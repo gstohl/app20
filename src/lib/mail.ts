@@ -1,7 +1,7 @@
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { decodeEnvelope, type DecodedMail } from "./envelope";
+import { decodeEnvelope, type DecodedMail } from "./envelope.js";
 
 const FELT_PAYLOAD_BYTES = 31;
 export const MAX_CT_FELTS = 140;
