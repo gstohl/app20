@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EncryptedMailRecord } from "./mail";
+import { addrSTRK } from "../utils/constants";
+import { buildOtcAcceptActions } from "./strk20";
 import {
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
@@ -27,15 +29,9 @@ describe("mail STRK20 actions", () => {
   it("keeps wallet placeholders literal in the invoke calldata", () => {
     const actions = buildMailActions(baseInput);
 
-    expect(actions).toHaveLength(2);
-    expect(actions[0]).toEqual({
-      type: "transfer",
-      token: "0x456",
-      amount: "OPEN",
-      recipient: "0x789",
-    });
+    expect(actions).toHaveLength(1);
 
-    const invoke = actions[1];
+    const invoke = actions[0];
     expect(invoke.type).toBe("invoke");
     if (invoke.type !== "invoke") throw new Error("Expected invoke action.");
     expect(invoke.calldata).toEqual([
@@ -62,18 +58,64 @@ describe("mail STRK20 actions", () => {
       attachmentAmount: 25n * 10n ** 17n,
     });
 
-    expect(actions).toHaveLength(3);
+    expect(actions).toHaveLength(2);
     expect(actions[0]).toEqual({
       type: "transfer",
       token: "0x456",
       amount: "0x22b1c8c1227a0000",
       recipient: "0xabc",
     });
-    expect(actions[1]).toMatchObject({ type: "transfer", amount: "OPEN" });
-    expect(actions[2]).toMatchObject({
+    expect(actions[1]).toMatchObject({
       type: "invoke",
       contract: "0x123",
     });
+  });
+
+  it("builds accept as transfer then invoke and refuses non-STRK give", () => {
+    const offer = {
+      dealId: `0x${"11".repeat(32)}`,
+      give: {
+        token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+        amount: "10000000000000000",
+      },
+      want: {
+        token: { symbol: "USDC", address: "0x53c", decimals: 6 },
+        amount: "2500000",
+      },
+      offerer: "0xa11ce",
+      expiresAt: 0,
+    };
+    const actions = buildOtcAcceptActions({
+      helperAddress: "0x123",
+      record,
+      offer,
+    });
+
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).toEqual({
+      type: "transfer",
+      token: addrSTRK,
+      amount: "0x2386f26fc10000",
+      recipient: "0xa11ce",
+    });
+    expect(actions[1]).toMatchObject({ type: "invoke", contract: "0x123" });
+    if (actions[1].type !== "invoke") throw new Error("Expected invoke.");
+    expect(actions[1].calldata[1]).toBe("${poolAddress}");
+    expect(actions[1].calldata[2]).toBe("${openNoteIds[0]}");
+
+    expect(() =>
+      buildOtcAcceptActions({
+        helperAddress: "0x123",
+        record,
+        offer: {
+          ...offer,
+          give: {
+            ...offer.give,
+            token: { ...offer.give.token, address: "0x53c" },
+          },
+        },
+      }),
+    ).toThrow(/only STRK/i);
   });
 
   it("parses optional STRK amounts without floating-point rounding", () => {

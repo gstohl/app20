@@ -1,10 +1,112 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
-import { walletV6 } from "starknet";
+import { num, walletV6 } from "starknet";
+import type { EncryptedMailRecord } from "./mail";
+import { assertSettlesStrk, type OfferPayload } from "./otc";
+import { addrSTRK } from "../utils/constants";
 
 export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
+export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
+export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
+
+export type MailInvokeBatchInput = {
+  helperAddress: string;
+  record: EncryptedMailRecord;
+  tokenAddress?: string;
+  noteId?: string;
+};
+
+export type MemoTransferBatchInput = MailInvokeBatchInput & {
+  recipient: string;
+  amount: string | bigint;
+};
+
+export type OtcAcceptBatchInput = MailInvokeBatchInput & {
+  offer: OfferPayload;
+};
+
+function assertConfiguredHelper(address: string): void {
+  try {
+    if (BigInt(address) === 0n) throw new Error();
+  } catch {
+    throw new Error("A deployed mail helper is required before sending.");
+  }
+}
+
+function baseUnitAmountHex(amount: string | bigint): string {
+  if (typeof amount === "string" && !/^(?:0|[1-9]\d*)$/.test(amount)) {
+    throw new Error("Transfer amount must be a decimal base-unit string.");
+  }
+  const parsed = BigInt(amount);
+  if (parsed <= 0n) throw new Error("Transfer amount must be greater than zero.");
+  return num.toHex(parsed);
+}
+
+function buildMailInvokeAction({
+  helperAddress,
+  record,
+  tokenAddress = addrSTRK,
+  noteId = OPEN_NOTE_ID_PLACEHOLDER,
+}: MailInvokeBatchInput): WALLET_API.STRK20_INVOKE_ACTION {
+  assertConfiguredHelper(helperAddress);
+  return {
+    type: "invoke",
+    contract: helperAddress,
+    calldata: [
+      tokenAddress,
+      POOL_ADDRESS_PLACEHOLDER,
+      noteId,
+      record.ephemeralPub[0],
+      record.ephemeralPub[1],
+      num.toHex(record.viewTag),
+      record.nonce[0],
+      record.nonce[1],
+      num.toHex(record.ciphertextFelts.length),
+      ...record.ciphertextFelts,
+    ],
+  };
+}
+
+/** Message-only envelopes use exactly one invoke action and no dummy transfer. */
+export function buildMailInvokeActions(
+  input: MailInvokeBatchInput,
+): WALLET_API.STRK20_ACTION[] {
+  return [buildMailInvokeAction(input)];
+}
+
+/** Builds one private transfer followed by its encrypted memo invoke. */
+export function buildMemoTransferActions({
+  recipient,
+  amount,
+  ...mail
+}: MemoTransferBatchInput): WALLET_API.STRK20_ACTION[] {
+  const token = mail.tokenAddress ?? addrSTRK;
+  return [
+    {
+      type: "transfer",
+      token,
+      amount: baseUnitAmountHex(amount),
+      recipient,
+    },
+    buildMailInvokeAction({ ...mail, tokenAddress: token }),
+  ];
+}
+
+/** OTC v1 always transfers the offered STRK give leg to the offerer. */
+export function buildOtcAcceptActions({
+  offer,
+  ...mail
+}: OtcAcceptBatchInput): WALLET_API.STRK20_ACTION[] {
+  assertSettlesStrk(offer);
+  return buildMemoTransferActions({
+    ...mail,
+    tokenAddress: addrSTRK,
+    recipient: offer.offerer,
+    amount: offer.give.amount,
+  });
+}
 
 export type Strk20Capability = {
   supported: boolean;
@@ -111,6 +213,50 @@ export async function submitActions(
   );
 
   return { transactionHash, receipt };
+}
+
+export type SubmitMailInput = MailInvokeBatchInput & {
+  account: WalletAccountV6;
+  provider: ProviderInterface;
+};
+
+export type SubmitMemoTransferInput = MemoTransferBatchInput & {
+  account: WalletAccountV6;
+  provider: ProviderInterface;
+};
+
+export type SubmitOtcAcceptInput = OtcAcceptBatchInput & {
+  account: WalletAccountV6;
+  provider: ProviderInterface;
+};
+
+/** Submits one invoke-only STRK20 batch for text and non-payment envelopes. */
+export function submitMail(
+  { account, provider, ...batch }: SubmitMailInput,
+  options: SubmitActionsOptions = {},
+): Promise<{ transactionHash: string; receipt: unknown }> {
+  return submitActions(account, provider, buildMailInvokeActions(batch), options);
+}
+
+/** Submits one wallet batch containing a transfer and its encrypted memo. */
+export function submitMemoTransfer(
+  { account, provider, ...batch }: SubmitMemoTransferInput,
+  options: SubmitActionsOptions = {},
+): Promise<{ transactionHash: string; receipt: unknown }> {
+  return submitActions(
+    account,
+    provider,
+    buildMemoTransferActions(batch),
+    options,
+  );
+}
+
+/** A single wallet call settles the STRK give leg and posts the accept memo. */
+export function submitOtcAccept(
+  { account, provider, ...batch }: SubmitOtcAcceptInput,
+  options: SubmitActionsOptions = {},
+): Promise<{ transactionHash: string; receipt: unknown }> {
+  return submitActions(account, provider, buildOtcAcceptActions(batch), options);
 }
 
 function errorDetails(error: unknown): string {

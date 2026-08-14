@@ -1,15 +1,19 @@
 import type { WALLET_API } from "@starknet-io/types-js";
-import { num } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
+import {
+  OPEN_NOTE_ID_PLACEHOLDER,
+  POOL_ADDRESS_PLACEHOLDER,
+  buildMailInvokeActions,
+  buildMemoTransferActions,
+} from "./strk20";
 
-export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
-export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
+export { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER };
 
 const STRK_DECIMALS = 18;
 const STRK_SCALE = 10n ** BigInt(STRK_DECIMALS);
 
 export function isConfiguredMailHelper(
-  address: string | null | undefined
+  address: string | null | undefined,
 ): address is string {
   if (!address) return false;
   try {
@@ -52,15 +56,12 @@ type BuildMailActionsInput = {
 };
 
 /**
- * Builds the atomic private-payment + public-ciphertext action batch. The open
- * note is a recovery slot for any token dust the helper echoes back to the
- * sender. Wallet placeholders must remain literal strings until wallet
- * assembly; converting them with num.toHex would corrupt the request.
+ * Backward-compatible facade for the compose screen. Typed text is invoke-only;
+ * an explicit attachment is one numeric transfer followed by the memo invoke.
  */
 export function buildMailActions({
   helperAddress,
   tokenAddress,
-  senderAddress,
   recipientAddress,
   record,
   attachmentAmount,
@@ -68,42 +69,14 @@ export function buildMailActions({
   if (!isConfiguredMailHelper(helperAddress)) {
     throw new Error("A deployed mail helper is required before sending.");
   }
-  if (attachmentAmount !== undefined && attachmentAmount <= 0n) {
-    throw new Error("Attached STRK must be greater than zero.");
+  if (attachmentAmount === undefined) {
+    return buildMailInvokeActions({ helperAddress, tokenAddress, record });
   }
-
-  const actions: WALLET_API.STRK20_ACTION[] = [];
-  if (attachmentAmount !== undefined) {
-    actions.push({
-      type: "transfer",
-      token: tokenAddress,
-      amount: num.toHex(attachmentAmount),
-      recipient: recipientAddress,
-    });
-  }
-
-  actions.push({
-    type: "transfer",
-    token: tokenAddress,
-    amount: "OPEN",
-    recipient: senderAddress,
+  return buildMemoTransferActions({
+    helperAddress,
+    tokenAddress,
+    recipient: recipientAddress,
+    amount: attachmentAmount,
+    record,
   });
-  actions.push({
-    type: "invoke",
-    contract: helperAddress,
-    calldata: [
-      tokenAddress,
-      POOL_ADDRESS_PLACEHOLDER,
-      OPEN_NOTE_ID_PLACEHOLDER,
-      record.ephemeralPub[0],
-      record.ephemeralPub[1],
-      num.toHex(record.viewTag),
-      record.nonce[0],
-      record.nonce[1],
-      num.toHex(record.ciphertextFelts.length),
-      ...record.ciphertextFelts,
-    ],
-  });
-
-  return actions;
 }
