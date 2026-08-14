@@ -192,6 +192,19 @@ Status: not started.
 
 Deadline: **31 Aug 2026, 23:59 UTC**.
 
+## 8.1 Phase 5 — typed envelopes and OTC-in-chat · code complete locally 2026-08-14
+
+Envelope v1, legacy text decoding, one-sided OTC state, invoke-only mail,
+transfer-plus-accept batches, mixed inbox cards, local aliases, and STRK payment
+requests are implemented. No Cairo changed. Sepolia two-wallet validation is
+still required; code-complete does not establish sender authentication or
+atomic settlement of the quoted token leg.
+
+Payload deviation approved during implementation: `payment_request` adds the
+claimed `requester` address and uses a random `requestId`, because the anonymous
+`MessagePosted` event has no sender address from which a payer could build the
+private transfer. The card always discloses that raw, unauthenticated address.
+
 ## 9. Testing
 
 **Headless app:** `npm ci` · `npm test` · `npm run typecheck` · `npm run build`.

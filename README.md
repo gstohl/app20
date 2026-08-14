@@ -33,6 +33,31 @@ One complete private-mail loop on Starknet mainnet:
 | That a message was sent | Partially | Block timestamp, that a pool tx occurred |
 | Payment amount (if attached) | Yes, inside the pool | Shield / unshield legs stay public |
 
+## Deals in chat
+
+Quietline can carry typed offers, accepts, declines, one-sided receipts, and
+payment requests inside the same encrypted mail records. An offer asks the
+recipient to sell STRK to the offerer; accepting creates one wallet batch with
+the private STRK transfer followed by its encrypted accept memo. A receipt is a
+separate helper transaction, so a failed receipt can be retried without moving
+STRK again. Deal state and contact aliases stay in this browser's localStorage,
+are never uploaded, and disappear when site data is cleared. Messages are not
+sender-authenticated in envelope v1, so offer and request addresses must be
+verified out-of-band before money moves.
+
+Quietline hides who mailed whom and the ciphertext. Timing of pool txs stays public.
+OTC MVP moves **only STRK**, one way, from accepter to offerer.
+The quoted non-STRK asset is a promise. No escrow, no clawback, no proof Alice paid.
+Two-person demos leak by timing correlation.
+`register_pubkey` in `cairo/src/lib.cairo` is a public `address → x25519`
+directory. It is not the pool viewing key, but it does reveal that an address
+opted into Quietline mail.
+
+This is not an atomic swap. The v1 receipt warning is `one_sided_v1`; it proves
+neither payment of the quoted non-STRK leg nor the identity behind a claimed
+address. Payment requests use the same one-way STRK rail and refuse duplicate
+Pay actions locally.
+
 ## Stack
 
 Vite + React 19 + TanStack Router, shipped as a client-only SPA (no SSR), with
