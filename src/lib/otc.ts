@@ -97,6 +97,8 @@ export type StorageLike = Pick<Storage, "getItem" | "setItem">;
 const ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const BASE_UNITS_PATTERN = /^(?:0|[1-9]\d*)$/;
 const MAX_TOKEN_DECIMALS = 255;
+const STRK_SYMBOL = "STRK";
+const STRK_DECIMALS = 18;
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1_000);
@@ -128,6 +130,23 @@ export function isPositiveBaseUnitAmount(value: unknown): value is string {
   );
 }
 
+export function normalizeTokenRef(token: TokenRef): TokenRef {
+  if (!feltEquals(token.address, addrSTRK)) return token;
+  return { address: addrSTRK, decimals: STRK_DECIMALS, symbol: STRK_SYMBOL };
+}
+
+export function isCanonicalStrkToken(token: TokenRef): boolean {
+  return (
+    feltEquals(token.address, addrSTRK) &&
+    token.decimals === STRK_DECIMALS &&
+    token.symbol === STRK_SYMBOL
+  );
+}
+
+export function hasConsistentTokenMetadata(token: TokenRef): boolean {
+  return !feltEquals(token.address, addrSTRK) || isCanonicalStrkToken(token);
+}
+
 function parseTokenRef(value: unknown): TokenRef | null {
   if (!isObject(value)) return null;
   if (
@@ -141,11 +160,13 @@ function parseTokenRef(value: unknown): TokenRef | null {
   ) {
     return null;
   }
-  return {
+  const token = {
     symbol: value.symbol.trim(),
     address: value.address,
     decimals: value.decimals as number,
   };
+  if (!hasConsistentTokenMetadata(token)) return null;
+  return normalizeTokenRef(token);
 }
 
 function parseLeg(value: unknown): OfferPayload["give"] | null {
@@ -339,14 +360,21 @@ export function paymentRequestIsExpired(
 }
 
 export function assertSettlesStrk(offer: OfferPayload): void {
-  if (!feltEquals(offer.give.token.address, addrSTRK)) {
-    throw new Error("Quietline OTC v1 can settle only STRK on the give leg.");
+  if (!isCanonicalStrkToken(offer.give.token)) {
+    throw new Error(
+      "Quietline OTC v1 can settle only STRK with canonical metadata on the give leg.",
+    );
+  }
+  if (!hasConsistentTokenMetadata(offer.want.token)) {
+    throw new Error("The offered want leg contains inconsistent STRK metadata.");
   }
 }
 
 function assertPaysStrk(request: PaymentRequestPayload): void {
-  if (!feltEquals(request.token.address, addrSTRK)) {
-    throw new Error("Quietline payment v1 can pay only STRK invoices.");
+  if (!isCanonicalStrkToken(request.token)) {
+    throw new Error(
+      "Quietline payment v1 can pay only STRK with canonical invoice metadata.",
+    );
   }
 }
 
@@ -360,7 +388,7 @@ export function acceptPayloadForOffer(
     dealId: offer.dealId,
     ...(offerIndex === undefined ? {} : { offerIndex }),
     transfer: {
-      token: offer.give.token,
+      token: normalizeTokenRef(offer.give.token),
       amount: offer.give.amount,
       to: offer.offerer,
     },

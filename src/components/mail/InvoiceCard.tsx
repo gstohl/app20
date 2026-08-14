@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { feltEquals } from "@/lib/addresses";
 import {
   formatBaseUnits,
+  hasConsistentTokenMetadata,
+  isCanonicalStrkToken,
+  normalizeTokenRef,
   paymentRequestIsExpired,
   type PaymentRequestPayload,
   type PaymentStatus,
 } from "@/lib/otc";
-import { addrSTRK } from "@/utils/constants";
 import styles from "./mail.module.css";
 
 type InvoiceCardProps = {
@@ -27,8 +28,10 @@ export default function InvoiceCard({
   onPay,
 }: InvoiceCardProps) {
   const [ignored, setIgnored] = useState(false);
-  const amount = formatBaseUnits(request.amount, request.token.decimals);
-  const isStrk = feltEquals(request.token.address, addrSTRK);
+  const token = normalizeTokenRef(request.token);
+  const amount = formatBaseUnits(request.amount, token.decimals);
+  const metadataConsistent = hasConsistentTokenMetadata(request.token);
+  const isStrk = isCanonicalStrkToken(request.token);
   const expired = status === "expired" || paymentRequestIsExpired(request);
   const canPay =
     status === "requested" && !expired && isStrk && !ignored && Boolean(onPay);
@@ -42,7 +45,7 @@ export default function InvoiceCard({
         ) : null}
       </div>
       <p className={styles.termsSentence}>
-        {alias ?? "The requester"} requests <strong>{amount} {request.token.symbol}</strong>
+        {alias ?? "The requester"} requests <strong>{amount} {token.symbol}</strong>
         {request.memo ? ` for “${request.memo}”.` : "."}
       </p>
 
@@ -55,7 +58,7 @@ export default function InvoiceCard({
         </span>
       </div>
       <p className={styles.riskCopy}>
-        <strong>{amount} {request.token.symbol} moves now, privately.</strong>{" "}
+        <strong>{amount} {token.symbol} moves now, privately.</strong>{" "}
         Anything else quoted is NOT settled by Quietline — you are trusting the
         counterparty. Not an atomic swap.
       </p>
@@ -66,7 +69,12 @@ export default function InvoiceCard({
         {" · "}Request {request.requestId.slice(0, 12)}…
       </p>
 
-      {!isStrk ? (
+      {!metadataConsistent ? (
+        <p className={styles.actionWarning}>
+          Quietline refuses this request: its STRK address has inconsistent
+          token metadata.
+        </p>
+      ) : !isStrk ? (
         <p className={styles.actionWarning}>
           Non-STRK requests are display-only. Quietline v1 will not send this
           token.

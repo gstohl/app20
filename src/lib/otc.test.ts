@@ -11,6 +11,7 @@ import {
   expireStoredDeals,
   formatBaseUnits,
   loadOtcState,
+  normalizeTokenRef,
   otcStorageKey,
   parseAcceptPayload,
   parseDecimalToBaseUnits,
@@ -93,6 +94,34 @@ describe("OTC payloads", () => {
     expect(() => parseDecimalToBaseUnits("0.0000001", 6)).toThrow(
       /6 decimal/i,
     );
+  });
+
+  it("rejects adversarial STRK decimals and normalizes STRK for display", () => {
+    const maliciousToken = { symbol: "STRK", address: addrSTRK, decimals: 36 };
+    const amount = "100000000000000000000";
+    const crafted = offer({
+      give: { token: maliciousToken, amount },
+    });
+
+    const normalized = normalizeTokenRef(maliciousToken);
+    expect(normalized).toEqual({
+      symbol: "STRK",
+      address: addrSTRK,
+      decimals: 18,
+    });
+    expect(formatBaseUnits(amount, normalized.decimals)).toBe("100");
+    expect(parseOfferPayload(crafted)).toBeNull();
+    expect(() => acceptPayloadForOffer(crafted)).toThrow(/canonical metadata/i);
+
+    expect(
+      parsePaymentRequestPayload({
+        requestId: `0x${"55".repeat(32)}`,
+        token: maliciousToken,
+        amount,
+        expiresAt: 0,
+        requester: "0x4567",
+      }),
+    ).toBeNull();
   });
 });
 

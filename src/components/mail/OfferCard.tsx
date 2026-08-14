@@ -1,7 +1,8 @@
-import { addrSTRK } from "@/utils/constants";
-import { feltEquals } from "@/lib/addresses";
 import {
   formatBaseUnits,
+  hasConsistentTokenMetadata,
+  isCanonicalStrkToken,
+  normalizeTokenRef,
   offerIsExpired,
   type DealStatus,
   type OfferPayload,
@@ -34,10 +35,15 @@ export default function OfferCard({
   onDecline,
   onPostReceipt,
 }: OfferCardProps) {
-  const giveAmount = formatBaseUnits(offer.give.amount, offer.give.token.decimals);
-  const wantAmount = formatBaseUnits(offer.want.amount, offer.want.token.decimals);
+  const giveToken = normalizeTokenRef(offer.give.token);
+  const wantToken = normalizeTokenRef(offer.want.token);
+  const giveAmount = formatBaseUnits(offer.give.amount, giveToken.decimals);
+  const wantAmount = formatBaseUnits(offer.want.amount, wantToken.decimals);
   const expired = status === "expired" || offerIsExpired(offer);
-  const settlesStrk = feltEquals(offer.give.token.address, addrSTRK);
+  const metadataConsistent =
+    hasConsistentTokenMetadata(offer.give.token) &&
+    hasConsistentTokenMetadata(offer.want.token);
+  const settlesStrk = isCanonicalStrkToken(offer.give.token);
   const active = status === "offered" && !expired;
   const displayOfferer = alias ?? "The offerer";
 
@@ -56,7 +62,7 @@ export default function OfferCard({
 
       <p className={styles.termsSentence}>
         {displayOfferer} offers to buy <strong>{giveAmount} STRK</strong> from
-        you for <strong>{wantAmount} {offer.want.token.symbol}</strong>.
+        you for <strong>{wantAmount} {wantToken.symbol}</strong>.
       </p>
 
       <div className={styles.addressProof}>
@@ -70,7 +76,7 @@ export default function OfferCard({
       </p>
 
       <p className={styles.riskCopy}>
-        <strong>{giveAmount} STRK moves now, privately.</strong> The {offer.want.token.symbol}
+        <strong>{giveAmount} STRK moves now, privately.</strong> The {wantToken.symbol}
         {" "}leg is NOT settled by Quietline — you are trusting the counterparty.
         Not an atomic swap.
       </p>
@@ -79,10 +85,15 @@ export default function OfferCard({
       </p>
       {offer.note ? <p className={styles.offerNote}>{offer.note}</p> : null}
 
-      {!settlesStrk ? (
+      {!metadataConsistent ? (
         <p className={styles.actionWarning}>
-          Quietline refuses this offer: OTC v1 can settle only STRK on the give
-          leg.
+          Quietline refuses this offer: its STRK address has inconsistent token
+          metadata.
+        </p>
+      ) : !settlesStrk ? (
+        <p className={styles.actionWarning}>
+          Quietline refuses this offer: OTC v1 can settle only canonical STRK on
+          the give leg.
         </p>
       ) : expired ? (
         <p className={styles.actionWarning}>This offer has expired locally.</p>
@@ -95,7 +106,7 @@ export default function OfferCard({
               className={styles.primaryButton}
               type="button"
               onClick={onAccept}
-              disabled={busy || !settlesStrk}
+              disabled={busy || !settlesStrk || !metadataConsistent}
             >
               {busy ? "Waiting for Ready…" : `Accept & send ${giveAmount} STRK`}
             </button>
