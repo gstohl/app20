@@ -1,4 +1,8 @@
-import { feltEquals } from "./addresses";
+import {
+  canonicalizeStarknetAddress,
+  feltEquals,
+} from "./addresses";
+import { sanitizeUntrustedText } from "./text";
 import { addrSTRK } from "../utils/constants";
 
 export const OTC_STORAGE_PREFIX = "quietline/otc/v1";
@@ -115,14 +119,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isFelt(value: unknown): value is string {
-  if (typeof value !== "string") return false;
+function parseAddress(value: unknown): string | null {
+  if (typeof value !== "string") return null;
   try {
-    const parsed = BigInt(value);
-    return parsed >= 0n && parsed < 2n ** 251n;
+    return canonicalizeStarknetAddress(value);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isFelt(value: unknown): value is string {
+  return parseAddress(value) !== null;
 }
 
 export function isRandom32ByteId(value: unknown): value is string {
@@ -138,8 +145,13 @@ export function isPositiveBaseUnitAmount(value: unknown): value is string {
 }
 
 export function normalizeTokenRef(token: TokenRef): TokenRef {
-  if (!feltEquals(token.address, addrSTRK)) return token;
-  return { address: addrSTRK, decimals: STRK_DECIMALS, symbol: STRK_SYMBOL };
+  if (feltEquals(token.address, addrSTRK)) {
+    return { address: addrSTRK, decimals: STRK_DECIMALS, symbol: STRK_SYMBOL };
+  }
+  return {
+    ...token,
+    address: canonicalizeStarknetAddress(token.address),
+  };
 }
 
 export function isCanonicalStrkToken(token: TokenRef): boolean {
@@ -156,11 +168,17 @@ export function hasConsistentTokenMetadata(token: TokenRef): boolean {
 
 function parseTokenRef(value: unknown): TokenRef | null {
   if (!isObject(value)) return null;
+  const address = parseAddress(value.address);
+  const symbol =
+    typeof value.symbol === "string"
+      ? sanitizeUntrustedText(value.symbol).trim()
+      : "";
   if (
+    !symbol ||
     typeof value.symbol !== "string" ||
-    !value.symbol.trim() ||
     value.symbol.length > 32 ||
-    !isFelt(value.address) ||
+    symbol.length > 32 ||
+    !address ||
     !Number.isInteger(value.decimals) ||
     (value.decimals as number) < 0 ||
     (value.decimals as number) > MAX_TOKEN_DECIMALS
@@ -168,8 +186,8 @@ function parseTokenRef(value: unknown): TokenRef | null {
     return null;
   }
   const token = {
-    symbol: value.symbol.trim(),
-    address: value.address,
+    symbol,
+    address,
     decimals: value.decimals as number,
   };
   if (!hasConsistentTokenMetadata(token)) return null;
@@ -186,18 +204,17 @@ function parseLeg(value: unknown): OfferPayload["give"] | null {
 function parseTransfer(value: unknown): AcceptPayload["transfer"] | null {
   if (!isObject(value)) return null;
   const token = parseTokenRef(value.token);
-  if (
-    !token ||
-    !isPositiveBaseUnitAmount(value.amount) ||
-    !isFelt(value.to)
-  ) {
+  const to = parseAddress(value.to);
+  if (!token || !isPositiveBaseUnitAmount(value.amount) || !to) {
     return null;
   }
-  return { token, amount: value.amount, to: value.to };
+  return { token, amount: value.amount, to };
 }
 
-function optionalShortString(value: unknown): value is string | undefined {
-  return value === undefined || (typeof value === "string" && value.length <= 512);
+function optionalShortText(value: unknown): string | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length > 512) return null;
+  return sanitizeUntrustedText(value);
 }
 
 function isExpiry(value: unknown): value is number {
@@ -208,13 +225,15 @@ export function parseOfferPayload(value: unknown): OfferPayload | null {
   if (!isObject(value)) return null;
   const give = parseLeg(value.give);
   const want = parseLeg(value.want);
+  const offerer = parseAddress(value.offerer);
+  const note = optionalShortText(value.note);
   if (
     !isRandom32ByteId(value.dealId) ||
     !give ||
     !want ||
-    !isFelt(value.offerer) ||
+    !offerer ||
     !isExpiry(value.expiresAt) ||
-    !optionalShortString(value.note)
+    note === null
   ) {
     return null;
   }
@@ -222,9 +241,9 @@ export function parseOfferPayload(value: unknown): OfferPayload | null {
     dealId: value.dealId,
     give,
     want,
-    offerer: value.offerer,
+    offerer,
     expiresAt: value.expiresAt,
-    ...(value.note === undefined ? {} : { note: value.note }),
+    ...(note === undefined ? {} : { note }),
   };
 }
 
@@ -251,16 +270,12 @@ export function parseAcceptPayload(value: unknown): AcceptPayload | null {
 }
 
 export function parseDeclinePayload(value: unknown): DeclinePayload | null {
-  if (
-    !isObject(value) ||
-    !isRandom32ByteId(value.dealId) ||
-    !optionalShortString(value.reason)
-  ) {
-    return null;
-  }
+  if (!isObject(value)) return null;
+  const reason = optionalShortText(value.reason);
+  if (!isRandom32ByteId(value.dealId) || reason === null) return null;
   return {
     dealId: value.dealId,
-    ...(value.reason === undefined ? {} : { reason: value.reason }),
+    ...(reason === undefined ? {} : { reason }),
   };
 }
 
@@ -293,13 +308,15 @@ export function parsePaymentRequestPayload(
       ? value.invoiceId
       : null;
   const token = parseTokenRef(value.token);
+  const requester = parseAddress(value.requester);
+  const memo = optionalShortText(value.memo);
   if (
     !requestId ||
     !token ||
     !isPositiveBaseUnitAmount(value.amount) ||
-    !optionalShortString(value.memo) ||
+    memo === null ||
     !isExpiry(value.expiresAt) ||
-    !isFelt(value.requester)
+    !requester
   ) {
     return null;
   }
@@ -308,8 +325,8 @@ export function parsePaymentRequestPayload(
     token,
     amount: value.amount,
     expiresAt: value.expiresAt,
-    requester: value.requester,
-    ...(value.memo === undefined ? {} : { memo: value.memo }),
+    requester,
+    ...(memo === undefined ? {} : { memo }),
     ...(typeof value.invoiceId === "string"
       ? { invoiceId: value.invoiceId }
       : {}),

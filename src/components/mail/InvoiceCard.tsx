@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import {
   formatBaseUnits,
   hasConsistentTokenMetadata,
@@ -37,6 +38,7 @@ export default function InvoiceCard({
   const metadataConsistent = hasConsistentTokenMetadata(request.token);
   const isStrk = isCanonicalStrkToken(request.token);
   const expired = status === "expired" || paymentRequestIsExpired(request);
+  const claimedPaymentAddress = canonicalizeStarknetAddress(request.requester);
   const canPay =
     status === "requested" && !expired && isStrk && !ignored && Boolean(onPay);
 
@@ -53,20 +55,29 @@ export default function InvoiceCard({
         ) : null}
       </div>
       <p className={styles.termsSentence}>
-        {alias ?? "The requester"} requests <strong>{amount} {token.symbol}</strong>
-        {request.memo ? ` for “${request.memo}”.` : "."}
+        This unsigned message requests <strong>{amount} <bdi>{token.symbol}</bdi></strong>
+        {request.memo ? (
+          <> for “<bdi>{request.memo}</bdi>”.</>
+        ) : (
+          "."
+        )}
       </p>
 
       <div className={styles.addressProof}>
-        {alias ? <strong>{alias}</strong> : null}
-        <code>{request.requester}</code>
+        <strong>Claimed payment address</strong>
+        <code>{claimedPaymentAddress}</code>
+        {alias ? (
+          <span>
+            Local label: <bdi>{alias}</bdi> — not authenticated
+          </span>
+        ) : null}
         <span>
           verify this address out-of-band before paying — requests are not
           sender-authenticated
         </span>
       </div>
       <p className={styles.riskCopy}>
-        <strong>{amount} {token.symbol} moves now, privately.</strong>{" "}
+        <strong>{amount} <bdi>{token.symbol}</bdi> moves now, privately.</strong>{" "}
         Anything else quoted is NOT settled by Quietline — you are trusting the
         counterparty. Not an atomic swap.
       </p>

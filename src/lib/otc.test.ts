@@ -96,6 +96,34 @@ describe("OTC payloads", () => {
     );
   });
 
+  it("canonicalizes addresses and strips controls from symbols and notes", () => {
+    const parsedOffer = parseOfferPayload({
+      ...offer(),
+      offerer: `0x${"0".repeat(20)}1234`,
+      want: {
+        token: { ...usdc, symbol: "US\u202eDC" },
+        amount: "2500000",
+      },
+      note: "Pay\u2066 now\u0000please",
+    });
+
+    expect(parsedOffer).toMatchObject({
+      offerer: "0x1234",
+      want: { token: { address: "0x53c", symbol: "USDC" } },
+      note: "Pay now please",
+    });
+
+    const parsedAccept = parseAcceptPayload({
+      dealId,
+      transfer: {
+        token: strk,
+        amount: "1",
+        to: `0x${"0".repeat(20)}1234`,
+      },
+    });
+    expect(parsedAccept?.transfer.to).toBe("0x1234");
+  });
+
   it("rejects adversarial STRK decimals and normalizes STRK for display", () => {
     const maliciousToken = { symbol: "STRK", address: addrSTRK, decimals: 36 };
     const amount = "100000000000000000000";

@@ -25,13 +25,13 @@ export default function ReceiptCard({
         <span className={styles.proofStamp}>Unverified counterparty claim</span>
       </div>
       <p className={styles.termsSentence}>
-        A counterparty claims the {amount} {receipt.transfer.token.symbol} leg
-        for deal {receipt.dealId.slice(0, 12)}… used transaction {receipt.txHash}.
+        A counterparty claims the {amount} <bdi>{receipt.transfer.token.symbol}</bdi>{" "}
+        leg for deal {receipt.dealId.slice(0, 12)}… used transaction {receipt.txHash}.
       </p>
       <p className={styles.riskCopy}>
         This encrypted receipt and its MessagePosted transaction do not prove a
-        transfer. Verify the STRK payment independently before releasing the {wantSymbol}
-        {" "}leg; this is not an atomic swap.
+        transfer. Verify the STRK payment independently before releasing the{" "}
+        <bdi>{wantSymbol}</bdi> leg; this is not an atomic swap.
       </p>
       <p className={styles.receiptWarning}>
         Counterparty claim warning: <strong>{receipt.warning}</strong>

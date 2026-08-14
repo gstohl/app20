@@ -305,7 +305,8 @@ export default function Thread({
           <p className={styles.termsSentence}>
             A counterparty claims they sent{" "}
             {formatBaseUnits(accept.transfer.amount, accept.transfer.token.decimals)}{" "}
-            {accept.transfer.token.symbol} for {isPayment ? "request" : "deal"}{" "}
+            <bdi>{accept.transfer.token.symbol}</bdi> for{" "}
+            {isPayment ? "request" : "deal"}{" "}
             {accept.dealId.slice(0, 12)}…
           </p>
           <p className={styles.riskCopy}>
@@ -329,7 +330,11 @@ export default function Thread({
           <p className={styles.termsSentence}>
             Deal {decline.dealId.slice(0, 12)}… was declined.
           </p>
-          {decline.reason ? <p className={styles.offerNote}>{decline.reason}</p> : null}
+          {decline.reason ? (
+            <p className={styles.offerNote}>
+              <bdi>{decline.reason}</bdi>
+            </p>
+          ) : null}
         </article>
       );
     }

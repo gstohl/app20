@@ -1,3 +1,4 @@
+import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import {
   formatBaseUnits,
   hasConsistentTokenMetadata,
@@ -49,7 +50,7 @@ export default function OfferCard({
     hasConsistentTokenMetadata(offer.want.token);
   const settlesStrk = isCanonicalStrkToken(offer.give.token);
   const active = status === "offered" && !expired;
-  const displayOfferer = alias ?? "The offerer";
+  const claimedPaymentAddress = canonicalizeStarknetAddress(offer.offerer);
 
   return (
     <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
@@ -71,29 +72,39 @@ export default function OfferCard({
       </div>
 
       <p className={styles.termsSentence}>
-        {displayOfferer} offers to buy <strong>{giveAmount} STRK</strong> from
-        you for <strong>{wantAmount} {wantToken.symbol}</strong>.
+        This unsigned message offers to buy <strong>{giveAmount} STRK</strong>{" "}
+        from you for <strong>{wantAmount} <bdi>{wantToken.symbol}</bdi></strong>.
       </p>
 
       <div className={styles.addressProof}>
-        {alias ? <strong>{alias}</strong> : null}
-        <code>{offer.offerer}</code>
+        <strong>Claimed payment address</strong>
+        <code>{claimedPaymentAddress}</code>
+        {alias ? (
+          <span>
+            Local label: <bdi>{alias}</bdi> — not authenticated
+          </span>
+        ) : null}
         <span>verify this address out-of-band before accepting</span>
       </div>
       <p className={styles.authWarning}>
-        Messages are not sender-authenticated in v1. The address above came
-        from the encrypted offer payload.
+        Messages are not sender-authenticated in v1. The claimed payment
+        address above came from the encrypted offer payload.
       </p>
 
       <p className={styles.riskCopy}>
-        <strong>{giveAmount} STRK moves now, privately.</strong> The {wantToken.symbol}
-        {" "}leg is NOT settled by Quietline — you are trusting the counterparty.
+        <strong>{giveAmount} STRK moves now, privately.</strong> The{" "}
+        <bdi>{wantToken.symbol}</bdi> leg is NOT settled by Quietline — you are
+        trusting the counterparty.
         Not an atomic swap.
       </p>
       <p className={styles.sheetMeta}>
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…
       </p>
-      {offer.note ? <p className={styles.offerNote}>{offer.note}</p> : null}
+      {offer.note ? (
+        <p className={styles.offerNote}>
+          <bdi>{offer.note}</bdi>
+        </p>
+      ) : null}
 
       {unverifiedClaim ? (
         <p className={styles.actionWarning}>

@@ -1,4 +1,8 @@
-import { feltEquals } from "./addresses";
+import {
+  canonicalizeStarknetAddress,
+  feltEquals,
+} from "./addresses";
+import { sanitizeUntrustedText } from "./text";
 
 export const ALIAS_STORAGE_PREFIX = "quietline/aliases/v1";
 
@@ -10,18 +14,11 @@ export type AliasRecord = {
 
 export type AliasStorage = Pick<Storage, "getItem" | "setItem">;
 
-function canonicalAddress(address: string): string {
-  try {
-    const value = BigInt(address);
-    if (value < 0n || value >= 2n ** 251n) throw new Error();
-    return `0x${value.toString(16)}`;
-  } catch {
-    throw new Error("Alias address must be a valid Starknet felt.");
-  }
-}
-
 function cleanLabel(label: string): string {
-  const cleaned = label.trim().replace(/\s+/g, " ");
+  if (label.length > 256) {
+    throw new Error("Alias label cannot exceed 64 characters.");
+  }
+  const cleaned = sanitizeUntrustedText(label).trim().replace(/\s+/g, " ");
   if (!cleaned) throw new Error("Alias label cannot be empty.");
   if (cleaned.length > 64) throw new Error("Alias label cannot exceed 64 characters.");
   return cleaned;
@@ -55,7 +52,7 @@ export function loadAliases(
       }
       try {
         aliases.push({
-          address: canonicalAddress(record.address),
+          address: canonicalizeStarknetAddress(record.address),
           label: cleanLabel(record.label),
           addedAt: record.addedAt,
         });
@@ -80,7 +77,10 @@ function findAliasByLabel(
   aliases: readonly AliasRecord[],
   label: string,
 ): AliasRecord | undefined {
-  const normalized = label.trim().toLocaleLowerCase();
+  const normalized = sanitizeUntrustedText(label)
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
   return aliases.find(
     (record) => record.label.toLocaleLowerCase() === normalized,
   );
@@ -101,7 +101,7 @@ export function saveAlias(
   label: string,
   addedAt = Math.floor(Date.now() / 1_000),
 ): AliasRecord[] {
-  const canonical = canonicalAddress(address);
+  const canonical = canonicalizeStarknetAddress(address);
   const cleaned = cleanLabel(label);
   const aliases = loadAliases(storage, selfAddress);
   const duplicateLabel = aliases.find(

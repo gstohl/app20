@@ -64,4 +64,23 @@ describe("local contact aliases", () => {
     storage.setItem(aliasStorageKey("0x1"), "not-json");
     expect(loadAliases(storage, "0x1")).toEqual([]);
   });
+
+  it("strips Unicode controls and bounds canonical alias addresses", () => {
+    const storage = new MemoryStorage();
+    const aliases = saveAlias(
+      storage,
+      "0x1",
+      `0x${"0".repeat(20)}abc`,
+      "Tre\u202eas\u2066ury\u0000 Desk",
+      1,
+    );
+
+    expect(aliases).toEqual([
+      { address: "0xabc", label: "Treasury Desk", addedAt: 1 },
+    ]);
+    expect(resolveAliasInput(aliases, "Tre\u202easury Desk")).toBe("0xabc");
+    expect(() =>
+      saveAlias(storage, "0x1", `0x${"0".repeat(1000)}abc`, "Long", 2),
+    ).toThrow(/bounded Starknet felt/i);
+  });
 });
