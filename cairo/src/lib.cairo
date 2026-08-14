@@ -27,6 +27,7 @@ pub trait IQuietlineMail<TState> {
         view_tag: u8,
         nonce: (felt252, felt252),
         ct: Array<felt252>,
+        action_id: felt252,
     ) -> Span<OpenNoteDeposit>;
     fn register_pubkey(ref self: TState, pk: (felt252, felt252));
     fn get_pubkey(self: @TState, addr: ContractAddress) -> (felt252, felt252);
@@ -44,6 +45,7 @@ pub mod QuietlineMail {
     mod errors {
         pub const BAD_POOL: felt252 = 'BAD_POOL';
         pub const CT_TOO_LARGE: felt252 = 'CT_TOO_LARGE';
+        pub const ACTION_ID_USED: felt252 = 'ACTION_ID_USED';
         pub const AMOUNT_OVERFLOW: felt252 = 'AMOUNT_OVERFLOW';
         pub const APPROVE_FAILED: felt252 = 'APPROVE_FAILED';
     }
@@ -53,6 +55,7 @@ pub mod QuietlineMail {
         pool: ContractAddress,
         pubkeys: Map<ContractAddress, (felt252, felt252)>,
         message_count: u64,
+        used_action_ids: Map<felt252, bool>,
     }
 
     #[event]
@@ -69,6 +72,7 @@ pub mod QuietlineMail {
         pub view_tag: u8,
         pub nonce: (felt252, felt252),
         pub ct: Span<felt252>,
+        pub action_id: felt252,
     }
 
     #[constructor]
@@ -87,6 +91,7 @@ pub mod QuietlineMail {
             view_tag: u8,
             nonce: (felt252, felt252),
             ct: Array<felt252>,
+            action_id: felt252,
         ) -> Span<OpenNoteDeposit> {
             // This argument is a wallet placeholder only; authorization uses storage.
             let _pool_placeholder = pool_address;
@@ -95,9 +100,16 @@ pub mod QuietlineMail {
             assert(caller == pool, errors::BAD_POOL);
             assert(ct.len() <= MAX_CT_FELTS, errors::CT_TOO_LARGE);
 
+            // Zero means no idempotency is required; it is never recorded or rejected.
+            if action_id != 0 {
+                let used_action_id = self.used_action_ids.entry(action_id);
+                assert(!used_action_id.read(), errors::ACTION_ID_USED);
+                used_action_id.write(true);
+            }
+
             let index = self.message_count.read();
             self.message_count.write(index + 1);
-            self.emit(MessagePosted { index, eph_pk, view_tag, nonce, ct: ct.span() });
+            self.emit(MessagePosted { index, eph_pk, view_tag, nonce, ct: ct.span(), action_id });
 
             let erc20 = IErc20Dispatcher { contract_address: token };
             let balance = erc20.balance_of(get_contract_address());

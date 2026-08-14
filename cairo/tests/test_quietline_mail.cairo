@@ -36,11 +36,19 @@ fn invoke(
     token: ContractAddress,
     note_id: felt252,
     ct: Array<felt252>,
+    action_id: felt252,
 ) -> Span<OpenNoteDeposit> {
     cheat_caller_address(helper_address, pool, CheatSpan::TargetCalls(1));
     helper
         .privacy_invoke(
-            token, contract_address(0x999), note_id, (0x111, 0x222), 0x7a, (0x333, 0x444), ct,
+            token,
+            contract_address(0x999),
+            note_id,
+            (0x111, 0x222),
+            0x7a,
+            (0x333, 0x444),
+            ct,
+            action_id,
         )
 }
 
@@ -59,6 +67,7 @@ fn non_pool_caller_reverts() {
             3,
             (0x4, 0x5),
             array![0x6],
+            0,
         );
 }
 
@@ -74,14 +83,7 @@ fn oversized_ciphertext_reverts() {
         index += 1;
     }
 
-    invoke(
-        helper_address,
-        helper,
-        pool,
-        contract_address(0x207),
-        0x307,
-        ct,
-    );
+    invoke(helper_address, helper, pool, contract_address(0x207), 0x307, ct, 0);
 }
 
 #[test]
@@ -93,7 +95,7 @@ fn post_emits_event_with_exact_payload() {
     let expected_ct = array![0x2, 0xabc, 0xdef];
 
     let deposits = invoke(
-        helper_address, helper, pool, token_address, 0x515, array![0x2, 0xabc, 0xdef],
+        helper_address, helper, pool, token_address, 0x515, array![0x2, 0xabc, 0xdef], 0xa11,
     );
 
     assert(deposits.is_empty(), 'expected no deposit');
@@ -109,6 +111,7 @@ fn post_emits_event_with_exact_payload() {
                             view_tag: 0x7a,
                             nonce: (0x333, 0x444),
                             ct: expected_ct.span(),
+                            action_id: 0xa11,
                         },
                     ),
                 ),
@@ -118,12 +121,55 @@ fn post_emits_event_with_exact_payload() {
 }
 
 #[test]
+#[should_panic(expected: ('ACTION_ID_USED',))]
+fn duplicate_nonzero_action_id_reverts() {
+    let pool = contract_address(0x108);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, _) = deploy_token(pool, 0);
+
+    let first = invoke(helper_address, helper, pool, token_address, 0x808, array![0x1], 0xaaaa);
+    assert(first.is_empty(), 'expected no deposit');
+
+    invoke(helper_address, helper, pool, token_address, 0x808, array![0x1], 0xaaaa);
+}
+
+#[test]
+fn different_nonzero_action_ids_both_succeed() {
+    let pool = contract_address(0x109);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, _) = deploy_token(pool, 0);
+
+    let first = invoke(helper_address, helper, pool, token_address, 0x909, array![0x1], 0xaaaa);
+    let second = invoke(helper_address, helper, pool, token_address, 0x909, array![0x1], 0xbbbb);
+
+    assert(first.is_empty(), 'expected no first deposit');
+    assert(second.is_empty(), 'expected no second deposit');
+    assert(helper.message_count() == 2, 'wrong message count');
+}
+
+#[test]
+fn zero_action_id_can_repeat_freely() {
+    let pool = contract_address(0x10a);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, _) = deploy_token(pool, 0);
+
+    let first = invoke(helper_address, helper, pool, token_address, 0xa0a, array![0x1], 0);
+    let second = invoke(helper_address, helper, pool, token_address, 0xa0a, array![0x1], 0);
+
+    assert(first.is_empty(), 'expected no first deposit');
+    assert(second.is_empty(), 'expected no second deposit');
+    assert(helper.message_count() == 2, 'wrong message count');
+}
+
+#[test]
 fn zero_balance_returns_empty_span() {
     let pool = contract_address(0x102);
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, _) = deploy_token(pool, 1_000);
 
-    let deposits = invoke(helper_address, helper, pool, token_address, 0x616, array![0x1, 0xbeef]);
+    let deposits = invoke(
+        helper_address, helper, pool, token_address, 0x616, array![0x1, 0xbeef], 0,
+    );
 
     assert(deposits.is_empty(), 'expected empty deposit span');
     assert(helper.message_count() == 1, 'message was not posted');
@@ -139,7 +185,9 @@ fn dust_balance_is_approved_and_echoed() {
     cheat_caller_address(token_address, pool, CheatSpan::TargetCalls(1));
     assert(token.transfer(helper_address, dust), 'dust transfer failed');
 
-    let deposits = invoke(helper_address, helper, pool, token_address, 0x717, array![0x1, 0xcafe]);
+    let deposits = invoke(
+        helper_address, helper, pool, token_address, 0x717, array![0x1, 0xcafe], 0,
+    );
 
     assert(deposits.len() == 1, 'expected one deposit');
     let deposit = *deposits.at(0);
@@ -161,12 +209,6 @@ fn register_pubkeys_are_isolated_by_caller() {
     cheat_caller_address(helper_address, registrant_b, CheatSpan::TargetCalls(1));
     helper.register_pubkey((0x777777, 0x888888));
 
-    assert(
-        helper.get_pubkey(registrant_a) == (0x123456, 0xabcdef),
-        'caller B altered caller A',
-    );
-    assert(
-        helper.get_pubkey(registrant_b) == (0x777777, 0x888888),
-        'caller B key mismatch',
-    );
+    assert(helper.get_pubkey(registrant_a) == (0x123456, 0xabcdef), 'caller B altered caller A');
+    assert(helper.get_pubkey(registrant_b) == (0x777777, 0x888888), 'caller B key mismatch');
 }
