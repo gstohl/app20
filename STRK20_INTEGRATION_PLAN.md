@@ -167,6 +167,33 @@ public **test-only** screening key `0xCAFEBABE`. Devnet does not implement
 services and a storage-proof-capable node such as Pathfinder. Ready plus the
 manual Sepolia two-wallet gate therefore remains open.
 
+### 6.5 Why there is no programmatic Sepolia test
+
+We investigated running a Node e2e against the real Sepolia pool and concluded
+it is not available to us. Recorded here so the gap is not mistaken for an
+oversight.
+
+- **Hosted proving and discovery URLs are unpublished.** The SDK requires
+  caller-supplied `PROVING_SERVICE_URL` and `INDEXER_URL`; every public example
+  is `localhost` or a placeholder, and upstream's mainnet template ships literal
+  `TODO_MAINNET_PROVER_URL` / `TODO_MAINNET_INDEXER_URL` values. Upstream's own
+  e2e README instructs contributors to fill real values "from the shared team
+  document", so these endpoints are circulated privately rather than published.
+- **Self-hosting cannot complete a deposit.** The prover and discovery service
+  are open source and could run locally against a storage-proof-capable Sepolia
+  RPC, but the live pool was deployed with StarkWare's screener key and every
+  deposit must carry an FPI screening signature relayed by the hosted prover.
+  No public screening endpoint or third-party credential exists, so a locally
+  proved deposit is rejected on-chain. Devnet only works because a self-deployed
+  pool uses the public test screener key.
+- **Non-deposit actions are not screened.** If the hosted endpoints ever become
+  available, a hybrid harness is viable: shield once through the wallet, then
+  prove and submit private transfers and `privacy_invoke` mail locally.
+
+Consequence: Ready plus a human is the only route to a real pool transaction on
+Sepolia or mainnet today, which is why the manual gate in the runbook is the
+validation step rather than a convenience.
+
 ## 7. Phase 3 — discover + decrypt + memo
 
 Status: not started.
