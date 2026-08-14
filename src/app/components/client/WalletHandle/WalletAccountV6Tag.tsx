@@ -17,7 +17,6 @@ import SelectWallet from "./SelectWallet";
 
 const TOKEN = constants.addrSTRK;
 const TEN_STRK = 10n * 10n ** 18n;
-const FIVE_STRK = 5n * 10n ** 18n;
 const ONE_STRK = 10n ** 18n;
 
 function fmtStrk(amount: bigint): string {
@@ -165,12 +164,11 @@ function errorResult(message: string): ActionResult {
   return { status: "error", title: "Action failed", note: message };
 }
 
-type TabKey = "shield" | "send" | "unshield" | "echo" | "balances";
+type TabKey = "shield" | "send" | "unshield" | "balances";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "shield", label: "Shield" },
   { key: "send", label: "Send" },
   { key: "unshield", label: "Unshield" },
-  { key: "echo", label: "Echo · DEMO" },
   { key: "balances", label: "Balances" },
 ];
 
@@ -184,20 +182,11 @@ export default function WalletAccountV6Tag() {
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
   const networkName = constants.Strk20Networks[providerIndex];
   const isStrk20Network = networkName !== undefined;
-  const echoHelper = constants.echoHelperForIndex(providerIndex);
-  const hasEchoHelper = (() => {
-    try {
-      return num.toBigInt(echoHelper) !== 0n;
-    } catch {
-      return false;
-    }
-  })();
 
   const [resultBalances, setResultBalances] = useState<ActionResult | null>(null);
   const [resultShield, setResultShield] = useState<ActionResult | null>(null);
   const [resultUnshield, setResultUnshield] = useState<ActionResult | null>(null);
   const [resultTransfer, setResultTransfer] = useState<ActionResult | null>(null);
-  const [resultEcho, setResultEcho] = useState<ActionResult | null>(null);
   const [tab, setTab] = useState<TabKey>("shield");
 
   async function submit(
@@ -321,33 +310,6 @@ export default function WalletAccountV6Tag() {
     );
   }
 
-  async function handleEcho() {
-    setResultEcho(null);
-    if (!connectedAddress || !hasEchoHelper) {
-      setResultEcho(
-        errorResult("The optional DEMO echo helper is not configured here.")
-      );
-      return;
-    }
-
-    // These placeholders are literal strings interpreted by the wallet.
-    const actions: WALLET_API.STRK20_ACTION[] = [
-      {
-        type: "withdraw",
-        token: TOKEN,
-        amount: num.toHex(FIVE_STRK),
-        recipient: num.toHex(echoHelper),
-      },
-      { type: "transfer", token: TOKEN, amount: "OPEN", recipient: connectedAddress },
-      {
-        type: "invoke",
-        contract: num.toHex(echoHelper),
-        calldata: [num.toHex(TOKEN), "${poolAddress}", "${openNoteIds[0]}"],
-      },
-    ];
-    await submit(actions, setResultEcho, "5 STRK");
-  }
-
   const explorerTxUrl = (hash: string) =>
     providerIndex === 0
       ? `https://voyager.online/tx/${hash}`
@@ -437,16 +399,6 @@ export default function WalletAccountV6Tag() {
       result: resultUnshield,
       disabled: !isStrk20Network,
     },
-    echo: {
-      label: "DEMO echo invoke",
-      value: "5",
-      token: "STRK",
-      hint: "Debug-only starter helper; not part of Feltproof",
-      cta: "Run DEMO echo",
-      onRun: handleEcho,
-      result: resultEcho,
-      disabled: !isStrk20Network || !hasEchoHelper,
-    },
     balances: {
       label: "Shielded balances",
       value: "All",
@@ -473,7 +425,7 @@ export default function WalletAccountV6Tag() {
           <strong>Privacy actions unavailable</strong>
           <p>
             This wallet did not declare Wallet API/spec support at version 0.10
-            or newer. Install or connect Ready to shield STRK on Sepolia.
+            or newer. Install or connect Ready to use Quietline on Sepolia.
           </p>
           <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
             Get Ready ↗
@@ -542,14 +494,7 @@ export default function WalletAccountV6Tag() {
       {!isStrk20Network ? (
         <div className={styles.warn}>
           STRK20 actions require Mainnet or Sepolia. Use Sepolia for Phase 1
-          checks; do not test Feltproof on mainnet yet.
-        </div>
-      ) : null}
-
-      {tab === "echo" && !hasEchoHelper ? (
-        <div className={styles.warn}>
-          DEMO echo is disabled because no optional helper is configured. Shield,
-          self-transfer, unshield, and balances do not need it.
+          checks; do not send Quietline mail on mainnet yet.
         </div>
       ) : null}
 

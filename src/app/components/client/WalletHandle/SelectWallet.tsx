@@ -170,7 +170,7 @@ export default function SelectWallet({
             >
               Ready
             </a>{" "}
-            to use Feltproof privacy actions.
+            to use Quietline privacy actions.
           </div>
         )}
 

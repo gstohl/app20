@@ -17,8 +17,8 @@ const spaceMono = Space_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Feltproof · Private poker on Starknet',
-  description: 'Feltproof uses STRK20 shielded STRK for private poker sessions on Starknet.',
+  title: 'Quietline · Private mail on Starknet',
+  description: 'Encrypted on-chain mail and payment memos on the STRK20 privacy pool.',
 }
 
 export default function RootLayout({

@@ -1,44 +1,42 @@
-# Feltproof
+# Quietline
 
-Provably fair private poker on Starknet.
+Encrypted on-chain mail on Starknet.
 
-Hole cards are helper-stored ciphertexts with on-chain commitments; STRK20 notes
-hold shielded chips, not cards. The planned trusted-dealer V1 commits and later
-reveals its shuffle seed. Stacks and session PnL stay in the pool while bet sizes
-remain public — that is poker. Who is sitting is not.
+Addresses never appear on the message. Content decrypts only on the
+recipient's device. A private transfer can carry a memo in the same
+transaction — remittance with a note, on a public chain.
 
 Built for the [STRK20 Private Sprint](https://github.com/starkience/strk20-hackathon)
 against the live mainnet pool. Inspired by
-[RFP-03](https://strk20.starknet.io/rfp/private-poker).
+[RFP-01](https://strk20.starknet.io/rfp/private-messaging).
 
-## The hand we are shipping
+This repository was started as Feltproof (private poker) and pivoted.
+The GitHub URL is still `gstohl/feltproof`. The product is Quietline.
 
-One complete heads-up NLHE cash-game loop on Starknet mainnet:
+## What we are shipping
 
-1. Two players shield STRK and buy in.
-2. The dealer commits a seed and stores encrypted hole cards plus commitments.
-3. Betting is public. Identities are not — a paymaster submits every action.
-4. Board deals. Fold or showdown.
-5. The pot settles as private notes.
-6. Cash out to any address.
+One complete private-mail loop on Starknet mainnet:
 
-Trusted-dealer shuffle first, proven from a committed seed. Mental poker is later.
+1. Two Ready wallets register in the pool (wallet does this on first use).
+2. Alice sends Bob an encrypted message through a `privacy_invoke` helper.
+3. Bob discovers and decrypts it locally. No server holds plaintext.
+4. Optionally, Alice attaches the memo to a private STRK transfer in the same tx.
+5. Observer sees that *a* pool transaction happened, and when. Not who, not what.
 
 ## Hidden vs visible
 
 | Element | Hidden | Visible |
 | --- | --- | --- |
-| Player identities | Yes — paymaster submits | |
-| Hole cards | Yes — helper ciphertexts + commitments | |
-| Stacks, session history | Yes — private notes | |
-| Bet amounts | | Yes — poker bets are public |
-| Board / fold / showdown | | Yes |
-| That a hand happened | | Yes — a pool transaction occurred |
+| Sender identity | Yes — pool is `msg.sender` | |
+| Recipient identity | Yes — only via the recipient's viewing key | |
+| Message content | Yes — encrypted to the channel key | |
+| That a message was sent | Partially | Block timestamp, that a pool tx occurred |
+| Payment amount (if attached) | Yes, inside the pool | Shield / unshield legs stay public |
 
 ## Stack
 
 Wallet API + a `privacy_invoke` helper. The dapp never touches a viewing key.
-Ready wallet on mainnet. Alchemy RPC in an env var, never committed.
+Ready wallet. Alchemy RPC in an env var, never committed.
 
 ## Sprint artifacts
 
@@ -46,14 +44,14 @@ Scoring reads this repository every 30 minutes. Fill in `strk20.json` as they ex
 
 - `transactions` — three successful mainnet hashes that touched the STRK20 pool
 - `contracts` — deployed helper addresses
-- `demo_video` — a 3-minute walkthrough of a full hand
+- `demo_video` — a 3-minute walkthrough of send + discover + optional memo
 - `demo_url` — only if GitHub Pages / Website / Vercel does not already find it
 
 ## Status
 
-Phase 1 app code is complete: connect Ready, detect Wallet API/spec support ≥0.10,
-and exercise shield, private self-transfer, unshield, and balances with STRK. Manual
-wallet checks remain on Sepolia. No poker helper or table UI is included yet.
+Phase 1 wallet plumbing is in: connect Ready, detect Wallet API/spec ≥ 0.10,
+shield / private transfer / unshield / balances on Sepolia. Inbox UI and the
+message helper are next. This is not a gambling product.
 
 ```bash
 npm ci
