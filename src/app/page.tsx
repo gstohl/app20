@@ -23,10 +23,13 @@ export default function Page() {
           <span className={styles.heroAccent}>Send a memo with the money.</span>
         </h1>
         <p className={styles.heroSub}>
-          Quietline is encrypted on-chain mail on Starknet. Phase 1 connects
-          Ready and exercises shield, private transfer, unshield, and balances
-          with STRK on Sepolia. Inbox comes next.
+          Quietline is encrypted on-chain mail on Starknet. Connect Ready for
+          shielded STRK actions, then open the inbox to register a mail key,
+          compose ciphertext, and decrypt messages locally.
         </p>
+        <a className={styles.inboxLink} href="/inbox">
+          Open inbox →
+        </a>
       </header>
 
       <main>
