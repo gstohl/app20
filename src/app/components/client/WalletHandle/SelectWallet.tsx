@@ -58,10 +58,9 @@ export default function SelectWallet({
     return unsubscribe;
   }, []);
 
-  const pickable = wallets.filter((wallet) => {
-    const id = normalizeId(wallet.name);
-    return !id.includes("metamask") && !id.includes("braavos");
-  });
+  const pickable = wallets.filter(
+    (wallet) => !normalizeId(wallet.name).includes("metamask")
+  );
 
   async function handleSelectedWallet(
     selectedWallet: WalletWithStarknetFeatures

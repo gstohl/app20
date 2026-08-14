@@ -211,13 +211,15 @@ export default function WalletAccountV6Tag() {
     }
 
     const provider = constants.myFrontendProviders[providerIndex];
+    let submittedHash: string | undefined;
     try {
       const { transactionHash, receipt } = await submitActions(
         walletAccount,
         provider,
         actions,
         {
-          onSubmitted: (hash) =>
+          onSubmitted: (hash) => {
+            submittedHash = hash;
             setResult({
               status: "pending",
               title: "Waiting for confirmation…",
@@ -225,7 +227,8 @@ export default function WalletAccountV6Tag() {
                 { label: "Amount", value: amountLabel },
                 { label: "Transaction", value: shortHex(hash), hash },
               ],
-            }),
+            });
+          },
         }
       );
       setResult(receiptToResult(receipt, transactionHash, amountLabel));
@@ -233,7 +236,7 @@ export default function WalletAccountV6Tag() {
       const transactionHash =
         error instanceof Strk20WaitTimeoutError
           ? error.transactionHash
-          : undefined;
+          : submittedHash;
       setResult({
         status: "error",
         title: transactionHash
