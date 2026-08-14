@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { encodeEnvelope } from "./envelope";
 import {
   MAX_CT_FELTS,
   decryptMail,
@@ -85,6 +86,11 @@ describe("encrypted mail", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].index).toBe(0);
     expect(messages[0].plaintext).toBe("hello from quietline");
+    expect(messages[0].envelope).toMatchObject({
+      version: 0,
+      type: "text",
+      payload: { body: "hello from quietline" },
+    });
   });
 
   it("rejects a wrong key", async () => {
@@ -107,6 +113,42 @@ describe("encrypted mail", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0].plaintextBytes).toEqual(binary);
     expect(messages[0].plaintext).toBe("");
+    expect(messages[0].envelope.type).toBe("unsupported");
+  });
+
+  it("decrypts binary v1 envelopes without treating the whole blob as text", async () => {
+    const recipient = deriveKeypair(seed(24));
+    const envelope = encodeEnvelope("offer", {
+      dealId: `0x${"ab".repeat(32)}`,
+    });
+    const record = await encryptMail(recipient.publicKey, envelope);
+
+    const [message] = await scanAndDecrypt(recipient.privateKey, [record]);
+    expect(message.plaintextBytes).toEqual(envelope);
+    expect(message.plaintext).toBe("");
+    expect(message.envelope).toMatchObject({
+      version: 1,
+      type: "offer",
+      payload: { dealId: `0x${"ab".repeat(32)}` },
+    });
+  });
+
+  it("surfaces unknown v1 types instead of throwing during a scan", async () => {
+    const recipient = deriveKeypair(seed(25));
+    const bytes = new Uint8Array([0x01, 0xfe, 0xff]);
+    const record = await encryptMail(recipient.publicKey, bytes);
+
+    await expect(
+      scanAndDecrypt(recipient.privateKey, [record]),
+    ).resolves.toMatchObject([
+      {
+        plaintext: "",
+        envelope: {
+          type: "unsupported",
+          payload: { body: "unsupported message", reason: "unknown_type" },
+        },
+      },
+    ]);
   });
 
   it("filters a non-matching view tag before trial decryption", async () => {

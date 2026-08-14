@@ -1,6 +1,7 @@
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { decodeEnvelope, type DecodedMail } from "./envelope";
 
 const FELT_PAYLOAD_BYTES = 31;
 export const MAX_CT_FELTS = 140;
@@ -11,7 +12,6 @@ const AES_KEY_BYTES = 32;
 const AES_TAG_BITS = 128;
 const EMPTY_BYTES = new Uint8Array();
 const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const PRIVATE_KEY_INFO = textEncoder.encode("quietline/x25519/private/v1");
 const MAIL_KEY_INFO = textEncoder.encode("key");
@@ -40,6 +40,7 @@ export type DecryptedMail = {
   index: number;
   plaintext: string;
   plaintextBytes: Uint8Array;
+  envelope: DecodedMail;
   record: EncryptedMailRecord;
 };
 
@@ -309,16 +310,17 @@ export async function scanAndDecrypt(
       if (record.viewTag !== viewTag) continue;
 
       const plaintextBytes = await decryptMail(privateKey, record);
-      let plaintext = "";
-      try {
-        plaintext = textDecoder.decode(plaintextBytes);
-      } catch {
-        // Authenticated binary payloads are valid mail even when not UTF-8.
-      }
+      const envelope = decodeEnvelope(plaintextBytes);
+      const plaintext =
+        envelope.type === "text" &&
+        typeof (envelope.payload as { body?: unknown }).body === "string"
+          ? (envelope.payload as { body: string }).body
+          : "";
       decrypted.push({
         index,
         plaintext,
         plaintextBytes,
+        envelope,
         record,
       });
     } catch {
