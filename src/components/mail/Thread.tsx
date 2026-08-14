@@ -76,7 +76,7 @@ export default function Thread({
         <div className={styles.emptyState}>
           <strong>No locally decrypted mail yet.</strong>
           <span>
-            Register this tab&apos;s key, then scan after someone sends to that
+            Load this device&apos;s key, then scan after someone sends to that
             registered public key.
           </span>
         </div>

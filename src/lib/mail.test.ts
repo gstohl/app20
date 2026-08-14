@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_CT_FELTS,
   decryptMail,
   deriveKeypair,
   deriveKeypairFromSource,
-  deriveSeedFromSignature,
   encryptMail,
   packBytesToFelts,
   publicKeyFromFelts,
@@ -51,6 +51,12 @@ describe("felt packing", () => {
     expect(() => unpackFeltsToBytes([])).toThrow(/byte length/i);
     expect(() => unpackFeltsToBytes(["0x20", "0x1"])).toThrow(/count/i);
     expect(() => unpackFeltsToBytes(["0x1", "0x100"])).toThrow(/fit/i);
+    expect(() =>
+      unpackFeltsToBytes(new Array(MAX_CT_FELTS + 1).fill("0x0"))
+    ).toThrow(/140 felts/i);
+    expect(() =>
+      unpackFeltsToBytes([`0x${(31 * MAX_CT_FELTS).toString(16)}`])
+    ).toThrow(/payload limit/i);
   });
 
   it("roundtrips public-key felt limbs with leading zeroes", () => {
@@ -67,17 +73,6 @@ describe("mail key derivation", () => {
     const injected = await deriveKeypairFromSource(async () => seed(3));
     expect(injected).toEqual(direct);
     expect(deriveKeypair(seed(4)).publicKey).not.toEqual(direct.publicKey);
-  });
-
-  it("derives a stable, message-bound seed from signature felts", () => {
-    const first = deriveSeedFromSignature(["0x123", "0x456"], "0x789");
-    expect(deriveSeedFromSignature(["0x123", "0x456"], "0x789")).toEqual(
-      first,
-    );
-    expect(deriveSeedFromSignature(["0x123", "0x456"], "0x788")).not.toEqual(
-      first,
-    );
-    expect(() => deriveSeedFromSignature([], "0x1")).toThrow(/signature/i);
   });
 });
 
@@ -101,6 +96,17 @@ describe("encrypted mail", () => {
     await expect(scanAndDecrypt(stranger.privateKey, [record])).resolves.toEqual(
       [],
     );
+  });
+
+  it("keeps authenticated binary payloads that are not valid UTF-8", async () => {
+    const recipient = deriveKeypair(seed(23));
+    const binary = new Uint8Array([0xff, 0xfe, 0x80, 0x00, 0xc0]);
+    const record = await encryptMail(recipient.publicKey, binary);
+
+    const messages = await scanAndDecrypt(recipient.privateKey, [record]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].plaintextBytes).toEqual(binary);
+    expect(messages[0].plaintext).toBe("");
   });
 
   it("filters a non-matching view tag before trial decryption", async () => {

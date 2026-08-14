@@ -1,5 +1,7 @@
 use starknet::ContractAddress;
 
+pub const MAX_CT_FELTS: usize = 140;
+
 // Must match privacy::objects::OpenNoteDeposit (positional Serde).
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
 pub struct OpenNoteDeposit {
@@ -37,10 +39,11 @@ pub mod QuietlineMail {
         Map, StoragePathEntry, StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
-    use super::{IErc20Dispatcher, IErc20DispatcherTrait, OpenNoteDeposit};
+    use super::{IErc20Dispatcher, IErc20DispatcherTrait, MAX_CT_FELTS, OpenNoteDeposit};
 
     mod errors {
         pub const BAD_POOL: felt252 = 'BAD_POOL';
+        pub const CT_TOO_LARGE: felt252 = 'CT_TOO_LARGE';
         pub const AMOUNT_OVERFLOW: felt252 = 'AMOUNT_OVERFLOW';
         pub const APPROVE_FAILED: felt252 = 'APPROVE_FAILED';
     }
@@ -90,6 +93,7 @@ pub mod QuietlineMail {
             let caller = get_caller_address();
             let pool = self.pool.read();
             assert(caller == pool, errors::BAD_POOL);
+            assert(ct.len() <= MAX_CT_FELTS, errors::CT_TOO_LARGE);
 
             let index = self.message_count.read();
             self.message_count.write(index + 1);

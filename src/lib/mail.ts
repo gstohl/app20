@@ -3,6 +3,8 @@ import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
 const FELT_PAYLOAD_BYTES = 31;
+export const MAX_CT_FELTS = 140;
+const MAX_PACKED_BYTES = (MAX_CT_FELTS - 1) * FELT_PAYLOAD_BYTES;
 const X25519_KEY_BYTES = 32;
 const NONCE_BYTES = 12;
 const AES_KEY_BYTES = 32;
@@ -12,7 +14,6 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const PRIVATE_KEY_INFO = textEncoder.encode("quietline/x25519/private/v1");
-const SIGNATURE_SEED_INFO = textEncoder.encode("quietline/signature-seed/v1");
 const MAIL_KEY_INFO = textEncoder.encode("key");
 const VIEW_TAG_INFO = textEncoder.encode("tag");
 const AAD_DOMAIN = textEncoder.encode("quietline/mail/aes-gcm/v1");
@@ -119,10 +120,13 @@ export function packBytesToFelts(bytes: Uint8Array): Felt[] {
 
 export function unpackFeltsToBytes(felts: readonly FeltInput[]): Uint8Array {
   if (felts.length === 0) throw new Error("Packed felts are missing a byte length.");
+  if (felts.length > MAX_CT_FELTS) {
+    throw new Error(`Packed ciphertext exceeds ${MAX_CT_FELTS} felts.`);
+  }
 
   const byteLengthValue = parseFelt(felts[0], "packed byte length");
-  if (byteLengthValue > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error("Packed byte length is too large.");
+  if (byteLengthValue > BigInt(MAX_PACKED_BYTES)) {
+    throw new Error("Packed byte length exceeds the mail payload limit.");
   }
   const byteLength = Number(byteLengthValue);
   const payloadCount = Math.ceil(byteLength / FELT_PAYLOAD_BYTES);
@@ -177,10 +181,6 @@ function nonceFromFelts(pair: readonly FeltInput[]): Uint8Array {
   );
 }
 
-function feltToBytes32(value: FeltInput, label: string): Uint8Array {
-  return bigIntToFixedBytes(value, 32, label);
-}
-
 function deriveMailSecrets(sharedSecret: Uint8Array): {
   aesKey: Uint8Array;
   viewTag: number;
@@ -213,31 +213,6 @@ export async function deriveKeypairFromSource(
   seedSource: MailSeedSource,
 ): Promise<MailKeypair> {
   return deriveKeypair(await seedSource());
-}
-
-/**
- * Turns a deterministic SNIP-12 signature into the local mail seed. Wallet UI
- * can inject signMessage later without coupling the crypto module to a wallet.
- */
-export function deriveSeedFromSignature(
-  signatureFelts: readonly FeltInput[],
-  messageHash: FeltInput,
-): Uint8Array {
-  if (signatureFelts.length === 0) {
-    throw new Error("A wallet signature is required to derive the mail seed.");
-  }
-  const signatureBytes = concatBytes(
-    ...signatureFelts.map((felt, index) =>
-      feltToBytes32(felt, `signature felt ${index}`),
-    ),
-  );
-  return hkdf(
-    sha256,
-    signatureBytes,
-    feltToBytes32(messageHash, "message hash"),
-    SIGNATURE_SEED_INFO,
-    X25519_KEY_BYTES,
-  );
 }
 
 export async function encryptMail(
@@ -274,11 +249,16 @@ export async function encryptMail(
     toArrayBuffer(plaintextBytes),
   );
 
+  const ciphertextFelts = packBytesToFelts(new Uint8Array(ciphertext));
+  if (ciphertextFelts.length > MAX_CT_FELTS) {
+    throw new Error(`Encrypted mail exceeds ${MAX_CT_FELTS} ciphertext felts.`);
+  }
+
   return {
     ephemeralPub: publicKeyToFelts(ephemeralPublicKey),
     viewTag,
     nonce: nonceToFelts(nonce),
-    ciphertextFelts: packBytesToFelts(new Uint8Array(ciphertext)),
+    ciphertextFelts,
   };
 }
 
@@ -329,9 +309,15 @@ export async function scanAndDecrypt(
       if (record.viewTag !== viewTag) continue;
 
       const plaintextBytes = await decryptMail(privateKey, record);
+      let plaintext = "";
+      try {
+        plaintext = textDecoder.decode(plaintextBytes);
+      } catch {
+        // Authenticated binary payloads are valid mail even when not UTF-8.
+      }
       decrypted.push({
         index,
-        plaintext: textDecoder.decode(plaintextBytes),
+        plaintext,
         plaintextBytes,
         record,
       });

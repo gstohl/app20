@@ -100,7 +100,7 @@ export default function InboxPage() {
 
   async function scanInbox() {
     if (!keypair) {
-      setScanMessage("Register this tab's mail key before scanning.");
+      setScanMessage("Load this device's mail key before scanning.");
       return;
     }
     if (!helperAddress) {
@@ -198,9 +198,9 @@ export default function InboxPage() {
           <p className={styles.eyebrow}>QUIETLINE / INBOX</p>
           <h1>Private words, public ciphertext.</h1>
           <p>
-            The chain records encrypted payloads and timing. Your mail key stays
-            in this browser tab, and plaintext appears only after local
-            decryption.
+            The chain records encrypted payloads and timing. Your device-bound
+            mail key stays in this browser profile, and plaintext appears only
+            after local decryption.
           </p>
         </header>
 

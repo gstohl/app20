@@ -67,11 +67,11 @@ Install JavaScript dependencies with `npm ci`. Cairo commands run from the
 | `npm run devnet` | root | Starts the Docker Starknet Devnet used by the local integration test |
 | `npm run test:e2e` | root | Builds and deploys the helper, registers a key, posts mail, scans/decrypts, rejects a wrong key, and exercises dust echo |
 | `scarb build` | `cairo/` | Compiles the Cairo helper and mock ERC-20 |
-| `snforge test` | `cairo/` | Runs helper authorization, event, directory, zero-balance, and dust tests |
+| `snforge test` | `cairo/` | Runs helper authorization, ciphertext-cap, caller-isolated directory, event, zero-balance, and dust tests |
 
-Use `npm run devnet:stop` when finished. The default image exercised for Phase 2
-was `docker.io/shardlabs/starknet-devnet-rs:latest` (Devnet `0.9.2`, image digest
-`sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`).
+Use `npm run devnet:stop` when finished. The default Devnet 0.9.2 image is
+pinned as `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`,
+and the container port is published on `127.0.0.1` only.
 
 **Devnet caveat:** this flow exercises a **MOCK pool caller only**. It does not
 run the real STRK20 pool, Ready, SNIP-36 proving, wallet placeholder resolution,

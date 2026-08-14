@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CONTAINER_NAME="${QUIETLINE_DEVNET_CONTAINER:-quietline-devnet}"
-IMAGE="${QUIETLINE_DEVNET_IMAGE:-docker.io/shardlabs/starknet-devnet-rs:latest}"
+IMAGE="${QUIETLINE_DEVNET_IMAGE:-docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf}"
 PORT="${QUIETLINE_DEVNET_PORT:-5050}"
 RPC_URL="http://127.0.0.1:${PORT}"
 
@@ -45,7 +45,7 @@ fi
 echo "Starting ${IMAGE} on ${RPC_URL}..."
 docker run --detach \
   --name "${CONTAINER_NAME}" \
-  --publish "${PORT}:5050" \
+  --publish "127.0.0.1:${PORT}:5050" \
   "${IMAGE}" \
   --port 5050 \
   --seed 0 >/dev/null

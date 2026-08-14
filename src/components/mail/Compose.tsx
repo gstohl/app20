@@ -56,7 +56,7 @@ export default function Compose({
   } else if (!isStrk20Capable) {
     disabledReason = "This wallet does not declare STRK20 Wallet API 0.10 support.";
   } else if (!keyReady) {
-    disabledReason = "Register this tab's mail key before sending.";
+    disabledReason = "Load this device's mail key before sending.";
   }
 
   const sendDisabled = Boolean(disabledReason) || sendState.kind === "pending";

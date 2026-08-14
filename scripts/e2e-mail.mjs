@@ -274,15 +274,32 @@ async function main() {
   check(BigInt(echo[3]) === DUST, "Open-note return has the wrong amount.");
 
   const eventSelector = hash.getSelectorFromName("MessagePosted");
-  const events = await provider.getEvents({
-    address: helperAddress,
-    from_block: { block_number: 0 },
-    to_block: "latest",
-    keys: [[eventSelector]],
-    chunk_size: 100,
-  });
-  check(events.events.length === 1, "Expected exactly one MessagePosted event.");
-  const eventRecord = parseMessageEvent(events.events[0]);
+  const events = [];
+  const seenTokens = new Set();
+  let continuationToken;
+  do {
+    const chunk = await provider.getEvents({
+      address: helperAddress,
+      from_block: { block_number: 0 },
+      to_block: "latest",
+      keys: [[eventSelector]],
+      chunk_size: 100,
+      ...(continuationToken
+        ? { continuation_token: continuationToken }
+        : {}),
+    });
+    events.push(...chunk.events);
+    continuationToken = chunk.continuation_token;
+    if (continuationToken) {
+      check(
+        !seenTokens.has(continuationToken),
+        "RPC repeated an event continuation token.",
+      );
+      seenTokens.add(continuationToken);
+    }
+  } while (continuationToken);
+  check(events.length === 1, "Expected exactly one MessagePosted event.");
+  const eventRecord = parseMessageEvent(events[0]);
 
   const decrypted = await scanAndDecrypt(recipient.privateKey, [eventRecord]);
   check(decrypted.length === 1, "Recipient did not discover exactly one message.");

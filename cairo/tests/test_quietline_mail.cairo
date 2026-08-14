@@ -1,6 +1,7 @@
 use quietline_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use quietline_mail::{
-    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, OpenNoteDeposit, QuietlineMail,
+    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, MAX_CT_FELTS, OpenNoteDeposit,
+    QuietlineMail,
 };
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait,
@@ -59,6 +60,28 @@ fn non_pool_caller_reverts() {
             (0x4, 0x5),
             array![0x6],
         );
+}
+
+#[test]
+#[should_panic(expected: ('CT_TOO_LARGE',))]
+fn oversized_ciphertext_reverts() {
+    let pool = contract_address(0x107);
+    let (helper_address, helper) = deploy_helper(pool);
+    let mut ct = array![];
+    let mut index = 0;
+    while index <= MAX_CT_FELTS {
+        ct.append(0);
+        index += 1;
+    }
+
+    invoke(
+        helper_address,
+        helper,
+        pool,
+        contract_address(0x207),
+        0x307,
+        ct,
+    );
 }
 
 #[test]
@@ -127,14 +150,23 @@ fn dust_balance_is_approved_and_echoed() {
 }
 
 #[test]
-fn register_and_get_pubkey_roundtrip() {
+fn register_pubkeys_are_isolated_by_caller() {
     let pool = contract_address(0x104);
-    let registrant = contract_address(0x105);
+    let registrant_a = contract_address(0x105);
+    let registrant_b = contract_address(0x106);
     let (helper_address, helper) = deploy_helper(pool);
 
-    cheat_caller_address(helper_address, registrant, CheatSpan::TargetCalls(1));
+    cheat_caller_address(helper_address, registrant_a, CheatSpan::TargetCalls(1));
     helper.register_pubkey((0x123456, 0xabcdef));
+    cheat_caller_address(helper_address, registrant_b, CheatSpan::TargetCalls(1));
+    helper.register_pubkey((0x777777, 0x888888));
 
-    assert(helper.get_pubkey(registrant) == (0x123456, 0xabcdef), 'pubkey mismatch');
-    assert(helper.get_pubkey(contract_address(0x106)) == (0, 0), 'unexpected pubkey');
+    assert(
+        helper.get_pubkey(registrant_a) == (0x123456, 0xabcdef),
+        'caller B altered caller A',
+    );
+    assert(
+        helper.get_pubkey(registrant_b) == (0x777777, 0x888888),
+        'caller B key mismatch',
+    );
 }

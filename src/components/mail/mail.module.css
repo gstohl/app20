@@ -232,6 +232,36 @@
   opacity: 0.45;
 }
 
+.backupBox {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--teal);
+  background: var(--teal-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.backupBox code {
+  padding: 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono-ui), monospace;
+  line-height: 1.7;
+}
+
+.backupBox p {
+  color: var(--muted);
+}
+
+.backupBox .secondaryButton {
+  width: 100%;
+}
+
 .status {
   display: flex;
   flex-direction: column;

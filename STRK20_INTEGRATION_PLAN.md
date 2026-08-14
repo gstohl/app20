@@ -112,14 +112,14 @@ Status: code-complete locally. No Sepolia or mainnet helper was deployed, no liv
 | --- | --- |
 | `src/app/page.tsx` | Links the existing wallet-action lobby to `/inbox` |
 | `src/app/inbox/page.tsx` | Network-aware onboarding, compose, public-event scan, and newest-first local plaintext list |
-| `src/components/mail/Onboard.tsx` | Session-key derivation stub and public `register_pubkey` transaction |
+| `src/components/mail/Onboard.tsx` | Locally persisted random device seed, one-time backup display, and public `register_pubkey` transaction |
 | `src/components/mail/Compose.tsx` | Recipient directory lookup, local encryption, optional private STRK attachment, and STRK20 submission |
 | `src/components/mail/Thread.tsx` | Displays successful local decryptions only; no plaintext persistence |
-| `src/lib/mail.ts` | x25519 + HKDF-SHA256 + AES-256-GCM, felt packing, signature-seed seam, and view-tag scan |
+| `src/lib/mail.ts` | x25519 + HKDF-SHA256 + AES-256-GCM, bounded felt packing, authenticated binary retention, and view-tag scan |
 | `src/lib/mail-actions.ts` | Builds optional numeric `transfer`, recovery open note, and final `invoke`; preserves `${poolAddress}` and `${openNoteIds[0]}` as wallet literals |
 | `cairo/src/lib.cairo` | Team-written helper and public-key directory |
 
-The Phase 2 mail private key is an app-specific x25519 key, not the STRK20 viewing key `k`. The current UI derives a fresh in-memory seed per tab and says so; deterministic SNIP-12 derivation and safe persistence remain a live-wallet task.
+The Phase 2 mail private key is an app-specific x25519 key, not the STRK20 viewing key `k`. The UI generates 32 random bytes once per chain and address, persists them under `quietline/mailseed/v1/<chainId>/<address>` in the browser profile, and shows a backup only when first created. It does not derive mail keys from wallet signatures.
 
 ### 6.2 Landed helper
 
@@ -127,13 +127,14 @@ The Phase 2 mail private key is an app-specific x25519 key, not the STRK20 viewi
 
 - `privacy_invoke(token, pool_address, note_id, eph_pk, view_tag, nonce, ct) -> Span<OpenNoteDeposit>`
   - Only the configured pool caller succeeds.
+  - Rejects ciphertext above `MAX_CT_FELTS = 140` before storing the count or emitting.
   - Emits `MessagePosted(index, eph_pk, view_tag, nonce, ct)` without a wallet address.
   - Returns an empty span at zero helper balance.
   - Approves and echoes any helper token dust into the supplied open note so funds are not stranded.
 - `register_pubkey` / `get_pubkey` provide the public address-to-mail-key directory.
 - `message_count` supplies the monotonic public event index.
 
-The Cairo suite covers caller authorization, exact event payload, zero balance, dust approval/echo, and directory roundtrip. Payment plus memo is assembled as one wallet action batch, but real atomicity still needs Ready against Sepolia.
+The Cairo suite covers caller authorization, the ciphertext cap, exact event payload, zero balance, dust approval/echo, and caller-isolated directory entries. Payment plus memo is assembled as one wallet action batch, but real atomicity still needs Ready against Sepolia.
 
 ### 6.3 Completion record
 
@@ -147,7 +148,7 @@ The Cairo suite covers caller authorization, exact event payload, zero balance, 
 | Docker | `29.2.1` |
 | Starknet Devnet | `0.9.2` |
 
-Devnet image tag: `docker.io/shardlabs/starknet-devnet-rs:latest`; exercised image digest: `sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`.
+Devnet 0.9.2 image pin: `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`. The default port is bound to `127.0.0.1` only.
 
 The local e2e deploys the helper, registers a recipient key, encrypts an exact plaintext, posts as the configured **mock pool caller**, scans and decrypts the event, confirms a wrong key sees zero messages, and proves the 0.001 STRK dust balance is approved, echoed, and pulled back. It does **not** run the real STRK20 pool, Ready Wallet API action assembly, `${poolAddress}` / `${openNoteIds[0]}` resolution, SNIP-36 proving, relayer submission, note maturity/discovery, screening, pool fees, or two-wallet Sepolia behavior.
 
@@ -202,7 +203,7 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 
 - Freshness script / WalletAccount guide.
 - Ready acceptance of the three-action payment batch and literal wallet placeholder resolution.
-- Deterministic SNIP-12 mail-key derivation, recovery, and safe local persistence.
+- Backup import/recovery and stronger at-rest protection for the device mail seed.
 - Sepolia event-scan start block or a user-held discovery index for a durable inbox.
 - Whether Ready already relayer-submits every `strk20InvokeTransaction`.
 - Pool fee via `get_fee_amount`.
