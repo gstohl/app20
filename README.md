@@ -35,8 +35,13 @@ One complete private-mail loop on Starknet mainnet:
 
 ## Stack
 
-Wallet API + a `privacy_invoke` helper. The dapp never touches a viewing key.
-Ready wallet. Alchemy RPC in an env var, never committed.
+Vite + React 19 + TanStack Router, shipped as a client-only SPA (no SSR), with
+TypeScript, zustand, starknet.js 10.4.0, the Wallet API, and a
+`privacy_invoke` helper. The dapp never touches a viewing key. Ready wallet.
+Alchemy RPC configuration lives in an env var and is never committed.
+
+The SPA architecture is intentional: Quietline has no server routes, while its
+wallet connection and browser cryptography require browser APIs.
 
 ## Sprint artifacts
 
@@ -45,7 +50,11 @@ Scoring reads this repository every 30 minutes. Fill in `strk20.json` as they ex
 - `transactions` — three successful mainnet hashes that touched the STRK20 pool
 - `contracts` — deployed helper addresses
 - `demo_video` — a 3-minute walkthrough of send + discover + optional memo
-- `demo_url` — only if GitHub Pages / Website / Vercel does not already find it
+- `demo_url` — the deployed demo URL
+
+Once deployed, set the repository **Website** field to the Cloudflare URL and
+add that same URL to `strk20.json` as `demo_url` so sprint demo detection can
+find it. `strk20.json` is intentionally unchanged by the framework migration.
 
 ## Status
 
@@ -56,13 +65,26 @@ the inbox UI, and a deterministic mock-pool devnet test. No Sepolia or mainnet
 helper is configured by default, so the inbox honestly disables sending until a
 network-specific helper address is supplied. This is not a gambling product.
 
-## Local testing
+## Local development and testing
 
-Install JavaScript dependencies with `npm ci`. Cairo commands run from the
+Install JavaScript dependencies, copy the key-only env template, and start
+Vite from the repository root:
+
+```bash
+npm ci
+cp .env.example .env.local
+npm run dev
+```
+
+Fill in `.env.local` without committing it. Every `VITE_*` value is bundled
+into the browser and must be treated as public. Cairo commands run from the
 `cairo/` directory; all other commands run from the repository root.
 
 | Command | Directory | What it checks |
 | --- | --- | --- |
+| `npm run dev` | root | Starts the Vite development server |
+| `npm run build` | root | Type-checks and emits the production SPA to `dist/` |
+| `npm run preview` | root | Serves the production build locally |
 | `npm test` | root | Mail crypto, felt packing, view-tag scanning, and STRK20 mail-action assembly |
 | `npm run devnet` | root | Starts the Docker Starknet Devnet used by the local integration test |
 | `npm run test:e2e` | root | Builds and deploys the helper, registers a key, posts mail, scans/decrypts, rejects a wrong key, and exercises dust echo against the mock pool caller |
@@ -97,6 +119,42 @@ Sepolia/manual validation gap. Neither local tier claims a Sepolia/mainnet send.
 npm run typecheck
 npm run build
 ```
+
+## Cloudflare deployment
+
+The Vite build emits `dist/`. `public/_redirects` is copied into that directory
+for Cloudflare Pages, and `wrangler.jsonc` configures the Workers static-assets
+SPA fallback. Both deployment paths therefore serve the app HTML for a direct
+`/inbox` request.
+
+### Cloudflare dashboard (Pages)
+
+1. In Cloudflare, open **Workers & Pages → Create application → Pages → Connect
+   to Git**, then select this repository.
+2. Use production branch `main`, build command `npm run build`, and build output
+   directory `dist` (repository root `/`).
+3. Add `VITE_PROVIDER_URL`, `VITE_MAIL_HELPER_SEPOLIA`, and
+   `VITE_MAIL_HELPER_MAINNET` under **Settings → Environment variables**. These
+   are public build-time values; enter only the Alchemy key for
+   `VITE_PROVIDER_URL`, as shown in `.env.example`.
+4. Deploy, then verify both the deployment root and `/inbox` load directly.
+
+### Wrangler (Workers static assets)
+
+From a trusted local checkout with `.env.local` configured:
+
+```bash
+npm ci
+npx wrangler login
+npm run deploy:cf
+```
+
+`npx wrangler login` runs the installed `wrangler login` command. The deploy
+script rebuilds `dist/` and then runs `wrangler deploy`; it does not need or
+create a server entry point. Do not commit `.env.local` or `dist/`.
+
+After either path succeeds, set the GitHub repository **Website** field and
+`strk20.json` `demo_url` to the deployed URL as described above.
 
 ## License
 

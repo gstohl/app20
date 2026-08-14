@@ -6,7 +6,7 @@ Public repo: <https://github.com/gstohl/quietline>
 Sprint: STRK20 Private Sprint, 14–31 Aug 2026
 Inspired by RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 
-This plan was approved and Phase 2 was implemented on 2026-08-14. The message helper remains the team’s own Cairo to review, audit, deploy, and maintain; code-complete does not mean deployed or production-audited.
+This plan was approved and Phase 2 was implemented on 2026-08-14. On 2026-08-14, the client migrated from Next.js to a Vite + React + TanStack Router SPA (no SSR); Quietline has no server routes and relies on browser wallet and cryptography APIs. The message helper remains the team’s own Cairo to review, audit, deploy, and maintain; code-complete does not mean deployed or production-audited.
 
 ## 0. Decided interview answers
 
@@ -29,7 +29,7 @@ These are closed. Do not re-interview. Poker decisions are void.
 
 ## 1. Project snapshot
 
-- Stack: Next.js 16 · React 19 · TypeScript · zustand · `starknet@10.4.0` · get-starknet `6.0.3` · `@starknet-io/types-js@0.10.3`. Helper (later): Scarb edition `2024_07`, `starknet = "2.18.0"`.
+- Stack: Vite 8 · React 19 · TanStack Router · TypeScript · zustand · `starknet@10.4.0` · get-starknet `6.0.3` · `@starknet-io/types-js@0.10.3`. Client deployment is a static SPA. Helper (later): Scarb edition `2024_07`, `starknet = "2.18.0"`.
 - Landed plug-in points:
   - `src/app/components/client/WalletHandle/SelectWallet.tsx`
   - `src/app/components/Wallet/walletContext.ts`
@@ -75,7 +75,7 @@ Same pins as the landed scaffold. Do not unpin.
 | `@starknet-io/get-starknet-discovery` | `6.0.3` |
 | `@starknet-io/get-starknet-wallet-standard` | `6.0.3` |
 | `@starknet-io/types-js` | `0.10.3` |
-| Next / React | `next@^16.0.8`, `react@19.2.1` |
+| Vite / TanStack Router / React | `vite@^8.2.1`, `@tanstack/react-router@^1.170.28`, `react@19.2.1` |
 | Test wallet | Ready extension |
 | Pool (mainnet) | `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a` |
 | Token | STRK `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d` |
@@ -83,12 +83,12 @@ Same pins as the landed scaffold. Do not unpin.
 Env:
 
 ```
-NEXT_PUBLIC_PROVIDER_URL=your_alchemy_key_here
-NEXT_PUBLIC_MAIL_HELPER_SEPOLIA=0x0
-NEXT_PUBLIC_MAIL_HELPER_MAINNET=0x0
+VITE_PROVIDER_URL=your_alchemy_key_here
+VITE_MAIL_HELPER_SEPOLIA=0x0
+VITE_MAIL_HELPER_MAINNET=0x0
 ```
 
-`NEXT_PUBLIC_*` Alchemy keys ship in the browser bundle. Treat as public or move RPC behind a server before claiming RPC-operator privacy.
+`VITE_*` Alchemy values ship in the browser bundle. Treat them as public or move RPC behind a server before claiming RPC-operator privacy.
 
 ## 5. Phase 1 — first shielded flow · retargeted 2026-08-14
 
@@ -141,7 +141,7 @@ The Cairo suite covers caller authorization, the ciphertext cap, exact event pay
 | Tool | Verified version |
 | --- | --- |
 | Node / npm | `v24.12.0` / `11.19.0` |
-| Next / React / TypeScript / Vitest | `16.3.1` / `19.2.1` / `5.9.3` / `4.1.10` |
+| Vite / React / TypeScript / Vitest | `8.2.1` / `19.2.1` / `5.9.3` / `4.1.10` |
 | starknet.js / Wallet API types | `10.4.0` / `0.10.3` |
 | Scarb / Cairo | `2.18.0` / `2.18.0` |
 | Starknet Foundry | `snforge 0.63.0` |
@@ -222,7 +222,7 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 - Sepolia event-scan start block or a user-held discovery index for a durable inbox.
 - Whether Ready already relayer-submits every `strk20InvokeTransaction`.
 - Pool fee via `get_fee_amount`.
-- Rotate the current `NEXT_PUBLIC` Alchemy key; it has been in a client bundle.
+- Rotate the current `VITE_PROVIDER_URL` Alchemy key if it has been exposed in a client bundle.
 
 ## 12. Links
 
