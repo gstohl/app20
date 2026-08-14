@@ -6,6 +6,7 @@ import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useState } from "react";
 import { detectStrk20Capability } from "@/lib/strk20";
 import {
+  isStrk20Chain,
   myFrontendProviders,
   providerIndexForChain,
 } from "@/utils/constants";
@@ -68,12 +69,7 @@ export default function SelectWallet({
     // Determine the wallet's write chain before constructing WalletAccountV6.
     // Reads must use the matching provider: mainnet index 0, Sepolia index 2.
     const chainId = String(await walletV6.requestChainId(selectedWallet));
-    const isSupportedChain =
-      chainId === "SN_MAIN" ||
-      chainId === "0x534e5f4d41494e" ||
-      chainId === "SN_SEPOLIA" ||
-      chainId === "0x534e5f5345504f4c4941";
-    if (!isSupportedChain) {
+    if (!isStrk20Chain(chainId)) {
       throw new Error("Switch Ready to Sepolia or Mainnet before connecting.");
     }
     const providerIndex = providerIndexForChain(chainId);

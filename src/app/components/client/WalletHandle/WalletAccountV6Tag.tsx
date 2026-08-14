@@ -233,15 +233,17 @@ export default function WalletAccountV6Tag() {
       );
       setResult(receiptToResult(receipt, transactionHash, amountLabel));
     } catch (error: unknown) {
-      const transactionHash =
-        error instanceof Strk20WaitTimeoutError
-          ? error.transactionHash
-          : submittedHash;
+      const timedOut = error instanceof Strk20WaitTimeoutError;
+      const transactionHash = timedOut
+        ? error.transactionHash
+        : submittedHash;
       setResult({
         status: "error",
-        title: transactionHash
+        title: timedOut
           ? "Confirmation timed out"
-          : "Action failed",
+          : transactionHash
+            ? "Could not confirm transaction"
+            : "Action failed",
         rows: transactionHash
           ? [
               {
