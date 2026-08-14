@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
 import { strk20ErrorMessage } from "@/lib/strk20";
+import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -35,10 +36,6 @@ function seedFromHex(value: string): Uint8Array | null {
   return Uint8Array.from(
     value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []
   );
-}
-
-function formatBackupPhrase(seed: Uint8Array): string {
-  return seedToHex(seed).match(/.{1,8}/g)?.join(" ") ?? "";
 }
 
 function loadOrCreateSeed(
@@ -88,6 +85,9 @@ export default function Onboard({
   const [setup, setSetup] = useState<SetupState>({ kind: "idle" });
   const [backupPhrase, setBackupPhrase] = useState("");
   const [copied, setCopied] = useState(false);
+  const [restoreValue, setRestoreValue] = useState("");
+  const [restoreNeedsConfirmation, setRestoreNeedsConfirmation] =
+    useState(false);
 
   const disabled =
     setup.kind === "pending" ||
@@ -116,7 +116,7 @@ export default function Onboard({
 
     try {
       const { seed, created } = loadOrCreateSeed(chainId, address);
-      if (created) setBackupPhrase(formatBackupPhrase(seed));
+      if (created) setBackupPhrase(exportMailSeed(seed));
       const keypair = deriveKeypair(seed);
       const publicKey = publicKeyToFelts(keypair.publicKey);
       const provider = myFrontendProviders[providerIndex];
@@ -178,6 +178,52 @@ export default function Onboard({
         transactionHash,
       });
     } catch (error: unknown) {
+      setSetup({ kind: "error", message: strk20ErrorMessage(error) });
+    }
+  }
+
+  function restoreBackup(overwriteConfirmed: boolean) {
+    if (!address || !chainId) {
+      setSetup({ kind: "error", message: "Connect a wallet first." });
+      return;
+    }
+
+    try {
+      const restored = restoreMailSeed(restoreValue);
+      const key = seedStorageKey(chainId, address);
+      const encoded = seedToHex(restored.seed);
+      const existing = window.localStorage.getItem(key);
+      const existingSeed = existing === null ? null : seedFromHex(existing);
+      const sameSeed =
+        existingSeed !== null && seedToHex(existingSeed) === encoded;
+      const replacesSeed = existing !== null && !sameSeed;
+
+      if (replacesSeed && !overwriteConfirmed) {
+        setRestoreNeedsConfirmation(true);
+        return;
+      }
+
+      if (!sameSeed) {
+        window.localStorage.setItem(key, encoded);
+      }
+      const persisted = window.localStorage.getItem(key);
+      const persistedSeed = persisted === null ? null : seedFromHex(persisted);
+      if (persistedSeed === null || seedToHex(persistedSeed) !== encoded) {
+        throw new Error("Quietline could not persist the restored mail key.");
+      }
+
+      onKeyReady(restored.keypair);
+      setBackupPhrase("");
+      setCopied(false);
+      setRestoreValue("");
+      setRestoreNeedsConfirmation(false);
+      setSetup({
+        kind: "ok",
+        message:
+          "Backup restored locally. The derived mailbox key is ready on this device.",
+      });
+    } catch (error: unknown) {
+      setRestoreNeedsConfirmation(false);
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
   }
@@ -247,6 +293,62 @@ export default function Onboard({
           </button>
         </div>
       ) : null}
+
+      <details className={styles.restoreDisclosure}>
+        <summary>Restore from backup</summary>
+        <div className={styles.restoreForm}>
+          <label className={styles.field} htmlFor="mail-seed-backup">
+            Backup value
+            <textarea
+              id="mail-seed-backup"
+              rows={3}
+              value={restoreValue}
+              onChange={(event) => {
+                setRestoreValue(event.target.value);
+                setRestoreNeedsConfirmation(false);
+              }}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000"
+            />
+            <small>
+              Paste exactly eight groups of eight hexadecimal characters. The
+              backup stays in this browser and is never sent with a request.
+            </small>
+          </label>
+          {restoreNeedsConfirmation ? (
+            <div className={styles.restoreWarning} role="alert">
+              <strong>Replace the existing mailbox key?</strong>
+              <p>
+                This replaces the mailbox key on this device; mail encrypted to
+                the old key becomes unreadable here.
+              </p>
+              <button
+                className={styles.warningButton}
+                type="button"
+                onClick={() => restoreBackup(true)}
+              >
+                Replace mailbox key
+              </button>
+            </div>
+          ) : (
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              onClick={() => restoreBackup(false)}
+              disabled={
+                setup.kind === "pending" ||
+                !address ||
+                !chainId ||
+                restoreValue.length === 0
+              }
+            >
+              Restore mailbox key
+            </button>
+          )}
+        </div>
+      </details>
 
       {setup.message ? (
         <div

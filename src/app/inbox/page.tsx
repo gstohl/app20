@@ -87,6 +87,31 @@ function helperForNetwork(providerIndex: number): string | null {
   }
 }
 
+function parseBlockTimestamp(value: unknown): number | undefined {
+  try {
+    let timestamp: bigint;
+    if (typeof value === "bigint") {
+      timestamp = value;
+    } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+      timestamp = BigInt(value);
+    } else if (
+      typeof value === "string" &&
+      /^(?:0x[0-9a-f]+|[0-9]+)$/i.test(value)
+    ) {
+      timestamp = BigInt(value);
+    } else {
+      return undefined;
+    }
+
+    if (timestamp < 0n || timestamp > BigInt(Number.MAX_SAFE_INTEGER)) {
+      return undefined;
+    }
+    return Number(timestamp);
+  } catch {
+    return undefined;
+  }
+}
+
 function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
   try {
     if (event.keys.length < 2 || event.data.length < 6) return null;
@@ -324,6 +349,39 @@ export default function InboxPage() {
         keypair.privateKey,
         parsed.map((event) => event.record),
       );
+      // Fetch every public event block so timestamp lookups do not reveal
+      // which records matched this device's private key.
+      const eventBlockNumbers = [
+        ...new Set(
+          parsed
+            .map((event) => event.blockNumber)
+            .filter(
+              (blockNumber): blockNumber is number =>
+                blockNumber !== undefined,
+            ),
+        ),
+      ];
+      const timestampEntries = await Promise.all(
+        eventBlockNumbers.map(async (blockNumber) => {
+          try {
+            const block = await provider.getBlockWithTxHashes(blockNumber);
+            const timestamp = parseBlockTimestamp(
+              (block as { timestamp?: unknown }).timestamp,
+            );
+            return timestamp === undefined
+              ? null
+              : ([blockNumber, timestamp] as const);
+          } catch {
+            // Optional timestamp evidence must not prevent local decryption.
+            return null;
+          }
+        }),
+      );
+      const timestampsByBlock = new Map(
+        timestampEntries.filter(
+          (entry): entry is readonly [number, number] => entry !== null,
+        ),
+      );
       const localMessages = decrypted
         .map((message) => {
           const event = parsed[message.index];
@@ -332,8 +390,13 @@ export default function InboxPage() {
             index: event.index,
             plaintext: message.plaintext,
             envelope: message.envelope,
+            record: event.record,
             transactionHash: event.transactionHash,
             blockNumber: event.blockNumber,
+            blockTimestamp:
+              event.blockNumber === undefined
+                ? undefined
+                : timestampsByBlock.get(event.blockNumber),
             eventIndex: event.eventIndex,
           } satisfies LocalMailMessage;
         })

@@ -264,6 +264,84 @@
   width: 100%;
 }
 
+.restoreDisclosure {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.restoreDisclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 13px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.restoreDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.restoreDisclosure > summary::after {
+  color: var(--teal);
+  content: "+";
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 16px;
+}
+
+.restoreDisclosure[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.restoreDisclosure[open] > summary::after {
+  content: "−";
+}
+
+.restoreForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 13px;
+}
+
+.restoreForm .secondaryButton,
+.warningButton {
+  width: 100%;
+}
+
+.restoreWarning {
+  padding: 12px;
+  border-left: 4px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.09);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.restoreWarning p {
+  margin-top: 5px;
+}
+
+.warningButton {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink);
+  color: var(--paper);
+  background: var(--ribbon);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.warningButton:hover {
+  background: var(--ink);
+}
+
 .status {
   display: flex;
   flex-direction: column;
@@ -614,6 +692,272 @@
   margin-top: 0;
 }
 
+.chainDisclosure {
+  margin-top: 14px;
+  border: 1px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.035);
+}
+
+.chainDisclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-left: 5px solid var(--proof-teal);
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.chainDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chainToggleHint {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.chainToggleHint::before {
+  color: var(--proof-teal);
+  content: "+ ";
+}
+
+.chainDisclosure[open] .chainToggleHint::before {
+  content: "− ";
+}
+
+.chainRecord {
+  padding: 18px;
+  border-top: 1px solid var(--proof-teal);
+  border-left: 5px solid var(--proof-teal);
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.chainRecordHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.chainEyebrow,
+.chainEvidenceBadge,
+.chainFields dt,
+.ciphertextActions,
+.copyStatus {
+  font-family: var(--font-mono-ui), monospace;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.chainEyebrow {
+  color: var(--proof-teal);
+  font-size: 9px;
+}
+
+.chainRecordHeading h3 {
+  margin-top: 4px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  font-weight: 500;
+}
+
+.chainEvidenceBadge {
+  padding: 5px 7px;
+  border: 1px solid var(--proof-teal);
+  color: var(--proof-teal);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.chainFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+  border: 1px solid var(--line);
+}
+
+.chainField {
+  min-width: 0;
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chainField:nth-child(1),
+.chainField:nth-child(4) {
+  border-right: 1px solid var(--line);
+}
+
+.chainFieldWide {
+  grid-column: 1 / -1;
+}
+
+.chainFields dt {
+  color: var(--proof-teal);
+  font-size: 8px;
+}
+
+.chainFields dd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-top: 7px;
+}
+
+.chainFields dd code,
+.chainFields dd time {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.chainFields dd small {
+  color: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.feltPair {
+  padding: 9px 10px;
+  border-left: 3px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.06);
+}
+
+.sealedValue {
+  align-self: flex-start;
+  padding: 4px 7px;
+  color: var(--paper);
+  background: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.ciphertextPreview {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: rgba(39, 106, 114, 0.04);
+  list-style: none;
+}
+
+.ciphertextPreview li {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ciphertextPreview li:last-child {
+  border-bottom: 0;
+}
+
+.ciphertextPreview li > span {
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.ciphertextPreview .truncatedFelts {
+  display: block;
+  color: var(--muted);
+  background: var(--paper-deep);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ciphertextActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.chainCopyButton {
+  padding: 7px 9px;
+  border: 1px solid var(--proof-teal);
+  color: var(--proof-teal);
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.chainCopyButton:hover {
+  color: var(--paper);
+  background: var(--proof-teal);
+}
+
+.copyStatus {
+  min-height: 1em;
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.absentFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.absentFields span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  background: var(--paper-deep);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.absentFields code {
+  padding: 3px 6px;
+  color: var(--paper);
+  background: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.addressAbsence {
+  margin-top: 8px;
+  padding: 10px 11px;
+  border-left: 3px solid var(--muted);
+  color: var(--ink);
+  background: var(--paper-deep);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
 .localLabel {
   display: inline-block;
   margin-top: 16px;
@@ -681,8 +1025,24 @@
   .privacyStrip,
   .setupGrid,
   .disclosureGrid,
-  .aliasEditor {
+  .aliasEditor,
+  .chainFields,
+  .absentFields {
     grid-template-columns: 1fr;
+  }
+
+  .chainFieldWide {
+    grid-column: auto;
+  }
+
+  .chainField:nth-child(1),
+  .chainField:nth-child(4) {
+    border-right: 0;
+  }
+
+  .chainRecordHeading,
+  .ciphertextActions {
+    flex-direction: column;
   }
 
   .card {
