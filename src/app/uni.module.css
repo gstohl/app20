@@ -61,10 +61,16 @@
   font-size: 17px;
   letter-spacing: -0.01em;
 }
-.brandImg {
-  height: 26px;
-  width: auto;
-  display: block;
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--pink);
+  font-weight: 800;
+  box-shadow: 0 6px 18px -8px rgba(213, 88, 33, 0.75);
 }
 
 /* --- Hero ---------------------------------------------------------------- */
@@ -72,6 +78,19 @@
   text-align: center;
   margin: 46px auto 30px;
   padding: 0 20px;
+}
+.eyebrow {
+  display: inline-flex;
+  margin-bottom: 16px;
+  padding: 7px 11px;
+  border: 1px solid var(--pink-soft-2);
+  border-radius: 999px;
+  color: var(--pink-text);
+  background: var(--pink-soft);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
 }
 .heroTitle {
   font-weight: 600;
@@ -223,12 +242,44 @@
 }
 .verdictRow b { font-family: var(--font-body), sans-serif; color: var(--muted); font-weight: 500; }
 
-.warn {
+.warn,
+.info {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
   font-size: 12.5px;
-  color: var(--danger);
   font-weight: 500;
-  padding: 8px 12px 0;
   line-height: 1.45;
+}
+.warn {
+  color: var(--danger);
+  background: #fff5f4;
+  border: 1px solid #f4cccb;
+}
+.info {
+  color: #765020;
+  background: #fff8e8;
+  border: 1px solid #f0deaf;
+}
+.degradeCard {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card);
+  box-shadow: 0 18px 50px -38px rgba(13, 14, 14, 0.5);
+}
+.degradeCard strong { font-size: 17px; }
+.degradeCard p {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.degradeCard a {
+  display: inline-block;
+  margin-top: 14px;
+  color: var(--pink-text);
+  font-weight: 650;
 }
 
 /* Connect controls */

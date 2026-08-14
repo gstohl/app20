@@ -2,9 +2,10 @@
 
 Provably fair private poker on Starknet.
 
-Hole cards are encrypted STRK20 notes. The dealer shuffle is a STARK, not a server.
-Your stack, your session, your lifetime results stay in the pool. Bet sizes stay
-public — that is poker. Who is sitting is not.
+Hole cards are helper-stored ciphertexts with on-chain commitments; STRK20 notes
+hold shielded chips, not cards. The planned trusted-dealer V1 commits and later
+reveals its shuffle seed. Stacks and session PnL stay in the pool while bet sizes
+remain public — that is poker. Who is sitting is not.
 
 Built for the [STRK20 Private Sprint](https://github.com/starkience/strk20-hackathon)
 against the live mainnet pool. Inspired by
@@ -14,8 +15,8 @@ against the live mainnet pool. Inspired by
 
 One complete heads-up NLHE cash-game loop on Starknet mainnet:
 
-1. Two players shield USDC and buy in.
-2. The dealer commits a seed and deals encrypted hole cards as notes.
+1. Two players shield STRK and buy in.
+2. The dealer commits a seed and stores encrypted hole cards plus commitments.
 3. Betting is public. Identities are not — a paymaster submits every action.
 4. Board deals. Fold or showdown.
 5. The pot settles as private notes.
@@ -28,7 +29,7 @@ Trusted-dealer shuffle first, proven from a committed seed. Mental poker is late
 | Element | Hidden | Visible |
 | --- | --- | --- |
 | Player identities | Yes — paymaster submits | |
-| Hole cards | Yes — encrypted notes | |
+| Hole cards | Yes — helper ciphertexts + commitments | |
 | Stacks, session history | Yes — private notes | |
 | Bet amounts | | Yes — poker bets are public |
 | Board / fold / showdown | | Yes |
@@ -50,7 +51,15 @@ Scoring reads this repository every 30 minutes. Fill in `strk20.json` as they ex
 
 ## Status
 
-Repository initialized. Integration plan and first playable table come next.
+Phase 1 app code is complete: connect Ready, detect Wallet API/spec support ≥0.10,
+and exercise shield, private self-transfer, unshield, and balances with STRK. Manual
+wallet checks remain on Sepolia. No poker helper or table UI is included yet.
+
+```bash
+npm ci
+npm run typecheck
+npm run build
+```
 
 ## License
 

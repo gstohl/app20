@@ -2,25 +2,19 @@
 
 import { createStore, type Store } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
-import {
-  constants as SNconstants,
-  validateAndParseAddress,
-  walletV6,
-  WalletAccountV6,
-} from "starknet";
+import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useState } from "react";
 import { detectStrk20Capability } from "@/lib/strk20";
-import { myFrontendProviders } from "@/utils/constants";
+import {
+  myFrontendProviders,
+  providerIndexForChain,
+} from "@/utils/constants";
 import styles from "../../../uni.module.css";
 import { useStoreWallet } from "../../Wallet/walletContext";
 import { useFrontendProvider } from "../provider/providerContext";
 
 function normalizeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function providerIndexForChain(chainId: string): 0 | 2 {
-  return chainId === SNconstants.StarknetChainId.SN_MAIN ? 0 : 2;
 }
 
 export default function SelectWallet({
@@ -75,6 +69,14 @@ export default function SelectWallet({
     // Determine the wallet's write chain before constructing WalletAccountV6.
     // Reads must use the matching provider: mainnet index 0, Sepolia index 2.
     const chainId = String(await walletV6.requestChainId(selectedWallet));
+    const isSupportedChain =
+      chainId === "SN_MAIN" ||
+      chainId === "0x534e5f4d41494e" ||
+      chainId === "SN_SEPOLIA" ||
+      chainId === "0x534e5f5345504f4c4941";
+    if (!isSupportedChain) {
+      throw new Error("Switch Ready to Sepolia or Mainnet before connecting.");
+    }
     const providerIndex = providerIndexForChain(chainId);
     const provider = myFrontendProviders[providerIndex];
 

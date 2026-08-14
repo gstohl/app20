@@ -115,9 +115,15 @@ Alchemy prefixes stay in `src/utils/constants.ts`; the env var is the key only:
 
 Day-0 also lists `https://rpc.starknet.lava.build`. Do not guess discovery / proving URLs — wallets own those on this route.
 
-## 5. Phase 1 — first shielded flow (buildable now) · Days 1–3 (14–16 Aug)
+## 5. Phase 1 — first shielded flow (buildable now) · Days 1–3 (14–16 Aug) — ✅ done-for-code 2026-08-14
 
-Status: not started.
+Status: code complete; headless typecheck/build passed 2026-08-14. Remaining manual Ready checks on Sepolia:
+
+- Connect Ready through get-starknet v6 and confirm the privacy tabs appear.
+- Confirm a non-STRK20 wallet degrades to the Ready prompt without a balance probe.
+- Shield a small amount of Sepolia STRK (approve + deposit prompts) and verify screening declines render as protocol state.
+- Run a private self-transfer, query balances, and unshield back to the connected account.
+- Cross-check the flow against <https://starknet-wallet-account.vercel.app/>.
 
 Goal: Feltproof-branded Next.js app that connects Ready, detects STRK20, and completes shield / private transfer / unshield on Sepolia. No helper required.
 

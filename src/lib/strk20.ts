@@ -1,6 +1,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
+import { walletV6 } from "starknet";
 
 export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -29,10 +30,9 @@ export function supportsWalletApi010(version: string): boolean {
 export async function detectStrk20Capability(
   wallet: WalletWithStarknetFeatures
 ): Promise<Strk20Capability> {
-  const request = wallet.features["starknet:walletApi"].request;
   const [walletApiResult, specsResult] = await Promise.allSettled([
-    request({ type: "wallet_supportedWalletApi" }),
-    request({ type: "wallet_supportedSpecs" }),
+    walletV6.supportedWalletApi(wallet),
+    walletV6.supportedSpecs(wallet),
   ]);
 
   const walletApiVersions =
@@ -130,7 +130,7 @@ function errorDetails(error: unknown): string {
 export function strk20ErrorMessage(error: unknown): string {
   const details = errorDetails(error);
 
-  if (/screen|sanction|compliance|blocked depositor/i.test(details)) {
+  if (/screen|sanction|compliance|blocked depositor|privacy_leak/i.test(details)) {
     return "The deposit was declined by STRK20 protocol screening. No privacy action was submitted.";
   }
   if (/user.*(refus|reject)|rejected by user/i.test(details)) {
