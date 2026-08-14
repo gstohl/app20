@@ -216,7 +216,7 @@ export default function Onboard({
       {!helperAddress ? (
         <p className={styles.notice}>
           No helper deployment is configured for this network. Registration is
-          disabled until NEXT_PUBLIC_MAIL_HELPER_* is set.
+          disabled until VITE_MAIL_HELPER_* is set.
         </p>
       ) : null}
       <button

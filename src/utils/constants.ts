@@ -4,7 +4,7 @@ import { feltEquals } from "@/lib/addresses";
 export const addrSTRK =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
-const alchemyKey = process.env.NEXT_PUBLIC_PROVIDER_URL ?? "";
+const alchemyKey = import.meta.env.VITE_PROVIDER_URL ?? "";
 
 // Indices follow the starter's convention: Mainnet = 0, Sepolia = 2.
 export const myFrontendProviders: ProviderInterface[] = [
@@ -44,6 +44,6 @@ export const Strk20Networks: Record<number, string> = {
 
 // QuietlineMail helper — 0x0 until Phase 2 deploy.
 export const mailHelperSepolia =
-  process.env.NEXT_PUBLIC_MAIL_HELPER_SEPOLIA ?? "0x0";
+  import.meta.env.VITE_MAIL_HELPER_SEPOLIA ?? "0x0";
 export const mailHelperMainnet =
-  process.env.NEXT_PUBLIC_MAIL_HELPER_MAINNET ?? "0x0";
+  import.meta.env.VITE_MAIL_HELPER_MAINNET ?? "0x0";

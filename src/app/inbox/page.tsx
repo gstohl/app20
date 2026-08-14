@@ -1,5 +1,6 @@
 "use client";
 
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
@@ -183,10 +184,10 @@ export default function InboxPage() {
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
-        <a className={styles.brand} href="/" aria-label="Quietline home">
+        <Link className={styles.brand} to="/" aria-label="Quietline home">
           <span className={styles.brandMark}>Q</span>
           <span>Quietline</span>
-        </a>
+        </Link>
         <div className={styles.navRight}>
           <span className={styles.network}>{networkName}</span>
           <SelectWallet variant="nav" />
@@ -237,7 +238,7 @@ export default function InboxPage() {
       </main>
 
       <footer className={styles.footer}>
-        <a href="/">← Wallet actions</a>
+        <Link to="/">← Wallet actions</Link>
         <span>Quietline stores ciphertext on-chain, never plaintext.</span>
       </footer>
     </div>

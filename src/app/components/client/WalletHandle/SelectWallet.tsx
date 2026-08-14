@@ -151,7 +151,6 @@ export default function SelectWallet({
                 onClick={() => selectWallet(wallet)}
                 disabled={Boolean(connectingWallet)}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img className={styles.walletIcon} src={wallet.icon} alt="" />
                 <span className={styles.walletName}>{wallet.name}</span>
                 <span className={styles.walletGo}>

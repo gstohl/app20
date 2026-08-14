@@ -2,12 +2,14 @@
   "name": "quietline",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "deploy:cf": "npm run build && wrangler deploy",
     "devnet": "bash scripts/devnet.sh",
     "devnet:stop": "bash scripts/devnet.sh stop",
-    "start": "next start",
     "test": "vitest run src",
     "test:e2e": "node scripts/e2e-mail.mjs",
     "pool:setup": "bash scripts/pool-harness-setup.sh",
@@ -19,10 +21,9 @@
     "@noble/hashes": "^2.3.0",
     "@starknet-io/get-starknet-discovery": "6.0.3",
     "@starknet-io/get-starknet-wallet-standard": "6.0.3",
-    "next": "^16.0.8",
+    "@tanstack/react-router": "^1.170.28",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "sharp": "^0.34.5",
     "starknet": "10.4.0",
     "zustand": "^5.0.9"
   },
@@ -30,8 +31,12 @@
     "@starknet-io/types-js": "0.10.3",
     "@types/node": "24.10.2",
     "@types/react": "19.2.7",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.10"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10",
+    "wrangler": "^4.123.0"
   },
   "overrides": {
     "@starknet-io/types-js": "0.10.3",

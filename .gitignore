@@ -4,7 +4,7 @@ node_modules/
 .pnp.js
 vendor/
 
-# next / build
+# app build artifacts
 .next/
 out/
 dist/
@@ -44,4 +44,3 @@ target/
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts

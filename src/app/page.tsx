@@ -1,5 +1,6 @@
 "use client";
 
+import { Link } from "@tanstack/react-router";
 import styles from "./uni.module.css";
 import SelectWallet from "./components/client/WalletHandle/SelectWallet";
 import WalletAccountV6Tag from "./components/client/WalletHandle/WalletAccountV6Tag";
@@ -8,10 +9,10 @@ export default function Page() {
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
-        <a className={styles.brand} href="/" aria-label="Quietline home">
+        <Link className={styles.brand} to="/" aria-label="Quietline home">
           <span className={styles.brandMark}>Q</span>
           <span>Quietline</span>
-        </a>
+        </Link>
         <SelectWallet variant="nav" />
       </nav>
 
@@ -27,9 +28,9 @@ export default function Page() {
           shielded STRK actions, then open the inbox to register a mail key,
           compose ciphertext, and decrypt messages locally.
         </p>
-        <a className={styles.inboxLink} href="/inbox">
+        <Link className={styles.inboxLink} to="/inbox">
           Open inbox →
-        </a>
+        </Link>
       </header>
 
       <main>
