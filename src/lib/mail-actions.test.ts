@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { WALLET_API } from "@starknet-io/types-js";
+import type { ProviderInterface, WalletAccountV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { addrSTRK } from "../utils/constants";
-import { buildOtcAcceptActions } from "./strk20";
+import {
+  buildOtcAcceptActions,
+  submitMail,
+  submitOtcAccept,
+} from "./strk20";
 import {
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
@@ -136,5 +142,55 @@ describe("mail STRK20 actions", () => {
     expect(() =>
       buildMailActions({ ...baseInput, helperAddress: "0x0" })
     ).toThrow(/helper/i);
+  });
+
+  it("submits each invoke-only or accept batch through one wallet call", async () => {
+    const batches: WALLET_API.STRK20_ACTION[][] = [];
+    const invoke = vi.fn(async (actions: WALLET_API.STRK20_ACTION[]) => {
+      batches.push(actions);
+      return { transaction_hash: "0x999" };
+    });
+    const wait = vi.fn(async () => ({ finality_status: "ACCEPTED_ON_L2" }));
+    const account = {
+      strk20InvokeTransaction: invoke,
+    } as unknown as WalletAccountV6;
+    const provider = { waitForTransaction: wait } as unknown as ProviderInterface;
+
+    await submitMail({
+      account,
+      provider,
+      helperAddress: "0x123",
+      tokenAddress: addrSTRK,
+      record,
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(batches[0]).toHaveLength(1);
+
+    const offer = {
+      dealId: `0x${"44".repeat(32)}`,
+      give: {
+        token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+        amount: "1000",
+      },
+      want: {
+        token: { symbol: "USDC", address: "0x53c", decimals: 6 },
+        amount: "1",
+      },
+      offerer: "0xa11ce",
+      expiresAt: 0,
+    };
+    await submitOtcAccept({
+      account,
+      provider,
+      helperAddress: "0x123",
+      offer,
+      record,
+    });
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(batches[1]).toHaveLength(2);
+    expect(batches[1].map((action) => action.type)).toEqual([
+      "transfer",
+      "invoke",
+    ]);
   });
 });

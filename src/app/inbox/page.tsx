@@ -6,12 +6,52 @@ import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import Compose from "@/components/mail/Compose";
+import Compose, { type SentEnvelope } from "@/components/mail/Compose";
 import Onboard from "@/components/mail/Onboard";
-import Thread, { type LocalMailMessage } from "@/components/mail/Thread";
+import Thread, {
+  type LocalMailMessage,
+  type ThreadActionState,
+} from "@/components/mail/Thread";
+import { loadAliases, type AliasRecord } from "@/lib/aliases";
+import { encodeEnvelope } from "@/lib/envelope";
 import type { EncryptedMailRecord, MailKeypair } from "@/lib/mail";
-import { scanAndDecrypt } from "@/lib/mail";
+import {
+  encryptMail,
+  publicKeyFromFelts,
+  scanAndDecrypt,
+} from "@/lib/mail";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import {
+  acceptPayloadForOffer,
+  claimOtcAccept,
+  claimPayment,
+  confirmOtcAccept,
+  confirmPayment,
+  emptyOtcState,
+  expireStoredDeals,
+  loadOtcState,
+  parseAcceptPayload,
+  parseDeclinePayload,
+  parseOfferPayload,
+  parsePaymentRequestPayload,
+  parseReceiptPayload,
+  receiptForTransfer,
+  recordDealEvent,
+  recordPaymentRequest,
+  recordPaymentTransfer,
+  releaseOtcAccept,
+  releasePayment,
+  type AcceptPayload,
+  type OfferPayload,
+  type OtcState,
+  type PaymentRequestPayload,
+} from "@/lib/otc";
+import {
+  strk20ErrorMessage,
+  submitMail,
+  submitMemoTransfer,
+  submitOtcAccept,
+} from "@/lib/strk20";
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
@@ -82,11 +122,19 @@ function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
 
 export default function InboxPage() {
   const providerIndex = useFrontendProvider(
-    (state) => state.currentFrontendProviderIndex
+    (state) => state.currentFrontendProviderIndex,
   );
   const address = useStoreWallet((state) => state.address);
+  const chainId = useStoreWallet((state) => state.chain);
+  const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
   const [keypair, setKeypair] = useState<MailKeypair | null>(null);
   const [messages, setMessages] = useState<LocalMailMessage[]>([]);
+  const [aliases, setAliases] = useState<AliasRecord[]>([]);
+  const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
+  const [actionStates, setActionStates] = useState<
+    Record<string, ThreadActionState>
+  >({});
   const [scanning, setScanning] = useState(false);
   const [scanMessage, setScanMessage] = useState("");
 
@@ -97,7 +145,136 @@ export default function InboxPage() {
     setKeypair(null);
     setMessages([]);
     setScanMessage("");
-  }, [address, providerIndex]);
+    setActionStates({});
+    if (address && chainId) {
+      setAliases(loadAliases(window.localStorage, address));
+      setOtcState(
+        expireStoredDeals(window.localStorage, chainId, address),
+      );
+    } else {
+      setAliases([]);
+      setOtcState(emptyOtcState());
+    }
+  }, [address, chainId, providerIndex]);
+
+  function setActionState(key: string, state: ThreadActionState) {
+    setActionStates((current) => ({ ...current, [key]: state }));
+  }
+
+  function refreshOtcState() {
+    if (!address || !chainId) return;
+    setOtcState(expireStoredDeals(window.localStorage, chainId, address));
+  }
+
+  function requireActionContext() {
+    if (!helperAddress) throw new Error("No mail helper is configured.");
+    if (!walletAccount || !address || !chainId || !isStrk20Capable) {
+      throw new Error("Connect a STRK20-capable Ready wallet first.");
+    }
+    return {
+      helperAddress,
+      walletAccount,
+      provider: constants.myFrontendProviders[providerIndex],
+      address,
+      chainId,
+    };
+  }
+
+  async function lookupMailKey(helper: string, recipient: string) {
+    const provider = constants.myFrontendProviders[providerIndex];
+    const registered = await provider.callContract({
+      contractAddress: helper,
+      entrypoint: "get_pubkey",
+      calldata: [validateAndParseAddress(recipient)],
+    });
+    if (
+      registered.length !== 2 ||
+      (BigInt(registered[0]) === 0n && BigInt(registered[1]) === 0n)
+    ) {
+      throw new Error(
+        "The response recipient has not registered a Quietline mail key.",
+      );
+    }
+    return publicKeyFromFelts(registered);
+  }
+
+  function mergeLocalDealState(localMessages: LocalMailMessage[]) {
+    if (!address || !chainId) return;
+
+    for (const message of [...localMessages].reverse()) {
+      try {
+        const { envelope } = message;
+        if (envelope.type === "offer") {
+          const offer = parseOfferPayload(envelope.payload);
+          if (offer) {
+            recordDealEvent(
+              window.localStorage,
+              chainId,
+              address,
+              { type: "offer", payload: offer },
+            );
+          }
+        } else if (envelope.type === "accept") {
+          const accept = parseAcceptPayload(envelope.payload);
+          if (!accept) continue;
+          const state = loadOtcState(window.localStorage, chainId, address);
+          if (state.deals[accept.dealId]) {
+            recordDealEvent(
+              window.localStorage,
+              chainId,
+              address,
+              {
+                type: "accept",
+                payload: accept,
+                txHash: message.transactionHash,
+              },
+            );
+          } else if (state.payments[accept.dealId]) {
+            recordPaymentTransfer(
+              window.localStorage,
+              chainId,
+              address,
+              accept,
+              message.transactionHash,
+            );
+          }
+        } else if (envelope.type === "decline") {
+          const decline = parseDeclinePayload(envelope.payload);
+          if (decline) {
+            recordDealEvent(
+              window.localStorage,
+              chainId,
+              address,
+              { type: "decline", payload: decline },
+            );
+          }
+        } else if (envelope.type === "receipt") {
+          const receipt = parseReceiptPayload(envelope.payload);
+          if (receipt) {
+            recordDealEvent(
+              window.localStorage,
+              chainId,
+              address,
+              { type: "receipt", payload: receipt },
+            );
+          }
+        } else if (envelope.type === "payment_request") {
+          const request = parsePaymentRequestPayload(envelope.payload);
+          if (request) {
+            recordPaymentRequest(
+              window.localStorage,
+              chainId,
+              address,
+              request,
+            );
+          }
+        }
+      } catch {
+        // A malformed or out-of-order payload cannot poison the local inbox.
+      }
+    }
+    refreshOtcState();
+  }
 
   async function scanInbox() {
     if (!keypair) {
@@ -145,7 +322,7 @@ export default function InboxPage() {
         .filter((event): event is ParsedMailEvent => event !== null);
       const decrypted = await scanAndDecrypt(
         keypair.privateKey,
-        parsed.map((event) => event.record)
+        parsed.map((event) => event.record),
       );
       const localMessages = decrypted
         .map((message) => {
@@ -154,6 +331,7 @@ export default function InboxPage() {
             id: `${event.transactionHash}:${event.eventIndex ?? message.index}`,
             index: event.index,
             plaintext: message.plaintext,
+            envelope: message.envelope,
             transactionHash: event.transactionHash,
             blockNumber: event.blockNumber,
             eventIndex: event.eventIndex,
@@ -167,17 +345,351 @@ export default function InboxPage() {
         });
 
       setMessages(localMessages);
+      mergeLocalDealState(localMessages);
       setScanMessage(
         `Decrypted ${localMessages.length} of ${parsed.length} valid ciphertext event${
           parsed.length === 1 ? "" : "s"
-        } locally.`
+        } locally.`,
       );
     } catch (error: unknown) {
       setScanMessage(
-        error instanceof Error ? error.message : "Mailbox scan failed."
+        error instanceof Error ? error.message : "Mailbox scan failed.",
       );
     } finally {
       setScanning(false);
+    }
+  }
+
+  function handleSent(message: SentEnvelope) {
+    if (address && chainId) {
+      try {
+        if (message.type === "offer") {
+          const offer = parseOfferPayload(message.payload);
+          if (offer) {
+            recordDealEvent(
+              window.localStorage,
+              chainId,
+              address,
+              { type: "offer", payload: offer },
+            );
+          }
+        } else if (message.type === "payment_request") {
+          const request = parsePaymentRequestPayload(message.payload);
+          if (request) {
+            recordPaymentRequest(
+              window.localStorage,
+              chainId,
+              address,
+              request,
+            );
+          }
+        }
+        refreshOtcState();
+      } catch {
+        // The confirmed ciphertext remains valid even if localStorage is full.
+      }
+    }
+    void scanInbox();
+  }
+
+  async function postReceipt(
+    offer: OfferPayload,
+    accept: AcceptPayload,
+    acceptTransactionHash: string,
+    recipientKey?: Uint8Array,
+  ) {
+    const context = requireActionContext();
+    const key =
+      recipientKey ??
+      (await lookupMailKey(context.helperAddress, offer.offerer));
+    const receipt = receiptForTransfer(
+      offer.dealId,
+      accept.transfer,
+      acceptTransactionHash,
+    );
+    const record = await encryptMail(
+      key,
+      encodeEnvelope("receipt", receipt),
+    );
+    await submitMail({
+      account: context.walletAccount,
+      provider: context.provider,
+      helperAddress: context.helperAddress,
+      tokenAddress: constants.addrSTRK,
+      record,
+    });
+    recordDealEvent(
+      window.localStorage,
+      context.chainId,
+      context.address,
+      { type: "receipt", payload: receipt },
+    );
+    refreshOtcState();
+  }
+
+  async function handleAccept(offer: OfferPayload, offerIndex?: number) {
+    const actionKey = `deal:${offer.dealId}`;
+    let claimed = false;
+    try {
+      const context = requireActionContext();
+      const accept = acceptPayloadForOffer(offer, offerIndex);
+      claimOtcAccept(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        accept,
+      );
+      claimed = true;
+      refreshOtcState();
+      setActionState(actionKey, {
+        pending: true,
+        message: "Preparing one private STRK transfer and accept memo…",
+      });
+
+      const recipientKey = await lookupMailKey(
+        context.helperAddress,
+        offer.offerer,
+      );
+      const record = await encryptMail(
+        recipientKey,
+        encodeEnvelope("accept", accept),
+      );
+      let submittedHash = "";
+      const result = await submitOtcAccept(
+        {
+          account: context.walletAccount,
+          provider: context.provider,
+          helperAddress: context.helperAddress,
+          tokenAddress: constants.addrSTRK,
+          offer,
+          record,
+        },
+        {
+          onSubmitted: (transactionHash) => {
+            submittedHash = transactionHash;
+            confirmOtcAccept(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              offer.dealId,
+              transactionHash,
+            );
+            refreshOtcState();
+            setActionState(actionKey, {
+              pending: true,
+              message: "STRK transfer submitted; waiting before posting receipt…",
+            });
+          },
+        },
+      );
+      const acceptHash = submittedHash || result.transactionHash;
+      if (!submittedHash) {
+        confirmOtcAccept(
+          window.localStorage,
+          context.chainId,
+          context.address,
+          offer.dealId,
+          acceptHash,
+        );
+      }
+
+      setActionState(actionKey, {
+        pending: true,
+        message: "STRK transfer confirmed. Posting the separate receipt…",
+      });
+      await postReceipt(offer, accept, acceptHash, recipientKey);
+      setActionState(actionKey, {
+        pending: false,
+        message: "Accept transfer and one-sided receipt confirmed.",
+      });
+      void scanInbox();
+    } catch (error: unknown) {
+      if (claimed && address && chainId) {
+        releaseOtcAccept(
+          window.localStorage,
+          chainId,
+          address,
+          offer.dealId,
+        );
+        refreshOtcState();
+      }
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    }
+  }
+
+  async function handleDecline(offer: OfferPayload) {
+    const actionKey = `deal:${offer.dealId}`;
+    try {
+      const context = requireActionContext();
+      const current = loadOtcState(
+        window.localStorage,
+        context.chainId,
+        context.address,
+      ).deals[offer.dealId];
+      if (!current || current.status !== "offered") {
+        throw new Error("This offer is no longer open.");
+      }
+      setActionState(actionKey, {
+        pending: true,
+        message: "Encrypting decline; no transfer will be sent…",
+      });
+      const decline = { dealId: offer.dealId };
+      const key = await lookupMailKey(context.helperAddress, offer.offerer);
+      const record = await encryptMail(
+        key,
+        encodeEnvelope("decline", decline),
+      );
+      await submitMail({
+        account: context.walletAccount,
+        provider: context.provider,
+        helperAddress: context.helperAddress,
+        tokenAddress: constants.addrSTRK,
+        record,
+      });
+      recordDealEvent(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        { type: "decline", payload: decline },
+      );
+      refreshOtcState();
+      setActionState(actionKey, {
+        pending: false,
+        message: "Decline confirmed. No STRK moved.",
+      });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    }
+  }
+
+  async function handlePostReceipt(offer: OfferPayload) {
+    const actionKey = `deal:${offer.dealId}`;
+    try {
+      const context = requireActionContext();
+      const deal = loadOtcState(
+        window.localStorage,
+        context.chainId,
+        context.address,
+      ).deals[offer.dealId];
+      if (!deal?.accept || !deal.acceptTxHash || deal.status !== "accepted") {
+        throw new Error("No confirmed accept transfer is waiting for a receipt.");
+      }
+      setActionState(actionKey, {
+        pending: true,
+        message: "Posting the one-sided receipt…",
+      });
+      await postReceipt(offer, deal.accept, deal.acceptTxHash);
+      setActionState(actionKey, {
+        pending: false,
+        message: "Receipt confirmed.",
+      });
+      void scanInbox();
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    }
+  }
+
+  async function handlePay(request: PaymentRequestPayload) {
+    const actionKey = `payment:${request.requestId}`;
+    let claimed = false;
+    try {
+      const context = requireActionContext();
+      claimPayment(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        request.requestId,
+      );
+      claimed = true;
+      refreshOtcState();
+      setActionState(actionKey, {
+        pending: true,
+        message: "Preparing one private STRK payment and payment memo…",
+      });
+      const transfer = {
+        token: request.token,
+        amount: request.amount,
+        to: request.requester,
+      };
+      const paymentMemo: AcceptPayload = {
+        dealId: request.requestId,
+        transfer,
+      };
+      const key = await lookupMailKey(context.helperAddress, request.requester);
+      const record = await encryptMail(
+        key,
+        encodeEnvelope("accept", paymentMemo),
+      );
+      let submittedHash = "";
+      const result = await submitMemoTransfer(
+        {
+          account: context.walletAccount,
+          provider: context.provider,
+          helperAddress: context.helperAddress,
+          tokenAddress: constants.addrSTRK,
+          recipient: request.requester,
+          amount: request.amount,
+          record,
+        },
+        {
+          onSubmitted: (transactionHash) => {
+            submittedHash = transactionHash;
+            const receipt = receiptForTransfer(
+              request.requestId,
+              transfer,
+              transactionHash,
+            );
+            confirmPayment(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              request.requestId,
+              transactionHash,
+              receipt,
+            );
+            refreshOtcState();
+          },
+        },
+      );
+      const transactionHash = submittedHash || result.transactionHash;
+      if (!submittedHash) {
+        confirmPayment(
+          window.localStorage,
+          context.chainId,
+          context.address,
+          request.requestId,
+          transactionHash,
+          receiptForTransfer(request.requestId, transfer, transactionHash),
+        );
+      }
+      setActionState(actionKey, {
+        pending: false,
+        message: "Private STRK payment and encrypted memo confirmed.",
+      });
+      void scanInbox();
+    } catch (error: unknown) {
+      if (claimed && address && chainId) {
+        releasePayment(
+          window.localStorage,
+          chainId,
+          address,
+          request.requestId,
+        );
+        refreshOtcState();
+      }
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
     }
   }
 
@@ -224,7 +736,8 @@ export default function InboxPage() {
             helperAddress={helperAddress}
             keyReady={Boolean(keypair)}
             networkName={networkName}
-            onSent={() => void scanInbox()}
+            onSent={handleSent}
+            onAliasesChange={setAliases}
           />
         </div>
 
@@ -233,7 +746,15 @@ export default function InboxPage() {
           canScan={Boolean(keypair && helperAddress)}
           scanning={scanning}
           scanMessage={scanMessage}
+          selfAddress={address}
+          aliases={aliases}
+          otcState={otcState}
+          actionStates={actionStates}
           onScan={() => void scanInbox()}
+          onAccept={(offer, index) => void handleAccept(offer, index)}
+          onDecline={(offer) => void handleDecline(offer)}
+          onPostReceipt={(offer) => void handlePostReceipt(offer)}
+          onPay={(request) => void handlePay(request)}
         />
       </main>
 

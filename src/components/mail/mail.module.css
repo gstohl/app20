@@ -5,6 +5,8 @@
   --muted: #5d6965;
   --teal: #087d77;
   --teal-soft: #dcebe6;
+  --ribbon: #7a3e55;
+  --proof-teal: #276a72;
   --line: rgba(23, 34, 32, 0.2);
 
   /* Variables consumed by the existing wallet picker. */
@@ -315,6 +317,84 @@
   margin-top: 20px;
 }
 
+.composeToggle,
+.dealKindToggle {
+  display: flex;
+  gap: 1px;
+  margin-top: 20px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+}
+
+.composeToggle button,
+.dealKindToggle button {
+  flex: 1;
+  padding: 10px 12px;
+  border: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.composeToggle button[aria-pressed="true"],
+.dealKindToggle button[aria-pressed="true"] {
+  color: var(--paper);
+  background: var(--ribbon);
+}
+
+.aliasEditor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.aliasEditor input {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  outline: none;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 12px;
+}
+
+.aliasEditor .secondaryButton {
+  padding: 10px 12px;
+}
+
+.dealFields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-left: 4px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.07);
+}
+
+.termsPreview,
+.dealDisclosure {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.termsPreview {
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+}
+
+.dealDisclosure {
+  padding: 11px 12px;
+  border-left: 3px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.07);
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -390,13 +470,148 @@
   text-transform: uppercase;
 }
 
-.message > p {
+.messageSheet {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: rgba(250, 247, 239, 0.72);
+}
+
+.dealSheet {
+  border-left: 4px solid var(--ribbon);
+}
+
+.sheetHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheetType,
+.sheetMeta,
+.receiptWarning {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.sheetType,
+.sheetMeta {
+  color: var(--muted);
+}
+
+.proofStamp {
+  display: inline-block;
+  padding: 5px 8px 4px;
+  border: 2px solid var(--proof-teal);
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  transform: rotate(-1deg);
+}
+
+.letterBody,
+.termsSentence {
   margin-top: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 18px;
   line-height: 1.55;
+}
+
+.termsSentence strong {
+  color: var(--ribbon);
+}
+
+.addressProof {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.06);
+}
+
+.addressProof code,
+.fullHash {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.addressProof span,
+.authWarning,
+.riskCopy,
+.offerNote,
+.actionWarning,
+.inlineStatus,
+.receiptWarning {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.addressProof span,
+.authWarning,
+.sheetMeta,
+.offerNote {
+  color: var(--muted);
+}
+
+.authWarning,
+.riskCopy,
+.offerNote,
+.actionWarning,
+.inlineStatus,
+.receiptWarning,
+.fullHash,
+.sheetMeta {
+  display: block;
+  margin-top: 12px;
+}
+
+.riskCopy {
+  padding: 12px;
+  border-left: 3px solid var(--ink);
+  background: var(--paper-deep);
+}
+
+.actionWarning {
+  padding: 10px 12px;
+  border-left: 3px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.09);
+}
+
+.inlineStatus {
+  color: var(--proof-teal);
+}
+
+.receiptWarning {
+  color: var(--proof-teal);
+}
+
+.sheetActions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.sheetActions .primaryButton,
+.sheetActions .secondaryButton {
+  flex: 1;
+  width: auto;
+  margin-top: 0;
 }
 
 .localLabel {
@@ -465,7 +680,8 @@
 
   .privacyStrip,
   .setupGrid,
-  .disclosureGrid {
+  .disclosureGrid,
+  .aliasEditor {
     grid-template-columns: 1fr;
   }
 
@@ -474,7 +690,8 @@
   }
 
   .threadHeading,
-  .footer {
+  .footer,
+  .sheetActions {
     flex-direction: column;
   }
 

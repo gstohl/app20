@@ -20,6 +20,7 @@ import {
   receiptForTransfer,
   recordDealEvent,
   recordPaymentRequest,
+  recordPaymentTransfer,
   transitionDeal,
   type OfferPayload,
   type PaymentRequestPayload,
@@ -244,5 +245,80 @@ describe("payment request idempotency", () => {
     expect(() =>
       claimPayment(...scope, request.requestId, 1_900_000_002),
     ).toThrow(/no second transfer/i);
+  });
+
+  it("marks the requester's copy paid from the encrypted transfer memo", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xa11ce"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    const transfer = {
+      token: request.token,
+      amount: request.amount,
+      to: request.requester,
+    };
+
+    expect(
+      recordPaymentTransfer(
+        ...scope,
+        { dealId: request.requestId, transfer },
+        "0x999",
+        1_900_000_001,
+      ),
+    ).toMatchObject({
+      status: "paid",
+      paymentTxHash: "0x999",
+      receipt: { warning: "one_sided_v1" },
+    });
+    expect(
+      recordPaymentTransfer(
+        ...scope,
+        { dealId: request.requestId, transfer },
+        "0x999",
+        1_900_000_002,
+      ).status,
+    ).toBe("paid");
+  });
+
+  it("refuses non-STRK and expired payment requests", () => {
+    const storage = new MemoryStorage();
+    const nonStrk = { ...request, token: usdc };
+    recordPaymentRequest(
+      storage,
+      "SN_SEPOLIA",
+      "0xb0b",
+      nonStrk,
+      1_900_000_000,
+    );
+    expect(() =>
+      claimPayment(
+        storage,
+        "SN_SEPOLIA",
+        "0xb0b",
+        nonStrk.requestId,
+        1_900_000_001,
+      ),
+    ).toThrow(/only STRK/i);
+
+    const expired = {
+      ...request,
+      requestId: `0x${"33".repeat(32)}`,
+      expiresAt: 100,
+    };
+    recordPaymentRequest(
+      storage,
+      "SN_SEPOLIA",
+      "0xb0b",
+      expired,
+      99,
+    );
+    expect(() =>
+      claimPayment(
+        storage,
+        "SN_SEPOLIA",
+        "0xb0b",
+        expired.requestId,
+        100,
+      ),
+    ).toThrow(/expired/i);
   });
 });

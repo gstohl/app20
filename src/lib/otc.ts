@@ -723,6 +723,48 @@ export function claimPayment(
   return claimed;
 }
 
+export function recordPaymentTransfer(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  accept: AcceptPayload,
+  transactionHash: string,
+  at = nowSeconds(),
+): PaymentRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.payments[accept.dealId];
+  if (!current) throw new Error("The referenced payment request is not stored locally.");
+  if (current.status === "paid") return current;
+  if (current.status !== "requested" || paymentRequestIsExpired(current.request, at)) {
+    throw new Error("This payment request is no longer payable.");
+  }
+  assertPaysStrk(current.request);
+  const expected: AcceptPayload["transfer"] = {
+    token: current.request.token,
+    amount: current.request.amount,
+    to: current.request.requester,
+  };
+  if (!transfersEqual(accept.transfer, expected)) {
+    throw new Error("Payment memo does not match the requested STRK transfer.");
+  }
+  const receipt = receiptForTransfer(
+    current.requestId,
+    accept.transfer,
+    transactionHash,
+  );
+  const next: PaymentRecord = {
+    ...current,
+    status: "paid",
+    receipt,
+    paymentTxHash: transactionHash,
+    paymentPending: false,
+    updatedAt: at,
+  };
+  state.payments[current.requestId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
+}
+
 export function confirmPayment(
   storage: StorageLike,
   chainId: string,
@@ -736,6 +778,17 @@ export function confirmPayment(
   const current = state.payments[requestId];
   if (!current || current.status !== "paid") {
     throw new Error("No reserved payment can be confirmed.");
+  }
+  if (
+    receipt.dealId !== requestId ||
+    receipt.txHash !== transactionHash ||
+    !transfersEqual(receipt.transfer, {
+      token: current.request.token,
+      amount: current.request.amount,
+      to: current.request.requester,
+    })
+  ) {
+    throw new Error("Payment receipt does not match the requested STRK transfer.");
   }
   const next: PaymentRecord = {
     ...current,
