@@ -2,7 +2,7 @@
 
 Generated 2026-08-14 by the strk20-privacy-integration skill. Pivoted from Feltproof / RFP-03 the same day. Statuses current at generation; re-verify pins with `python3 .agents/skills/strk20-privacy-integration/scripts/check_freshness.py` before building.
 
-Public repo: <https://github.com/gstohl/feltproof> (product name Quietline; URL not renamed this sprint)
+Public repo: <https://github.com/gstohl/quietline>
 Sprint: STRK20 Private Sprint, 14–31 Aug 2026
 Inspired by RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 
@@ -214,7 +214,7 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 - RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 - Hackathon: <https://github.com/starkience/strk20-hackathon>
 - Day 0: <https://github.com/starkience/strk20-hackathon/blob/main/docs/MAINNET-DAY-0.md>
-- Repo: <https://github.com/gstohl/feltproof>
+- Repo: <https://github.com/gstohl/quietline>
 - What STRK20 is: <https://strk20-by-example.org/what-is-strk20>
 - Channels: <https://strk20-by-example.org/channels-and-subchannels>
 - Viewing keys: <https://strk20-by-example.org/viewing-keys>

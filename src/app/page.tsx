@@ -38,7 +38,7 @@ export default function Page() {
 
       <footer className={styles.footer}>
         <a
-          href="https://github.com/gstohl/feltproof"
+          href="https://github.com/gstohl/quietline"
           target="_blank"
           rel="noreferrer"
         >

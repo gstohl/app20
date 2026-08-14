@@ -10,8 +10,8 @@ Built for the [STRK20 Private Sprint](https://github.com/starkience/strk20-hacka
 against the live mainnet pool. Inspired by
 [RFP-01](https://strk20.starknet.io/rfp/private-messaging).
 
-This repository was started as Feltproof (private poker) and pivoted.
-The GitHub URL is still `gstohl/feltproof`. The product is Quietline.
+This repository was started as Feltproof (private poker) and pivoted to
+Quietline early on day one; the repo now lives at `gstohl/quietline`.
 
 ## What we are shipping
 
