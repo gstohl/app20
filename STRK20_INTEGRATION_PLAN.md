@@ -6,7 +6,7 @@ Public repo: <https://github.com/gstohl/feltproof> (product name Quietline; URL 
 Sprint: STRK20 Private Sprint, 14–31 Aug 2026
 Inspired by RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 
-Nothing in the inbox or helper changes until this plan is approved. After approval, execution is app code only, one phase at a time. The message helper is the team’s own Cairo to write, review, audit, deploy, and maintain — this skill never generates it.
+This plan was approved and Phase 2 was implemented on 2026-08-14. The message helper remains the team’s own Cairo to review, audit, deploy, and maintain; code-complete does not mean deployed or production-audited.
 
 ## 0. Decided interview answers
 
@@ -37,9 +37,10 @@ These are closed. Do not re-interview. Poker decisions are void.
   - `src/utils/constants.ts`
   - `src/app/components/client/WalletHandle/WalletAccountV6Tag.tsx`
   - `src/lib/strk20.ts`, `src/lib/addresses.ts`
-- Planned after this pivot:
+- Phase 2 landed:
   - `src/app/inbox/page.tsx`, `src/components/mail/*`
-  - Team-written helper: `cairo/src/quietline_mail.cairo`
+  - `src/lib/mail.ts`, `src/lib/mail-actions.ts`
+  - Team-written helper: `cairo/src/lib.cairo`
 - Privacy goal: hide sender, recipient, and content; keep the fact+timing of a pool interaction public.
 - Environment: Sepolia daily; `SN_MAIN` against pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a` for three scoring txs.
 
@@ -101,34 +102,54 @@ Status: code complete for wallet plumbing; poker branding and DEMO echo removed 
 
 Do not deploy a helper. Do not touch `strk20.json`. Do not enable mainnet financial actions until Phase 4.
 
-## 6. Phase 2 — compose + `QuietlineMail` invoke wiring
+## 6. Phase 2 — compose + `QuietlineMail` invoke wiring ✅ code complete 2026-08-14
 
-Status: not started. Depends on Phase 1 manual pass.
+Status: code-complete locally. No Sepolia or mainnet helper was deployed, no live STRK20 transaction was sent, and the manual Ready gate remains open.
 
-### 6.1 Dapp files
+### 6.1 Landed dapp files
 
-| File | Change |
+| File | Landed behavior |
 | --- | --- |
-| `src/app/page.tsx` | Quietline lobby: connect, shield, open inbox |
-| `src/app/inbox/page.tsx` | Thread list + compose |
-| `src/components/mail/Compose.tsx` | Recipient (registered address), body, optional attach-payment |
-| `src/components/mail/Thread.tsx` | Locally decrypted messages only |
-| `src/lib/mail.ts` | Client encode/decode of helper payloads; no viewing key |
-| `src/lib/strk20.ts` | `invokeMail` using withdraw/transfer/`invoke` as needed |
-| `cairo/src/quietline_mail.cairo` | **Team** writes this. Skill does not generate Cairo. |
+| `src/app/page.tsx` | Links the existing wallet-action lobby to `/inbox` |
+| `src/app/inbox/page.tsx` | Network-aware onboarding, compose, public-event scan, and newest-first local plaintext list |
+| `src/components/mail/Onboard.tsx` | Session-key derivation stub and public `register_pubkey` transaction |
+| `src/components/mail/Compose.tsx` | Recipient directory lookup, local encryption, optional private STRK attachment, and STRK20 submission |
+| `src/components/mail/Thread.tsx` | Displays successful local decryptions only; no plaintext persistence |
+| `src/lib/mail.ts` | x25519 + HKDF-SHA256 + AES-256-GCM, felt packing, signature-seed seam, and view-tag scan |
+| `src/lib/mail-actions.ts` | Builds optional numeric `transfer`, recovery open note, and final `invoke`; preserves `${poolAddress}` and `${openNoteIds[0]}` as wallet literals |
+| `cairo/src/lib.cairo` | Team-written helper and public-key directory |
 
-### 6.2 Helper — interface only
+The Phase 2 mail private key is an app-specific x25519 key, not the STRK20 viewing key `k`. The current UI derives a fresh in-memory seed per tab and says so; deterministic SNIP-12 derivation and safe persistence remain a live-wallet task.
 
-Study: starter echo helper, RFP-01 write-up. Mandatory `privacy_invoke`, caller must be the **configured** pool (immutable constructor address — do not trust calldata `pool_address`).
+### 6.2 Landed helper
 
-- `privacy_invoke(op, channel_hint, payload_hash, extra) -> Span<OpenNoteDeposit>`
-  - `op`: `Send`, `SendWithPayment`
-  - `Send` may return an empty span (payload only).
-  - `SendWithPayment` pairs a private transfer with the memo; open-note return only if value must come back.
-- Public events indexed by a **channel id / commitment**, never a wallet: `MessagePosted`.
-- Payload: ciphertext bytes felt-packed in helper storage or an event. Encryption uses the same ECDH channel derivation the pool uses for notes **inside the wallet**, or a sit-down published pubkey. The dapp must not ask for `k`.
+`QuietlineMail` pins the authorized pool address in constructor storage and never trusts the calldata `pool_address` placeholder for authorization.
 
-Atomicity tests: only the pool can call; garbage payload reverts or is ignored; payment+memo rolls back together; helper ERC-20 balance returns to ~0 after a payment op.
+- `privacy_invoke(token, pool_address, note_id, eph_pk, view_tag, nonce, ct) -> Span<OpenNoteDeposit>`
+  - Only the configured pool caller succeeds.
+  - Emits `MessagePosted(index, eph_pk, view_tag, nonce, ct)` without a wallet address.
+  - Returns an empty span at zero helper balance.
+  - Approves and echoes any helper token dust into the supplied open note so funds are not stranded.
+- `register_pubkey` / `get_pubkey` provide the public address-to-mail-key directory.
+- `message_count` supplies the monotonic public event index.
+
+The Cairo suite covers caller authorization, exact event payload, zero balance, dust approval/echo, and directory roundtrip. Payment plus memo is assembled as one wallet action batch, but real atomicity still needs Ready against Sepolia.
+
+### 6.3 Completion record
+
+| Tool | Verified version |
+| --- | --- |
+| Node / npm | `v24.12.0` / `11.19.0` |
+| Next / React / TypeScript / Vitest | `16.3.1` / `19.2.1` / `5.9.3` / `4.1.10` |
+| starknet.js / Wallet API types | `10.4.0` / `0.10.3` |
+| Scarb / Cairo | `2.18.0` / `2.18.0` |
+| Starknet Foundry | `snforge 0.63.0` |
+| Docker | `29.2.1` |
+| Starknet Devnet | `0.9.2` |
+
+Devnet image tag: `docker.io/shardlabs/starknet-devnet-rs:latest`; exercised image digest: `sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`.
+
+The local e2e deploys the helper, registers a recipient key, encrypts an exact plaintext, posts as the configured **mock pool caller**, scans and decrypts the event, confirms a wrong key sees zero messages, and proves the 0.001 STRK dust balance is approved, echoed, and pulled back. It does **not** run the real STRK20 pool, Ready Wallet API action assembly, `${poolAddress}` / `${openNoteIds[0]}` resolution, SNIP-36 proving, relayer submission, note maturity/discovery, screening, pool fees, or two-wallet Sepolia behavior.
 
 ## 7. Phase 3 — discover + decrypt + memo
 
@@ -157,11 +178,15 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 
 ## 9. Testing
 
-**Headless:** `npm ci` · `npm run typecheck` · `npm run build`. Helper: `scarb test` / `snforge`.
+**Headless app:** `npm ci` · `npm test` · `npm run typecheck` · `npm run build`.
+
+**Cairo (from `cairo/`):** `scarb build` · `snforge test`.
+
+**Local integration:** `npm run devnet` · `npm run test:e2e`; this is the mock-pool scope recorded in §6.3, not a real STRK20 proof.
 
 **Manual — Phase 1:** Ready connect, degrade, Sepolia shield / transfer / unshield.
 
-**Manual — Phase 2–3:** post a message; second wallet decrypts; memo+payment atomic; Voyager sender is a relayer.
+**Manual — Phase 2–3:** deploy the audited helper on Sepolia; register two durable keys; post a message; second wallet decrypts; memo+payment is atomic; Voyager sender is a relayer.
 
 **Manual — Phase 4:** tiny mainnet amounts; three hashes in `strk20.json`.
 
@@ -176,7 +201,9 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 ## 11. Open items to re-verify at build time
 
 - Freshness script / WalletAccount guide.
-- How a Wallet-API dapp discovers helper-stored ciphertexts without `k`.
+- Ready acceptance of the three-action payment batch and literal wallet placeholder resolution.
+- Deterministic SNIP-12 mail-key derivation, recovery, and safe local persistence.
+- Sepolia event-scan start block or a user-held discovery index for a durable inbox.
 - Whether Ready already relayer-submits every `strk20InvokeTransaction`.
 - Pool fee via `get_fee_amount`.
 - Rotate the current `NEXT_PUBLIC` Alchemy key; it has been in a client bundle.
@@ -195,4 +222,4 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 - Wallet test dapp: <https://starknet-wallet-account.vercel.app/>
 - Ready: <https://www.ready.co/>
 
-After this file is approved, execute Phase 2 only. Do not generate Cairo. Do not revive poker scope.
+Phase 2 is code-complete only. The next gate is helper review/audit plus Ready validation on Sepolia; do not revive poker scope or enable mainnet sends early.
