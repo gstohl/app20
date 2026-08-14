@@ -32,52 +32,78 @@ const baseInput = {
 };
 
 describe("mail STRK20 actions", () => {
-  it("keeps wallet placeholders literal in the invoke calldata", () => {
+  it("creates a recovery note before using its literal invoke placeholder", () => {
     const actions = buildMailActions(baseInput);
 
-    expect(actions).toHaveLength(1);
-
-    const invoke = actions[0];
-    expect(invoke.type).toBe("invoke");
-    if (invoke.type !== "invoke") throw new Error("Expected invoke action.");
-    expect(invoke.calldata).toEqual([
-      "0x456",
-      POOL_ADDRESS_PLACEHOLDER,
-      OPEN_NOTE_ID_PLACEHOLDER,
-      "0x11",
-      "0x22",
-      "0x7a",
-      "0x33",
-      "0x44",
-      "0x3",
-      "0x2",
-      "0xabc",
-      "0xdef",
+    expect(actions).toEqual([
+      {
+        type: "transfer",
+        token: "0x456",
+        amount: "OPEN",
+        recipient: "0x789",
+      },
+      {
+        type: "invoke",
+        contract: "0x123",
+        calldata: [
+          "0x456",
+          POOL_ADDRESS_PLACEHOLDER,
+          OPEN_NOTE_ID_PLACEHOLDER,
+          "0x11",
+          "0x22",
+          "0x7a",
+          "0x33",
+          "0x44",
+          "0x3",
+          "0x2",
+          "0xabc",
+          "0xdef",
+        ],
+      },
     ]);
-    expect(invoke.calldata[1]).toBe("${poolAddress}");
-    expect(invoke.calldata[2]).toBe("${openNoteIds[0]}");
   });
 
-  it("prepends an optional private STRK transfer", () => {
+  it("places an optional private STRK transfer before recovery and invoke", () => {
     const actions = buildMailActions({
       ...baseInput,
       attachmentAmount: 25n * 10n ** 17n,
     });
 
-    expect(actions).toHaveLength(2);
-    expect(actions[0]).toEqual({
-      type: "transfer",
-      token: "0x456",
-      amount: "0x22b1c8c1227a0000",
-      recipient: "0xabc",
-    });
-    expect(actions[1]).toMatchObject({
-      type: "invoke",
-      contract: "0x123",
-    });
+    expect(actions).toEqual([
+      {
+        type: "transfer",
+        token: "0x456",
+        amount: "0x22b1c8c1227a0000",
+        recipient: "0xabc",
+      },
+      {
+        type: "transfer",
+        token: "0x456",
+        amount: "OPEN",
+        recipient: "0x789",
+      },
+      {
+        type: "invoke",
+        contract: "0x123",
+        calldata: [
+          "0x456",
+          POOL_ADDRESS_PLACEHOLDER,
+          OPEN_NOTE_ID_PLACEHOLDER,
+          "0x11",
+          "0x22",
+          "0x7a",
+          "0x33",
+          "0x44",
+          "0x3",
+          "0x2",
+          "0xabc",
+          "0xdef",
+        ],
+      },
+    ]);
   });
 
-  it("builds accept as transfer then invoke and refuses non-STRK give", () => {
+  it("builds accept as transfer, recovery note, invoke and refuses non-STRK give", () => {
     const offer = {
       dealId: `0x${"11".repeat(32)}`,
       give: {
@@ -93,25 +119,36 @@ describe("mail STRK20 actions", () => {
     };
     const actions = buildOtcAcceptActions({
       helperAddress: "0x123",
+      recoveryAddress: "0xb0b",
       record,
       offer,
     });
 
-    expect(actions).toHaveLength(2);
+    expect(actions.map((action) => action.type)).toEqual([
+      "transfer",
+      "transfer",
+      "invoke",
+    ]);
     expect(actions[0]).toEqual({
       type: "transfer",
       token: addrSTRK,
       amount: "0x2386f26fc10000",
       recipient: "0xa11ce",
     });
-    expect(actions[1]).toMatchObject({ type: "invoke", contract: "0x123" });
-    if (actions[1].type !== "invoke") throw new Error("Expected invoke.");
-    expect(actions[1].calldata[1]).toBe("${poolAddress}");
-    expect(actions[1].calldata[2]).toBe("${openNoteIds[0]}");
+    expect(actions[1]).toEqual({
+      type: "transfer",
+      token: addrSTRK,
+      amount: "OPEN",
+      recipient: "0xb0b",
+    });
+    if (actions[2].type !== "invoke") throw new Error("Expected invoke.");
+    expect(actions[2].calldata[1]).toBe("${poolAddress}");
+    expect(actions[2].calldata[2]).toBe("${openNoteIds[0]}");
 
     expect(() =>
       buildOtcAcceptActions({
         helperAddress: "0x123",
+        recoveryAddress: "0xb0b",
         record,
         offer: {
           ...offer,
@@ -144,7 +181,7 @@ describe("mail STRK20 actions", () => {
     ).toThrow(/helper/i);
   });
 
-  it("submits each invoke-only or accept batch through one wallet call", async () => {
+  it("submits each mail or accept batch through one wallet call", async () => {
     const batches: WALLET_API.STRK20_ACTION[][] = [];
     const invoke = vi.fn(async (actions: WALLET_API.STRK20_ACTION[]) => {
       batches.push(actions);
@@ -160,11 +197,19 @@ describe("mail STRK20 actions", () => {
       account,
       provider,
       helperAddress: "0x123",
+      recoveryAddress: "0xb0b",
       tokenAddress: addrSTRK,
       record,
     });
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(batches[0]).toHaveLength(1);
+    expect(batches[0].map((action) => action.type)).toEqual([
+      "transfer",
+      "invoke",
+    ]);
+    expect(batches[0][0]).toMatchObject({
+      amount: "OPEN",
+      recipient: "0xb0b",
+    });
 
     const offer = {
       dealId: `0x${"44".repeat(32)}`,
@@ -183,14 +228,19 @@ describe("mail STRK20 actions", () => {
       account,
       provider,
       helperAddress: "0x123",
+      recoveryAddress: "0xb0b",
       offer,
       record,
     });
     expect(invoke).toHaveBeenCalledTimes(2);
-    expect(batches[1]).toHaveLength(2);
     expect(batches[1].map((action) => action.type)).toEqual([
+      "transfer",
       "transfer",
       "invoke",
     ]);
+    expect(batches[1][1]).toMatchObject({
+      amount: "OPEN",
+      recipient: "0xb0b",
+    });
   });
 });

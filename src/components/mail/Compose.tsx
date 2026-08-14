@@ -227,6 +227,7 @@ export default function Compose({
           account: walletAccount,
           provider,
           helperAddress,
+          recoveryAddress: senderAddress,
           tokenAddress: addrSTRK,
           record,
         },

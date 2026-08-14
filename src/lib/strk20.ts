@@ -13,9 +13,9 @@ export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
 
 export type MailInvokeBatchInput = {
   helperAddress: string;
+  recoveryAddress: string;
   record: EncryptedMailRecord;
   tokenAddress?: string;
-  noteId?: string;
 };
 
 export type MemoTransferBatchInput = MailInvokeBatchInput & {
@@ -48,7 +48,6 @@ function buildMailInvokeAction({
   helperAddress,
   record,
   tokenAddress = addrSTRK,
-  noteId = OPEN_NOTE_ID_PLACEHOLDER,
 }: MailInvokeBatchInput): WALLET_API.STRK20_INVOKE_ACTION {
   assertConfiguredHelper(helperAddress);
   return {
@@ -57,7 +56,7 @@ function buildMailInvokeAction({
     calldata: [
       tokenAddress,
       POOL_ADDRESS_PLACEHOLDER,
-      noteId,
+      OPEN_NOTE_ID_PLACEHOLDER,
       record.ephemeralPub[0],
       record.ephemeralPub[1],
       num.toHex(record.viewTag),
@@ -69,14 +68,25 @@ function buildMailInvokeAction({
   };
 }
 
-/** Message-only envelopes use exactly one invoke action and no dummy transfer. */
+function buildRecoveryOpenNoteAction(
+  token: string,
+  recipient: string,
+): WALLET_API.STRK20_TRANSFER_ACTION {
+  return { type: "transfer", token, amount: "OPEN", recipient };
+}
+
+/** Message-only envelopes create the recovery note consumed by the invoke. */
 export function buildMailInvokeActions(
   input: MailInvokeBatchInput,
 ): WALLET_API.STRK20_ACTION[] {
-  return [buildMailInvokeAction(input)];
+  const token = input.tokenAddress ?? addrSTRK;
+  return [
+    buildRecoveryOpenNoteAction(token, input.recoveryAddress),
+    buildMailInvokeAction({ ...input, tokenAddress: token }),
+  ];
 }
 
-/** Builds one private transfer followed by its encrypted memo invoke. */
+/** Builds a private transfer, recovery open note, then encrypted memo invoke. */
 export function buildMemoTransferActions({
   recipient,
   amount,
@@ -90,6 +100,7 @@ export function buildMemoTransferActions({
       amount: baseUnitAmountHex(amount),
       recipient,
     },
+    buildRecoveryOpenNoteAction(token, mail.recoveryAddress),
     buildMailInvokeAction({ ...mail, tokenAddress: token }),
   ];
 }
@@ -230,7 +241,7 @@ export type SubmitOtcAcceptInput = OtcAcceptBatchInput & {
   provider: ProviderInterface;
 };
 
-/** Submits one invoke-only STRK20 batch for text and non-payment envelopes. */
+/** Submits one recovery-open-note + invoke batch for non-payment envelopes. */
 export function submitMail(
   { account, provider, ...batch }: SubmitMailInput,
   options: SubmitActionsOptions = {},
@@ -238,7 +249,7 @@ export function submitMail(
   return submitActions(account, provider, buildMailInvokeActions(batch), options);
 }
 
-/** Submits one wallet batch containing a transfer and its encrypted memo. */
+/** Submits one wallet batch containing a transfer, recovery note, and memo. */
 export function submitMemoTransfer(
   { account, provider, ...batch }: SubmitMemoTransferInput,
   options: SubmitActionsOptions = {},

@@ -478,6 +478,7 @@ export default function InboxPage() {
       account: context.walletAccount,
       provider: context.provider,
       helperAddress: context.helperAddress,
+      recoveryAddress: context.address,
       tokenAddress: constants.addrSTRK,
       record,
     });
@@ -524,6 +525,7 @@ export default function InboxPage() {
           account: context.walletAccount,
           provider: context.provider,
           helperAddress: context.helperAddress,
+          recoveryAddress: context.address,
           tokenAddress: constants.addrSTRK,
           offer,
           record,
@@ -611,6 +613,7 @@ export default function InboxPage() {
         account: context.walletAccount,
         provider: context.provider,
         helperAddress: context.helperAddress,
+        recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
         record,
       });
@@ -701,6 +704,7 @@ export default function InboxPage() {
           account: context.walletAccount,
           provider: context.provider,
           helperAddress: context.helperAddress,
+          recoveryAddress: context.address,
           tokenAddress: constants.addrSTRK,
           recipient: request.requester,
           amount: request.amount,

@@ -56,12 +56,13 @@ type BuildMailActionsInput = {
 };
 
 /**
- * Backward-compatible facade for the compose screen. Typed text is invoke-only;
- * an explicit attachment is one numeric transfer followed by the memo invoke.
+ * Backward-compatible facade for the compose screen. Every helper invoke has a
+ * recovery open note; an attachment adds one numeric transfer before it.
  */
 export function buildMailActions({
   helperAddress,
   tokenAddress,
+  senderAddress,
   recipientAddress,
   record,
   attachmentAmount,
@@ -70,11 +71,17 @@ export function buildMailActions({
     throw new Error("A deployed mail helper is required before sending.");
   }
   if (attachmentAmount === undefined) {
-    return buildMailInvokeActions({ helperAddress, tokenAddress, record });
+    return buildMailInvokeActions({
+      helperAddress,
+      tokenAddress,
+      recoveryAddress: senderAddress,
+      record,
+    });
   }
   return buildMemoTransferActions({
     helperAddress,
     tokenAddress,
+    recoveryAddress: senderAddress,
     recipient: recipientAddress,
     amount: attachmentAmount,
     record,
