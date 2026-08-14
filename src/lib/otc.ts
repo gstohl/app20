@@ -288,7 +288,7 @@ export function parsePaymentRequestPayload(
   };
 }
 
-export function createRandom32ByteId(): string {
+function createRandom32ByteId(): string {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(32));
   return `0x${Array.from(bytes, (byte) =>
     byte.toString(16).padStart(2, "0"),
@@ -344,7 +344,7 @@ export function assertSettlesStrk(offer: OfferPayload): void {
   }
 }
 
-export function assertPaysStrk(request: PaymentRequestPayload): void {
+function assertPaysStrk(request: PaymentRequestPayload): void {
   if (!feltEquals(request.token.address, addrSTRK)) {
     throw new Error("Quietline payment v1 can pay only STRK invoices.");
   }
@@ -533,7 +533,7 @@ export function loadOtcState(
   }
 }
 
-export function saveOtcState(
+function saveOtcState(
   storage: StorageLike,
   chainId: string,
   selfAddress: string,

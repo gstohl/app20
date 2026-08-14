@@ -115,7 +115,7 @@ export type Strk20Capability = {
 };
 
 /** STRK20 wallet methods landed in Wallet API 0.10. */
-export function supportsWalletApi010(version: string): boolean {
+function supportsWalletApi010(version: string): boolean {
   const match = /^v?(\d+)\.(\d+)/i.exec(version.trim());
   if (!match) return false;
 
@@ -165,7 +165,7 @@ export class Strk20WaitTimeoutError extends Error {
   }
 }
 
-export async function waitForStrk20Transaction(
+async function waitForStrk20Transaction(
   provider: ProviderInterface,
   transactionHash: string,
   timeoutMs = STRK20_WAIT_TIMEOUT_MS

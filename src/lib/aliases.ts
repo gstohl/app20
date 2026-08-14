@@ -76,7 +76,7 @@ export function findAliasByAddress(
   return aliases.find((record) => feltEquals(record.address, address));
 }
 
-export function findAliasByLabel(
+function findAliasByLabel(
   aliases: readonly AliasRecord[],
   label: string,
 ): AliasRecord | undefined {
