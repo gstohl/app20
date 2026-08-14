@@ -1,0 +1,140 @@
+use quietline_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use quietline_mail::{
+    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, OpenNoteDeposit, QuietlineMail,
+};
+use snforge_std::{
+    CheatSpan, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait,
+    cheat_caller_address, declare, spy_events,
+};
+use starknet::ContractAddress;
+
+fn contract_address(value: felt252) -> ContractAddress {
+    value.try_into().unwrap()
+}
+
+fn deploy_helper(pool: ContractAddress) -> (ContractAddress, IQuietlineMailDispatcher) {
+    let contract = declare("QuietlineMail").unwrap().contract_class();
+    let (address, _) = contract.deploy(@array![pool.into()]).unwrap();
+    (address, IQuietlineMailDispatcher { contract_address: address })
+}
+
+fn deploy_token(
+    recipient: ContractAddress, supply: u256,
+) -> (ContractAddress, IMockErc20Dispatcher) {
+    let contract = declare("MockErc20").unwrap().contract_class();
+    let mut calldata = array![recipient.into()];
+    supply.serialize(ref calldata);
+    let (address, _) = contract.deploy(@calldata).unwrap();
+    (address, IMockErc20Dispatcher { contract_address: address })
+}
+
+fn invoke(
+    helper_address: ContractAddress,
+    helper: IQuietlineMailDispatcher,
+    pool: ContractAddress,
+    token: ContractAddress,
+    note_id: felt252,
+    ct: Array<felt252>,
+) -> Span<OpenNoteDeposit> {
+    cheat_caller_address(helper_address, pool, CheatSpan::TargetCalls(1));
+    helper
+        .privacy_invoke(
+            token, contract_address(0x999), note_id, (0x111, 0x222), 0x7a, (0x333, 0x444), ct,
+        )
+}
+
+#[test]
+#[should_panic(expected: ('BAD_POOL',))]
+fn non_pool_caller_reverts() {
+    let pool = contract_address(0x100);
+    let (_helper_address, helper) = deploy_helper(pool);
+
+    helper
+        .privacy_invoke(
+            contract_address(0x200),
+            contract_address(0x300),
+            0x400,
+            (0x1, 0x2),
+            3,
+            (0x4, 0x5),
+            array![0x6],
+        );
+}
+
+#[test]
+fn post_emits_event_with_exact_payload() {
+    let pool = contract_address(0x101);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, _) = deploy_token(pool, 0);
+    let mut spy = spy_events();
+    let expected_ct = array![0x2, 0xabc, 0xdef];
+
+    let deposits = invoke(
+        helper_address, helper, pool, token_address, 0x515, array![0x2, 0xabc, 0xdef],
+    );
+
+    assert(deposits.is_empty(), 'expected no deposit');
+    spy
+        .assert_emitted(
+            @array![
+                (
+                    helper_address,
+                    QuietlineMail::Event::MessagePosted(
+                        QuietlineMail::MessagePosted {
+                            index: 0,
+                            eph_pk: (0x111, 0x222),
+                            view_tag: 0x7a,
+                            nonce: (0x333, 0x444),
+                            ct: expected_ct.span(),
+                        },
+                    ),
+                ),
+            ],
+        );
+    assert(helper.message_count() == 1, 'wrong message count');
+}
+
+#[test]
+fn zero_balance_returns_empty_span() {
+    let pool = contract_address(0x102);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, _) = deploy_token(pool, 1_000);
+
+    let deposits = invoke(helper_address, helper, pool, token_address, 0x616, array![0x1, 0xbeef]);
+
+    assert(deposits.is_empty(), 'expected empty deposit span');
+    assert(helper.message_count() == 1, 'message was not posted');
+}
+
+#[test]
+fn dust_balance_is_approved_and_echoed() {
+    let pool = contract_address(0x103);
+    let (helper_address, helper) = deploy_helper(pool);
+    let (token_address, token) = deploy_token(pool, 1_000);
+    let dust: u256 = 100;
+
+    cheat_caller_address(token_address, pool, CheatSpan::TargetCalls(1));
+    assert(token.transfer(helper_address, dust), 'dust transfer failed');
+
+    let deposits = invoke(helper_address, helper, pool, token_address, 0x717, array![0x1, 0xcafe]);
+
+    assert(deposits.len() == 1, 'expected one deposit');
+    let deposit = *deposits.at(0);
+    assert(deposit.note_id == 0x717, 'wrong note id');
+    assert(deposit.token == token_address, 'wrong token');
+    assert(deposit.amount == 100, 'wrong amount');
+    assert(token.allowance(helper_address, pool) == dust, 'dust was not approved');
+}
+
+#[test]
+fn register_and_get_pubkey_roundtrip() {
+    let pool = contract_address(0x104);
+    let registrant = contract_address(0x105);
+    let (helper_address, helper) = deploy_helper(pool);
+
+    cheat_caller_address(helper_address, registrant, CheatSpan::TargetCalls(1));
+    helper.register_pubkey((0x123456, 0xabcdef));
+
+    assert(helper.get_pubkey(registrant) == (0x123456, 0xabcdef), 'pubkey mismatch');
+    assert(helper.get_pubkey(contract_address(0x106)) == (0, 0), 'unexpected pubkey');
+}
