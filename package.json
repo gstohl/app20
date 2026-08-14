@@ -8,8 +8,10 @@
     "devnet": "bash scripts/devnet.sh",
     "devnet:stop": "bash scripts/devnet.sh stop",
     "start": "next start",
-    "test": "vitest run",
+    "test": "vitest run src",
     "test:e2e": "node scripts/e2e-mail.mjs",
+    "pool:setup": "bash scripts/pool-harness-setup.sh",
+    "test:e2e:pool": "bash scripts/pool-harness-setup.sh --check && PATH=\"$PWD/vendor/bin:$PATH\" npm --prefix pool-harness test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

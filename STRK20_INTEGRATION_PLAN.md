@@ -152,6 +152,21 @@ Devnet 0.9.2 image pin: `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f4638
 
 The local e2e deploys the helper, registers a recipient key, encrypts an exact plaintext, posts as the configured **mock pool caller**, scans and decrypts the event, confirms a wrong key sees zero messages, and proves the 0.001 STRK dust balance is approved, echoed, and pulled back. It does **not** run the real STRK20 pool, Ready Wallet API action assembly, `${poolAddress}` / `${openNoteIds[0]}` resolution, SNIP-36 proving, relayer submission, note maturity/discovery, screening, pool fees, or two-wallet Sepolia behavior.
 
+### 6.4 Phase 2 hardening — local real-pool harness
+
+The optional `pool-harness/` tier pins upstream `PRIVACY-0.14.3-RC.5`, builds it
+with a repository-local Scarb 2.17.0, and uses native Starknet Devnet
+0.8.0-rc.3. `npm run test:e2e:pool` deploys the actual `privacy_Privacy`
+contract and exercises Bob registration, Alice's screened 100-unit STRK deposit
+plus 50-unit private transfer, direct contract discovery, and Bob's 50-unit
+withdrawal. It complements rather than replaces the mock-pool mail e2e.
+
+This hardening tier uses upstream's simulated proof provider and the canonical
+public **test-only** screening key `0xCAFEBABE`. Devnet does not implement
+`starknet_getStorageProof`; a real STARK proof still requires hosted proving
+services and a storage-proof-capable node such as Pathfinder. Ready plus the
+manual Sepolia two-wallet gate therefore remains open.
+
 ## 7. Phase 3 — discover + decrypt + memo
 
 Status: not started.
@@ -183,7 +198,7 @@ Deadline: **31 Aug 2026, 23:59 UTC**.
 
 **Cairo (from `cairo/`):** `scarb build` · `snforge test`.
 
-**Local integration:** `npm run devnet` · `npm run test:e2e`; this is the mock-pool scope recorded in §6.3, not a real STRK20 proof.
+**Local integration:** `npm run devnet` · `npm run test:e2e` covers the mock-pool scope in §6.3. After the optional one-time `npm run pool:setup`, `npm run test:e2e:pool` covers the §6.4 real-pool/simulated-proof tier. Neither is a real STARK proof.
 
 **Manual — Phase 1:** Ready connect, degrade, Sepolia shield / transfer / unshield.
 

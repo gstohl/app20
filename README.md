@@ -65,7 +65,9 @@ Install JavaScript dependencies with `npm ci`. Cairo commands run from the
 | --- | --- | --- |
 | `npm test` | root | Mail crypto, felt packing, view-tag scanning, and STRK20 mail-action assembly |
 | `npm run devnet` | root | Starts the Docker Starknet Devnet used by the local integration test |
-| `npm run test:e2e` | root | Builds and deploys the helper, registers a key, posts mail, scans/decrypts, rejects a wrong key, and exercises dust echo |
+| `npm run test:e2e` | root | Builds and deploys the helper, registers a key, posts mail, scans/decrypts, rejects a wrong key, and exercises dust echo against the mock pool caller |
+| `npm run pool:setup` | root | One-time pinned vendor/toolchain build for the isolated real-pool harness (Node >=24) |
+| `npm run test:e2e:pool` | root | Deploys the real `privacy_Privacy` pool, then runs register → deposit/private transfer → discover → withdraw |
 | `scarb build` | `cairo/` | Compiles the Cairo helper and mock ERC-20 |
 | `snforge test` | `cairo/` | Runs helper authorization, ciphertext-cap, caller-isolated directory, event, zero-balance, and dust tests |
 
@@ -73,11 +75,23 @@ Use `npm run devnet:stop` when finished. The default Devnet 0.9.2 image is
 pinned as `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`,
 and the container port is published on `127.0.0.1` only.
 
-**Devnet caveat:** this flow exercises a **MOCK pool caller only**. It does not
-run the real STRK20 pool, Ready, SNIP-36 proving, wallet placeholder resolution,
-or private note discovery. Real STRK20 proving and discovery still require
-Ready plus an intentionally configured Sepolia deployment and manual test.
-Neither local testing nor this status claims a Sepolia/mainnet send.
+`npm run pool:setup` clones the recon-pinned upstream RC into ignored `vendor/`,
+installs Scarb 2.17.0 and Universal Sierra Compiler 2.8.0 there without changing
+the Scarb used by `cairo/`, builds the vendored SDK, and downloads native
+Starknet Devnet 0.8.0-rc.3. The separate `pool-harness/` package keeps the main
+`npm ci` independent of that optional build.
+
+**Mock-pool caveat:** `npm run test:e2e` exercises a **MOCK pool caller only**.
+It does not run the real STRK20 pool, Ready, SNIP-36 proving, wallet placeholder
+resolution, or private note discovery.
+
+**Real-pool caveat:** `npm run test:e2e:pool` exercises the **real pool + real
+direct contract discovery + upstream's SIMULATED proof**. Devnet cannot serve
+`starknet_getStorageProof`, so real STARK proving needs hosted proving services
+and a storage-proof-capable node such as Pathfinder. Deposit screening uses the
+canonical public test key `0xCAFEBABE`, which is test-only material. This tier
+still does not exercise Ready or close the intentionally configured
+Sepolia/manual validation gap. Neither local tier claims a Sepolia/mainnet send.
 
 ```bash
 npm run typecheck

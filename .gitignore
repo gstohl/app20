@@ -2,6 +2,7 @@
 node_modules/
 .pnp
 .pnp.js
+vendor/
 
 # next / build
 .next/
