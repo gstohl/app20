@@ -430,6 +430,7 @@ export default function InboxPage() {
   async function handleAccept(offer: OfferPayload, offerIndex?: number) {
     const actionKey = `deal:${offer.dealId}`;
     let claimed = false;
+    let walletSubmitted = false;
     try {
       const context = requireActionContext();
       const accept = acceptPayloadForOffer(offer, offerIndex);
@@ -467,6 +468,7 @@ export default function InboxPage() {
         {
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
+            walletSubmitted = true;
             confirmOtcAccept(
               window.localStorage,
               context.chainId,
@@ -504,7 +506,7 @@ export default function InboxPage() {
       });
       void scanInbox();
     } catch (error: unknown) {
-      if (claimed && address && chainId) {
+      if (claimed && !walletSubmitted && address && chainId) {
         releaseOtcAccept(
           window.localStorage,
           chainId,
@@ -601,6 +603,7 @@ export default function InboxPage() {
   async function handlePay(request: PaymentRequestPayload) {
     const actionKey = `payment:${request.requestId}`;
     let claimed = false;
+    let walletSubmitted = false;
     try {
       const context = requireActionContext();
       claimPayment(
@@ -643,6 +646,7 @@ export default function InboxPage() {
         {
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
+            walletSubmitted = true;
             const receipt = receiptForTransfer(
               request.requestId,
               transfer,
@@ -677,7 +681,7 @@ export default function InboxPage() {
       });
       void scanInbox();
     } catch (error: unknown) {
-      if (claimed && address && chainId) {
+      if (claimed && !walletSubmitted && address && chainId) {
         releasePayment(
           window.localStorage,
           chainId,
