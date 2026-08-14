@@ -49,6 +49,7 @@ type ThreadProps = {
   otcState: OtcState;
   actionStates: Record<string, ThreadActionState>;
   onScan: () => void;
+  onScanOlder: () => void;
   onAccept: (offer: OfferPayload, offerIndex?: number) => void;
   onDecline: (offer: OfferPayload) => void;
   onPostReceipt: (offer: OfferPayload) => void;
@@ -238,6 +239,7 @@ export default function Thread({
   otcState,
   actionStates,
   onScan,
+  onScanOlder,
   onAccept,
   onDecline,
   onPostReceipt,
@@ -376,19 +378,30 @@ export default function Thread({
           <p className={styles.kicker}>LOCAL PLAINTEXT ONLY</p>
           <h2 className={styles.cardTitle}>Inbox</h2>
         </div>
-        <button
-          className={styles.secondaryButton}
-          type="button"
-          onClick={onScan}
-          disabled={!canScan || scanning}
-        >
-          {scanning ? "Scanning…" : "Scan public events"}
-        </button>
+        <div className={styles.scanActions}>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={onScan}
+            disabled={!canScan || scanning}
+          >
+            {scanning ? "Scanning…" : "Scan recent events"}
+          </button>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={onScanOlder}
+            disabled={!canScan || scanning}
+          >
+            Scan older
+          </button>
+        </div>
       </div>
 
       <p className={styles.copy}>
-        Quietline downloads public ciphertext events and trial-decrypts them in
-        this tab. Typed letters, offers, responses, receipts, and invoices are
+        Quietline downloads bounded pages of recent public ciphertext and
+        trial-decrypts them in this tab. Use Scan older explicitly for earlier
+        windows. Typed letters, offers, responses, receipts, and invoices are
         rendered as paper sheets. Aliases and deal state stay in this browser;
         clearing site data wipes them.
       </p>

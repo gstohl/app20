@@ -1,7 +1,7 @@
 "use client";
 
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -14,12 +14,27 @@ import Thread, {
 } from "@/components/mail/Thread";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { encodeEnvelope } from "@/lib/envelope";
-import type { EncryptedMailRecord, MailKeypair } from "@/lib/mail";
-import {
-  encryptMail,
-  publicKeyFromFelts,
-  scanAndDecrypt,
+import type {
+  DecryptedMail,
+  EncryptedMailRecord,
+  MailKeypair,
 } from "@/lib/mail";
+import { encryptMail, publicKeyFromFelts } from "@/lib/mail";
+import {
+  MAIL_SCAN_CHUNK_SIZE,
+  MAIL_SCAN_MAX_MESSAGES,
+  MAIL_SCAN_MAX_PAGES,
+  completeMailScan,
+  loadMailScanCursor,
+  mailScanCursorKey,
+  normalizeContinuationToken,
+  parseMailEvent,
+  pauseMailScan,
+  planMailScan,
+  saveMailScanCursor,
+  type MailEvent,
+  type ParsedMailEvent,
+} from "@/lib/mail-scan";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
 import {
   acceptPayloadForOffer,
@@ -55,20 +70,13 @@ import {
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
-type MailEvent = {
-  keys: string[];
-  data: string[];
-  transaction_hash: string;
-  block_number?: number;
-  event_index?: number;
-};
+type ScanWorkerResponse =
+  | { ok: true; decrypted: DecryptedMail[] }
+  | { ok: false; message: string };
 
-type ParsedMailEvent = {
-  record: EncryptedMailRecord;
-  index: string;
-  transactionHash: string;
-  blockNumber?: number;
-  eventIndex?: number;
+type ActiveScanWorker = {
+  worker: Worker;
+  reject: (error: Error) => void;
 };
 
 function helperForNetwork(providerIndex: number): string | null {
@@ -85,6 +93,34 @@ function helperForNetwork(providerIndex: number): string | null {
   } catch {
     return null;
   }
+}
+
+function mailKeyFingerprint(keypair: MailKeypair | null): string {
+  if (!keypair) return "";
+  return Array.from(keypair.publicKey, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function sortMailMessages(messages: LocalMailMessage[]): LocalMailMessage[] {
+  return messages.sort((left, right) => {
+    const blockDifference =
+      (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
+    if (blockDifference) return blockDifference;
+    return (right.eventIndex ?? -1) - (left.eventIndex ?? -1);
+  });
+}
+
+function mergeMailMessages(
+  current: LocalMailMessage[],
+  incoming: LocalMailMessage[],
+): LocalMailMessage[] {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  for (const message of incoming) byId.set(message.id, message);
+  return sortMailMessages([...byId.values()]).slice(
+    0,
+    MAIL_SCAN_MAX_MESSAGES,
+  );
 }
 
 function parseBlockTimestamp(value: unknown): number | undefined {
@@ -112,39 +148,6 @@ function parseBlockTimestamp(value: unknown): number | undefined {
   }
 }
 
-function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
-  try {
-    if (event.keys.length < 2 || event.data.length < 6) return null;
-    const ciphertextLength = Number(BigInt(event.data[5]));
-    const viewTag = Number(BigInt(event.data[2]));
-    if (
-      !Number.isSafeInteger(ciphertextLength) ||
-      ciphertextLength < 0 ||
-      event.data.length !== 6 + ciphertextLength ||
-      !Number.isInteger(viewTag) ||
-      viewTag < 0 ||
-      viewTag > 255
-    ) {
-      return null;
-    }
-
-    return {
-      index: BigInt(event.keys[1]).toString(),
-      transactionHash: event.transaction_hash,
-      blockNumber: event.block_number,
-      eventIndex: event.event_index,
-      record: {
-        ephemeralPub: [event.data[0], event.data[1]],
-        viewTag,
-        nonce: [event.data[3], event.data[4]],
-        ciphertextFelts: event.data.slice(6),
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
 export default function InboxPage() {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
@@ -165,8 +168,63 @@ export default function InboxPage() {
 
   const helperAddress = helperForNetwork(providerIndex);
   const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
+  const keyFingerprint = mailKeyFingerprint(keypair);
+  const scanIdentity = [
+    providerIndex,
+    chainId,
+    address,
+    helperAddress,
+    keyFingerprint,
+  ].join(":");
+  const scanGenerationRef = useRef(0);
+  const scanIdentityRef = useRef(scanIdentity);
+  const recentLoadedRef = useRef(false);
+  const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
+  scanIdentityRef.current = scanIdentity;
+
+  function cancelActiveScanWorker() {
+    const active = scanWorkerRef.current;
+    if (!active) return;
+    scanWorkerRef.current = null;
+    active.worker.terminate();
+    active.reject(new Error("Mail scan cancelled."));
+  }
+
+  function decryptMailRecords(
+    privateKey: Uint8Array,
+    records: EncryptedMailRecord[],
+  ): Promise<DecryptedMail[]> {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(
+        new URL("../../workers/mail-scan.worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      const active: ActiveScanWorker = { worker, reject };
+      scanWorkerRef.current = active;
+
+      function finish() {
+        worker.terminate();
+        if (scanWorkerRef.current === active) scanWorkerRef.current = null;
+      }
+
+      worker.onmessage = (event: MessageEvent<ScanWorkerResponse>) => {
+        finish();
+        if (event.data.ok) resolve(event.data.decrypted);
+        else reject(new Error(event.data.message));
+      };
+      worker.onerror = () => {
+        finish();
+        reject(new Error("The background mailbox scanner failed."));
+      };
+      worker.postMessage({ privateKey, records });
+    });
+  }
 
   useEffect(() => {
+    scanGenerationRef.current += 1;
+    cancelActiveScanWorker();
+    recentLoadedRef.current = false;
+    setScanning(false);
     setKeypair(null);
     setMessages([]);
     setScanMessage("");
@@ -180,6 +238,10 @@ export default function InboxPage() {
       setAliases([]);
       setOtcState(emptyOtcState());
     }
+    return () => {
+      scanGenerationRef.current += 1;
+      cancelActiveScanWorker();
+    };
   }, [address, chainId, providerIndex]);
 
   function setActionState(key: string, state: ThreadActionState) {
@@ -296,63 +358,135 @@ export default function InboxPage() {
     refreshOtcState();
   }
 
-  async function scanInbox() {
+  function handleKeyReady(nextKeypair: MailKeypair) {
+    scanGenerationRef.current += 1;
+    cancelActiveScanWorker();
+    recentLoadedRef.current = false;
+    setScanning(false);
+    setMessages([]);
+    setScanMessage("");
+    setKeypair(nextKeypair);
+  }
+
+  async function scanInbox(requested: "newer" | "older" = "newer") {
     if (!keypair) {
       setScanMessage("Load this device's mail key before scanning.");
       return;
     }
     if (!helperAddress) {
-      setScanMessage(`No QuietlineMail helper is configured on ${networkName}.`);
+      setScanMessage(
+        `No QuietlineMail helper is configured on ${networkName}.`,
+      );
+      return;
+    }
+    if (!address || !chainId || !keyFingerprint) {
+      setScanMessage("Connect the mailbox account before scanning.");
       return;
     }
 
+    const generation = ++scanGenerationRef.current;
+    cancelActiveScanWorker();
+    const identity = scanIdentity;
+    const privateKey = keypair.privateKey;
+    const isCurrentScan = () =>
+      generation === scanGenerationRef.current &&
+      identity === scanIdentityRef.current;
+
     setScanning(true);
-    setScanMessage("Downloading public MessagePosted events…");
+    setScanMessage(
+      requested === "older"
+        ? "Planning a bounded older-message scan…"
+        : "Planning a bounded recent-message scan…",
+    );
 
     try {
       const provider = constants.myFrontendProviders[providerIndex];
       const selector = hash.getSelectorFromName("MessagePosted");
-      const events: MailEvent[] = [];
-      const seenTokens = new Set<string>();
-      let continuationToken: string | undefined;
+      const latestBlock = await provider.getBlockNumber();
+      if (!isCurrentScan()) return;
 
-      do {
+      const cursorKey = mailScanCursorKey(
+        chainId,
+        address,
+        helperAddress,
+        keyFingerprint,
+      );
+      const cursor = loadMailScanCursor(window.localStorage, cursorKey);
+      const range = planMailScan(
+        cursor,
+        latestBlock,
+        requested,
+        recentLoadedRef.current,
+      );
+      if (!range) {
+        setScanMessage(
+          requested === "older"
+            ? "The persisted mailbox cursor has reached genesis."
+            : "No newer blocks are available; the bounded recent scan is current.",
+        );
+        return;
+      }
+
+      setScanMessage(
+        `Scanning ${range.direction} blocks ${range.fromBlock}–${range.toBlock} in bounded pages…`,
+      );
+      const parsed: ParsedMailEvent[] = [];
+      const seenTokens = new Set<string>();
+      let continuationToken = range.continuationToken;
+      if (continuationToken) seenTokens.add(continuationToken);
+      let pages = 0;
+
+      while (pages < MAIL_SCAN_MAX_PAGES) {
         const chunk = await provider.getEvents({
           address: helperAddress,
-          from_block: { block_number: 0 },
-          to_block: "latest",
+          from_block: { block_number: range.fromBlock },
+          to_block: { block_number: range.toBlock },
           keys: [[selector]],
-          chunk_size: 100,
+          chunk_size: MAIL_SCAN_CHUNK_SIZE,
           ...(continuationToken
             ? { continuation_token: continuationToken }
             : {}),
         });
-        events.push(...(chunk.events as MailEvent[]));
-        continuationToken = chunk.continuation_token;
-        if (continuationToken) {
-          if (seenTokens.has(continuationToken)) {
-            throw new Error("The RPC repeated an event continuation token.");
-          }
-          seenTokens.add(continuationToken);
+        if (!isCurrentScan()) return;
+        if (
+          !Array.isArray(chunk.events) ||
+          chunk.events.length > MAIL_SCAN_CHUNK_SIZE
+        ) {
+          throw new Error("The RPC exceeded the bounded mail event page size.");
         }
-      } while (continuationToken);
 
-      const parsed = events
-        .map(parseMailEvent)
-        .filter((event): event is ParsedMailEvent => event !== null);
-      const decrypted = await scanAndDecrypt(
-        keypair.privateKey,
+        for (const rpcEvent of chunk.events) {
+          const event = parseMailEvent(rpcEvent as MailEvent);
+          if (event) parsed.push(event);
+        }
+        pages += 1;
+
+        const nextToken = normalizeContinuationToken(chunk.continuation_token);
+        if (!nextToken) {
+          continuationToken = undefined;
+          break;
+        }
+        if (seenTokens.has(nextToken)) {
+          throw new Error("The RPC repeated an event continuation token.");
+        }
+        seenTokens.add(nextToken);
+        continuationToken = nextToken;
+      }
+
+      const decrypted = await decryptMailRecords(
+        privateKey,
         parsed.map((event) => event.record),
       );
-      // Fetch every public event block so timestamp lookups do not reveal
-      // which records matched this device's private key.
+      if (!isCurrentScan()) return;
+
+      // Fetch every processed public event block so timestamp requests do not
+      // reveal which bounded records matched this device's private key.
       const eventBlockNumbers = [
         ...new Set(
           parsed
             .map((event) => event.blockNumber)
             .filter(
-              (blockNumber): blockNumber is number =>
-                blockNumber !== undefined,
+              (blockNumber): blockNumber is number => blockNumber !== undefined,
             ),
         ),
       ];
@@ -367,21 +501,22 @@ export default function InboxPage() {
               ? null
               : ([blockNumber, timestamp] as const);
           } catch {
-            // Optional timestamp evidence must not prevent local decryption.
             return null;
           }
         }),
       );
+      if (!isCurrentScan()) return;
+
       const timestampsByBlock = new Map(
         timestampEntries.filter(
           (entry): entry is readonly [number, number] => entry !== null,
         ),
       );
-      const localMessages = decrypted
-        .map((message) => {
+      const localMessages = sortMailMessages(
+        decrypted.map((message) => {
           const event = parsed[message.index];
           return {
-            id: `${event.transactionHash}:${event.eventIndex ?? message.index}`,
+            id: `${event.transactionHash}:${event.eventIndex ?? event.index}`,
             index: event.index,
             plaintext: message.plaintext,
             envelope: message.envelope,
@@ -394,27 +529,37 @@ export default function InboxPage() {
                 : timestampsByBlock.get(event.blockNumber),
             eventIndex: event.eventIndex,
           } satisfies LocalMailMessage;
-        })
-        .sort((left, right) => {
-          const blockDifference =
-            (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
-          if (blockDifference) return blockDifference;
-          return (right.eventIndex ?? -1) - (left.eventIndex ?? -1);
-        });
+        }),
+      );
 
-      setMessages(localMessages);
+      const nextCursor = continuationToken
+        ? pauseMailScan(cursor, range, continuationToken)
+        : completeMailScan(cursor, range);
+      saveMailScanCursor(window.localStorage, cursorKey, nextCursor);
+      if (!continuationToken && range.toBlock === latestBlock) {
+        recentLoadedRef.current = true;
+      }
+      if (!isCurrentScan()) return;
+
+      setMessages((current) => mergeMailMessages(current, localMessages));
       mergeLocalDealState(localMessages);
       setScanMessage(
         `Decrypted ${localMessages.length} of ${parsed.length} valid ciphertext event${
           parsed.length === 1 ? "" : "s"
-        } locally.`,
+        } across ${pages} bounded page${pages === 1 ? "" : "s"}.${
+          continuationToken
+            ? " Page budget reached; scan again to resume the persisted continuation token."
+            : " Cursor saved."
+        }`,
       );
     } catch (error: unknown) {
-      setScanMessage(
-        error instanceof Error ? error.message : "Mailbox scan failed.",
-      );
+      if (isCurrentScan()) {
+        setScanMessage(
+          error instanceof Error ? error.message : "Mailbox scan failed.",
+        );
+      }
     } finally {
-      setScanning(false);
+      if (isCurrentScan()) setScanning(false);
     }
   }
 
@@ -801,7 +946,7 @@ export default function InboxPage() {
           <Onboard
             key={`${providerIndex}:${address}`}
             helperAddress={helperAddress}
-            onKeyReady={setKeypair}
+            onKeyReady={handleKeyReady}
           />
           <Compose
             helperAddress={helperAddress}
@@ -821,7 +966,8 @@ export default function InboxPage() {
           aliases={aliases}
           otcState={otcState}
           actionStates={actionStates}
-          onScan={() => void scanInbox()}
+          onScan={() => void scanInbox("newer")}
+          onScanOlder={() => void scanInbox("older")}
           onAccept={(offer, index) => void handleAccept(offer, index)}
           onDecline={(offer) => void handleDecline(offer)}
           onPostReceipt={(offer) => void handlePostReceipt(offer)}
