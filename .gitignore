@@ -8,6 +8,7 @@ node_modules/
 out/
 dist/
 build/
+.e2e-build/
 .turbo/
 
 # env — never commit keys

@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "../.e2e-build",
+    "rootDir": "../src/lib",
+    "declaration": false,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "files": ["../src/lib/mail.ts"]
+}

@@ -5,8 +5,11 @@
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
+    "devnet": "bash scripts/devnet.sh",
+    "devnet:stop": "bash scripts/devnet.sh stop",
     "start": "next start",
     "test": "vitest run",
+    "test:e2e": "node scripts/e2e-mail.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
