@@ -58,6 +58,7 @@ describe("mail STRK20 actions", () => {
           "0x2",
           "0xabc",
           "0xdef",
+          "0x0",
         ],
       },
     ]);
@@ -98,6 +99,7 @@ describe("mail STRK20 actions", () => {
           "0x2",
           "0xabc",
           "0xdef",
+          "0x0",
         ],
       },
     ]);

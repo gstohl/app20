@@ -1,7 +1,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
-import { num, walletV6 } from "starknet";
+import { hash, num, walletV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { assertSettlesStrk, type OfferPayload } from "./otc";
 import { addrSTRK } from "../utils/constants";
@@ -16,7 +16,18 @@ export type MailInvokeBatchInput = {
   recoveryAddress: string;
   record: EncryptedMailRecord;
   tokenAddress?: string;
+  /** Non-zero makes the helper reject a replay of this exact action on-chain. */
+  actionId?: string;
 };
+
+/**
+ * Deal and request ids are 32 random bytes, which can exceed the felt252 range,
+ * so they are hashed into field-safe ids. Deterministic on purpose: a retry
+ * reuses the id, so a duplicate submission reverts instead of paying twice.
+ */
+export function computeActionId(kind: string, id: string): string {
+  return num.toHex(hash.starknetKeccak(`quietline/action/v1/${kind}/${id}`));
+}
 
 export type MemoTransferBatchInput = MailInvokeBatchInput & {
   recipient: string;
@@ -48,6 +59,7 @@ function buildMailInvokeAction({
   helperAddress,
   record,
   tokenAddress = addrSTRK,
+  actionId = "0x0",
 }: MailInvokeBatchInput): WALLET_API.STRK20_INVOKE_ACTION {
   assertConfiguredHelper(helperAddress);
   return {
@@ -64,6 +76,7 @@ function buildMailInvokeAction({
       record.nonce[1],
       num.toHex(record.ciphertextFelts.length),
       ...record.ciphertextFelts,
+      actionId,
     ],
   };
 }
@@ -116,6 +129,7 @@ export function buildOtcAcceptActions({
     tokenAddress: addrSTRK,
     recipient: offer.offerer,
     amount: offer.give.amount,
+    actionId: mail.actionId ?? computeActionId("otc-accept", offer.dealId),
   });
 }
 
