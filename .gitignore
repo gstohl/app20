@@ -39,6 +39,7 @@ target/
 .pi-smart-router/
 .pi-lens/
 .claude/
+/rules/
 
 # typescript
 *.tsbuildinfo
