@@ -64,6 +64,9 @@ export type DealRecord = {
   receipt?: ReceiptPayload;
   acceptTxHash?: string;
   acceptPending?: boolean;
+  settlementVerified?: boolean;
+  counterpartyAcceptClaim?: AcceptPayload;
+  counterpartyReceiptClaim?: ReceiptPayload;
   updatedAt: number;
 };
 
@@ -76,6 +79,8 @@ export type PaymentRecord = {
   receipt?: ReceiptPayload;
   paymentTxHash?: string;
   paymentPending?: boolean;
+  paymentVerified?: boolean;
+  counterpartyPaymentClaim?: AcceptPayload;
   updatedAt: number;
 };
 
@@ -87,9 +92,11 @@ export type OtcState = {
 
 export type OtcDealEvent =
   | { type: "offer"; payload: OfferPayload }
-  | { type: "accept"; payload: AcceptPayload; txHash?: string }
+  | { type: "accept"; payload: AcceptPayload }
+  | { type: "accept_claim"; payload: AcceptPayload }
   | { type: "decline"; payload: DeclinePayload }
   | { type: "receipt"; payload: ReceiptPayload }
+  | { type: "receipt_claim"; payload: ReceiptPayload }
   | { type: "expire" };
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -479,6 +486,37 @@ export function transitionDeal(
     return { ...current, status: "expired", updatedAt: at };
   }
 
+  if (event.type === "accept_claim") {
+    const accept = parseAcceptPayload(event.payload);
+    if (!accept) throw new Error("Invalid OTC accept claim payload.");
+    assertAcceptMatchesOffer(current.offer, accept);
+    return {
+      ...current,
+      counterpartyAcceptClaim: accept,
+      updatedAt: at,
+    };
+  }
+
+  if (event.type === "receipt_claim") {
+    const receipt = parseReceiptPayload(event.payload);
+    if (!receipt) throw new Error("Invalid OTC receipt claim payload.");
+    assertAcceptMatchesOffer(current.offer, {
+      dealId: receipt.dealId,
+      transfer: receipt.transfer,
+    });
+    if (
+      current.acceptTxHash &&
+      !feltEquals(receipt.txHash, current.acceptTxHash)
+    ) {
+      throw new Error("Receipt transaction hash does not match the recorded accept transaction.");
+    }
+    return {
+      ...current,
+      counterpartyReceiptClaim: receipt,
+      updatedAt: at,
+    };
+  }
+
   if (event.type === "accept") {
     if (current.status === "accepted" || current.status === "closed") return current;
     if (current.status !== "offered") {
@@ -491,8 +529,8 @@ export function transitionDeal(
       ...current,
       status: "accepted",
       accept,
-      ...(event.txHash === undefined ? {} : { acceptTxHash: event.txHash }),
       acceptPending: false,
+      settlementVerified: false,
       updatedAt: at,
     };
   }
@@ -508,23 +546,27 @@ export function transitionDeal(
     return { ...current, status: "declined", updatedAt: at };
   }
 
-  if (current.status === "closed") return current;
-  if (current.status !== "accepted" || !current.accept) {
-    throw new Error(`Cannot close a ${current.status} deal.`);
-  }
   const receipt = parseReceiptPayload(event.payload);
+  if (!receipt) throw new Error("Invalid OTC receipt payload.");
   if (
-    !receipt ||
-    !transfersEqual(receipt.transfer, current.accept.transfer)
+    (current.status !== "accepted" && current.status !== "closed") ||
+    !current.accept ||
+    !current.acceptTxHash ||
+    !current.settlementVerified ||
+    !transfersEqual(receipt.transfer, current.accept.transfer) ||
+    !feltEquals(receipt.txHash, current.acceptTxHash)
   ) {
-    throw new Error("Receipt does not match the accepted STRK transfer.");
+    throw new Error(
+      "Receipt does not match the locally verified accept transaction.",
+    );
   }
+  if (current.status === "closed") return current;
   return {
     ...current,
     status: "closed",
     receipt,
-    acceptTxHash: current.acceptTxHash ?? receipt.txHash,
     acceptPending: false,
+    settlementVerified: true,
     updatedAt: at,
   };
 }
@@ -636,7 +678,11 @@ export function claimOtcAccept(
     throw new Error("This deal was already accepted; no second transfer was sent.");
   }
   const next = transitionDeal(current, { type: "accept", payload: accept }, at);
-  const claimed = { ...next, acceptPending: true };
+  const claimed = {
+    ...next,
+    acceptPending: true,
+    settlementVerified: false,
+  };
   state.deals[accept.dealId] = claimed;
   saveOtcState(storage, chainId, selfAddress, state);
   return claimed;
@@ -652,13 +698,21 @@ export function confirmOtcAccept(
 ): DealRecord {
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.deals[dealId];
-  if (!current || current.status !== "accepted" || !current.accept) {
-    throw new Error("No reserved OTC accept can be confirmed.");
+  if (
+    !current ||
+    current.status !== "accepted" ||
+    !current.accept ||
+    !isFelt(transactionHash) ||
+    (current.acceptTxHash !== undefined &&
+      !feltEquals(current.acceptTxHash, transactionHash))
+  ) {
+    throw new Error("No matching reserved OTC accept can be confirmed.");
   }
   const next = {
     ...current,
     acceptTxHash: transactionHash,
     acceptPending: false,
+    settlementVerified: true,
     updatedAt: at,
   };
   state.deals[dealId] = next;
@@ -687,6 +741,12 @@ export function releaseOtcAccept(
     dealId: current.dealId,
     status: offerIsExpired(current.offer, at) ? "expired" : "offered",
     offer: current.offer,
+    ...(current.counterpartyAcceptClaim
+      ? { counterpartyAcceptClaim: current.counterpartyAcceptClaim }
+      : {}),
+    ...(current.counterpartyReceiptClaim
+      ? { counterpartyReceiptClaim: current.counterpartyReceiptClaim }
+      : {}),
     updatedAt: at,
   };
   state.deals[dealId] = next;
@@ -744,6 +804,7 @@ export function claimPayment(
     ...current,
     status: "paid",
     paymentPending: true,
+    paymentVerified: false,
     updatedAt: at,
   };
   state.payments[requestId] = claimed;
@@ -751,19 +812,19 @@ export function claimPayment(
   return claimed;
 }
 
-export function recordPaymentTransfer(
+export function recordUnverifiedPaymentClaim(
   storage: StorageLike,
   chainId: string,
   selfAddress: string,
-  accept: AcceptPayload,
-  transactionHash: string,
+  acceptPayload: AcceptPayload,
   at = nowSeconds(),
 ): PaymentRecord {
+  const accept = parseAcceptPayload(acceptPayload);
+  if (!accept) throw new Error("Invalid payment claim payload.");
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[accept.dealId];
   if (!current) throw new Error("The referenced payment request is not stored locally.");
-  if (current.status === "paid") return current;
-  if (current.status !== "requested" || paymentRequestIsExpired(current.request, at)) {
+  if (paymentRequestIsExpired(current.request, at)) {
     throw new Error("This payment request is no longer payable.");
   }
   assertPaysStrk(current.request);
@@ -773,19 +834,11 @@ export function recordPaymentTransfer(
     to: current.request.requester,
   };
   if (!transfersEqual(accept.transfer, expected)) {
-    throw new Error("Payment memo does not match the requested STRK transfer.");
+    throw new Error("Payment claim does not match the requested STRK transfer.");
   }
-  const receipt = receiptForTransfer(
-    current.requestId,
-    accept.transfer,
-    transactionHash,
-  );
   const next: PaymentRecord = {
     ...current,
-    status: "paid",
-    receipt,
-    paymentTxHash: transactionHash,
-    paymentPending: false,
+    counterpartyPaymentClaim: accept,
     updatedAt: at,
   };
   state.payments[current.requestId] = next;
@@ -809,7 +862,10 @@ export function confirmPayment(
   }
   if (
     receipt.dealId !== requestId ||
-    receipt.txHash !== transactionHash ||
+    !isFelt(transactionHash) ||
+    !feltEquals(receipt.txHash, transactionHash) ||
+    (current.paymentTxHash !== undefined &&
+      !feltEquals(current.paymentTxHash, transactionHash)) ||
     !transfersEqual(receipt.transfer, {
       token: current.request.token,
       amount: current.request.amount,
@@ -823,6 +879,7 @@ export function confirmPayment(
     receipt,
     paymentTxHash: transactionHash,
     paymentPending: false,
+    paymentVerified: true,
     updatedAt: at,
   };
   state.payments[requestId] = next;
@@ -853,6 +910,7 @@ export function releasePayment(
       ? "expired"
       : "requested",
     paymentPending: false,
+    paymentVerified: false,
     updatedAt: at,
   };
   state.payments[requestId] = next;

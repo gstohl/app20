@@ -14,6 +14,8 @@ type InvoiceCardProps = {
   request: PaymentRequestPayload;
   alias?: string;
   status?: PaymentStatus;
+  paymentVerified?: boolean;
+  unverifiedClaim?: boolean;
   busy?: boolean;
   actionMessage?: string;
   onPay?: () => void;
@@ -23,6 +25,8 @@ export default function InvoiceCard({
   request,
   alias,
   status = "requested",
+  paymentVerified = false,
+  unverifiedClaim = false,
   busy = false,
   actionMessage,
   onPay,
@@ -40,8 +44,12 @@ export default function InvoiceCard({
     <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
       <div className={styles.sheetHeading}>
         <span className={styles.sheetType}>PAYMENT REQUEST / ONE-SIDED V1</span>
-        {status === "paid" ? (
-          <span className={styles.proofStamp}>Paid</span>
+        {unverifiedClaim || (status === "paid" && !paymentVerified) ? (
+          <span className={styles.proofStamp}>
+            Unverified counterparty claim
+          </span>
+        ) : status === "paid" ? (
+          <span className={styles.proofStamp}>Payment verified locally</span>
         ) : null}
       </div>
       <p className={styles.termsSentence}>
@@ -68,6 +76,13 @@ export default function InvoiceCard({
           : `Expires ${new Date(request.expiresAt * 1_000).toLocaleString()}`}
         {" · "}Request {request.requestId.slice(0, 12)}…
       </p>
+
+      {unverifiedClaim ? (
+        <p className={styles.actionWarning}>
+          The decrypted payment memo is an unverified counterparty claim. Its
+          MessagePosted transaction does not prove that STRK moved.
+        </p>
+      ) : null}
 
       {!metadataConsistent ? (
         <p className={styles.actionWarning}>

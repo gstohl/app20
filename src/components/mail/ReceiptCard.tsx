@@ -21,19 +21,20 @@ export default function ReceiptCard({
   return (
     <article className={styles.messageSheet}>
       <div className={styles.sheetHeading}>
-        <span className={styles.sheetType}>PRIVATE TRANSFER RECEIPT</span>
-        <span className={styles.proofStamp}>Paid</span>
+        <span className={styles.sheetType}>PRIVATE TRANSFER CLAIM</span>
+        <span className={styles.proofStamp}>Unverified counterparty claim</span>
       </div>
       <p className={styles.termsSentence}>
-        Deal {receipt.dealId.slice(0, 12)}… closed; the {amount}{" "}
-        {receipt.transfer.token.symbol} leg landed in transaction {receipt.txHash}.
+        A counterparty claims the {amount} {receipt.transfer.token.symbol} leg
+        for deal {receipt.dealId.slice(0, 12)}… used transaction {receipt.txHash}.
       </p>
       <p className={styles.riskCopy}>
-        The {wantSymbol} leg was never on this rail. Quietline has no proof that
-        the counterparty paid it, and this is not an atomic swap.
+        This encrypted receipt and its MessagePosted transaction do not prove a
+        transfer. Verify the STRK payment independently before releasing the {wantSymbol}
+        {" "}leg; this is not an atomic swap.
       </p>
       <p className={styles.receiptWarning}>
-        Receipt warning: <strong>{receipt.warning}</strong>
+        Counterparty claim warning: <strong>{receipt.warning}</strong>
       </p>
       <code className={styles.fullHash}>{receipt.txHash}</code>
     </article>

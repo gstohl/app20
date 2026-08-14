@@ -38,7 +38,7 @@ import {
   receiptForTransfer,
   recordDealEvent,
   recordPaymentRequest,
-  recordPaymentTransfer,
+  recordUnverifiedPaymentClaim,
   releaseOtcAccept,
   releasePayment,
   type AcceptPayload,
@@ -248,19 +248,14 @@ export default function InboxPage() {
               window.localStorage,
               chainId,
               address,
-              {
-                type: "accept",
-                payload: accept,
-                txHash: message.transactionHash,
-              },
+              { type: "accept_claim", payload: accept },
             );
           } else if (state.payments[accept.dealId]) {
-            recordPaymentTransfer(
+            recordUnverifiedPaymentClaim(
               window.localStorage,
               chainId,
               address,
               accept,
-              message.transactionHash,
             );
           }
         } else if (envelope.type === "decline") {
@@ -280,7 +275,7 @@ export default function InboxPage() {
               window.localStorage,
               chainId,
               address,
-              { type: "receipt", payload: receipt },
+              { type: "receipt_claim", payload: receipt },
             );
           }
         } else if (envelope.type === "payment_request") {
@@ -645,8 +640,13 @@ export default function InboxPage() {
         context.chainId,
         context.address,
       ).deals[offer.dealId];
-      if (!deal?.accept || !deal.acceptTxHash || deal.status !== "accepted") {
-        throw new Error("No confirmed accept transfer is waiting for a receipt.");
+      if (
+        !deal?.accept ||
+        !deal.acceptTxHash ||
+        !deal.settlementVerified ||
+        deal.status !== "accepted"
+      ) {
+        throw new Error("No locally verified accept transfer is waiting for a receipt.");
       }
       setActionState(actionKey, {
         pending: true,

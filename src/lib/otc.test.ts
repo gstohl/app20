@@ -21,7 +21,7 @@ import {
   receiptForTransfer,
   recordDealEvent,
   recordPaymentRequest,
-  recordPaymentTransfer,
+  recordUnverifiedPaymentClaim,
   transitionDeal,
   type OfferPayload,
   type PaymentRequestPayload,
@@ -126,7 +126,7 @@ describe("OTC payloads", () => {
 });
 
 describe("OTC local state", () => {
-  it("moves none to offered to accepted to closed", () => {
+  it("closes only after a locally verified accept with a matching receipt", () => {
     const offered = transitionDeal(
       undefined,
       { type: "offer", payload: offer() },
@@ -137,18 +137,89 @@ describe("OTC local state", () => {
     const accept = acceptPayloadForOffer(offered.offer);
     const accepted = transitionDeal(
       offered,
-      { type: "accept", payload: accept, txHash: "0xaaa" },
+      { type: "accept", payload: accept },
       1_900_000_001,
     );
-    expect(accepted).toMatchObject({ status: "accepted", acceptTxHash: "0xaaa" });
+    expect(accepted).toMatchObject({
+      status: "accepted",
+      settlementVerified: false,
+    });
 
+    const locallyVerified = {
+      ...accepted,
+      acceptTxHash: "0xaaa",
+      settlementVerified: true,
+    };
     const receipt = receiptForTransfer(dealId, accept.transfer, "0xaaa");
     const closed = transitionDeal(
-      accepted,
+      locallyVerified,
       { type: "receipt", payload: receipt },
       1_900_000_002,
     );
-    expect(closed).toMatchObject({ status: "closed", receipt });
+    expect(closed).toMatchObject({
+      status: "closed",
+      receipt,
+      acceptTxHash: "0xaaa",
+      settlementVerified: true,
+    });
+
+    expect(() =>
+      transitionDeal(
+        locallyVerified,
+        {
+          type: "receipt",
+          payload: receiptForTransfer(dealId, accept.transfer, "0xbbb"),
+        },
+        1_900_000_003,
+      ),
+    ).toThrow(/verified accept transaction/i);
+  });
+
+  it("keeps decrypted accept and receipt envelopes as unverified claims", () => {
+    const offered = transitionDeal(
+      undefined,
+      { type: "offer", payload: offer() },
+      1_900_000_000,
+    );
+    const accept = acceptPayloadForOffer(offered.offer);
+    const acceptClaimed = transitionDeal(
+      offered,
+      { type: "accept_claim", payload: accept },
+      1_900_000_001,
+    );
+
+    expect(acceptClaimed).toMatchObject({
+      status: "offered",
+      counterpartyAcceptClaim: accept,
+    });
+    expect(acceptClaimed.accept).toBeUndefined();
+    expect(acceptClaimed.acceptTxHash).toBeUndefined();
+
+    const receipt = receiptForTransfer(dealId, accept.transfer, "0xaaa");
+    const receiptClaimed = transitionDeal(
+      acceptClaimed,
+      { type: "receipt_claim", payload: receipt },
+      1_900_000_002,
+    );
+    expect(receiptClaimed).toMatchObject({
+      status: "offered",
+      counterpartyReceiptClaim: receipt,
+    });
+    expect(receiptClaimed.acceptTxHash).toBeUndefined();
+
+    expect(() =>
+      transitionDeal(
+        {
+          ...acceptClaimed,
+          status: "accepted",
+          accept,
+          acceptTxHash: "0xbbb",
+          settlementVerified: true,
+        },
+        { type: "receipt_claim", payload: receipt },
+        1_900_000_003,
+      ),
+    ).toThrow(/transaction hash.*recorded accept/i);
   });
 
   it("persists under the chain and self scoped v1 key", () => {
@@ -193,6 +264,7 @@ describe("OTC local state", () => {
       status: "accepted",
       acceptPending: false,
       acceptTxHash: "0xabc",
+      settlementVerified: true,
     });
   });
 
@@ -276,7 +348,7 @@ describe("payment request idempotency", () => {
     ).toThrow(/no second transfer/i);
   });
 
-  it("marks the requester's copy paid from the encrypted transfer memo", () => {
+  it("stores an encrypted payment memo only as an unverified claim", () => {
     const storage = new MemoryStorage();
     const scope = [storage, "SN_SEPOLIA", "0xa11ce"] as const;
     recordPaymentRequest(...scope, request, 1_900_000_000);
@@ -285,27 +357,26 @@ describe("payment request idempotency", () => {
       amount: request.amount,
       to: request.requester,
     };
+    const claim = { dealId: request.requestId, transfer };
 
     expect(
-      recordPaymentTransfer(
+      recordUnverifiedPaymentClaim(
         ...scope,
-        { dealId: request.requestId, transfer },
-        "0x999",
+        claim,
         1_900_000_001,
       ),
     ).toMatchObject({
-      status: "paid",
-      paymentTxHash: "0x999",
-      receipt: { warning: "one_sided_v1" },
+      status: "requested",
+      counterpartyPaymentClaim: claim,
     });
-    expect(
-      recordPaymentTransfer(
-        ...scope,
-        { dealId: request.requestId, transfer },
-        "0x999",
-        1_900_000_002,
-      ).status,
-    ).toBe("paid");
+    const stored = recordUnverifiedPaymentClaim(
+      ...scope,
+      claim,
+      1_900_000_002,
+    );
+    expect(stored.status).toBe("requested");
+    expect(stored.paymentTxHash).toBeUndefined();
+    expect(stored.receipt).toBeUndefined();
   });
 
   it("refuses non-STRK and expired payment requests", () => {

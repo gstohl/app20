@@ -13,6 +13,8 @@ type OfferCardProps = {
   offer: OfferPayload;
   alias?: string;
   status?: DealStatus;
+  settlementVerified?: boolean;
+  unverifiedClaim?: boolean;
   busy?: boolean;
   actionMessage?: string;
   onAccept?: () => void;
@@ -29,6 +31,8 @@ export default function OfferCard({
   offer,
   alias,
   status = "offered",
+  settlementVerified = false,
+  unverifiedClaim = false,
   busy = false,
   actionMessage,
   onAccept,
@@ -51,12 +55,18 @@ export default function OfferCard({
     <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
       <div className={styles.sheetHeading}>
         <span className={styles.sheetType}>OTC OFFER / ONE-SIDED V1</span>
-        {status === "accepted" ? (
-          <span className={styles.proofStamp}>Accepted</span>
+        {unverifiedClaim ||
+        ((status === "accepted" || status === "closed") &&
+          !settlementVerified) ? (
+          <span className={styles.proofStamp}>
+            Unverified counterparty claim
+          </span>
+        ) : status === "accepted" ? (
+          <span className={styles.proofStamp}>Transfer verified locally</span>
         ) : status === "declined" ? (
           <span className={styles.proofStamp}>Declined</span>
         ) : status === "closed" ? (
-          <span className={styles.proofStamp}>Paid</span>
+          <span className={styles.proofStamp}>Receipt posted</span>
         ) : null}
       </div>
 
@@ -84,6 +94,13 @@ export default function OfferCard({
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…
       </p>
       {offer.note ? <p className={styles.offerNote}>{offer.note}</p> : null}
+
+      {unverifiedClaim ? (
+        <p className={styles.actionWarning}>
+          A decrypted memo or receipt is only an unverified counterparty claim.
+          Its MessagePosted transaction does not prove that STRK moved.
+        </p>
+      ) : null}
 
       {!metadataConsistent ? (
         <p className={styles.actionWarning}>
@@ -124,7 +141,7 @@ export default function OfferCard({
         </div>
       ) : null}
 
-      {status === "accepted" && onPostReceipt ? (
+      {status === "accepted" && settlementVerified && onPostReceipt ? (
         <button
           className={styles.secondaryButton}
           type="button"

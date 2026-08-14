@@ -269,12 +269,18 @@ export default function Thread({
           offer={offer}
           alias={findAliasByAddress(aliases, offer.offerer)?.label}
           status={deal?.status}
+          settlementVerified={deal?.settlementVerified}
+          unverifiedClaim={Boolean(
+            deal?.counterpartyAcceptClaim || deal?.counterpartyReceiptClaim,
+          )}
           busy={action?.pending}
           actionMessage={action?.message}
           onAccept={ownOffer ? undefined : () => onAccept(offer, safeOfferIndex(message.index))}
           onDecline={ownOffer ? undefined : () => onDecline(offer)}
           onPostReceipt={
-            ownOffer || deal?.status !== "accepted"
+            ownOffer ||
+            deal?.status !== "accepted" ||
+            !deal.settlementVerified
               ? undefined
               : () => onPostReceipt(offer)
           }
@@ -293,18 +299,19 @@ export default function Thread({
               {isPayment ? "PAYMENT MEMO" : "OTC ACCEPT MEMO"}
             </span>
             <span className={styles.proofStamp}>
-              {isPayment ? "Paid" : "Accepted"}
+              Unverified counterparty claim
             </span>
           </div>
           <p className={styles.termsSentence}>
-            {isPayment ? "Paid" : "Accepted"}{" "}
+            A counterparty claims they sent{" "}
             {formatBaseUnits(accept.transfer.amount, accept.transfer.token.decimals)}{" "}
             {accept.transfer.token.symbol} for {isPayment ? "request" : "deal"}{" "}
             {accept.dealId.slice(0, 12)}…
           </p>
           <p className={styles.riskCopy}>
-            This memo reports only the private STRK leg. It does not prove any
-            quoted non-STRK consideration or counterparty identity.
+            This decrypted memo and its MessagePosted transaction do not prove
+            that STRK moved. Verify settlement independently before releasing
+            any quoted consideration.
           </p>
         </article>
       );
@@ -348,6 +355,8 @@ export default function Thread({
         request={request}
         alias={findAliasByAddress(aliases, request.requester)?.label}
         status={payment?.status}
+        paymentVerified={payment?.paymentVerified}
+        unverifiedClaim={Boolean(payment?.counterpartyPaymentClaim)}
         busy={action?.pending}
         actionMessage={action?.message}
         onPay={ownRequest ? undefined : () => onPay(request)}
