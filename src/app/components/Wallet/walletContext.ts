@@ -1,54 +1,76 @@
 "use client";
+
+import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
+import type {
+  AccountInterface,
+  ProviderInterface,
+  WalletAccountV6,
+} from "starknet";
 import { create } from "zustand";
-import { ProviderInterface, AccountInterface, type WalletAccountV6 } from "starknet";
-import { type WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
-
-
-// import { StarknetWindowObject } from "@/app/core/StarknetWindowObject";
 
 export interface WalletState {
-    StarknetWalletObject: WalletWithStarknetFeatures | undefined,
-    setMyStarknetWalletObject: (wallet: WalletWithStarknetFeatures) => void,
-    address: string,
-    setAddressAccount: (address: string) => void,
-    chain: string,
-    setChain: (chain: string) => void,
-    myWalletAccount: WalletAccountV6|undefined;
-    setMyWalletAccount: (myWAccount:WalletAccountV6)=>void;
-    account: AccountInterface | undefined,
-    setAccount: (account: AccountInterface) => void,
-    provider: ProviderInterface | undefined,
-    setProvider: (provider: ProviderInterface) => void,
-    isConnected: boolean,
-    setConnected: (isConnected: boolean) => void,
-    displaySelectWalletUI: boolean,
-    setSelectWalletUI: (displaySelectWalletUI: boolean) => void,
-    walletApiList: string[],
-    setWalletApiList: (version: string[]) => void,
-    selectedApiVersion: string,
-    setSelectedApiVersion: (version: string) => void,
-
+  StarknetWalletObject: WalletWithStarknetFeatures | undefined;
+  setMyStarknetWalletObject: (
+    wallet: WalletWithStarknetFeatures | undefined
+  ) => void;
+  address: string;
+  setAddressAccount: (address: string) => void;
+  chain: string;
+  setChain: (chain: string) => void;
+  myWalletAccount: WalletAccountV6 | undefined;
+  setMyWalletAccount: (myWAccount: WalletAccountV6 | undefined) => void;
+  account: AccountInterface | undefined;
+  setAccount: (account: AccountInterface | undefined) => void;
+  provider: ProviderInterface | undefined;
+  setProvider: (provider: ProviderInterface | undefined) => void;
+  isConnected: boolean;
+  setConnected: (isConnected: boolean) => void;
+  displaySelectWalletUI: boolean;
+  setSelectWalletUI: (displaySelectWalletUI: boolean) => void;
+  walletApiList: string[];
+  setWalletApiList: (version: string[]) => void;
+  selectedApiVersion: string;
+  setSelectedApiVersion: (version: string) => void;
+  isStrk20Capable: boolean;
+  setStrk20Capable: (supported: boolean) => void;
+  disconnect: () => void;
 }
 
-export const useStoreWallet = create<WalletState>()(set => ({
-    StarknetWalletObject: undefined,
-    setMyStarknetWalletObject: (wallet: WalletWithStarknetFeatures) => { set(state => ({ StarknetWalletObject: wallet })) },
-    address: "",
-    setAddressAccount: (address: string) => { set(state => ({ address })) },
-    chain: "",
-    setChain: (chain: string) => { set(state => ({ chain: chain })) },
-    myWalletAccount: undefined,
-    setMyWalletAccount: (myWAccount: WalletAccountV6) => { set(state => ({ myWalletAccount: myWAccount })) },
-    account: undefined,
-    setAccount: (account: AccountInterface) => { set(state => ({ account })) },
-    provider: undefined,
-    setProvider: (provider: ProviderInterface) => { set(state => ({ provider: provider })) },
-    isConnected: false,
-    setConnected: (isConnected: boolean) => { set(state => ({ isConnected })) },
-    displaySelectWalletUI: false,
-    setSelectWalletUI: (displaySelectWalletUI: boolean) => { set(state => ({ displaySelectWalletUI })) },
-    walletApiList: [],
-    setWalletApiList: (walletApi: string[]) => { set(state => ({ walletApiList: walletApi })) },
-    selectedApiVersion: "default",
-    setSelectedApiVersion: (selectedApiVersion: string) => { set(state => ({ selectedApiVersion })) },
-    }));
+export const useStoreWallet = create<WalletState>()((set) => ({
+  StarknetWalletObject: undefined,
+  setMyStarknetWalletObject: (StarknetWalletObject) =>
+    set({ StarknetWalletObject }),
+  address: "",
+  setAddressAccount: (address) => set({ address }),
+  chain: "",
+  setChain: (chain) => set({ chain }),
+  myWalletAccount: undefined,
+  setMyWalletAccount: (myWalletAccount) => set({ myWalletAccount }),
+  account: undefined,
+  setAccount: (account) => set({ account }),
+  provider: undefined,
+  setProvider: (provider) => set({ provider }),
+  isConnected: false,
+  setConnected: (isConnected) => set({ isConnected }),
+  displaySelectWalletUI: false,
+  setSelectWalletUI: (displaySelectWalletUI) => set({ displaySelectWalletUI }),
+  walletApiList: [],
+  setWalletApiList: (walletApiList) => set({ walletApiList }),
+  selectedApiVersion: "default",
+  setSelectedApiVersion: (selectedApiVersion) => set({ selectedApiVersion }),
+  isStrk20Capable: false,
+  setStrk20Capable: (isStrk20Capable) => set({ isStrk20Capable }),
+  disconnect: () =>
+    set({
+      StarknetWalletObject: undefined,
+      address: "",
+      chain: "",
+      myWalletAccount: undefined,
+      account: undefined,
+      provider: undefined,
+      isConnected: false,
+      walletApiList: [],
+      selectedApiVersion: "default",
+      isStrk20Capable: false,
+    }),
+}));
