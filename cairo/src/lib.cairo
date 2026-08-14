@@ -124,5 +124,6 @@ pub mod QuietlineMail {
         }
     }
 }
+pub mod escrow;
 
 pub mod mock_erc20;
