@@ -7,7 +7,11 @@ export type EnvelopeType =
   | "accept"
   | "decline"
   | "receipt"
-  | "payment_request";
+  | "payment_request"
+  | "escrow_fund"
+  | "escrow_fill"
+  | "escrow_claim"
+  | "escrow_timeout";
 
 export type MailEnvelopeV1 = {
   version: 1;
@@ -43,6 +47,10 @@ export const ENVELOPE_TYPE_BYTES: Readonly<Record<EnvelopeType, number>> = {
   decline: 0x04,
   receipt: 0x05,
   payment_request: 0x06,
+  escrow_fund: 0x07,
+  escrow_fill: 0x08,
+  escrow_claim: 0x09,
+  escrow_timeout: 0x0a,
 };
 
 const TYPES_BY_BYTE = new Map<number, EnvelopeType>(
