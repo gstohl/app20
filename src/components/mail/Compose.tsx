@@ -173,7 +173,7 @@ function TradeFields({
           : "Send bilateral quoted terms. Sending the offer moves no asset."}
       </p>
       <label className={styles.field}>
-        <span>{escrow ? "Leg A STRK to deposit" : "STRK offered"}</span>
+        <span>{escrow ? "Leg A STRK to deposit" : "STRK to buy"}</span>
         <input
           value={attachment.giveStrk}
           onChange={(event) => update({ giveStrk: event.target.value })}

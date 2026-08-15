@@ -15,6 +15,7 @@ import {
   parseOfferPayload,
   parsePaymentRequestPayload,
   parseReceiptPayload,
+  receiptForTransfer,
   type OfferPayload,
   type OtcState,
   type PaymentRequestPayload,
@@ -293,32 +294,16 @@ export default function Thread({
       ) {
         if (attachment.type === "payment") {
           return (
-            <article
-              className={styles.messageSheet}
+            <ReceiptCard
               key={`${attachment.type}:${attachmentIndex}`}
-            >
-              <div className={styles.sheetHeading}>
-                <span className={styles.sheetType}>PRIVATE PAYMENT MEMO</span>
-                <span className={styles.proofStamp}>
-                  {message.direction === "outgoing"
-                    ? "Submitted with document"
-                    : "Unverified claim"}
-                </span>
-              </div>
-              <p className={styles.termsSentence}>
-                {formatBaseUnits(
-                  attachment.payload.transfer.amount,
-                  attachment.payload.transfer.token.decimals,
-                )}{" "}
-                <bdi>{attachment.payload.transfer.token.symbol}</bdi> addressed
-                to <code>{attachment.payload.transfer.to}</code>.
-              </p>
-              <p className={styles.riskCopy}>
-                This encrypted memo does not independently prove a private
-                transfer. The sender's local wallet confirmation is not
-                counterparty-verifiable settlement proof.
-              </p>
-            </article>
+              receipt={receiptForTransfer(
+                attachment.payload.dealId,
+                attachment.payload.transfer,
+                message.transactionHash,
+              )}
+              standalonePayment
+              locallySubmitted={message.direction === "outgoing"}
+            />
           );
         }
         const type = attachment.type;
