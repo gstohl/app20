@@ -1,16 +1,18 @@
 "use client";
 
 import type { WALLET_API } from "@starknet-io/types-js";
-import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
-import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useLocalnetTools } from "@/app/localnetToolsContext";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
-import ConversationList from "@/components/mail/ConversationList";
+import ConversationList, {
+  mailboxCategory,
+  type MailboxFilter,
+} from "@/components/mail/ConversationList";
 import Onboard from "@/components/mail/Onboard";
+import { ScanProgress } from "@/components/mail/OperationProgress";
 import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
 import Thread, {
   type LocalMailMessage,
@@ -111,6 +113,14 @@ type ActiveScanWorker = {
 };
 
 type ScanKind = "idle" | "scanning" | "ok" | "error";
+
+const MAILBOX_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
+  { id: "all", label: "All" },
+  { id: "letters", label: "Letters" },
+  { id: "deals", label: "Deals" },
+  { id: "invoices", label: "Invoices" },
+  { id: "escrow", label: "Escrow" },
+];
 
 type LocalnetEscrowSigner = {
   private_key: string;
@@ -269,7 +279,13 @@ export default function InboxPage() {
     maxPages: MAIL_SCAN_MAX_PAGES,
   });
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [mailboxFilter, setMailboxFilter] = useState<MailboxFilter>("all");
+  const [composerOpen, setComposerOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -335,7 +351,14 @@ export default function InboxPage() {
     setKeypair(null);
     setMailSeed(null);
     setMessages([]);
+    setScanKind("idle");
     setScanMessage("");
+    setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
+    setSelectedMessageId(null);
+    setReadMessageIds(new Set());
+    setComposerOpen(false);
+    setMobileDetailOpen(false);
+    setSidebarOpen(false);
     setActionStates({});
     if (address && chainId) {
       setAliases(loadAliases(window.localStorage, address));
@@ -353,6 +376,30 @@ export default function InboxPage() {
       cancelActiveScanWorker();
     };
   }, [address, chainId, providerIndex]);
+
+  useEffect(() => {
+    const visibleMessages =
+      mailboxFilter === "all"
+        ? messages
+        : messages.filter(
+            (message) => mailboxCategory(message) === mailboxFilter,
+          );
+    if (
+      selectedMessageId &&
+      visibleMessages.some((message) => message.id === selectedMessageId)
+    ) {
+      return;
+    }
+    const firstMessage = visibleMessages[0];
+    setSelectedMessageId(firstMessage?.id ?? null);
+    if (firstMessage) {
+      setReadMessageIds((current) => {
+        const next = new Set(current);
+        next.add(firstMessage.id);
+        return next;
+      });
+    }
+  }, [mailboxFilter, messages, selectedMessageId]);
 
   function setActionState(key: string, state: ThreadActionState) {
     setActionStates((current) => ({ ...current, [key]: state }));
@@ -560,7 +607,9 @@ export default function InboxPage() {
     recentLoadedRef.current = false;
     setScanning(false);
     setMessages([]);
+    setScanKind("idle");
     setScanMessage("");
+    setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setKeypair(nextKeypair);
     setMailSeed(
       address && chainId
@@ -571,16 +620,19 @@ export default function InboxPage() {
 
   async function scanInbox(requested: "newer" | "older" = "newer") {
     if (!keypair) {
+      setScanKind("error");
       setScanMessage("Load this device's mail key before scanning.");
       return;
     }
     if (!helperAddress) {
+      setScanKind("error");
       setScanMessage(
         `No QuietlineMail helper is configured on ${networkName}.`,
       );
       return;
     }
     if (!address || !chainId || !keyFingerprint) {
+      setScanKind("error");
       setScanMessage("Connect the mailbox account before scanning.");
       return;
     }
@@ -594,6 +646,8 @@ export default function InboxPage() {
       identity === scanIdentityRef.current;
 
     setScanning(true);
+    setScanKind("scanning");
+    setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setScanMessage(
       requested === "older"
         ? "Planning a bounded older-message scan…"
@@ -620,6 +674,7 @@ export default function InboxPage() {
         recentLoadedRef.current,
       );
       if (!range) {
+        setScanKind("ok");
         setScanMessage(
           requested === "older"
             ? "The persisted mailbox cursor has reached genesis."
@@ -661,6 +716,11 @@ export default function InboxPage() {
           if (event) parsed.push(event);
         }
         pages += 1;
+        setScanProgress({
+          pages,
+          events: parsed.length,
+          maxPages: MAIL_SCAN_MAX_PAGES,
+        });
 
         const nextToken = normalizeContinuationToken(chunk.continuation_token);
         if (!nextToken) {
@@ -744,6 +804,7 @@ export default function InboxPage() {
 
       setMessages((current) => mergeMailMessages(current, localMessages));
       mergeLocalDealState(localMessages);
+      setScanKind("ok");
       setScanMessage(
         `Decrypted ${localMessages.length} of ${parsed.length} valid ciphertext event${
           parsed.length === 1 ? "" : "s"
@@ -755,6 +816,7 @@ export default function InboxPage() {
       );
     } catch (error: unknown) {
       if (isCurrentScan()) {
+        setScanKind("error");
         setScanMessage(
           error instanceof Error ? error.message : "Mailbox scan failed.",
         );
@@ -1374,86 +1436,311 @@ export default function InboxPage() {
     }
   }
 
+  const messageCounts: Record<MailboxFilter, number> = {
+    all: messages.length,
+    letters: 0,
+    deals: 0,
+    invoices: 0,
+    escrow: 0,
+  };
+  for (const message of messages) messageCounts[mailboxCategory(message)] += 1;
+  const filteredMessages =
+    mailboxFilter === "all"
+      ? messages
+      : messages.filter((message) => mailboxCategory(message) === mailboxFilter);
+  const selectedMessage = filteredMessages.find(
+    (message) => message.id === selectedMessageId,
+  );
+  const filterLabel =
+    MAILBOX_FILTERS.find((filter) => filter.id === mailboxFilter)?.label ?? "All";
+
+  function selectMessage(messageId: string) {
+    setSelectedMessageId(messageId);
+    setReadMessageIds((current) => {
+      const next = new Set(current);
+      next.add(messageId);
+      return next;
+    });
+    setComposerOpen(false);
+    setMobileDetailOpen(true);
+  }
+
+  function openComposer() {
+    setComposerOpen(true);
+    setMobileDetailOpen(true);
+    setSidebarOpen(false);
+  }
+
+  function closeDetail() {
+    setComposerOpen(false);
+    setMobileDetailOpen(false);
+  }
+
+  function selectMailbox(nextFilter: MailboxFilter) {
+    setMailboxFilter(nextFilter);
+    setSidebarOpen(false);
+    setMobileDetailOpen(false);
+    const nextMessage =
+      nextFilter === "all"
+        ? messages[0]
+        : messages.find((message) => mailboxCategory(message) === nextFilter);
+    setSelectedMessageId(nextMessage?.id ?? null);
+  }
+
   return (
     <div className={styles.page}>
-      <nav className={styles.nav}>
-        <Link className={styles.brand} to="/" aria-label="Quietline home">
+      <header className={styles.mobileTopbar}>
+        <button
+          className={styles.menuButton}
+          type="button"
+          aria-label="Open mailbox sidebar"
+          aria-controls="mail-sidebar"
+          aria-expanded={sidebarOpen}
+          onClick={() => setSidebarOpen(true)}
+        >
+          ☰
+        </button>
+        <a className={styles.brand} href="/" aria-label="Quietline mailbox">
           <span className={styles.brandMark}>Q</span>
           <span>Quietline</span>
-        </Link>
-        <div className={styles.navRight}>
-          <span className={styles.network}>{networkName}</span>
-          <SelectWallet variant="nav" />
-        </div>
-      </nav>
+        </a>
+        <button className={styles.mobileCompose} type="button" onClick={openComposer}>
+          Compose
+        </button>
+      </header>
 
-      <main className={styles.shell}>
-        <header className={styles.intro}>
-          <p className={styles.eyebrow}>QUIETLINE / INBOX</p>
-          <h1>Private words, public ciphertext.</h1>
-          <p>
-            The chain records encrypted payloads and timing. Your device-bound
-            mail key stays in this browser profile, and plaintext appears only
-            after local decryption.
-          </p>
-        </header>
-
-        <div className={styles.privacyStrip}>
-          <span>
-            <strong>Hidden:</strong> message body and recipient link
-          </span>
-          <span>
-            <strong>Visible:</strong> helper activity, ciphertext, and timing
-          </span>
-        </div>
-
-        <div className={styles.setupGrid}>
-          <Onboard
-            key={`${providerIndex}:${address}`}
-            helperAddress={helperAddress}
-            onKeyReady={handleKeyReady}
-          />
-          <Compose
-            helperAddress={helperAddress}
-            escrowAddress={escrowAddress}
-            escrowEnabled={escrowEnabled}
-            mailSeed={mailSeed}
-            keyReady={Boolean(keypair)}
-            networkName={networkName}
-            onSent={handleSent}
-            onAliasesChange={setAliases}
-          />
-        </div>
-
-        <Thread
-          messages={messages}
-          selfAddress={address}
-          aliases={aliases}
-          otcState={otcState}
-          escrowState={escrowState}
-          actionStates={actionStates}
-          onAccept={(offer, index) => void handleAccept(offer, index)}
-          onDecline={(offer) => void handleDecline(offer)}
-          onPostReceipt={(offer) => void handlePostReceipt(offer)}
-          onPay={(request) => void handlePay(request)}
-          onEscrowFill={(fund) => void handleEscrowFill(fund)}
-          onEscrowClaim={
-            providerIndex === constants.LOCALNET_PROVIDER_INDEX
-              ? (fund) => void handleLocalnetEscrowPayout(fund, "claim")
-              : undefined
-          }
-          onEscrowTimeout={
-            providerIndex === constants.LOCALNET_PROVIDER_INDEX
-              ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
-              : undefined
-          }
+      {sidebarOpen ? (
+        <button
+          className={styles.sidebarBackdrop}
+          type="button"
+          aria-label="Close mailbox sidebar"
+          onClick={() => setSidebarOpen(false)}
         />
-      </main>
+      ) : null}
 
-      <footer className={styles.footer}>
-        <Link to="/">← Wallet actions</Link>
-        <span>Quietline stores ciphertext on-chain, never plaintext.</span>
-      </footer>
+      <div
+        className={`${styles.mailWorkspace} ${
+          mobileDetailOpen ? styles.detailOpen : ""
+        }`}
+      >
+        <aside
+          id="mail-sidebar"
+          className={`${styles.mailSidebar} ${
+            sidebarOpen ? styles.sidebarOpen : ""
+          }`}
+          aria-label="Mailbox sidebar"
+        >
+          <div className={styles.sidebarBrandRow}>
+            <a className={styles.brand} href="/" aria-label="Quietline mailbox">
+              <span className={styles.brandMark}>Q</span>
+              <span>Quietline</span>
+            </a>
+            <button
+              className={styles.sidebarClose}
+              type="button"
+              aria-label="Close mailbox sidebar"
+              onClick={() => setSidebarOpen(false)}
+            >
+              ×
+            </button>
+          </div>
+          <p className={styles.sidebarTagline}>PRIVATE MAIL / PUBLIC CIPHERTEXT</p>
+
+          <button className={styles.composeButton} type="button" onClick={openComposer}>
+            <span aria-hidden="true">＋</span>
+            Compose
+          </button>
+
+          <nav className={styles.mailboxNav} aria-label="Mailboxes">
+            <span className={styles.sidebarLabel}>MAILBOXES</span>
+            {MAILBOX_FILTERS.map((filter) => (
+              <button
+                key={filter.id}
+                type="button"
+                aria-current={mailboxFilter === filter.id ? "page" : undefined}
+                onClick={() => selectMailbox(filter.id)}
+              >
+                <span>{filter.label}</span>
+                <strong>{messageCounts[filter.id]}</strong>
+              </button>
+            ))}
+          </nav>
+
+          <div className={styles.networkRow}>
+            <span className={styles.networkDot} aria-hidden="true" />
+            <span>{networkName}</span>
+            <small>{helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}</small>
+          </div>
+
+          <PrivacyWalletMenu />
+
+          {renderLocalnetTools ? (
+            <div className={styles.localnetSlot}>{renderLocalnetTools()}</div>
+          ) : null}
+
+          <section className={styles.sidebarScan} aria-labelledby="scan-title">
+            <div className={styles.scanHeading}>
+              <div>
+                <span className={styles.sidebarLabel}>PUBLIC RAIL</span>
+                <strong id="scan-title">Sealed envelopes</strong>
+              </div>
+              <span className={styles.sealGlyph} aria-hidden="true">✉</span>
+            </div>
+            <div className={styles.scanActions}>
+              <button
+                type="button"
+                onClick={() => void scanInbox("newer")}
+                disabled={!keypair || scanning}
+              >
+                {scanning ? "Scanning…" : "Scan recent"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void scanInbox("older")}
+                disabled={!keypair || scanning}
+              >
+                Older
+              </button>
+            </div>
+            <ScanProgress
+              scanning={scanning}
+              pages={scanProgress.pages}
+              maxPages={scanProgress.maxPages}
+              events={scanProgress.events}
+            />
+            {!scanning && scanMessage ? (
+              <p
+                className={`${styles.scanMessage} ${
+                  scanKind === "error" ? styles.scanMessageError : ""
+                }`}
+                role={scanKind === "error" ? "alert" : "status"}
+              >
+                {scanMessage}
+              </p>
+            ) : null}
+          </section>
+
+          <footer className={styles.sidebarFooter}>
+            <a href="https://github.com/gstohl/quietline" target="_blank" rel="noreferrer">
+              GitHub ↗
+            </a>
+            <span>Ciphertext on-chain. Plaintext on this device.</span>
+          </footer>
+        </aside>
+
+        <ConversationList
+          messages={filteredMessages}
+          selectedMessageId={selectedMessageId}
+          readMessageIds={readMessageIds}
+          aliases={aliases}
+          selfAddress={address}
+          filterLabel={filterLabel}
+          onSelect={selectMessage}
+        />
+
+        <main className={styles.readingPane} aria-label="Reading pane">
+          <header className={styles.readingToolbar}>
+            <button className={styles.backToList} type="button" onClick={closeDetail}>
+              ← Messages
+            </button>
+            <div>
+              <span className={styles.sidebarLabel}>
+                {composerOpen ? "NEW DOCUMENT" : "LOCAL PLAINTEXT / CARBON COPY"}
+              </span>
+              <strong>{composerOpen ? "Compose" : selectedMessage ? "Opened envelope" : "Quietline"}</strong>
+            </div>
+            {composerOpen ? (
+              <button className={styles.closeCompose} type="button" onClick={closeDetail}>
+                Close
+              </button>
+            ) : null}
+          </header>
+
+          <div className={styles.readingScroll}>
+            {composerOpen ? (
+              <Compose
+                helperAddress={helperAddress}
+                escrowAddress={escrowAddress}
+                escrowEnabled={escrowEnabled}
+                mailSeed={mailSeed}
+                keyReady={Boolean(keypair)}
+                networkName={networkName}
+                onSent={(message) => {
+                  handleSent(message);
+                  setComposerOpen(false);
+                }}
+                onAliasesChange={setAliases}
+              />
+            ) : selectedMessage ? (
+              <Thread
+                messages={[selectedMessage]}
+                selfAddress={address}
+                aliases={aliases}
+                otcState={otcState}
+                escrowState={escrowState}
+                actionStates={actionStates}
+                onAccept={(offer, index) => void handleAccept(offer, index)}
+                onDecline={(offer) => void handleDecline(offer)}
+                onPostReceipt={(offer) => void handlePostReceipt(offer)}
+                onPay={(request) => void handlePay(request)}
+                onEscrowFill={(fund) => void handleEscrowFill(fund)}
+                onEscrowClaim={
+                  providerIndex === constants.LOCALNET_PROVIDER_INDEX
+                    ? (fund) => void handleLocalnetEscrowPayout(fund, "claim")
+                    : undefined
+                }
+                onEscrowTimeout={
+                  providerIndex === constants.LOCALNET_PROVIDER_INDEX
+                    ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
+                    : undefined
+                }
+              />
+            ) : (
+              <section className={styles.welcomeState}>
+                <div className={styles.welcomeSheet}>
+                  <p className={styles.eyebrow}>QUIETLINE / PRIVATE MAIL</p>
+                  <h1>Private words, public ciphertext.</h1>
+                  <p className={styles.welcomeCopy}>
+                    Quietline is encrypted on-chain mail for letters, private STRK
+                    payment memos, invoices, one-sided deals, and experimental escrow.
+                    Your mailbox key decrypts locally; Quietline never posts plaintext.
+                  </p>
+                  <div className={styles.privacySummary}>
+                    <div>
+                      <strong>HIDDEN IN THE POOL</strong>
+                      <span>
+                        Sender, recipient identities, message body, and in-pool amounts.
+                      </span>
+                    </div>
+                    <div>
+                      <strong>VISIBLE ON-CHAIN</strong>
+                      <span>
+                        Pool and helper use, timing, ciphertext, size, and recipient count.
+                        Shield and unshield legs are public.
+                      </span>
+                    </div>
+                  </div>
+                  <p className={styles.honestyNote}>
+                    Privacy is not invisibility: timing and pool use remain public. For
+                    multi-recipient mail, the recipient count is public while identities
+                    are absent from MessagePosted.
+                  </p>
+                  <button className={styles.welcomeCompose} type="button" onClick={openComposer}>
+                    Write a private document
+                  </button>
+                </div>
+                {keypair ? null : (
+                  <Onboard
+                    key={`${providerIndex}:${address}`}
+                    helperAddress={helperAddress}
+                    onKeyReady={handleKeyReady}
+                  />
+                )}
+              </section>
+            )}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }

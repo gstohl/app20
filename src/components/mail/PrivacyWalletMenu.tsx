@@ -3,6 +3,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
 import { useEffect, useRef, useState } from "react";
+import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
@@ -87,7 +88,6 @@ export default function PrivacyWalletMenu() {
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const [open, setOpen] = useState(false);
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
   const balanceGeneration = useRef(0);
@@ -130,15 +130,6 @@ export default function PrivacyWalletMenu() {
     }
     void refreshBalance();
   }, [connectedAddress, isConnected, isStrk20Capable, providerIndex, walletAccount]);
-
-  useEffect(() => {
-    if (!open) return;
-    function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape" && !actionPending) setOpen(false);
-    }
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [actionPending, open]);
 
   async function runAction(
     actions: WALLET_API.STRK20_ACTION[],
@@ -267,170 +258,98 @@ export default function PrivacyWalletMenu() {
         : null;
 
   return (
-    <div className={styles.walletMenu}>
-      <button
-        className={styles.balanceChip}
-        type="button"
-        aria-expanded={open}
-        aria-controls="privacy-wallet-drawer"
-        onClick={() => setOpen(true)}
-      >
-        <span>SHIELDED BALANCE</span>
+    <section className={styles.sidebarAccount} aria-label="Wallet and shielded balance">
+      <div className={styles.accountHeading}>
+        <div>
+          <span className={styles.sidebarLabel}>IDENTITY</span>
+          <strong>{isConnected ? "Mailbox account" : "Wallet disconnected"}</strong>
+        </div>
+        <SelectWallet variant="nav" />
+      </div>
+
+      {connectedAddress ? (
+        <code className={styles.accountAddress} title={connectedAddress}>
+          {connectedAddress}
+        </code>
+      ) : (
+        <p className={styles.accountHint}>Connect Ready to open this mailbox.</p>
+      )}
+
+      <div className={styles.sidebarBalance}>
+        <span>Shielded balance</span>
         <strong>{balanceLabel}</strong>
-        <em>WALLET-PRIVATE</em>
-      </button>
-
-      {open ? (
-        <div
-          className={styles.drawerBackdrop}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !actionPending) setOpen(false);
-          }}
+        <button
+          type="button"
+          onClick={() => void refreshBalance()}
+          disabled={!isConnected || balance.kind === "loading"}
         >
-          <aside
-            id="privacy-wallet-drawer"
-            className={styles.walletDrawer}
-            aria-labelledby="privacy-wallet-title"
-          >
-            <div className={styles.drawerHeading}>
-              <div>
-                <p className={styles.kicker}>WALLET-PRIVATE / LIVE STATE</p>
-                <h2 id="privacy-wallet-title">Shielded STRK</h2>
-              </div>
-              <button
-                className={styles.drawerClose}
-                type="button"
-                onClick={() => setOpen(false)}
-                disabled={actionPending}
-                aria-label="Close wallet actions"
-              >
-                ×
-              </button>
-            </div>
+          Refresh
+        </button>
+      </div>
 
-            <div className={styles.liveBalance}>
-              <span>Available balance reported by Ready</span>
-              <strong>{balanceLabel}</strong>
-              <button
-                type="button"
-                onClick={() => void refreshBalance()}
-                disabled={balance.kind === "loading" || !isStrk20Capable}
-              >
-                Refresh live state
-              </button>
-            </div>
-            {balance.kind === "error" ? (
-              <p className={styles.walletError} role="alert">{balance.message}</p>
-            ) : null}
-            <p className={styles.walletPrivacyCopy}>
-              This balance read is requested from your wallet. It is not written
-              to Quietline or to MessagePosted.
-            </p>
+      <div className={styles.sidebarWalletActions}>
+        <button
+          type="button"
+          onClick={shield}
+          disabled={!isConnected || !isStrk20Network || actionPending}
+        >
+          <span>Shield</span>
+          <small>10 STRK · public entry</small>
+        </button>
+        <button
+          type="button"
+          onClick={unshield}
+          disabled={!isConnected || !isStrk20Network || actionPending}
+        >
+          <span>Unshield</span>
+          <small>1 STRK · public exit</small>
+        </button>
+      </div>
 
-            {isConnected && !isStrk20Capable ? (
-              <div className={styles.capabilityState} role="alert">
-                <strong>Wallet not privacy-capable</strong>
-                <p>
-                  This wallet did not declare Wallet API/spec support at version
-                  0.10 or newer. Install or connect Ready to use Quietline
-                  privacy actions.
-                </p>
-                <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
-                  Get Ready ↗
-                </a>
-              </div>
+      {isConnected ? isStrk20Capable ? null : (
+        <p className={styles.walletError} role="alert">
+          This wallet did not declare Wallet API/spec 0.10 support. Connect Ready
+          for privacy actions.
+        </p>
+      ) : null}
+      {balance.kind === "error" ? (
+        <p className={styles.walletError} role="alert">{balance.message}</p>
+      ) : null}
+      {providerIndex === 0 ? (
+        <p className={styles.mainnetSafety} role="note">
+          Use Sepolia for Phase 1 checks; do not send Quietline mail on mainnet yet.
+        </p>
+      ) : null}
+
+      <ProvingProgress
+        active={actionPending}
+        startedAt={action.startedAt}
+        label={action.title ?? "Preparing privacy proof"}
+      />
+      {action.kind !== "idle" && action.kind !== "proving" ? (
+        <div
+          className={`${styles.walletResult} ${
+            action.kind === "error" ? styles.walletResultError : ""
+          }`}
+          role={action.kind === "error" ? "alert" : "status"}
+        >
+          <strong>{action.title}</strong>
+          {action.message ? <p>{action.message}</p> : null}
+          {action.transactionHash ? (
+            explorerBase ? (
+              <a
+                href={`${explorerBase}${action.transactionHash}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {shortHex(action.transactionHash)} ↗
+              </a>
             ) : (
-              <div className={styles.walletActionStack}>
-                <article className={styles.walletActionCard}>
-                  <div>
-                    <span className={styles.publicLabel}>PUBLIC ENTRY</span>
-                    <h3>Shield 10 STRK</h3>
-                    <p>
-                      Public deposit into the STRK20 pool. Depositor, token, and
-                      amount are visible.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={shield}
-                    disabled={!isConnected || !isStrk20Network || actionPending}
-                  >
-                    Shield · 2 prompts
-                  </button>
-                  <small>
-                    Screening is enforced by the protocol. A decline stops the
-                    action; Quietline does not retry around it.
-                  </small>
-                </article>
-
-                <article className={styles.walletActionCard}>
-                  <div>
-                    <span className={styles.publicLabel}>PUBLIC EXIT</span>
-                    <h3>Unshield 1 STRK</h3>
-                    <p>
-                      Public withdrawal to the connected account. Destination,
-                      token, and amount are visible.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={unshield}
-                    disabled={!isConnected || !isStrk20Network || actionPending}
-                  >
-                    Unshield
-                  </button>
-                </article>
-              </div>
-            )}
-
-            {isConnected ? null : (
-              <p className={styles.walletError}>Connect Ready from the header first.</p>
-            )}
-            {isStrk20Network ? null : (
-              <p className={styles.walletError} role="alert">
-                STRK20 actions require Mainnet or Sepolia. Use Sepolia for Phase
-                1 checks; do not send Quietline mail on mainnet yet.
-              </p>
-            )}
-            {providerIndex === 0 ? (
-              <p className={styles.mainnetSafety} role="note">
-                Use Sepolia for Phase 1 checks; do not send Quietline mail on
-                mainnet yet.
-              </p>
-            ) : null}
-
-            <ProvingProgress
-              active={actionPending}
-              startedAt={action.startedAt}
-              label={action.title ?? "Preparing privacy proof"}
-            />
-            {action.kind !== "idle" && action.kind !== "proving" ? (
-              <div
-                className={`${styles.walletResult} ${
-                  action.kind === "error" ? styles.walletResultError : ""
-                }`}
-                role={action.kind === "error" ? "alert" : "status"}
-              >
-                <strong>{action.title}</strong>
-                {action.message ? <p>{action.message}</p> : null}
-                {action.transactionHash ? (
-                  explorerBase ? (
-                    <a
-                      href={`${explorerBase}${action.transactionHash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {shortHex(action.transactionHash)} ↗
-                    </a>
-                  ) : (
-                    <code>{action.transactionHash}</code>
-                  )
-                ) : null}
-              </div>
-            ) : null}
-          </aside>
+              <code>{shortHex(action.transactionHash)}</code>
+            )
+          ) : null}
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

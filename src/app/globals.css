@@ -1,6 +1,7 @@
 :root {
-  --font-body: "Inter";
-  --font-mono-ui: "Space Mono";
+  --font-body: "Syne";
+  --font-reading: "Literata";
+  --font-mono-ui: "IBM Plex Mono";
   --max-width: 1100px;
   --border-radius: 12px;
   --font-mono: ui-monospace, Menlo, Monaco, 'Cascadia Mono', 'Segoe UI Mono',

@@ -103,7 +103,7 @@
 .intro h1 {
   max-width: 720px;
   margin-top: 12px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: clamp(42px, 7vw, 76px);
   font-weight: 500;
   line-height: 0.98;
@@ -166,7 +166,7 @@
 
 .cardTitle {
   margin-top: 6px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: 30px;
   font-weight: 500;
   letter-spacing: -0.02em;
@@ -463,7 +463,7 @@
 
 .termsPreview {
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: 15px;
 }
 
@@ -612,7 +612,7 @@
   margin-top: 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: 18px;
   line-height: 1.55;
 }
@@ -779,7 +779,7 @@
 
 .chainRecordHeading h3 {
   margin-top: 4px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: 23px;
   font-weight: 500;
 }
@@ -1075,6 +1075,1264 @@
 @media (prefers-reduced-motion: reduce) {
   .primaryButton,
   .secondaryButton {
+    transition: none;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Mail client shell
+   Three sheets, one mailbox: private account rail, sealed-record index, and
+   the locally decrypted carbon copy. These rules intentionally extend the
+   existing onionskin / gall-ink language instead of introducing a new theme.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.mailWorkspace {
+  display: grid;
+  grid-template-columns: 260px 360px minmax(0, 1fr);
+  width: 100%;
+  height: 100dvh;
+  min-height: 680px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.mobileTopbar,
+.sidebarBackdrop {
+  display: none;
+}
+
+.mailSidebar,
+.conversationRail,
+.readingPane {
+  min-width: 0;
+  min-height: 0;
+}
+
+.mailSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 22px 18px 18px;
+  border-right: 1px solid var(--ink);
+  background:
+    linear-gradient(rgba(23, 34, 32, 0.035) 1px, transparent 1px),
+    var(--paper-deep);
+  background-size: 100% 28px;
+}
+
+.sidebarBrandRow,
+.accountHeading,
+.scanHeading,
+.readingToolbar,
+.railHeading,
+.conversationTopline,
+.conversationMeta,
+.networkRow {
+  display: flex;
+  align-items: center;
+}
+
+.sidebarBrandRow,
+.accountHeading,
+.scanHeading,
+.readingToolbar,
+.railHeading,
+.conversationTopline,
+.conversationMeta {
+  justify-content: space-between;
+}
+
+.sidebarBrandRow .brand {
+  font-size: 20px;
+}
+
+.sidebarClose {
+  display: none;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebarTagline,
+.sidebarLabel,
+.accountAddress,
+.accountHint,
+.messageTotal,
+.typeBadge,
+.unreadIndicator,
+.readIndicator,
+.sidebarFooter,
+.networkRow,
+.scanMessage {
+  font-family: var(--font-mono-ui), monospace;
+}
+
+.sidebarTagline {
+  margin-top: -11px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+}
+
+.composeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 13px 15px;
+  border: 1px solid var(--ink);
+  color: var(--paper);
+  background: var(--teal);
+  box-shadow: 3px 3px 0 rgba(23, 34, 32, 0.16);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.composeButton:hover {
+  background: var(--ink);
+}
+
+.composeButton span {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 18px;
+  line-height: 0;
+}
+
+.sidebarLabel {
+  display: block;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+}
+
+.mailboxNav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mailboxNav > .sidebarLabel {
+  margin: 0 8px 5px;
+}
+
+.mailboxNav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-left: 3px solid transparent;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailboxNav button:hover {
+  background: rgba(250, 247, 239, 0.62);
+}
+
+.mailboxNav button[aria-current="page"] {
+  border-left-color: var(--teal);
+  background: rgba(250, 247, 239, 0.9);
+  color: var(--teal);
+}
+
+.mailboxNav button strong {
+  display: grid;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.networkRow {
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: rgba(250, 247, 239, 0.62);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.networkRow small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.networkDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-soft);
+}
+
+.sidebarAccount {
+  padding: 13px;
+  border: 1px solid var(--ink);
+  background: rgba(250, 247, 239, 0.88);
+  box-shadow: 3px 3px 0 rgba(23, 34, 32, 0.08);
+}
+
+.accountHeading {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.accountHeading > div {
+  min-width: 0;
+}
+
+.accountHeading strong {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.accountHeading > button {
+  flex: none;
+  max-width: 104px;
+  min-height: 28px;
+  padding: 5px 8px;
+  overflow: hidden;
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.accountAddress {
+  display: block;
+  margin-top: 10px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  border-left: 3px solid var(--teal);
+  color: var(--muted);
+  background: var(--paper-deep);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.accountHint {
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.sidebarBalance {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: end;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.sidebarBalance span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.sidebarBalance strong {
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.sidebarBalance button {
+  padding: 3px 0;
+  border: 0;
+  color: var(--teal);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sidebarBalance button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.sidebarWalletActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sidebarWalletActions button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid var(--ink);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebarWalletActions button:first-child {
+  color: var(--paper);
+  background: var(--teal);
+}
+
+.sidebarWalletActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.sidebarWalletActions span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sidebarWalletActions small {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 6px;
+  line-height: 1.35;
+}
+
+.walletError,
+.mainnetSafety,
+.walletResult {
+  margin-top: 9px;
+  padding: 8px;
+  border-left: 3px solid var(--ribbon);
+  background: rgba(122, 62, 85, 0.09);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.mainnetSafety {
+  border-left-color: var(--proof-teal);
+  background: rgba(39, 106, 114, 0.08);
+}
+
+.walletResult {
+  border-left-color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.walletResultError {
+  border-left-color: var(--ribbon);
+  background: rgba(122, 62, 85, 0.09);
+}
+
+.walletResult p,
+.walletResult a,
+.walletResult code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.localnetSlot {
+  width: 100%;
+  font-size: 9px;
+}
+
+.sidebarScan {
+  padding: 12px;
+  border: 1px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.045);
+}
+
+.scanHeading {
+  align-items: flex-start;
+}
+
+.scanHeading strong {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 14px;
+}
+
+.sealGlyph {
+  color: var(--proof-teal);
+  font-size: 18px;
+}
+
+.scanActions {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.scanActions button,
+.scanButton,
+.scanOlderButton {
+  padding: 7px 8px;
+  border: 1px solid var(--proof-teal);
+  color: var(--proof-teal);
+  background: var(--paper);
+  font: inherit;
+  font-size: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.scanActions button:first-child {
+  color: var(--paper);
+  background: var(--proof-teal);
+}
+
+.scanActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.scanMessage {
+  margin-top: 9px;
+  padding: 8px;
+  border-left: 3px solid var(--proof-teal);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.scanMessageError {
+  border-left-color: var(--ribbon);
+  color: var(--ink);
+}
+
+.sidebarFooter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.sidebarFooter a {
+  color: var(--teal);
+  font-size: 8px;
+  font-weight: 800;
+}
+
+/* Middle: the device-private index of opened records. */
+.conversationRail {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--ink);
+  background: rgba(244, 240, 229, 0.98);
+}
+
+.railHeading {
+  flex: none;
+  min-height: 92px;
+  padding: 22px 20px 17px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.railHeading h1 {
+  margin-top: 3px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.messageTotal {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.railPrivacyNote {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: none;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--paper-deep);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.railPrivacyNote strong {
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.conversationList {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.conversationList li {
+  border-bottom: 1px solid var(--line);
+}
+
+.conversationItem {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-height: 112px;
+  padding: 15px 17px 14px 19px;
+  border: 0;
+  border-left: 4px solid transparent;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversationItem:hover {
+  background: rgba(232, 226, 212, 0.6);
+}
+
+.conversationItemActive {
+  border-left-color: var(--teal);
+  background: var(--paper-deep);
+  box-shadow: inset -4px 0 0 rgba(39, 106, 114, 0.12);
+}
+
+.conversationTopline {
+  gap: 10px;
+}
+
+.conversationTopline strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversationTopline time {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+}
+
+.conversationPreview {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.conversationMeta {
+  gap: 8px;
+  margin-top: auto;
+}
+
+.typeBadge {
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: var(--paper);
+  font-size: 6px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.unreadIndicator,
+.readIndicator {
+  margin-left: auto;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+}
+
+.unreadIndicator {
+  color: var(--teal);
+}
+
+.readIndicator {
+  color: var(--muted);
+}
+
+.railEmptyState {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 240px;
+  padding: 30px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.railEmptyState strong {
+  color: var(--ink);
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.railEmptyState span:last-child {
+  max-width: 230px;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.emptyEnvelope {
+  display: grid;
+  width: 48px;
+  height: 38px;
+  place-items: center;
+  border: 1px dashed var(--teal);
+  color: var(--teal);
+  font-size: 20px;
+}
+
+/* Right: locally decrypted reading/compose sheet. */
+.readingPane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(23, 34, 32, 0.025) 1px, transparent 1px),
+    #f8f4e9;
+  background-size: 100% 32px;
+}
+
+.readingToolbar {
+  flex: none;
+  min-height: 64px;
+  gap: 15px;
+  padding: 11px 22px;
+  border-bottom: 1px solid var(--ink);
+  background: rgba(244, 240, 229, 0.96);
+}
+
+.readingToolbar > div {
+  min-width: 0;
+}
+
+.readingToolbar strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backToList,
+.closeCompose {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.backToList {
+  display: none;
+}
+
+.closeCompose {
+  margin-left: auto;
+}
+
+.readingScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: clamp(22px, 3vw, 46px);
+}
+
+.threadPanel,
+.composerSheet,
+.welcomeState {
+  width: min(820px, 100%);
+  margin: 0 auto;
+}
+
+.threadPanel .threadHeading {
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.threadPanel .threadList {
+  margin-top: 18px;
+}
+
+.threadPanel .message {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.threadPanel .messageSheet {
+  box-shadow: 4px 4px 0 rgba(39, 106, 114, 0.08);
+}
+
+.recipientDisclosure {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--proof-teal);
+  color: var(--muted);
+  background: rgba(39, 106, 114, 0.06);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.sheetClip {
+  color: var(--teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.composerSheet {
+  padding: clamp(22px, 4vw, 42px);
+  border: 1px solid var(--ink);
+  background: rgba(250, 247, 239, 0.96);
+  box-shadow: 7px 7px 0 var(--paper-deep);
+}
+
+.composerHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ink);
+}
+
+.composerHeading h2 {
+  margin-top: 4px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.modePicker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 12px;
+  margin-top: 20px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.modePicker select {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+}
+
+.modePicker small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.fieldBadge {
+  float: right;
+  margin-left: 8px;
+  padding: 2px 5px;
+  color: var(--paper);
+  background: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 6px;
+  font-style: normal;
+  letter-spacing: 0.07em;
+}
+
+.aliasChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  color: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+}
+
+.aliasChips button {
+  padding: 4px 7px;
+  border: 1px solid var(--teal);
+  color: var(--teal);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.letterInput {
+  font-family: var(--font-reading), Georgia, serif !important;
+  font-size: 15px !important;
+  line-height: 1.7 !important;
+}
+
+.paymentAttachment {
+  padding: 13px;
+  border: 1px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.05);
+}
+
+.attachmentToggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.attachmentToggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--teal);
+}
+
+.attachmentToggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachmentToggle small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.paymentAttachment > .field {
+  margin-top: 12px;
+}
+
+.amountPair {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.6fr) minmax(0, 1.4fr);
+  gap: 12px;
+}
+
+/* First-run copy replaces the deleted marketing page without blocking mail. */
+.welcomeState {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.welcomeSheet {
+  position: relative;
+  padding: clamp(26px, 5vw, 56px);
+  border: 1px solid var(--ink);
+  background: rgba(250, 247, 239, 0.96);
+  box-shadow: 8px 8px 0 var(--paper-deep);
+}
+
+.welcomeSheet::before {
+  position: absolute;
+  top: 17px;
+  right: 18px;
+  padding: 5px 7px;
+  border: 2px solid var(--proof-teal);
+  color: var(--proof-teal);
+  content: "LOCAL ONLY";
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  transform: rotate(1deg);
+}
+
+.welcomeSheet h1 {
+  max-width: 600px;
+  margin-top: 12px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: clamp(35px, 5vw, 62px);
+  font-weight: 500;
+  line-height: 1.02;
+  letter-spacing: -0.05em;
+}
+
+.welcomeCopy {
+  max-width: 620px;
+  margin-top: 22px;
+  color: var(--muted);
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.privacySummary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin-top: 26px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+}
+
+.privacySummary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  background: var(--paper);
+}
+
+.privacySummary strong {
+  color: var(--teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.privacySummary span,
+.honestyNote {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.honestyNote {
+  margin-top: 16px;
+  padding: 11px 12px;
+  border-left: 4px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.06);
+}
+
+.welcomeCompose {
+  margin-top: 20px;
+  padding: 11px 15px;
+  border: 1px solid var(--ink);
+  color: var(--paper);
+  background: var(--teal);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Shared bounded-operation progress. */
+.provingProgress,
+.scanProgress {
+  margin-top: 11px;
+  padding: 9px;
+  border: 1px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.06);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.progressHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.progressTime {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.progressTrack,
+.envelopeProgress {
+  height: 7px;
+  margin: 7px 0;
+  overflow: hidden;
+  border: 1px solid var(--proof-teal);
+  background: var(--paper);
+}
+
+.progressTrack span,
+.envelopeProgress span {
+  display: block;
+  height: 100%;
+  min-width: 2%;
+  background: var(--proof-teal);
+  transition: width 160ms linear;
+}
+
+.envelopeProgress {
+  height: 12px;
+}
+
+.envelopeProgress span {
+  overflow: hidden;
+  color: var(--paper);
+  font-size: 7px;
+  line-height: 10px;
+  white-space: nowrap;
+}
+
+/* Tablet: two panes remain visible; account/sidebar moves into a drawer. */
+@media (max-width: 1023px) {
+  .page {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .mobileTopbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 62px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--ink);
+    background: var(--paper-deep);
+  }
+
+  .mobileTopbar .brand {
+    font-size: 15px;
+  }
+
+  .menuButton,
+  .mobileCompose {
+    min-width: 42px;
+    padding: 8px 9px;
+    border: 1px solid var(--ink);
+    color: var(--ink);
+    background: var(--paper);
+    font: inherit;
+    font-size: 9px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+
+  .menuButton {
+    font-family: var(--font-mono-ui), monospace;
+    font-size: 16px;
+  }
+
+  .mobileCompose {
+    color: var(--paper);
+    background: var(--teal);
+  }
+
+  .mailWorkspace {
+    grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+    height: calc(100dvh - 62px);
+    min-height: 0;
+  }
+
+  .mailSidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 300;
+    width: min(300px, calc(100vw - 48px));
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+    box-shadow: 12px 0 30px rgba(23, 34, 32, 0.22);
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+  }
+
+  .sidebarClose {
+    display: block;
+  }
+
+  .sidebarBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 290;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: rgba(23, 34, 32, 0.42);
+    cursor: pointer;
+  }
+
+  .conversationRail {
+    grid-column: 1;
+  }
+
+  .readingPane {
+    grid-column: 2;
+  }
+
+  .backToList {
+    display: inline-flex;
+  }
+
+  .readingScroll {
+    padding: 24px;
+  }
+}
+
+/* Phone: one pane at a time; selecting or composing replaces the list. */
+@media (max-width: 639px) {
+  .mobileTopbar .brand > span:last-child {
+    display: none;
+  }
+
+  .mailWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .conversationRail,
+  .readingPane {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .mailWorkspace:not(.detailOpen) .readingPane {
+    display: none;
+  }
+
+  .mailWorkspace.detailOpen .conversationRail {
+    display: none;
+  }
+
+  .readingToolbar {
+    min-height: 58px;
+    padding: 9px 12px;
+  }
+
+  .readingScroll {
+    padding: 14px 12px 32px;
+  }
+
+  .composerSheet,
+  .welcomeSheet,
+  .card {
+    padding: 20px;
+    box-shadow: 4px 4px 0 var(--paper-deep);
+  }
+
+  .welcomeSheet::before {
+    position: static;
+    display: inline-block;
+    margin-bottom: 12px;
+  }
+
+  .privacySummary,
+  .amountPair,
+  .modePicker {
+    grid-template-columns: 1fr;
+  }
+
+  .modePicker small {
+    grid-column: 1;
+  }
+
+  .messageSheet,
+  .chainRecord {
+    padding: 14px;
+  }
+
+  .sheetHeading,
+  .chainRecordHeading {
+    flex-direction: column;
+  }
+
+  .sheetActions {
+    flex-direction: column;
+  }
+
+  .sheetActions .primaryButton,
+  .sheetActions .secondaryButton {
+    width: 100%;
+  }
+
+  .chainFields,
+  .absentFields,
+  .disclosureGrid,
+  .aliasEditor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chainFieldWide {
+    grid-column: 1;
+  }
+
+  .chainField:nth-child(1),
+  .chainField:nth-child(4) {
+    border-right: 0;
+  }
+
+  .addressProof code,
+  .fullHash,
+  .chainFields dd code {
+    word-break: break-all;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mailSidebar,
+  .progressTrack span,
+  .envelopeProgress span {
     transition: none;
   }
 }

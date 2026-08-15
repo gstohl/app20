@@ -285,8 +285,10 @@ function shortAddress(address: string): string {
 
 export function LocalnetDevTools({
   wallet,
+  variant = "sidebar",
 }: {
   wallet: QuietlineLocalnetWallet;
+  variant?: "banner" | "sidebar";
 }) {
   const [selectedId, setSelectedId] = useState(wallet.selectedIdentity.id);
   const [copied, setCopied] = useState("");
@@ -307,18 +309,26 @@ export function LocalnetDevTools({
     }
   }
 
+  const sidebar = variant === "sidebar";
+  const accent = sidebar ? "#087d77" : "#38bdf8";
+  const surface = sidebar ? "#e8e2d4" : "#07111f";
+  const ink = sidebar ? "#172220" : "#e0f2fe";
+  const quiet = sidebar ? "#5d6965" : "#7dd3fc";
+
   return (
     <aside
       data-testid="localnet-wallet-standard"
       data-dev-wallet-symbol={LOCALNET_DEV_WALLET_SENTINEL}
       style={{
-        background: "#07111f",
-        borderBottom: "2px solid #38bdf8",
-        color: "#e0f2fe",
+        background: surface,
+        border: sidebar ? "1px solid rgba(23, 34, 32, 0.2)" : 0,
+        borderBottom: sidebar ? undefined : `2px solid ${accent}`,
+        color: ink,
         display: "grid",
         gap: "10px",
-        padding: "12px clamp(16px, 4vw, 48px)",
+        padding: sidebar ? "12px" : "12px clamp(16px, 4vw, 48px)",
         position: "relative",
+        width: "100%",
         zIndex: 100,
       }}
     >
@@ -334,8 +344,8 @@ export function LocalnetDevTools({
         <strong style={{ letterSpacing: "0.08em" }}>
           LOCAL DEMO · REAL privacy_Privacy
         </strong>
-        <span style={{ color: "#7dd3fc", fontSize: "0.8rem" }}>
-          Wallet Standard: {wallet.name} · {wallet.config.proofMode}
+        <span style={{ color: quiet, fontSize: "0.7rem" }}>
+          {wallet.name} · {wallet.config.proofMode}
         </span>
       </div>
       <div
@@ -355,10 +365,10 @@ export function LocalnetDevTools({
             aria-pressed={selectedId === identity.id}
             onClick={() => selectIdentity(identity.id)}
             style={{
-              background: selectedId === identity.id ? "#38bdf8" : "#172554",
-              border: "1px solid #38bdf8",
-              borderRadius: "999px",
-              color: selectedId === identity.id ? "#07111f" : "#e0f2fe",
+              background: selectedId === identity.id ? accent : surface,
+              border: `1px solid ${accent}`,
+              borderRadius: sidebar ? "2px" : "999px",
+              color: selectedId === identity.id ? (sidebar ? "#f4f0e5" : "#07111f") : ink,
               cursor: "pointer",
               fontWeight: 700,
               padding: "7px 14px",
@@ -367,10 +377,10 @@ export function LocalnetDevTools({
             {identity.label}
           </button>
         ))}
-        <span style={{ color: "#bae6fd", fontFamily: "monospace" }}>
+        <span style={{ color: quiet, fontFamily: "monospace", fontSize: "0.7rem" }}>
           {shortAddress(wallet.selectedIdentity.address)}
         </span>
-        <span style={{ color: "#94a3b8", fontSize: "0.76rem" }}>
+        <span style={{ color: quiet, fontSize: "0.68rem" }}>
           {connectedAddress
             ? "account change is live"
             : "choose an identity, then connect Localnet (dev)"}
@@ -392,7 +402,7 @@ export function LocalnetDevTools({
             style={{
               background: "transparent",
               border: 0,
-              color: "#bae6fd",
+              color: quiet,
               cursor: "pointer",
               padding: 0,
               textDecoration: "underline",
@@ -413,7 +423,7 @@ export function LocalnetDevTools({
           style={{
             background: "transparent",
             border: 0,
-            color: "#bae6fd",
+            color: quiet,
             cursor: "pointer",
             padding: 0,
             textDecoration: "underline",
