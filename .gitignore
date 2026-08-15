@@ -11,6 +11,9 @@ dist/
 build/
 .e2e-build/
 .quietline-localnet/
+playwright-report/
+test-results/
+ui-artifacts/
 .turbo/
 
 # env — never commit keys

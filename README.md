@@ -187,6 +187,7 @@ into the browser and must be treated as public. Cairo commands run from the
 | --- | --- | --- |
 | `npm run dev` | root | Starts the ordinary Vite development server |
 | `npm run dev:localnet` | root | Deploys the real pool + helper, starts the dev-only two-identity wallet API, and serves Vite |
+| `npm run test:ui` | root | Starts a clean localnet, drives all browser journeys with Playwright, saves ignored screenshots under `ui-artifacts/localnet/`, and stops localnet |
 | `npm run localnet:stop` | root | Stops the local demo's Vite, wallet API, and native Devnet processes |
 | `npm run build` | root | Type-checks and emits the production SPA to `dist/` |
 | `npm run preview` | root | Serves the production build locally |
@@ -197,6 +198,10 @@ into the browser and must be treated as public. Cairo commands run from the
 | `npm run test:e2e:pool` | root | Runs the upstream real-pool lifecycle plus Quietline's production OPEN-note + mail invoke batch, decryption, recovery-note credit, and action-ID replay checks |
 | `scarb build` | `cairo/` | Compiles the Cairo helper and mock ERC-20 |
 | `snforge test` | `cairo/` | Runs helper authorization, ciphertext-cap, caller-isolated directory, event, zero-balance, and dust tests |
+
+The UI suite requires Playwright Chromium once per machine (`npx playwright install chromium`).
+It always uses `http://127.0.0.1:5173` so a stale service bound to `localhost` cannot
+be mistaken for the localnet app.
 
 Use `npm run devnet:stop` when finished. The default Devnet 0.9.2 image is
 pinned as `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`,
