@@ -7,9 +7,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "RUST_LOG=\"${RUST_LOG:-warn}\" node --test --test-concurrency=1 tests/real-pool.e2e.test.mjs"
+    "test": "RUST_LOG=\"${RUST_LOG:-warn}\" node --test --test-concurrency=1 tests/*.e2e.test.mjs"
   },
   "dependencies": {
-    "@starkware-libs/starknet-privacy-sdk": "file:../vendor/starknet-privacy/sdk"
+    "@starkware-libs/starknet-privacy-client": "file:../vendor/starknet-privacy/client",
+    "@starkware-libs/starknet-privacy-sdk": "file:../vendor/starknet-privacy/sdk",
+    "starknet": "10.5.0"
   }
 }

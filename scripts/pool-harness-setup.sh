@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENDOR_DIR="${ROOT_DIR}/vendor"
 PRIVACY_DIR="${VENDOR_DIR}/starknet-privacy"
 SDK_DIR="${PRIVACY_DIR}/sdk"
+CLIENT_DIR="${PRIVACY_DIR}/client"
 BIN_DIR="${VENDOR_DIR}/bin"
 TOOLCHAINS_DIR="${VENDOR_DIR}/toolchains"
 HARNESS_DIR="${ROOT_DIR}/pool-harness"
@@ -191,12 +192,20 @@ install_sdk_dependencies() {
 	(cd "${SDK_DIR}" && npm ci)
 }
 
+install_client_dependencies() {
+	(cd "${CLIENT_DIR}" && npm ci)
+}
+
 build_privacy_contracts() {
 	(cd "${SDK_DIR}" && PATH="${BIN_DIR}:${PATH}" npm run scarb:build)
 }
 
 build_sdk() {
 	(cd "${SDK_DIR}" && npm run build)
+}
+
+build_client() {
+	(cd "${CLIENT_DIR}" && npm run build)
 }
 
 install_harness_dependencies() {
@@ -227,10 +236,12 @@ check_installation() {
 	assert_file "${PRIVACY_DIR}/target/dev/privacy_Privacy.contract_class.json"
 	assert_file "${PRIVACY_DIR}/target/dev/privacy_Privacy.compiled_contract_class.json"
 	assert_file "${SDK_DIR}/dist/testing/index.js"
+	assert_file "${CLIENT_DIR}/dist/index.js"
 	assert_file "${HARNESS_DIR}/package-lock.json"
 	assert_file "${HARNESS_DIR}/node_modules/@starkware-libs/starknet-privacy-sdk/dist/testing/index.js"
+	assert_file "${HARNESS_DIR}/node_modules/@starkware-libs/starknet-privacy-client/dist/index.js"
 	(cd "${HARNESS_DIR}" && node --input-type=module --eval \
-		'import("@starkware-libs/starknet-privacy-sdk/testing")')
+		'await import("@starkware-libs/starknet-privacy-sdk/testing"); await import("@starkware-libs/starknet-privacy-client")')
 
 	printf 'Scarb: %s (repository-local; cairo/ remains unchanged)\n' \
 		"$("${BIN_DIR}/scarb" --version | head -n 1)"
@@ -273,7 +284,9 @@ step "installing repository-local Scarb ${SCARB_VERSION}" ensure_scarb "${TARGET
 step "installing repository-local Universal Sierra Compiler ${USC_VERSION}" ensure_usc "${TARGET}"
 step "installing native starknet-devnet ${DEVNET_VERSION}" ensure_devnet "${TARGET}"
 step "installing vendored SDK dependencies" install_sdk_dependencies
+step "installing vendored client dependencies" install_client_dependencies
 step "building the real privacy_Privacy Cairo artifacts with Scarb ${SCARB_VERSION}" build_privacy_contracts
 step "building the vendored TypeScript SDK" build_sdk
+step "building the vendored TypeScript client" build_client
 step "installing isolated pool-harness dependencies" install_harness_dependencies
 step "verifying the complete real-pool installation" check_installation

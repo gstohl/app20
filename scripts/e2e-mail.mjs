@@ -114,7 +114,7 @@ function parseMessageEvent(event) {
     "Invalid ciphertext felt length.",
   );
   check(
-    event.data.length === 6 + ciphertextLength,
+    event.data.length === 7 + ciphertextLength,
     "MessagePosted ciphertext length does not match its event data.",
   );
 
@@ -122,7 +122,8 @@ function parseMessageEvent(event) {
     ephemeralPub: [event.data[0], event.data[1]],
     viewTag: Number(BigInt(event.data[2])),
     nonce: [event.data[3], event.data[4]],
-    ciphertextFelts: event.data.slice(6),
+    ciphertextFelts: event.data.slice(6, 6 + ciphertextLength),
+    actionId: event.data[6 + ciphertextLength],
   };
 }
 
@@ -245,6 +246,7 @@ async function main() {
     record.nonce[1],
     num.toHex(record.ciphertextFelts.length),
     ...record.ciphertextFelts,
+    "0x0",
   ];
   const posted = await pool.execute(
     {
@@ -300,6 +302,7 @@ async function main() {
   } while (continuationToken);
   check(events.length === 1, "Expected exactly one MessagePosted event.");
   const eventRecord = parseMessageEvent(events[0]);
+  check(BigInt(eventRecord.actionId) === 0n, "Mock-pool mail must use action_id = 0.");
 
   const decrypted = await scanAndDecrypt(recipient.privateKey, [eventRecord]);
   check(decrypted.length === 1, "Recipient did not discover exactly one message.");
