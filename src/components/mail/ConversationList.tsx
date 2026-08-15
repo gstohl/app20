@@ -2,6 +2,7 @@
 
 import { feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
+import { parseCompositePayload } from "@/lib/composite";
 import {
   formatBaseUnits,
   parseAcceptPayload,
@@ -21,9 +22,23 @@ import styles from "./mail.module.css";
 
 export type MailboxFilter = "all" | "letters" | "deals" | "invoices" | "escrow";
 
-export function mailboxCategory(
+function attachmentCategory(
+  type: "payment" | "offer" | "payment_request" | "escrow_fund",
+): Exclude<MailboxFilter, "all"> {
+  if (type === "payment_request") return "invoices";
+  if (type === "escrow_fund") return "escrow";
+  return "deals";
+}
+
+function mailboxCategory(
   message: LocalMailMessage,
 ): Exclude<MailboxFilter, "all"> {
+  if (message.envelope.type === "composite") {
+    const composite = parseCompositePayload(message.envelope.payload);
+    if (composite?.body.trim()) return "letters";
+    const first = composite?.attachments[0];
+    return first ? attachmentCategory(first.type) : "letters";
+  }
   switch (message.envelope.type) {
     case "text":
       return "letters";
@@ -37,6 +52,23 @@ export function mailboxCategory(
     default:
       return "deals";
   }
+}
+
+/** Composite documents can appear under every matching secondary label. */
+export function mailboxMatchesFilter(
+  message: LocalMailMessage,
+  filter: MailboxFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (message.envelope.type !== "composite") {
+    return mailboxCategory(message) === filter;
+  }
+  const composite = parseCompositePayload(message.envelope.payload);
+  if (!composite) return false;
+  if (filter === "letters" && composite.body.trim()) return true;
+  return composite.attachments.some(
+    (attachment) => attachmentCategory(attachment.type) === filter,
+  );
 }
 
 function envelopeLabel(message: LocalMailMessage): string {
@@ -61,6 +93,13 @@ function envelopeLabel(message: LocalMailMessage): string {
       return "Escrow claim";
     case "escrow_timeout":
       return "Escrow timeout";
+    case "composite": {
+      const composite = parseCompositePayload(message.envelope.payload);
+      const count = composite?.attachments.length ?? 0;
+      return count
+        ? `Document · ${count} attachment${count === 1 ? "" : "s"}`
+        : "Document";
+    }
     default:
       return "Unsupported";
   }
@@ -91,6 +130,17 @@ function correspondent(
         return parsePaymentRequestPayload(payload)?.requester;
       case "escrow_fund":
         return parseEscrowFundPayload(payload)?.maker;
+      case "composite": {
+        const composite = parseCompositePayload(payload);
+        for (const attachment of composite?.attachments ?? []) {
+          if (attachment.type === "offer") return attachment.payload.offerer;
+          if (attachment.type === "payment_request") {
+            return attachment.payload.requester;
+          }
+          if (attachment.type === "escrow_fund") return attachment.payload.maker;
+        }
+        return undefined;
+      }
       default:
         return undefined;
     }
@@ -158,6 +208,23 @@ function messagePreview(message: LocalMailMessage): string {
       return parseEscrowTimeoutPayload(payload)
         ? "Escrow timeout notice"
         : "Escrow update";
+    case "composite": {
+      const composite = parseCompositePayload(payload);
+      if (!composite) return "Unsupported composite document";
+      const body = composite.body.replace(/\s+/g, " ").trim();
+      if (body) return body;
+      return composite.attachments
+        .map((attachment) =>
+          attachment.type === "payment_request"
+            ? "Invoice"
+            : attachment.type === "escrow_fund"
+              ? "Escrow"
+              : attachment.type === "offer"
+                ? "Offer"
+                : "Payment",
+        )
+        .join(" + ");
+    }
     default:
       return "Unsupported decrypted record";
   }
@@ -190,6 +257,7 @@ type ConversationListProps = {
   readMessageIds: ReadonlySet<string>;
   aliases: AliasRecord[];
   selfAddress: string;
+  folderLabel: string;
   filterLabel: string;
   onSelect: (messageId: string) => void;
 };
@@ -200,6 +268,7 @@ export default function ConversationList({
   readMessageIds,
   aliases,
   selfAddress,
+  folderLabel,
   filterLabel,
   onSelect,
 }: ConversationListProps) {
@@ -207,8 +276,8 @@ export default function ConversationList({
     <section className={styles.conversationRail} aria-label="Message list">
       <header className={styles.railHeading}>
         <div>
-          <p className={styles.kicker}>SEALED CORRESPONDENCE</p>
-          <h1>{filterLabel}</h1>
+          <p className={styles.kicker}>{filterLabel.toUpperCase()}</p>
+          <h1>{folderLabel}</h1>
         </div>
         <span className={styles.messageTotal}>{messages.length}</span>
       </header>
@@ -256,11 +325,13 @@ export default function ConversationList({
                         unread ? styles.unreadIndicator : styles.readIndicator
                       }
                     >
-                      {unread
-                        ? "● UNREAD"
-                        : message.envelope.type === "unsupported"
-                          ? "UNSUPPORTED"
-                          : "OPENED"}
+                      {message.direction === "outgoing"
+                        ? "✓ DELIVERED"
+                        : unread
+                          ? "● UNREAD"
+                          : message.envelope.type === "unsupported"
+                            ? "UNSUPPORTED"
+                            : "OPENED"}
                     </span>
                   </span>
                 </button>

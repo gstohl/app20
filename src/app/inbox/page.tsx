@@ -8,9 +8,10 @@ import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useLocalnetTools } from "@/app/localnetToolsContext";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
 import ConversationList, {
-  mailboxCategory,
+  mailboxMatchesFilter,
   type MailboxFilter,
 } from "@/components/mail/ConversationList";
+import DraftList from "@/components/mail/DraftList";
 import Onboard from "@/components/mail/Onboard";
 import { ScanProgress } from "@/components/mail/OperationProgress";
 import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
@@ -20,6 +21,14 @@ import Thread, {
 } from "@/components/mail/Thread";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
+import { parseCompositePayload } from "@/lib/composite";
+import {
+  createBlankDraft,
+  deleteDraft,
+  loadDrafts,
+  saveDraft,
+  type CompositeDraft,
+} from "@/lib/drafts";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import {
   claimEscrowOperation,
@@ -100,6 +109,11 @@ import {
   submitMemoTransfer,
   submitOtcAccept,
 } from "@/lib/strk20";
+import {
+  loadSentMail,
+  saveSentMail,
+  type StoredSentMail,
+} from "@/lib/sent-mail";
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
@@ -114,12 +128,19 @@ type ActiveScanWorker = {
 
 type ScanKind = "idle" | "scanning" | "ok" | "error";
 
-const MAILBOX_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
-  { id: "all", label: "All" },
+const TYPE_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
+  { id: "all", label: "All types" },
   { id: "letters", label: "Letters" },
   { id: "deals", label: "Deals" },
   { id: "invoices", label: "Invoices" },
   { id: "escrow", label: "Escrow" },
+];
+
+type MailFolder = "inbox" | "sent" | "drafts";
+const MAIL_FOLDERS: Array<{ id: MailFolder; label: string }> = [
+  { id: "inbox", label: "Inbox" },
+  { id: "sent", label: "Sent" },
+  { id: "drafts", label: "Drafts" },
 ];
 
 type LocalnetEscrowSigner = {
@@ -225,6 +246,48 @@ function mergeMailMessages(
   );
 }
 
+function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
+  return {
+    id: `sent:${message.documentId}`,
+    documentId: message.documentId,
+    index: "local",
+    plaintext: message.plaintext,
+    envelope: decodeEnvelope(encodeEnvelope(message.type, message.payload)),
+    record: message.record,
+    transactionHash: message.transactionHash,
+    transactionHashes: message.transactionHashes,
+    deliveryState: message.deliveryState,
+    direction: "outgoing",
+    recipientCount: message.recipientCount,
+    localCreatedAt: message.createdAt,
+  };
+}
+
+function draftMatchesFilter(
+  draft: CompositeDraft,
+  filter: MailboxFilter,
+): boolean {
+  if (filter === "all") return true;
+  if (filter === "letters" && draft.body.trim()) return true;
+  if (filter === "invoices") {
+    return draft.attachments.some(
+      (attachment) => attachment.type === "payment_request",
+    );
+  }
+  if (filter === "escrow") {
+    return draft.attachments.some(
+      (attachment) => attachment.type === "escrow_fund",
+    );
+  }
+  if (filter === "deals") {
+    return draft.attachments.some(
+      (attachment) =>
+        attachment.type === "offer" || attachment.type === "payment",
+    );
+  }
+  return false;
+}
+
 function parseBlockTimestamp(value: unknown): number | undefined {
   try {
     let timestamp: bigint;
@@ -282,7 +345,10 @@ export default function InboxPage() {
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [mailFolder, setMailFolder] = useState<MailFolder>("inbox");
   const [mailboxFilter, setMailboxFilter] = useState<MailboxFilter>("all");
+  const [drafts, setDrafts] = useState<CompositeDraft[]>([]);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -291,6 +357,8 @@ export default function InboxPage() {
   const escrowAddress = escrowForNetwork(providerIndex);
   const escrowEnabled = providerIndex !== 0 && escrowAddress !== null;
   const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
+  const draftScopeChain = chainId ?? `network-${providerIndex}`;
+  const draftScopeAddress = address || "unconnected";
   const keyFingerprint = mailKeyFingerprint(keypair);
   const scanIdentity = [
     providerIndex,
@@ -351,6 +419,10 @@ export default function InboxPage() {
     setKeypair(null);
     setMailSeed(null);
     setMessages([]);
+    setDrafts([]);
+    setMailFolder("inbox");
+    setMailboxFilter("all");
+    setSelectedDraftId(null);
     setScanKind("idle");
     setScanMessage("");
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
@@ -362,12 +434,25 @@ export default function InboxPage() {
     setActionStates({});
     if (address && chainId) {
       setAliases(loadAliases(window.localStorage, address));
+      setMessages(
+        loadSentMail(window.localStorage, chainId, address).map(
+          storedSentToLocal,
+        ),
+      );
+      setDrafts(loadDrafts(window.localStorage, chainId, address));
       setOtcState(
         expireStoredDeals(window.localStorage, chainId, address),
       );
       setEscrowState(loadEscrowState(window.localStorage, chainId, address));
     } else {
       setAliases([]);
+      setDrafts(
+        loadDrafts(
+          window.localStorage,
+          `network-${providerIndex}`,
+          "unconnected",
+        ),
+      );
       setOtcState(emptyOtcState());
       setEscrowState(emptyEscrowState());
     }
@@ -378,12 +463,27 @@ export default function InboxPage() {
   }, [address, chainId, providerIndex]);
 
   useEffect(() => {
-    const visibleMessages =
-      mailboxFilter === "all"
-        ? messages
-        : messages.filter(
-            (message) => mailboxCategory(message) === mailboxFilter,
-          );
+    if (mailFolder === "drafts") {
+      const visibleDrafts = drafts.filter((draft) =>
+        draftMatchesFilter(draft, mailboxFilter),
+      );
+      if (
+        selectedDraftId &&
+        visibleDrafts.some((draft) => draft.id === selectedDraftId)
+      ) {
+        return;
+      }
+      setSelectedDraftId(visibleDrafts[0]?.id ?? null);
+      return;
+    }
+    const inFolder = messages.filter((message) =>
+      mailFolder === "sent"
+        ? message.direction === "outgoing"
+        : message.direction !== "outgoing",
+    );
+    const visibleMessages = inFolder.filter((message) =>
+      mailboxMatchesFilter(message, mailboxFilter),
+    );
     if (
       selectedMessageId &&
       visibleMessages.some((message) => message.id === selectedMessageId)
@@ -399,7 +499,14 @@ export default function InboxPage() {
         return next;
       });
     }
-  }, [mailboxFilter, messages, selectedMessageId]);
+  }, [
+    drafts,
+    mailFolder,
+    mailboxFilter,
+    messages,
+    selectedDraftId,
+    selectedMessageId,
+  ]);
 
   function setActionState(key: string, state: ThreadActionState) {
     setActionStates((current) => ({ ...current, [key]: state }));
@@ -489,7 +596,32 @@ export default function InboxPage() {
     for (const message of [...localMessages].reverse()) {
       try {
         const { envelope } = message;
-        if (envelope.type === "offer") {
+        if (envelope.type === "composite") {
+          const composite = parseCompositePayload(envelope.payload);
+          if (!composite) continue;
+          for (const attachment of composite.attachments) {
+            if (attachment.type === "offer") {
+              recordDealEvent(window.localStorage, chainId, address, {
+                type: "offer",
+                payload: attachment.payload,
+              });
+            } else if (attachment.type === "payment_request") {
+              recordPaymentRequest(
+                window.localStorage,
+                chainId,
+                address,
+                attachment.payload,
+              );
+            } else if (attachment.type === "escrow_fund") {
+              recordEscrowFund(
+                window.localStorage,
+                chainId,
+                address,
+                attachment.payload,
+              );
+            }
+          }
+        } else if (envelope.type === "offer") {
           const offer = parseOfferPayload(envelope.payload);
           if (offer) {
             recordDealEvent(
@@ -606,7 +738,13 @@ export default function InboxPage() {
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
     setScanning(false);
-    setMessages([]);
+    setMessages(
+      address && chainId
+        ? loadSentMail(window.localStorage, chainId, address).map(
+            storedSentToLocal,
+          )
+        : [],
+    );
     setScanKind("idle");
     setScanMessage("");
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
@@ -827,47 +965,45 @@ export default function InboxPage() {
   }
 
   function handleSent(message: SentEnvelope) {
+    const createdAt = Date.now();
+    const localMessage: LocalMailMessage = {
+      id: `sent:${message.documentId}`,
+      documentId: message.documentId,
+      index: "local",
+      plaintext: message.plaintext,
+      envelope: decodeEnvelope(encodeEnvelope(message.type, message.payload)),
+      record: message.record,
+      transactionHash: message.transactionHash,
+      transactionHashes: message.transactionHashes,
+      deliveryState: message.deliveryState,
+      direction: "outgoing",
+      recipientCount: message.recipientCount,
+      localCreatedAt: createdAt,
+    };
+    setMessages((current) => mergeMailMessages(current, [localMessage]));
     if (address && chainId) {
       try {
-        if (message.type === "offer") {
-          const offer = parseOfferPayload(message.payload);
-          if (offer) {
-            recordDealEvent(
-              window.localStorage,
-              chainId,
-              address,
-              { type: "offer", payload: offer },
-            );
-          }
-        } else if (message.type === "payment_request") {
-          const request = parsePaymentRequestPayload(message.payload);
-          if (request) {
-            recordPaymentRequest(
-              window.localStorage,
-              chainId,
-              address,
-              request,
-            );
-          }
-        } else if (message.type === "escrow_fund") {
-          const fund = parseEscrowFundPayload(message.payload);
-          if (fund) {
-            recordEscrowFund(
-              window.localStorage,
-              chainId,
-              address,
-              fund,
-            );
-          }
-        }
+        saveSentMail(window.localStorage, chainId, address, {
+          version: 1,
+          documentId: message.documentId,
+          type: message.type,
+          payload: message.payload,
+          plaintext: message.plaintext,
+          record: message.record,
+          transactionHash: message.transactionHash,
+          transactionHashes: message.transactionHashes,
+          recipientCount: message.recipientCount,
+          deliveryState: message.deliveryState,
+          createdAt,
+        });
+        mergeLocalDealState([localMessage]);
         refreshOtcState();
         refreshEscrowState();
         void refreshEscrowChainDeals();
       } catch {
-        // The confirmed ciphertext remains valid even if localStorage is full.
+        // Confirmed delivery stays visible in memory if localStorage is full.
       }
     }
-    void scanInbox();
   }
 
   async function postReceipt(
@@ -1436,23 +1572,80 @@ export default function InboxPage() {
     }
   }
 
-  const messageCounts: Record<MailboxFilter, number> = {
-    all: messages.length,
+  const inboxMessages = messages.filter(
+    (message) => message.direction !== "outgoing",
+  );
+  const sentMessages = messages.filter(
+    (message) => message.direction === "outgoing",
+  );
+  const folderCounts: Record<MailFolder, number> = {
+    inbox: inboxMessages.length,
+    sent: sentMessages.length,
+    drafts: drafts.length,
+  };
+  const folderMessages = mailFolder === "sent" ? sentMessages : inboxMessages;
+  const typeCounts: Record<MailboxFilter, number> = {
+    all: mailFolder === "drafts" ? drafts.length : folderMessages.length,
     letters: 0,
     deals: 0,
     invoices: 0,
     escrow: 0,
   };
-  for (const message of messages) messageCounts[mailboxCategory(message)] += 1;
-  const filteredMessages =
-    mailboxFilter === "all"
-      ? messages
-      : messages.filter((message) => mailboxCategory(message) === mailboxFilter);
+  for (const filter of TYPE_FILTERS.slice(1)) {
+    typeCounts[filter.id] =
+      mailFolder === "drafts"
+        ? drafts.filter((draft) => draftMatchesFilter(draft, filter.id)).length
+        : folderMessages.filter((message) =>
+            mailboxMatchesFilter(message, filter.id),
+          ).length;
+  }
+  const filteredMessages = folderMessages.filter((message) =>
+    mailboxMatchesFilter(message, mailboxFilter),
+  );
+  const filteredDrafts = drafts.filter((draft) =>
+    draftMatchesFilter(draft, mailboxFilter),
+  );
   const selectedMessage = filteredMessages.find(
     (message) => message.id === selectedMessageId,
   );
+  const activeDraft = drafts.find((draft) => draft.id === selectedDraftId);
+  const folderLabel =
+    MAIL_FOLDERS.find((folder) => folder.id === mailFolder)?.label ?? "Inbox";
   const filterLabel =
-    MAILBOX_FILTERS.find((filter) => filter.id === mailboxFilter)?.label ?? "All";
+    TYPE_FILTERS.find((filter) => filter.id === mailboxFilter)?.label ??
+    "All types";
+
+  function persistDraft(draft: CompositeDraft) {
+    setDrafts(
+      saveDraft(
+        window.localStorage,
+        draftScopeChain,
+        draftScopeAddress,
+        draft,
+        draft.updatedAt,
+      ),
+    );
+  }
+
+  function removeDraft(draftId: string, confirmDelete = true) {
+    if (
+      confirmDelete &&
+      !window.confirm(
+        "Delete this device-private draft? It has never been uploaded and cannot be restored.",
+      )
+    ) {
+      return;
+    }
+    const next = deleteDraft(
+      window.localStorage,
+      draftScopeChain,
+      draftScopeAddress,
+      draftId,
+    );
+    setDrafts(next);
+    setSelectedDraftId(next[0]?.id ?? null);
+    if (selectedDraftId === draftId && !next.length) setComposerOpen(false);
+  }
 
   function selectMessage(messageId: string) {
     setSelectedMessageId(messageId);
@@ -1465,7 +1658,19 @@ export default function InboxPage() {
     setMobileDetailOpen(true);
   }
 
+  function selectDraft(draftId: string) {
+    setSelectedDraftId(draftId);
+    setComposerOpen(true);
+    setMobileDetailOpen(true);
+    setSidebarOpen(false);
+  }
+
   function openComposer() {
+    const draft = createBlankDraft();
+    persistDraft(draft);
+    setMailFolder("drafts");
+    setMailboxFilter("all");
+    setSelectedDraftId(draft.id);
     setComposerOpen(true);
     setMobileDetailOpen(true);
     setSidebarOpen(false);
@@ -1476,15 +1681,23 @@ export default function InboxPage() {
     setMobileDetailOpen(false);
   }
 
-  function selectMailbox(nextFilter: MailboxFilter) {
+  function selectFolder(nextFolder: MailFolder) {
+    setMailFolder(nextFolder);
+    setSidebarOpen(false);
+    setMobileDetailOpen(false);
+    setComposerOpen(nextFolder === "drafts" && Boolean(filteredDrafts[0]));
+    if (nextFolder === "drafts") {
+      const nextDraft = drafts.find((draft) =>
+        draftMatchesFilter(draft, mailboxFilter),
+      );
+      setSelectedDraftId(nextDraft?.id ?? null);
+    }
+  }
+
+  function selectTypeFilter(nextFilter: MailboxFilter) {
     setMailboxFilter(nextFilter);
     setSidebarOpen(false);
     setMobileDetailOpen(false);
-    const nextMessage =
-      nextFilter === "all"
-        ? messages[0]
-        : messages.find((message) => mailboxCategory(message) === nextFilter);
-    setSelectedMessageId(nextMessage?.id ?? null);
   }
 
   return (
@@ -1505,7 +1718,7 @@ export default function InboxPage() {
           <span>Quietline</span>
         </a>
         <button className={styles.mobileCompose} type="button" onClick={openComposer}>
-          Compose
+          New
         </button>
       </header>
 
@@ -1548,20 +1761,35 @@ export default function InboxPage() {
 
           <button className={styles.composeButton} type="button" onClick={openComposer}>
             <span aria-hidden="true">＋</span>
-            Compose
+            New
           </button>
 
-          <nav className={styles.mailboxNav} aria-label="Mailboxes">
-            <span className={styles.sidebarLabel}>MAILBOXES</span>
-            {MAILBOX_FILTERS.map((filter) => (
+          <nav className={styles.mailboxNav} aria-label="Mail folders">
+            <span className={styles.sidebarLabel}>FOLDERS</span>
+            {MAIL_FOLDERS.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                aria-current={mailFolder === folder.id ? "page" : undefined}
+                onClick={() => selectFolder(folder.id)}
+              >
+                <span>{folder.label}</span>
+                <strong>{folderCounts[folder.id]}</strong>
+              </button>
+            ))}
+          </nav>
+
+          <nav className={styles.typeFilterNav} aria-label="Filter current folder">
+            <span className={styles.sidebarLabel}>SHOW</span>
+            {TYPE_FILTERS.map((filter) => (
               <button
                 key={filter.id}
                 type="button"
-                aria-current={mailboxFilter === filter.id ? "page" : undefined}
-                onClick={() => selectMailbox(filter.id)}
+                aria-pressed={mailboxFilter === filter.id}
+                onClick={() => selectTypeFilter(filter.id)}
               >
                 <span>{filter.label}</span>
-                <strong>{messageCounts[filter.id]}</strong>
+                <strong>{typeCounts[filter.id]}</strong>
               </button>
             ))}
           </nav>
@@ -1628,15 +1856,26 @@ export default function InboxPage() {
           </footer>
         </aside>
 
-        <ConversationList
-          messages={filteredMessages}
-          selectedMessageId={selectedMessageId}
-          readMessageIds={readMessageIds}
-          aliases={aliases}
-          selfAddress={address}
-          filterLabel={filterLabel}
-          onSelect={selectMessage}
-        />
+        {mailFolder === "drafts" ? (
+          <DraftList
+            drafts={filteredDrafts}
+            selectedDraftId={selectedDraftId}
+            filterLabel={filterLabel}
+            onSelect={selectDraft}
+            onDelete={(draftId) => removeDraft(draftId)}
+          />
+        ) : (
+          <ConversationList
+            messages={filteredMessages}
+            selectedMessageId={selectedMessageId}
+            readMessageIds={readMessageIds}
+            aliases={aliases}
+            selfAddress={address}
+            folderLabel={folderLabel}
+            filterLabel={filterLabel}
+            onSelect={selectMessage}
+          />
+        )}
 
         <main className={styles.readingPane} aria-label="Reading pane">
           <header className={styles.readingToolbar}>
@@ -1645,9 +1884,9 @@ export default function InboxPage() {
             </button>
             <div>
               <span className={styles.sidebarLabel}>
-                {composerOpen ? "NEW DOCUMENT" : "LOCAL PLAINTEXT / CARBON COPY"}
+                {composerOpen ? "DEVICE-PRIVATE DRAFT" : "LOCAL PLAINTEXT / CARBON COPY"}
               </span>
-              <strong>{composerOpen ? "Compose" : selectedMessage ? "Opened envelope" : "Quietline"}</strong>
+              <strong>{composerOpen ? "New document" : selectedMessage ? folderLabel : "Quietline"}</strong>
             </div>
             {composerOpen ? (
               <button className={styles.closeCompose} type="button" onClick={closeDetail}>
@@ -1657,16 +1896,23 @@ export default function InboxPage() {
           </header>
 
           <div className={styles.readingScroll}>
-            {composerOpen ? (
+            {composerOpen && activeDraft ? (
               <Compose
+                draft={activeDraft}
                 helperAddress={helperAddress}
                 escrowAddress={escrowAddress}
                 escrowEnabled={escrowEnabled}
                 mailSeed={mailSeed}
                 keyReady={Boolean(keypair)}
                 networkName={networkName}
+                onDraftChange={persistDraft}
+                onDeleteDraft={(draftId) => removeDraft(draftId, false)}
                 onSent={(message) => {
                   handleSent(message);
+                  removeDraft(message.draftId, false);
+                  setMailFolder("sent");
+                  setMailboxFilter("all");
+                  setSelectedMessageId(`sent:${message.documentId}`);
                   setComposerOpen(false);
                 }}
                 onAliasesChange={setAliases}

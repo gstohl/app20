@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -11,12 +11,23 @@ import {
   saveAlias,
   type AliasRecord,
 } from "@/lib/aliases";
+import type { CompositeAttachment, CompositePayload } from "@/lib/composite";
+import {
+  planCompositeSubmission,
+  submissionStepLabel,
+} from "@/lib/composite-submit";
+import {
+  createDraftAttachment,
+  type CompositeDraft,
+  type DraftAttachment,
+  type TradeDraftFields,
+} from "@/lib/drafts";
 import { encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
-  createEscrowDealId,
   deriveEscrowClaimKey,
+  loadEscrowState,
   markEscrowOperationSubmitted,
   parseEscrowFundPayload,
   recordEscrowFund,
@@ -32,13 +43,13 @@ import {
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import {
-  createDealId,
-  createRequestId,
   parseDecimalToBaseUnits,
+  type AcceptPayload,
   type OfferPayload,
   type PaymentRequestPayload,
 } from "@/lib/otc";
 import {
+  computeActionId,
   strk20ErrorMessage,
   submitActions,
   submitMail,
@@ -49,20 +60,28 @@ import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
 export type SentEnvelope = {
+  documentId: string;
+  draftId: string;
   type: EnvelopeType;
   payload: unknown;
+  plaintext: string;
   record: EncryptedMailRecord;
   transactionHash: string;
+  transactionHashes: string[];
   recipientCount: number;
+  deliveryState: "confirmed";
 };
 
 type ComposeProps = {
+  draft: CompositeDraft;
   helperAddress: string | null;
   escrowAddress: string | null;
   escrowEnabled: boolean;
   mailSeed: Uint8Array | null;
   keyReady: boolean;
   networkName: string;
+  onDraftChange: (draft: CompositeDraft) => void;
+  onDeleteDraft: (draftId: string) => void;
   onSent: (message: SentEnvelope) => void;
   onAliasesChange?: (aliases: AliasRecord[]) => void;
 };
@@ -70,15 +89,18 @@ type ComposeProps = {
 type SendState = {
   kind: "idle" | "lookup" | "encrypting" | "proving" | "ok" | "error";
   message?: string;
-  transactionHash?: string;
+  transactionHashes?: string[];
   startedAt?: number;
+  step?: number;
+  totalSteps?: number;
 };
 
-type ComposeMode = "letter" | "deal" | "escrow" | "invoice";
-
-function expiryFromHours(value: string): number {
+function expiryFromHours(value: string, escrow = false): number {
   const trimmed = value.trim();
-  if (!trimmed || trimmed === "0") return 0;
+  if (!trimmed || trimmed === "0") {
+    if (escrow) throw new Error("Escrow requires a future fill deadline.");
+    return 0;
+  }
   const hours = Number(trimmed);
   if (!Number.isFinite(hours) || hours <= 0 || hours > 8_760) {
     throw new Error("Expiry must be 0–8760 hours.");
@@ -93,13 +115,160 @@ function splitRecipientEntries(value: string): string[] {
     .filter(Boolean);
 }
 
+function attachmentLabel(type: DraftAttachment["type"]): string {
+  switch (type) {
+    case "payment":
+      return "Private payment";
+    case "offer":
+      return "OTC offer";
+    case "payment_request":
+      return "Invoice";
+    case "escrow_fund":
+      return "Escrow fund";
+  }
+}
+
+function AttachmentShell({
+  type,
+  children,
+  onRemove,
+}: {
+  type: DraftAttachment["type"];
+  children: ReactNode;
+  onRemove: () => void;
+}) {
+  return (
+    <section className={styles.compositeAttachment}>
+      <header className={styles.attachmentHeading}>
+        <div>
+          <span className={styles.fieldBadge}>ATTACHMENT</span>
+          <strong>{attachmentLabel(type)}</strong>
+        </div>
+        <button type="button" onClick={onRemove}>
+          Remove
+        </button>
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function TradeFields({
+  attachment,
+  escrow,
+  update,
+}: {
+  attachment: Extract<
+    DraftAttachment,
+    { type: "offer" | "escrow_fund" }
+  >;
+  escrow: boolean;
+  update: (fields: Partial<TradeDraftFields>) => void;
+}) {
+  return (
+    <div className={styles.dealFields}>
+      <p className={styles.termsPreview}>
+        {escrow
+          ? "Deposit leg A in QuietlineEscrow; the counterparty deposits leg B before receiving it."
+          : "Send bilateral quoted terms. Sending the offer moves no asset."}
+      </p>
+      <label className={styles.field}>
+        <span>{escrow ? "Leg A STRK to deposit" : "STRK offered"}</span>
+        <input
+          value={attachment.giveStrk}
+          onChange={(event) => update({ giveStrk: event.target.value })}
+          inputMode="decimal"
+          placeholder="0.01"
+          required
+        />
+      </label>
+      <label className={styles.field}>
+        <span>Quoted token symbol</span>
+        <input
+          value={attachment.wantSymbol}
+          onChange={(event) => update({ wantSymbol: event.target.value })}
+          placeholder="USDC"
+          maxLength={32}
+          required
+        />
+      </label>
+      <label className={styles.field}>
+        <span>Quoted token address</span>
+        <input
+          value={attachment.wantAddress}
+          onChange={(event) => update({ wantAddress: event.target.value })}
+          placeholder="0x…"
+          required
+        />
+      </label>
+      <div className={styles.amountPair}>
+        <label className={styles.field}>
+          <span>Token decimals</span>
+          <input
+            value={attachment.wantDecimals}
+            onChange={(event) => update({ wantDecimals: event.target.value })}
+            inputMode="numeric"
+            required
+          />
+        </label>
+        <label className={styles.field}>
+          <span>Quoted amount</span>
+          <input
+            value={attachment.wantAmount}
+            onChange={(event) => update({ wantAmount: event.target.value })}
+            inputMode="decimal"
+            placeholder="2.50"
+            required
+          />
+        </label>
+      </div>
+      <label className={styles.field}>
+        <span>Note (optional)</span>
+        <input
+          value={attachment.note}
+          onChange={(event) => update({ note: event.target.value })}
+          maxLength={512}
+        />
+      </label>
+      <label className={styles.field}>
+        <span>{escrow ? "Fill deadline in hours" : "Expiry in hours (0 = none)"}</span>
+        <input
+          value={attachment.expiryHours}
+          onChange={(event) => update({ expiryHours: event.target.value })}
+          inputMode="decimal"
+          required
+        />
+      </label>
+      <p className={styles.dealDisclosure}>
+        {escrow ? (
+          <>
+            Funding withdraws leg A into the contract, so escrow token amounts
+            and contract activity are public. Funding and encrypted delivery are
+            two transactions because the pool permits one external invoke per
+            transaction. This is not a single-transaction atomic swap. Escrow
+            stays off the mainnet scoring path until reviewed.
+          </>
+        ) : (
+          <>
+            Any quoted non-STRK leg remains a promise. No escrow or atomic
+            settlement is claimed.
+          </>
+        )}
+      </p>
+    </div>
+  );
+}
+
 export default function Compose({
+  draft: initialDraft,
   helperAddress,
   escrowAddress,
   escrowEnabled,
   mailSeed,
   keyReady,
   networkName,
+  onDraftChange,
+  onDeleteDraft,
   onSent,
   onAliasesChange,
 }: ComposeProps) {
@@ -111,27 +280,16 @@ export default function Compose({
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
-  const [mode, setMode] = useState<ComposeMode>("letter");
-  const [escrowDraftDealId, setEscrowDraftDealId] = useState(() =>
-    createEscrowDealId(),
-  );
-  const [recipient, setRecipient] = useState("");
-  const [body, setBody] = useState("");
-  const [attachPayment, setAttachPayment] = useState(false);
-  const [attachmentAmount, setAttachmentAmount] = useState("");
-  const [giveStrk, setGiveStrk] = useState("0.01");
-  const [wantAmount, setWantAmount] = useState("");
-  const [wantSymbol, setWantSymbol] = useState("USDC");
-  const [wantAddress, setWantAddress] = useState("");
-  const [wantDecimals, setWantDecimals] = useState("6");
-  const [dealNote, setDealNote] = useState("");
-  const [requestAmount, setRequestAmount] = useState("");
-  const [requestMemo, setRequestMemo] = useState("");
-  const [expiryHours, setExpiryHours] = useState("24");
+  const [draft, setDraft] = useState(initialDraft);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [aliasLabel, setAliasLabel] = useState("");
   const [aliasNotice, setAliasNotice] = useState("");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
+
+  useEffect(() => {
+    setDraft(initialDraft);
+    setSendState({ kind: "idle" });
+  }, [initialDraft.id]);
 
   useEffect(() => {
     if (!senderAddress) {
@@ -142,9 +300,62 @@ export default function Compose({
   }, [senderAddress]);
 
   const recipientEntries = useMemo(
-    () => splitRecipientEntries(recipient),
-    [recipient],
+    () => splitRecipientEntries(draft.recipient),
+    [draft.recipient],
   );
+  const hasEscrow = draft.attachments.some(
+    (attachment) => attachment.type === "escrow_fund",
+  );
+  const hasAnyAttachment = draft.attachments.length > 0;
+
+  function updateDraft(
+    update:
+      | Partial<CompositeDraft>
+      | ((current: CompositeDraft) => CompositeDraft),
+  ) {
+    setDraft((current) => {
+      const next =
+        typeof update === "function"
+          ? update(current)
+          : { ...current, ...update };
+      const saved = { ...next, updatedAt: Date.now() };
+      onDraftChange(saved);
+      return saved;
+    });
+  }
+
+  function updateAttachment(
+    type: DraftAttachment["type"],
+    update: (attachment: DraftAttachment) => DraftAttachment,
+  ) {
+    updateDraft((current) => ({
+      ...current,
+      attachments: current.attachments.map((attachment) =>
+        attachment.type === type ? update(attachment) : attachment,
+      ),
+    }));
+  }
+
+  function addAttachment(type: DraftAttachment["type"]) {
+    if (draft.attachments.some((attachment) => attachment.type === type)) return;
+    const attachment =
+      type === "payment"
+        ? createDraftAttachment("payment")
+        : type === "offer"
+          ? createDraftAttachment("offer")
+          : type === "payment_request"
+            ? createDraftAttachment("payment_request")
+            : createDraftAttachment("escrow_fund");
+    updateDraft({ attachments: [...draft.attachments, attachment] });
+  }
+
+  function removeAttachment(type: DraftAttachment["type"]) {
+    updateDraft({
+      attachments: draft.attachments.filter(
+        (attachment) => attachment.type !== type,
+      ),
+    });
+  }
 
   let disabledReason = "";
   if (!helperAddress) {
@@ -155,15 +366,12 @@ export default function Compose({
     disabledReason = "This wallet does not declare STRK20 Wallet API 0.10 support.";
   } else if (!keyReady) {
     disabledReason = "Load this device's mail key before sending.";
-  } else if (
-    mode === "escrow" &&
-    (!escrowEnabled || !escrowAddress)
-  ) {
+  } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
     disabledReason =
       networkName === "MAINNET"
         ? "Escrow stays off the mainnet scoring path until reviewed."
         : `No reviewed QuietlineEscrow deployment is configured on ${networkName}.`;
-  } else if (mode === "escrow" && (!mailSeed || !chainId)) {
+  } else if (hasEscrow && (!mailSeed || !chainId)) {
     disabledReason = "Reload the mailbox seed before funding escrow.";
   }
 
@@ -179,7 +387,6 @@ export default function Compose({
         `Multi-recipient mail supports at most ${MAX_MULTI_RECIPIENTS} recipients within the 140-felt ciphertext cap.`,
       );
     }
-
     const addresses = recipientEntries.map((entry) =>
       validateAndParseAddress(resolveAliasInput(aliases, entry)),
     );
@@ -222,101 +429,150 @@ export default function Compose({
   }
 
   function appendAlias(alias: AliasRecord) {
-    const separator = recipient.trim() ? "\n" : "";
-    setRecipient((current) => `${current.trimEnd()}${separator}${alias.label}`);
+    const separator = draft.recipient.trim() ? "\n" : "";
+    updateDraft({
+      recipient: `${draft.recipient.trimEnd()}${separator}${alias.label}`,
+    });
   }
 
-  function buildPayload(): { type: EnvelopeType; payload: unknown } {
-    if (mode === "letter") {
-      if (!body.trim()) throw new Error("Write a message before sending.");
-      return { type: "text", payload: { body } };
+  function tradePayload(
+    attachment: Extract<
+      DraftAttachment,
+      { type: "offer" | "escrow_fund" }
+    >,
+    recipientAddress: string,
+  ): OfferPayload | EscrowFundPayload {
+    const decimals = Number(attachment.wantDecimals);
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+      throw new Error("Quoted token decimals must be an integer from 0 to 255.");
     }
-
-    const expiresAt = expiryFromHours(expiryHours);
-    if (mode === "deal" || mode === "escrow") {
-      const decimals = Number(wantDecimals);
-      if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-        throw new Error("Quoted token decimals must be an integer from 0 to 255.");
-      }
-      const legA = {
-        token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
-        amount: parseDecimalToBaseUnits(giveStrk, 18),
-      };
-      const legB = {
-        token: {
-          symbol: wantSymbol.trim(),
-          address: validateAndParseAddress(wantAddress.trim()),
-          decimals,
-        },
-        amount: parseDecimalToBaseUnits(wantAmount, decimals),
-      };
-      if (!legB.token.symbol) {
-        throw new Error("Want-token symbol is required.");
-      }
-
-      if (mode === "escrow") {
-        if (!escrowAddress || !escrowEnabled || !mailSeed) {
-          throw new Error(
-            disabledReason || "QuietlineEscrow is unavailable on this network.",
-          );
-        }
-        if (expiresAt === 0) {
-          throw new Error("Escrow requires a future fill deadline.");
-        }
-        const claimKey = deriveEscrowClaimKey(mailSeed, escrowDraftDealId);
-        const claimPubkey = claimKey.claimPubkey;
-        claimKey.privateKey.fill(0);
-        const payload = parseEscrowFundPayload({
-          dealId: escrowDraftDealId,
-          escrowAddress,
-          maker: validateAndParseAddress(senderAddress),
-          legA,
-          legB,
-          deadline: expiresAt,
-          claimPubkey,
-          ...(dealNote.trim() ? { note: dealNote.trim() } : {}),
-        });
-        if (!payload) {
-          throw new Error(
-            "Escrow legs require different tokens and valid u128 amounts.",
-          );
-        }
-        return { type: "escrow_fund", payload };
-      }
-
-      const payload: OfferPayload = {
-        dealId: createDealId(),
-        give: legA,
-        want: legB,
-        offerer: validateAndParseAddress(senderAddress),
-        expiresAt,
-        ...(dealNote.trim() ? { note: dealNote.trim() } : {}),
-      };
-      return { type: "offer", payload };
-    }
-
-    const payload: PaymentRequestPayload = {
-      requestId: createRequestId(),
+    const legA = {
       token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
-      amount: parseDecimalToBaseUnits(requestAmount, 18),
-      requester: validateAndParseAddress(senderAddress),
-      expiresAt,
-      ...(requestMemo.trim() ? { memo: requestMemo.trim() } : {}),
+      amount: parseDecimalToBaseUnits(attachment.giveStrk, 18),
     };
-    return { type: "payment_request", payload };
+    const legB = {
+      token: {
+        symbol: attachment.wantSymbol.trim(),
+        address: validateAndParseAddress(attachment.wantAddress.trim()),
+        decimals,
+      },
+      amount: parseDecimalToBaseUnits(attachment.wantAmount, decimals),
+    };
+    if (!legB.token.symbol) throw new Error("Want-token symbol is required.");
+
+    if (attachment.type === "escrow_fund") {
+      if (!escrowAddress || !escrowEnabled || !mailSeed || !senderAddress) {
+        throw new Error(
+          disabledReason || "QuietlineEscrow is unavailable on this network.",
+        );
+      }
+      const claimKey = deriveEscrowClaimKey(mailSeed, attachment.dealId);
+      const claimPubkey = claimKey.claimPubkey;
+      claimKey.privateKey.fill(0);
+      const payload = parseEscrowFundPayload({
+        dealId: attachment.dealId,
+        escrowAddress,
+        maker: validateAndParseAddress(senderAddress),
+        legA,
+        legB,
+        deadline: expiryFromHours(attachment.expiryHours, true),
+        claimPubkey,
+        ...(attachment.note.trim() ? { note: attachment.note.trim() } : {}),
+      });
+      if (!payload) {
+        throw new Error(
+          "Escrow legs require different tokens and valid u128 amounts.",
+        );
+      }
+      return payload;
+    }
+
+    return {
+      dealId: attachment.dealId,
+      give: legA,
+      want: legB,
+      offerer: validateAndParseAddress(senderAddress ?? recipientAddress),
+      expiresAt: expiryFromHours(attachment.expiryHours),
+      ...(attachment.note.trim() ? { note: attachment.note.trim() } : {}),
+    };
+  }
+
+  function buildDocument(
+    recipientAddress: string,
+  ): {
+    type: EnvelopeType;
+    payload: unknown;
+    composite: CompositePayload | null;
+    payment: AcceptPayload | null;
+    escrow: EscrowFundPayload | null;
+  } {
+    const attachments: CompositeAttachment[] = [];
+    let payment: AcceptPayload | null = null;
+    let escrow: EscrowFundPayload | null = null;
+
+    for (const attachment of draft.attachments) {
+      if (attachment.type === "payment") {
+        const amount = parseOptionalStrkAmount(attachment.amount);
+        if (amount === undefined) throw new Error("Enter the STRK amount to attach.");
+        payment = {
+          dealId: attachment.paymentId,
+          transfer: {
+            token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+            amount: amount.toString(),
+            to: recipientAddress,
+          },
+        };
+        attachments.push({ type: "payment", payload: payment });
+      } else if (attachment.type === "payment_request") {
+        const payload: PaymentRequestPayload = {
+          requestId: attachment.requestId,
+          token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+          amount: parseDecimalToBaseUnits(attachment.amount, 18),
+          requester: validateAndParseAddress(senderAddress ?? recipientAddress),
+          expiresAt: expiryFromHours(attachment.expiryHours),
+          ...(attachment.memo.trim() ? { memo: attachment.memo.trim() } : {}),
+        };
+        attachments.push({ type: "payment_request", payload });
+      } else {
+        const payload = tradePayload(attachment, recipientAddress);
+        if (attachment.type === "escrow_fund") {
+          escrow = payload as EscrowFundPayload;
+          attachments.push({ type: "escrow_fund", payload: escrow });
+        } else {
+          attachments.push({ type: "offer", payload: payload as OfferPayload });
+        }
+      }
+    }
+
+    if (!draft.body.trim() && attachments.length === 0) {
+      throw new Error("Write a message or add at least one attachment.");
+    }
+    if (attachments.length === 0) {
+      return {
+        type: "text",
+        payload: { body: draft.body },
+        composite: null,
+        payment: null,
+        escrow: null,
+      };
+    }
+    const composite: CompositePayload = {
+      documentId: draft.documentId,
+      body: draft.body,
+      attachments,
+    };
+    return {
+      type: "composite",
+      payload: composite,
+      composite,
+      payment,
+      escrow,
+    };
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!helperAddress) {
-      setSendState({
-        kind: "error",
-        message: `No QuietlineMail helper is configured on ${networkName}.`,
-      });
-      return;
-    }
-    if (!walletAccount || !senderAddress || !isStrk20Capable || !keyReady) {
+    if (!helperAddress || !walletAccount || !senderAddress || !isStrk20Capable || !keyReady) {
       setSendState({
         kind: "error",
         message: disabledReason || "Mail sending is not ready.",
@@ -327,53 +583,36 @@ export default function Compose({
     let escrowReservation:
       | { dealId: string; submitted: boolean }
       | undefined;
+    let fundConfirmedHash: string | undefined;
+    let documentSubmittedHash: string | undefined;
+    const transactionHashes: string[] = [];
     try {
       const recipientAddresses = resolvedRecipients();
-      if (mode !== "letter" && recipientAddresses.length !== 1) {
+      if (hasAnyAttachment && recipientAddresses.length !== 1) {
         throw new Error(
-          "Deals, escrow, and invoices are bilateral. Address exactly one counterparty.",
+          "Attachments are bilateral. Address exactly one counterparty; body-only documents may have multiple recipients.",
         );
       }
-      if (attachPayment && recipientAddresses.length !== 1) {
-        throw new Error(
-          "An attached STRK payment has one private transfer destination. Send group letters without an attachment.",
-        );
-      }
-      const paymentAmount = attachPayment
-        ? parseOptionalStrkAmount(attachmentAmount)
-        : undefined;
-      if (attachPayment && paymentAmount === undefined) {
-        throw new Error("Enter the STRK amount to attach.");
-      }
-      const message = buildPayload();
+      const document = buildDocument(recipientAddresses[0]);
       const provider = myFrontendProviders[providerIndex];
-
-      if (message.type === "escrow_fund") {
-        if (!chainId) throw new Error("Connect the escrow mailbox account first.");
-        const fund = message.payload as EscrowFundPayload;
-        const stored = recordEscrowFund(
-          window.localStorage,
-          chainId,
-          senderAddress,
-          fund,
-        );
-        if (!stored.operations.fund) {
-          claimEscrowOperation(
-            window.localStorage,
-            chainId,
-            senderAddress,
-            fund.dealId,
-            "fund",
-          );
-          escrowReservation = { dealId: fund.dealId, submitted: false };
-        }
-      }
+      const steps = document.composite
+        ? planCompositeSubmission(document.composite)
+        : [
+            {
+              kind: "send_document" as const,
+              label: "sending document" as const,
+              idempotencyKey: computeActionId(
+                "composite-document",
+                draft.documentId,
+              ),
+            },
+          ];
 
       setSendState({
         kind: "lookup",
-        message: `Looking up ${recipientAddresses.length} recipient mail key${
-          recipientAddresses.length === 1 ? "" : "s"
-        }…`,
+        message: `Looking up ${recipientAddresses.length} recipient mail key${recipientAddresses.length === 1 ? "" : "s"}…`,
+        step: 1,
+        totalSteps: steps.length,
       });
       const registeredKeys = await Promise.all(
         recipientAddresses.map(async (address, index) => {
@@ -396,153 +635,181 @@ export default function Compose({
 
       setSendState({
         kind: "encrypting",
-        message: `Sealing one shared letter for ${registeredKeys.length} recipient${
-          registeredKeys.length === 1 ? "" : "s"
-        } on this device…`,
+        message: "Sealing the body and every attachment as one document on this device…",
+        step: 1,
+        totalSteps: steps.length,
       });
       const record = await encryptMailForRecipients(
         registeredKeys,
-        encodeEnvelope(message.type, message.payload),
+        encodeEnvelope(document.type, document.payload),
       );
       const startedAt = Date.now();
-      setSendState({
-        kind: "proving",
-        message: "Ready is preparing the private mail action…",
-        startedAt,
-      });
 
-      const options = {
-        onSubmitted: (transactionHash: string) => {
+      if (document.escrow) {
+        if (!chainId || !escrowAddress) {
+          throw new Error("Connect the escrow mailbox account first.");
+        }
+        const stored = recordEscrowFund(
+          window.localStorage,
+          chainId,
+          senderAddress,
+          document.escrow,
+        );
+        const existingFund = stored.operations.fund;
+        if (existingFund?.state === "confirmed" && existingFund.transactionHash) {
+          fundConfirmedHash = existingFund.transactionHash;
+          transactionHashes.push(existingFund.transactionHash);
+        } else if (existingFund) {
+          throw new Error(
+            existingFund.transactionHash
+              ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Quietline will not issue another Fund.`
+              : "Escrow funding is already reserved. Quietline will not risk a second Fund; reopen after checking the prior wallet request.",
+          );
+        } else {
+          claimEscrowOperation(
+            window.localStorage,
+            chainId,
+            senderAddress,
+            document.escrow.dealId,
+            "fund",
+          );
+          escrowReservation = {
+            dealId: document.escrow.dealId,
+            submitted: false,
+          };
           setSendState({
-            kind: "proving" as const,
-            message: "Private action submitted. Waiting for confirmation…",
-            transactionHash,
+            kind: "proving",
+            message: submissionStepLabel(steps[0], 0, steps.length),
             startedAt,
+            step: 1,
+            totalSteps: steps.length,
+            transactionHashes,
           });
-        },
-      };
-      let transactionHash: string;
-      if (message.type === "escrow_fund") {
-        if (!escrowAddress) throw new Error("QuietlineEscrow is unavailable.");
-        const fund = message.payload as EscrowFundPayload;
-        if (escrowReservation) {
           const fundResult = await submitActions(
             walletAccount,
             provider,
             buildEscrowFundActions({
               escrowAddress,
-              dealId: fund.dealId,
-              token: fund.legA.token.address,
-              amount: fund.legA.amount,
-              counterToken: fund.legB.token.address,
-              counterAmount: fund.legB.amount,
-              deadline: fund.deadline,
-              claimPubkey: fund.claimPubkey,
+              dealId: document.escrow.dealId,
+              token: document.escrow.legA.token.address,
+              amount: document.escrow.legA.amount,
+              counterToken: document.escrow.legB.token.address,
+              counterAmount: document.escrow.legB.amount,
+              deadline: document.escrow.deadline,
+              claimPubkey: document.escrow.claimPubkey,
             }),
             {
-              onSubmitted: (fundTransactionHash) => {
-                if (!chainId) return;
+              onSubmitted: (transactionHash) => {
                 escrowReservation!.submitted = true;
-                markEscrowFundSubmitted(
+                markEscrowOperationSubmitted(
+                  window.localStorage,
                   chainId,
                   senderAddress,
-                  fund.dealId,
-                  fundTransactionHash,
+                  document.escrow!.dealId,
+                  "fund",
+                  transactionHash,
                 );
                 setSendState({
                   kind: "proving",
-                  message: "Leg A funding submitted; waiting for confirmation…",
-                  transactionHash: fundTransactionHash,
+                  message: `${submissionStepLabel(steps[0], 0, steps.length)} · submitted, waiting for confirmation`,
                   startedAt,
+                  step: 1,
+                  totalSteps: steps.length,
+                  transactionHashes: [transactionHash],
                 });
               },
             },
           );
-          if (!chainId) throw new Error("Escrow mailbox scope disappeared.");
           confirmEscrowOperation(
             window.localStorage,
             chainId,
             senderAddress,
-            fund.dealId,
+            document.escrow.dealId,
             "fund",
             fundResult.transactionHash,
           );
+          fundConfirmedHash = fundResult.transactionHash;
+          transactionHashes.push(fundResult.transactionHash);
         }
-        setSendState({
-          kind: "proving",
-          message:
-            "Leg A is funded. Posting the encrypted escrow terms in a separate pool action…",
-          startedAt,
-        });
-        ({ transactionHash } = await submitMail(
-          {
-            account: walletAccount,
-            provider,
-            helperAddress,
-            recoveryAddress: senderAddress,
-            tokenAddress: addrSTRK,
-            record,
-          },
-          options,
-        ));
-      } else if (paymentAmount === undefined) {
-        ({ transactionHash } = await submitMail(
-          {
-            account: walletAccount,
-            provider,
-            helperAddress,
-            recoveryAddress: senderAddress,
-            tokenAddress: addrSTRK,
-            record,
-          },
-          options,
-        ));
-      } else {
-        ({ transactionHash } = await submitMemoTransfer(
-          {
-            account: walletAccount,
-            provider,
-            helperAddress,
-            recoveryAddress: senderAddress,
-            tokenAddress: addrSTRK,
-            recipient: recipientAddresses[0],
-            amount: paymentAmount,
-            record,
-          },
-          options,
-        ));
       }
 
+      const sendStepIndex = steps.length - 1;
+      setSendState({
+        kind: "proving",
+        message: submissionStepLabel(steps[sendStepIndex], sendStepIndex, steps.length),
+        startedAt,
+        step: sendStepIndex + 1,
+        totalSteps: steps.length,
+        transactionHashes,
+      });
+      const options = {
+        onSubmitted: (transactionHash: string) => {
+          documentSubmittedHash = transactionHash;
+          setSendState({
+            kind: "proving" as const,
+            message: `${submissionStepLabel(steps[sendStepIndex], sendStepIndex, steps.length)} · submitted, waiting for confirmation`,
+            startedAt,
+            step: sendStepIndex + 1,
+            totalSteps: steps.length,
+            transactionHashes: [...transactionHashes, transactionHash],
+          });
+        },
+      };
+      const mailActionId = computeActionId(
+        "composite-document",
+        draft.documentId,
+      );
+      const mailResult = document.payment
+        ? await submitMemoTransfer(
+            {
+              account: walletAccount,
+              provider,
+              helperAddress,
+              recoveryAddress: senderAddress,
+              tokenAddress: addrSTRK,
+              recipient: recipientAddresses[0],
+              amount: document.payment.transfer.amount,
+              record,
+              actionId: mailActionId,
+            },
+            options,
+          )
+        : await submitMail(
+            {
+              account: walletAccount,
+              provider,
+              helperAddress,
+              recoveryAddress: senderAddress,
+              tokenAddress: addrSTRK,
+              record,
+              actionId: mailActionId,
+            },
+            options,
+          );
+      transactionHashes.push(mailResult.transactionHash);
       setSendState({
         kind: "ok",
         message:
-          message.type === "escrow_fund"
-            ? "Leg A is held by QuietlineEscrow and the encrypted terms are confirmed."
-            : message.type === "offer"
-              ? "Encrypted deal confirmed. No asset moved."
-              : message.type === "payment_request"
-                ? "Encrypted invoice confirmed. No asset moved."
-                : paymentAmount === undefined
-                  ? `Encrypted letter confirmed for ${recipientAddresses.length} recipient${
-                      recipientAddresses.length === 1 ? "" : "s"
-                    }.`
-                  : "Encrypted letter and private STRK payment confirmed in one action.",
-        transactionHash,
+          steps.length === 2
+            ? "Escrow funding and the composite document are confirmed in two transactions."
+            : document.payment
+              ? "The composite document and private STRK payment are confirmed in one transaction."
+              : `The document is confirmed for ${recipientAddresses.length} recipient${recipientAddresses.length === 1 ? "" : "s"}.`,
+        transactionHashes,
+        step: steps.length,
+        totalSteps: steps.length,
       });
-      if (message.type === "text") setBody("");
-      if (message.type === "offer" || message.type === "escrow_fund") {
-        setDealNote("");
-      }
-      if (message.type === "escrow_fund") {
-        setEscrowDraftDealId(createEscrowDealId());
-      }
-      if (message.type === "payment_request") setRequestMemo("");
-      if (paymentAmount !== undefined) setAttachmentAmount("");
       onSent({
-        ...message,
+        documentId: draft.documentId,
+        draftId: draft.id,
+        type: document.type,
+        payload: document.payload,
+        plaintext: draft.body,
         record,
-        transactionHash,
+        transactionHash: mailResult.transactionHash,
+        transactionHashes,
         recipientCount: recipientAddresses.length,
+        deliveryState: "confirmed",
       });
     } catch (error: unknown) {
       if (
@@ -559,66 +826,41 @@ export default function Compose({
           "fund",
         );
       }
-      const message = strk20ErrorMessage(error);
+      const base = strk20ErrorMessage(error);
+      const message = documentSubmittedHash
+        ? `${base} The document transaction ${documentSubmittedHash} was submitted but confirmation was not observed. Its stable action id prevents a duplicate document or payment; check that transaction before retrying.`
+        : fundConfirmedHash
+          ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Quietline will skip funding.`
+          : escrowReservation?.submitted
+            ? `${base} Escrow funding was submitted and Quietline will not fund it again. The document was not submitted; verify funding before retrying.`
+            : base;
       setSendState({
         kind: "error",
-        message: escrowReservation?.submitted
-          ? `${message} Leg A was already submitted and Quietline will not fund it again; retry the unchanged terms to post the encrypted notice.`
-          : message,
+        message,
+        transactionHashes: [
+          ...(fundConfirmedHash ? [fundConfirmedHash] : []),
+          ...(documentSubmittedHash ? [documentSubmittedHash] : []),
+        ],
       });
     }
-  }
-
-  function markEscrowFundSubmitted(
-    scopeChainId: string,
-    scopeAddress: string,
-    dealId: string,
-    transactionHash: string,
-  ) {
-    // Kept as a small local wrapper so the callback cannot accidentally reserve
-    // a different operation than the Fund batch it just emitted.
-    markEscrowOperationSubmitted(
-      window.localStorage,
-      scopeChainId,
-      scopeAddress,
-      dealId,
-      "fund",
-      transactionHash,
-    );
   }
 
   return (
     <section className={styles.composerSheet} aria-labelledby="compose-title">
       <div className={styles.composerHeading}>
         <div>
-          <p className={styles.kicker}>PRIVATE DELIVERY</p>
-          <h2 id="compose-title">Compose a document</h2>
+          <p className={styles.kicker}>DEVICE-PRIVATE DRAFT</p>
+          <h2 id="compose-title">New document</h2>
         </div>
-        <span className={styles.sheetClip} aria-hidden="true">CLIP / 02</span>
+        <span className={styles.sheetClip} aria-hidden="true">
+          AUTO-SAVED
+        </span>
       </div>
-
-      <label className={styles.modePicker}>
-        <span>Document</span>
-        <select
-          value={mode}
-          onChange={(event) => setMode(event.target.value as ComposeMode)}
-        >
-          <option value="letter">Letter</option>
-          <option value="deal">Deal · one-sided v1</option>
-          <option value="escrow">Escrow deal · contract-backed</option>
-          <option value="invoice">Invoice</option>
-        </select>
-        <small>
-          One-sided v1 deals trust the quoted counterparty. Escrow makes both
-          legs contract-backed, but it is not a single-transaction atomic swap.
-        </small>
-      </label>
 
       <div className={styles.disclosureGrid}>
         <p>
           <strong>Device-private / sealed</strong>
-          Body, recipient identities, local aliases, and attached transfer
-          details.
+          Draft, body, recipient identities, aliases, and attachment terms.
         </p>
         <p>
           <strong>Public</strong>
@@ -630,25 +872,26 @@ export default function Compose({
       <form className={styles.form} onSubmit={handleSubmit}>
         <label className={styles.field}>
           <span>
-            Recipient address or local alias
+            To
             <em className={styles.fieldBadge}>COUNT PUBLIC</em>
           </span>
           <textarea
-            value={recipient}
-            onChange={(event) => setRecipient(event.target.value)}
+            value={draft.recipient}
+            onChange={(event) => updateDraft({ recipient: event.target.value })}
             placeholder={
-              mode === "letter"
-                ? "One address or alias per line"
-                : "One counterparty address or alias"
+              hasAnyAttachment
+                ? "One counterparty address or local alias"
+                : "One address or alias per line"
             }
             autoComplete="off"
-            rows={mode === "letter" ? 3 : 2}
+            rows={hasAnyAttachment ? 2 : 3}
             required
           />
           <small>
-            {recipientEntries.length || 0} / {MAX_MULTI_RECIPIENTS} recipients.
-            Count is public; identities are not in MessagePosted. Group delivery
-            is available for letters; deals, escrow, and invoices are bilateral.
+            {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
+            Recipient count is public; identities are absent from
+            MessagePosted. Attachments are bilateral; body-only delivery can be
+            multi-recipient.
           </small>
         </label>
 
@@ -685,184 +928,175 @@ export default function Compose({
         </div>
         {aliasNotice ? <p className={styles.finePrint}>{aliasNotice}</p> : null}
 
-        {mode === "letter" ? (
-          <>
-            <label className={styles.field}>
-              <span>Letter</span>
-              <textarea
-                className={styles.letterInput}
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder="Write a private letter"
-                rows={7}
-                maxLength={4096}
-                required
-              />
-              <small>{body.length} / 4096 characters; typed envelope v1</small>
-            </label>
+        <label className={styles.field}>
+          <span>Message</span>
+          <textarea
+            className={styles.letterInput}
+            value={draft.body}
+            onChange={(event) => updateDraft({ body: event.target.value })}
+            placeholder="Write a private message, or leave blank when sending attachments only"
+            rows={8}
+            maxLength={4_096}
+          />
+          <small>{draft.body.length} / 4096 characters</small>
+        </label>
 
-            <div className={styles.paymentAttachment}>
-              <label className={styles.attachmentToggle}>
-                <input
-                  type="checkbox"
-                  checked={attachPayment}
-                  onChange={(event) => setAttachPayment(event.target.checked)}
-                />
-                <span>
-                  <strong>Attach shielded STRK</strong>
-                  <small>Part of composing, not a separate Send tab</small>
-                </span>
-              </label>
-              {attachPayment ? (
+        <section className={styles.attachmentTray} aria-labelledby="attach-title">
+          <header>
+            <div>
+              <span className={styles.sidebarLabel}>OPTIONAL</span>
+              <strong id="attach-title">Add attachments</strong>
+            </div>
+            <span>{draft.attachments.length} / 4</span>
+          </header>
+          <div className={styles.attachmentButtons}>
+            {(
+              [
+                "payment",
+                "offer",
+                "payment_request",
+                "escrow_fund",
+              ] as const
+            ).map((type) => {
+              const attached = draft.attachments.some(
+                (attachment) => attachment.type === type,
+              );
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  disabled={attached}
+                  onClick={() => addAttachment(type)}
+                >
+                  {attached ? "✓" : "+"} {attachmentLabel(type)}
+                </button>
+              );
+            })}
+          </div>
+          <p>
+            This is one document, not a mode picker. Add any combination; text
+            and existing attachments are never cleared.
+          </p>
+        </section>
+
+        {draft.attachments.map((attachment) => {
+          if (attachment.type === "payment") {
+            return (
+              <AttachmentShell
+                key={attachment.type}
+                type={attachment.type}
+                onRemove={() => removeAttachment(attachment.type)}
+              >
                 <label className={styles.field}>
-                  <span>STRK amount</span>
+                  <span>Private STRK amount</span>
                   <input
-                    value={attachmentAmount}
-                    onChange={(event) => setAttachmentAmount(event.target.value)}
+                    value={attachment.amount}
+                    onChange={(event) =>
+                      updateAttachment("payment", (current) => ({
+                        ...(current as typeof attachment),
+                        amount: event.target.value,
+                      }))
+                    }
                     inputMode="decimal"
                     placeholder="0.01"
                     required
                   />
                   <small>
-                    One private in-pool transfer to one recipient in the same
-                    atomic wallet batch. Timing and pool activity stay public.
+                    The private transfer and mail helper invoke share the
+                    document transaction. Timing and pool activity remain
+                    public.
                   </small>
                 </label>
-              ) : null}
-            </div>
-          </>
-        ) : mode === "deal" || mode === "escrow" ? (
-          <div className={styles.dealFields}>
-            <p className={styles.termsPreview}>
-              {mode === "escrow"
-                ? "Deposit leg A into QuietlineEscrow and ask the counterparty to deposit leg B before receiving it."
-                : "Offer to buy one STRK amount from this counterparty for one quoted token amount."}
-            </p>
-            <label className={styles.field}>
-              <span>{mode === "escrow" ? "Leg A STRK to deposit" : "STRK to buy"}</span>
-              <input
-                value={giveStrk}
-                onChange={(event) => setGiveStrk(event.target.value)}
-                inputMode="decimal"
-                placeholder="0.01"
-                required
+              </AttachmentShell>
+            );
+          }
+          if (attachment.type === "payment_request") {
+            return (
+              <AttachmentShell
+                key={attachment.type}
+                type={attachment.type}
+                onRemove={() => removeAttachment(attachment.type)}
+              >
+                <div className={styles.dealFields}>
+                  <label className={styles.field}>
+                    <span>STRK requested</span>
+                    <input
+                      value={attachment.amount}
+                      onChange={(event) =>
+                        updateAttachment("payment_request", (current) => ({
+                          ...(current as typeof attachment),
+                          amount: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      placeholder="0.01"
+                      required
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Invoice memo (optional)</span>
+                    <input
+                      value={attachment.memo}
+                      onChange={(event) =>
+                        updateAttachment("payment_request", (current) => ({
+                          ...(current as typeof attachment),
+                          memo: event.target.value,
+                        }))
+                      }
+                      maxLength={512}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>Expiry in hours (0 = none)</span>
+                    <input
+                      value={attachment.expiryHours}
+                      onChange={(event) =>
+                        updateAttachment("payment_request", (current) => ({
+                          ...(current as typeof attachment),
+                          expiryHours: event.target.value,
+                        }))
+                      }
+                      inputMode="decimal"
+                      required
+                    />
+                  </label>
+                  <p className={styles.dealDisclosure}>
+                    Sending a request moves no asset. A later encrypted payment
+                    claim is not proof; settlement is independently verified.
+                  </p>
+                </div>
+              </AttachmentShell>
+            );
+          }
+          return (
+            <AttachmentShell
+              key={attachment.type}
+              type={attachment.type}
+              onRemove={() => removeAttachment(attachment.type)}
+            >
+              <TradeFields
+                attachment={attachment}
+                escrow={attachment.type === "escrow_fund"}
+                update={(fields) =>
+                  updateAttachment(attachment.type, (current) => ({
+                    ...(current as typeof attachment),
+                    ...fields,
+                  }))
+                }
               />
-            </label>
-            <label className={styles.field}>
-              <span>Quoted token symbol</span>
-              <input
-                value={wantSymbol}
-                onChange={(event) => setWantSymbol(event.target.value)}
-                placeholder="USDC"
-                maxLength={32}
-                required
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Quoted token address</span>
-              <input
-                value={wantAddress}
-                onChange={(event) => setWantAddress(event.target.value)}
-                placeholder="0x…"
-                required
-              />
-            </label>
-            <div className={styles.amountPair}>
-              <label className={styles.field}>
-                <span>Token decimals</span>
-                <input
-                  value={wantDecimals}
-                  onChange={(event) => setWantDecimals(event.target.value)}
-                  inputMode="numeric"
-                  required
-                />
-              </label>
-              <label className={styles.field}>
-                <span>Quoted amount</span>
-                <input
-                  value={wantAmount}
-                  onChange={(event) => setWantAmount(event.target.value)}
-                  inputMode="decimal"
-                  placeholder="2.50"
-                  required
-                />
-              </label>
-            </div>
-            <label className={styles.field}>
-              <span>Note (optional)</span>
-              <input
-                value={dealNote}
-                onChange={(event) => setDealNote(event.target.value)}
-                maxLength={512}
-              />
-            </label>
-          </div>
-        ) : (
-          <div className={styles.dealFields}>
-            <p className={styles.termsPreview}>
-              Request one later private STRK payment from this counterparty.
-            </p>
-            <label className={styles.field}>
-              <span>STRK requested</span>
-              <input
-                value={requestAmount}
-                onChange={(event) => setRequestAmount(event.target.value)}
-                inputMode="decimal"
-                placeholder="0.01"
-                required
-              />
-            </label>
-            <label className={styles.field}>
-              <span>Invoice memo (optional)</span>
-              <input
-                value={requestMemo}
-                onChange={(event) => setRequestMemo(event.target.value)}
-                maxLength={512}
-              />
-            </label>
-          </div>
-        )}
-
-        {mode === "letter" ? null : (
-          <>
-            <label className={styles.field}>
-              <span>
-                {mode === "escrow"
-                  ? "Fill deadline in hours"
-                  : "Expiry in hours (0 = none)"}
-              </span>
-              <input
-                value={expiryHours}
-                onChange={(event) => setExpiryHours(event.target.value)}
-                inputMode="decimal"
-                placeholder="24"
-                required
-              />
-            </label>
-            <p className={styles.dealDisclosure}>
-              {mode === "escrow" ? (
-                <>
-                  Funding withdraws leg A into the contract, so escrow token
-                  amounts and contract activity are public. Funding and the
-                  encrypted notice are two sequential wallet actions because a
-                  pool transaction has one external-invoke phase. The taker
-                  cannot receive leg A without depositing leg B; the maker claims
-                  leg B afterward with a signature. This is not a
-                  single-transaction atomic swap. Escrow stays off the mainnet
-                  scoring path until reviewed.
-                </>
-              ) : (
-                <>
-                  Sending terms moves no asset. An accept or pay action can move
-                  only STRK, one way; any quoted non-STRK leg remains a promise.
-                  No escrow or atomic settlement is claimed.
-                </>
-              )}
-            </p>
-          </>
-        )}
+            </AttachmentShell>
+          );
+        })}
 
         {disabledReason ? <p className={styles.notice}>{disabledReason}</p> : null}
+        {hasEscrow ? (
+          <p className={styles.multiStepNotice}>
+            <strong>2 TRANSACTIONS</strong>
+            Step 1 funds escrow. Step 2 sends this entire document and any
+            private payment. Each step has a stable replay guard; a retry never
+            funds or sends twice.
+          </p>
+        ) : null}
         <button
           className={styles.primaryButton}
           type="submit"
@@ -870,23 +1104,37 @@ export default function Compose({
         >
           {sendPending
             ? "Preparing sealed delivery…"
-            : mode === "letter"
-              ? attachPayment
-                ? "Encrypt letter & attach payment"
-                : "Encrypt & send letter"
-              : mode === "deal"
-                ? "Encrypt & send deal"
-                : mode === "escrow"
-                  ? "Fund leg A & send escrow terms"
-                  : "Encrypt & send invoice"}
+            : hasEscrow
+              ? "Fund escrow & send document"
+              : "Send document"}
+        </button>
+        <button
+          className={styles.deleteDraftButton}
+          type="button"
+          onClick={() => {
+            if (
+              window.confirm(
+                "Delete this device-private draft? It has never been uploaded and cannot be restored.",
+              )
+            ) {
+              onDeleteDraft(draft.id);
+            }
+          }}
+        >
+          Delete draft…
         </button>
       </form>
 
+      {sendState.step && sendState.totalSteps ? (
+        <p className={styles.stepProgress} aria-live="polite">
+          Step {sendState.step} of {sendState.totalSteps}
+        </p>
+      ) : null}
       <ProvingProgress
         active={sendState.kind === "proving"}
         startedAt={sendState.startedAt}
       />
-      {sendState.message && sendState.kind !== "proving" ? (
+      {sendState.message ? (
         <div
           className={`${styles.status} ${
             sendState.kind === "error" ? styles.statusError : ""
@@ -894,12 +1142,11 @@ export default function Compose({
           role={sendState.kind === "error" ? "alert" : "status"}
         >
           {sendState.message}
-          {sendState.transactionHash ? (
-            <span className={styles.mono}>
-              {sendState.transactionHash.slice(0, 10)}…
-              {sendState.transactionHash.slice(-6)}
+          {sendState.transactionHashes?.map((transactionHash, index) => (
+            <span className={styles.mono} key={`${index}:${transactionHash}`}>
+              TX {index + 1}: {transactionHash}
             </span>
-          ) : null}
+          ))}
         </div>
       ) : null}
     </section>

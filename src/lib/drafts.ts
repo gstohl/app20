@@ -1,7 +1,8 @@
 import type { CompositeAttachment } from "./composite";
+import { createEscrowDealId } from "./escrow";
 import { createDealId, createRequestId } from "./otc";
 
-export const DRAFT_STORAGE_PREFIX = "quietline/drafts/v1";
+const DRAFT_STORAGE_PREFIX = "quietline/drafts/v1";
 
 export type TradeDraftFields = {
   giveStrk: string;
@@ -48,6 +49,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isNonZeroFeltId(value: unknown): value is string {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+    return false;
+  }
+  try {
+    return BigInt(value) > 0n;
+  } catch {
+    return false;
+  }
 }
 
 function isShortString(value: unknown, max: number): value is string {
@@ -107,7 +119,7 @@ function parseAttachment(value: unknown): DraftAttachment | null {
         : null;
     case "escrow_fund": {
       const trade = parseTrade(value);
-      return isId(value.dealId) && trade
+      return isNonZeroFeltId(value.dealId) && trade
         ? { type: "escrow_fund", dealId: value.dealId, ...trade }
         : null;
     }
@@ -116,7 +128,7 @@ function parseAttachment(value: unknown): DraftAttachment | null {
   }
 }
 
-export function parseDraft(value: unknown): CompositeDraft | null {
+function parseDraft(value: unknown): CompositeDraft | null {
   if (
     !isObject(value) ||
     value.version !== 1 ||
@@ -194,7 +206,7 @@ export function createDraftAttachment(
   }
   return {
     type,
-    dealId: createDealId(),
+    dealId: type === "escrow_fund" ? createEscrowDealId() : createDealId(),
     giveStrk: "0.01",
     wantAmount: "",
     wantSymbol: "USDC",

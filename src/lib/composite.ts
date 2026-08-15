@@ -88,10 +88,3 @@ export function parseCompositePayload(value: unknown): CompositePayload | null {
   if (!body.trim() && attachments.length === 0) return null;
   return { documentId: value.documentId, body, attachments };
 }
-
-export function compositeAttachment(
-  payload: CompositePayload,
-  type: CompositeAttachment["type"],
-): CompositeAttachment | undefined {
-  return payload.attachments.find((attachment) => attachment.type === type);
-}

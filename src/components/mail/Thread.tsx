@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { parseCompositePayload, type CompositeAttachment } from "@/lib/composite";
 import type { DecodedMail } from "@/lib/envelope";
 import type { EncryptedMailRecord } from "@/lib/mail";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
@@ -40,6 +41,9 @@ export type LocalMailMessage = {
   envelope: DecodedMail;
   record: EncryptedMailRecord;
   transactionHash: string;
+  transactionHashes?: string[];
+  deliveryState?: "confirmed" | "partially_confirmed";
+  documentId?: string;
   blockNumber?: number;
   blockTimestamp?: number;
   eventIndex?: number;
@@ -278,6 +282,87 @@ export default function Thread({
     const { envelope } = message;
     if (envelope.type === "unsupported") return <UnsupportedMessage />;
 
+    if (envelope.type === "composite") {
+      const composite = parseCompositePayload(envelope.payload);
+      if (!composite) return <UnsupportedMessage />;
+      const recipientCount =
+        message.recipientCount ?? publicRecipientCount(message.record);
+      function renderAttachment(
+        attachment: CompositeAttachment,
+        attachmentIndex: number,
+      ) {
+        if (attachment.type === "payment") {
+          return (
+            <article
+              className={styles.messageSheet}
+              key={`${attachment.type}:${attachmentIndex}`}
+            >
+              <div className={styles.sheetHeading}>
+                <span className={styles.sheetType}>PRIVATE PAYMENT MEMO</span>
+                <span className={styles.proofStamp}>
+                  {message.direction === "outgoing"
+                    ? "Submitted with document"
+                    : "Unverified claim"}
+                </span>
+              </div>
+              <p className={styles.termsSentence}>
+                {formatBaseUnits(
+                  attachment.payload.transfer.amount,
+                  attachment.payload.transfer.token.decimals,
+                )}{" "}
+                <bdi>{attachment.payload.transfer.token.symbol}</bdi> addressed
+                to <code>{attachment.payload.transfer.to}</code>.
+              </p>
+              <p className={styles.riskCopy}>
+                This encrypted memo does not independently prove a private
+                transfer. The sender's local wallet confirmation is not
+                counterparty-verifiable settlement proof.
+              </p>
+            </article>
+          );
+        }
+        const type = attachment.type;
+        return (
+          <div key={`${type}:${attachmentIndex}`}>
+            {renderEnvelope({
+              ...message,
+              plaintext: "",
+              envelope: {
+                version: 1,
+                type,
+                payload: attachment.payload,
+                bytes: envelope.bytes,
+              },
+            })}
+          </div>
+        );
+      }
+      return (
+        <article className={styles.compositeDocument}>
+          <div className={styles.sheetHeading}>
+            <span className={styles.sheetType}>COMPOSITE DOCUMENT</span>
+            <span className={styles.proofStamp}>
+              {composite.attachments.length} attachment
+              {composite.attachments.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <p className={styles.recipientDisclosure}>
+            {recipientCount} recipient{recipientCount === 1 ? "" : "s"}; the
+            count is public ciphertext metadata while identities are absent
+            from MessagePosted.
+          </p>
+          {composite.body ? (
+            <p className={styles.letterBody}>{composite.body}</p>
+          ) : (
+            <p className={styles.emptyDocumentBody}>No message body</p>
+          )}
+          <div className={styles.compositeCardStack}>
+            {composite.attachments.map(renderAttachment)}
+          </div>
+        </article>
+      );
+    }
+
     if (envelope.type === "text") {
       const recipientCount =
         message.recipientCount ?? publicRecipientCount(message.record);
@@ -504,6 +589,21 @@ export default function Thread({
                   </span>
                 </div>
                 {renderEnvelope(message)}
+                {message.transactionHashes &&
+                message.transactionHashes.length > 1 ? (
+                  <aside className={styles.submissionTransactions}>
+                    <strong>Submission transactions</strong>
+                    {message.transactionHashes.map((transactionHash, index) => (
+                      <code key={`${index}:${transactionHash}`}>
+                        {index + 1}. {transactionHash}
+                      </code>
+                    ))}
+                    <span>
+                      Escrow funding and document delivery are separate because
+                      the pool permits one external invoke per transaction.
+                    </span>
+                  </aside>
+                ) : null}
                 <ChainRecordPanel message={message} />
                 <span className={styles.localLabel}>
                   {message.direction === "outgoing"

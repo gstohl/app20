@@ -2329,6 +2329,236 @@
   }
 }
 
+/* Real-mail folders and secondary type labels. */
+.typeFilterNav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.typeFilterNav > .sidebarLabel {
+  grid-column: 1 / -1;
+  margin: 0 4px 2px;
+}
+
+.typeFilterNav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: rgba(250, 247, 239, 0.45);
+  font: inherit;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.typeFilterNav button[aria-pressed="true"] {
+  border-color: var(--teal);
+  color: var(--paper);
+  background: var(--teal);
+}
+
+.typeFilterNav button strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+}
+
+.attachmentTray {
+  padding: 15px;
+  border: 1px solid var(--ink);
+  background: var(--paper-deep);
+}
+
+.attachmentTray > header,
+.attachmentHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attachmentTray > header > div,
+.attachmentHeading > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attachmentTray > header > span,
+.attachmentTray > p,
+.attachmentHeading .fieldBadge {
+  color: var(--muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.attachmentTray > p {
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.attachmentButtons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.attachmentButtons button,
+.attachmentHeading button,
+.deleteDraftButton {
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: var(--paper);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.attachmentButtons button {
+  padding: 9px;
+  text-align: left;
+}
+
+.attachmentButtons button:disabled {
+  color: var(--teal);
+  background: var(--teal-soft);
+  cursor: default;
+  opacity: 1;
+}
+
+.compositeAttachment {
+  padding: 15px;
+  border: 1px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.035);
+}
+
+.attachmentHeading {
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.attachmentHeading .fieldBadge {
+  float: none;
+  margin: 0;
+  padding: 0;
+  color: var(--proof-teal);
+  background: transparent;
+}
+
+.attachmentHeading button {
+  padding: 6px 9px;
+  color: var(--ribbon);
+}
+
+.multiStepNotice,
+.stepProgress,
+.submissionTransactions {
+  padding: 11px 12px;
+  border-left: 4px solid var(--proof-teal);
+  background: rgba(39, 106, 114, 0.07);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.multiStepNotice strong,
+.submissionTransactions strong {
+  display: block;
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+
+.deleteDraftButton {
+  width: 100%;
+  padding: 9px;
+  color: var(--ribbon);
+  background: transparent;
+}
+
+.stepProgress {
+  margin-top: 14px;
+  color: var(--proof-teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-weight: 800;
+}
+
+.compositeDocument {
+  margin-top: 14px;
+  padding: 20px;
+  border: 1px solid var(--ink);
+  background: rgba(250, 247, 239, 0.92);
+}
+
+.compositeCardStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px dashed var(--line);
+}
+
+.compositeCardStack .messageSheet,
+.compositeCardStack .dealSheet {
+  margin-top: 0;
+}
+
+.emptyDocumentBody {
+  margin-top: 14px;
+  color: var(--muted);
+  font-family: var(--font-reading), Georgia, serif;
+  font-style: italic;
+}
+
+.submissionTransactions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.submissionTransactions code {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.submissionTransactions span {
+  color: var(--muted);
+}
+
+.draftListItem {
+  position: relative;
+}
+
+.draftDelete {
+  position: absolute;
+  right: 10px;
+  bottom: 7px;
+  border: 0;
+  color: var(--ribbon);
+  background: transparent;
+  font: inherit;
+  font-size: 7px;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .attachmentButtons {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mailSidebar,
   .progressTrack span,
