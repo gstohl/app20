@@ -1,7 +1,12 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
-import { hash, num, walletV6 } from "starknet";
+import {
+  hash,
+  num,
+  TransactionExecutionStatus,
+  walletV6,
+} from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { assertSettlesStrk, type OfferPayload } from "./otc";
 import { addrSTRK } from "../utils/constants";
@@ -178,38 +183,157 @@ export async function detectStrk20Capability(
   };
 }
 
+export type TransactionLifecycleState =
+  | "reserved"
+  | "submitted"
+  | "confirmed"
+  | "reverted"
+  | "unknown";
+
 export class Strk20WaitTimeoutError extends Error {
   readonly transactionHash: string;
 
   constructor(transactionHash: string, timeoutMs: number) {
     super(
-      `Transaction confirmation exceeded ${Math.round(timeoutMs / 60_000)} minutes.`
+      `Transaction ${transactionHash} was submitted, but confirmation was not observed within ${Math.max(1, Math.round(timeoutMs / 60_000))} minute(s). Its outcome is unknown; check the transaction before retrying.`,
     );
     this.name = "Strk20WaitTimeoutError";
     this.transactionHash = transactionHash;
   }
 }
 
+export class Strk20RevertedError extends Error {
+  readonly transactionHash: string;
+  readonly receipt?: unknown;
+
+  constructor(transactionHash: string, receipt?: unknown, cause?: unknown) {
+    super(
+      `Transaction ${transactionHash} reverted or was rejected. No successful value movement was confirmed.`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "Strk20RevertedError";
+    this.transactionHash = transactionHash;
+    this.receipt = receipt;
+  }
+}
+
+export class Strk20UnknownOutcomeError extends Error {
+  readonly transactionHash: string;
+  readonly receipt?: unknown;
+
+  constructor(transactionHash: string, receipt?: unknown, cause?: unknown) {
+    super(
+      `Transaction ${transactionHash} was submitted, but its successful execution could not be proven. Its outcome is unknown; check the transaction before retrying.`,
+      cause === undefined ? undefined : { cause },
+    );
+    this.name = "Strk20UnknownOutcomeError";
+    this.transactionHash = transactionHash;
+    this.receipt = receipt;
+  }
+}
+
+export class Strk20SubmissionCallbackError extends Error {
+  readonly transactionHash: string;
+
+  constructor(transactionHash: string, cause: unknown) {
+    super(
+      `Transaction ${transactionHash} succeeded, but Quietline could not persist its submitted state. Local verification remains false; reconcile the transaction before retrying.`,
+      { cause },
+    );
+    this.name = "Strk20SubmissionCallbackError";
+    this.transactionHash = transactionHash;
+  }
+}
+
+function receiptValue(receipt: unknown): Record<string, unknown> | undefined {
+  if (!receipt || typeof receipt !== "object") return undefined;
+  const outer = receipt as Record<string, unknown>;
+  const value = outer.value;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : outer;
+}
+
+function statusText(value: unknown): string {
+  return typeof value === "string" ? value.toUpperCase() : "";
+}
+
+function assertSuccessfulReceipt(
+  transactionHash: string,
+  receipt: unknown,
+): void {
+  const value = receiptValue(receipt);
+  const execution = statusText(
+    value?.execution_status ?? value?.executionStatus,
+  );
+  const finality = statusText(value?.finality_status ?? value?.finalityStatus);
+  const status = statusText(value?.status);
+  const combined = [execution, finality, status].filter(Boolean);
+
+  if (
+    combined.some((candidate) =>
+      ["REVERTED", "REJECTED"].includes(candidate),
+    )
+  ) {
+    throw new Strk20RevertedError(transactionHash, receipt);
+  }
+  if (execution !== TransactionExecutionStatus.SUCCEEDED) {
+    throw new Strk20UnknownOutcomeError(transactionHash, receipt);
+  }
+}
+
+function isRevertedOrRejected(error: unknown): boolean {
+  if (error instanceof Strk20RevertedError) return true;
+  if (!error) return false;
+  const candidate =
+    error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : typeof error === "object"
+        ? JSON.stringify(error)
+        : String(error);
+  return /\b(?:REVERTED|REJECTED)\b/i.test(candidate);
+}
+
 async function waitForStrk20Transaction(
   provider: ProviderInterface,
   transactionHash: string,
-  timeoutMs = STRK20_WAIT_TIMEOUT_MS
+  timeoutMs = STRK20_WAIT_TIMEOUT_MS,
 ): Promise<unknown> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
 
   try {
-    return await Promise.race([
+    const receipt = await Promise.race([
       provider.waitForTransaction(transactionHash, {
         retries: 400,
         retryInterval: 3_000,
+        successStates: [TransactionExecutionStatus.SUCCEEDED],
+        errorStates: [
+          TransactionExecutionStatus.REVERTED,
+          // Older RPC/wallet bridges may still surface REJECTED as a status.
+          "REJECTED" as never,
+        ],
       }),
       new Promise<never>((_, reject) => {
         timeout = setTimeout(
           () => reject(new Strk20WaitTimeoutError(transactionHash, timeoutMs)),
-          timeoutMs
+          timeoutMs,
         );
       }),
     ]);
+    assertSuccessfulReceipt(transactionHash, receipt);
+    return receipt;
+  } catch (error: unknown) {
+    if (error instanceof Strk20WaitTimeoutError) throw error;
+    if (error instanceof Strk20RevertedError) throw error;
+    if (isRevertedOrRejected(error)) {
+      throw new Strk20RevertedError(transactionHash, undefined, error);
+    }
+    if (error instanceof Strk20UnknownOutcomeError) throw error;
+    throw new Strk20UnknownOutcomeError(
+      transactionHash,
+      undefined,
+      error,
+    );
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -220,22 +344,57 @@ export type SubmitActionsOptions = {
   onSubmitted?: (transactionHash: string) => void;
 };
 
-/** Submit exactly one STRK20 action batch and wait with a bounded timeout. */
+export function transactionStateFromError(
+  error: unknown,
+): "reverted" | "unknown" | undefined {
+  if (error instanceof Strk20RevertedError) return "reverted";
+  if (
+    error instanceof Strk20WaitTimeoutError ||
+    error instanceof Strk20UnknownOutcomeError ||
+    error instanceof Strk20SubmissionCallbackError
+  ) {
+    return "unknown";
+  }
+  return undefined;
+}
+
+export function transactionHashFromError(error: unknown): string | undefined {
+  return error instanceof Strk20WaitTimeoutError ||
+    error instanceof Strk20RevertedError ||
+    error instanceof Strk20UnknownOutcomeError ||
+    error instanceof Strk20SubmissionCallbackError
+    ? error.transactionHash
+    : undefined;
+}
+
+/** Submit exactly one STRK20 action batch and confirm execution fail-closed. */
 export async function submitActions(
   account: WalletAccountV6,
   provider: ProviderInterface,
   actions: WALLET_API.STRK20_ACTION[],
-  options: SubmitActionsOptions = {}
+  options: SubmitActionsOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
   const { transaction_hash: transactionHash } =
     await account.strk20InvokeTransaction(actions);
 
-  options.onSubmitted?.(transactionHash);
+  let submissionCallbackError: unknown;
+  try {
+    options.onSubmitted?.(transactionHash);
+  } catch (error: unknown) {
+    submissionCallbackError = error;
+  }
+
   const receipt = await waitForStrk20Transaction(
     provider,
     transactionHash,
-    options.timeoutMs
+    options.timeoutMs,
   );
+  if (submissionCallbackError !== undefined) {
+    throw new Strk20SubmissionCallbackError(
+      transactionHash,
+      submissionCallbackError,
+    );
+  }
 
   return { transactionHash, receipt };
 }

@@ -11,6 +11,10 @@ import {
   expireStoredDeals,
   formatBaseUnits,
   loadOtcState,
+  markOtcAcceptOutcome,
+  markOtcAcceptSubmitted,
+  markPaymentOutcome,
+  markPaymentSubmitted,
   normalizeTokenRef,
   otcStorageKey,
   parseAcceptPayload,
@@ -281,18 +285,83 @@ describe("OTC local state", () => {
 
     expect(claimOtcAccept(...scope, accept, 1_900_000_001)).toMatchObject({
       status: "accepted",
+      acceptOperation: { state: "reserved" },
       acceptPending: true,
+      settlementVerified: false,
     });
     expect(() => claimOtcAccept(...scope, accept, 1_900_000_002)).toThrow(
       /no second transfer/i,
     );
     expect(
-      confirmOtcAccept(...scope, dealId, "0xabc", 1_900_000_003),
+      markOtcAcceptSubmitted(...scope, dealId, "0xabc", 1_900_000_003),
+    ).toMatchObject({
+      acceptOperation: { state: "submitted", transactionHash: "0xabc" },
+      acceptPending: true,
+      settlementVerified: false,
+    });
+    expect(
+      confirmOtcAccept(...scope, dealId, "0xabc", 1_900_000_004),
     ).toMatchObject({
       status: "accepted",
+      acceptOperation: { state: "confirmed", transactionHash: "0xabc" },
       acceptPending: false,
       acceptTxHash: "0xabc",
       settlementVerified: true,
+    });
+  });
+
+  it("keeps unknown accepts blocked and releases only proven reverts", () => {
+    const unknownStorage = new MemoryStorage();
+    const unknownScope = [unknownStorage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordDealEvent(
+      ...unknownScope,
+      { type: "offer", payload: offer() },
+      1_900_000_000,
+    );
+    const accept = acceptPayloadForOffer(offer());
+    claimOtcAccept(...unknownScope, accept, 1_900_000_001);
+    markOtcAcceptSubmitted(...unknownScope, dealId, "0xabc", 1_900_000_002);
+    expect(
+      markOtcAcceptOutcome(
+        ...unknownScope,
+        dealId,
+        "0xabc",
+        "unknown",
+        1_900_000_003,
+      ),
+    ).toMatchObject({
+      status: "accepted",
+      acceptOperation: { state: "unknown", transactionHash: "0xabc" },
+      settlementVerified: false,
+    });
+    expect(() => claimOtcAccept(...unknownScope, accept, 1_900_000_004)).toThrow(
+      /no second transfer/i,
+    );
+
+    const revertedStorage = new MemoryStorage();
+    const revertedScope = [revertedStorage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordDealEvent(
+      ...revertedScope,
+      { type: "offer", payload: offer() },
+      1_900_000_000,
+    );
+    claimOtcAccept(...revertedScope, accept, 1_900_000_001);
+    markOtcAcceptSubmitted(...revertedScope, dealId, "0xdef", 1_900_000_002);
+    expect(
+      markOtcAcceptOutcome(
+        ...revertedScope,
+        dealId,
+        "0xdef",
+        "reverted",
+        1_900_000_003,
+      ),
+    ).toMatchObject({
+      status: "offered",
+      acceptOperation: { state: "reverted", transactionHash: "0xdef" },
+      settlementVerified: false,
+    });
+    expect(claimOtcAccept(...revertedScope, accept, 1_900_000_004)).toMatchObject({
+      acceptOperation: { state: "reserved" },
     });
   });
 
@@ -374,6 +443,38 @@ describe("payment request idempotency", () => {
     expect(() =>
       claimPayment(...scope, request.requestId, 1_900_000_002),
     ).toThrow(/no second transfer/i);
+  });
+
+  it("moves payment reserved to submitted to confirmed, never verifying unknown", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    claimPayment(...scope, request.requestId, 1_900_000_001);
+    expect(
+      markPaymentSubmitted(
+        ...scope,
+        request.requestId,
+        "0xabc",
+        1_900_000_002,
+      ),
+    ).toMatchObject({
+      paymentOperation: { state: "submitted", transactionHash: "0xabc" },
+      paymentVerified: false,
+    });
+    expect(
+      markPaymentOutcome(
+        ...scope,
+        request.requestId,
+        "0xabc",
+        "unknown",
+        1_900_000_003,
+      ),
+    ).toMatchObject({
+      status: "paid",
+      paymentOperation: { state: "unknown" },
+      paymentPending: true,
+      paymentVerified: false,
+    });
   });
 
   it("stores an encrypted payment memo only as an unverified claim", () => {

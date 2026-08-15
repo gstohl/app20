@@ -86,7 +86,12 @@ export type EscrowContractDeal = {
 };
 
 export type EscrowOperation = "fund" | "fill" | "claim" | "timeout";
-export type EscrowOperationState = "pending" | "submitted" | "confirmed";
+export type EscrowOperationState =
+  | "reserved"
+  | "submitted"
+  | "confirmed"
+  | "reverted"
+  | "unknown";
 
 export type EscrowOperationRecord = {
   state: EscrowOperationState;
@@ -572,7 +577,8 @@ function assertOperationAllowed(
   operation: EscrowOperation,
   at: number,
 ): void {
-  if (record.operations[operation]) {
+  const priorOperation = record.operations[operation];
+  if (priorOperation && priorOperation.state !== "reverted") {
     throw new Error(
       `This escrow ${operation} was already reserved; no second transfer was sent.`,
     );
@@ -619,7 +625,7 @@ export function claimEscrowOperation(
     ...current,
     operations: {
       ...current.operations,
-      [operation]: { state: "pending", updatedAt: at },
+      [operation]: { state: "reserved", updatedAt: at },
     },
     updatedAt: at,
   };
@@ -641,14 +647,8 @@ export function markEscrowOperationSubmitted(
   const state = loadEscrowState(storage, chainId, selfAddress);
   const current = state.deals[num.toHex(dealId)];
   const reserved = current?.operations[operation];
-  if (!current || !reserved || !txHash) {
+  if (!current || !reserved || reserved.state !== "reserved" || !txHash) {
     throw new Error("No matching escrow operation reservation can be submitted.");
-  }
-  if (
-    reserved.transactionHash &&
-    !feltEquals(reserved.transactionHash, txHash)
-  ) {
-    throw new Error("Escrow operation already has another transaction hash.");
   }
   const next: EscrowDealRecord = {
     ...current,
@@ -672,23 +672,70 @@ export function confirmEscrowOperation(
   transactionHash: string,
   at = nowSeconds(),
 ): EscrowDealRecord {
-  const submitted = markEscrowOperationSubmitted(
-    storage,
-    chainId,
-    selfAddress,
-    dealId,
-    operation,
-    transactionHash,
-    at,
-  );
   const state = loadEscrowState(storage, chainId, selfAddress);
+  const parsedDealId = parseFelt(dealId, false);
+  const current = parsedDealId ? state.deals[parsedDealId] : undefined;
+  const submitted = current?.operations[operation];
+  const txHash = parseFelt(transactionHash, false);
+  if (
+    !current ||
+    !submitted ||
+    submitted.state !== "submitted" ||
+    !submitted.transactionHash ||
+    !txHash ||
+    !feltEquals(submitted.transactionHash, txHash)
+  ) {
+    throw new Error("No matching submitted escrow operation can be confirmed.");
+  }
   const next: EscrowDealRecord = {
-    ...submitted,
+    ...current,
     operations: {
-      ...submitted.operations,
+      ...current.operations,
       [operation]: {
-        ...submitted.operations[operation]!,
         state: "confirmed",
+        transactionHash: txHash,
+        updatedAt: at,
+      },
+    },
+    updatedAt: at,
+  };
+  state.deals[next.dealId] = next;
+  saveEscrowState(storage, chainId, selfAddress, state);
+  return next;
+}
+
+export function markEscrowOperationOutcome(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  dealId: string,
+  operation: EscrowOperation,
+  transactionHash: string,
+  outcome: "reverted" | "unknown",
+  at = nowSeconds(),
+): EscrowDealRecord {
+  const state = loadEscrowState(storage, chainId, selfAddress);
+  const parsedDealId = parseFelt(dealId, false);
+  const current = parsedDealId ? state.deals[parsedDealId] : undefined;
+  const submitted = current?.operations[operation];
+  const txHash = parseFelt(transactionHash, false);
+  if (
+    !current ||
+    !submitted ||
+    submitted.state !== "submitted" ||
+    !submitted.transactionHash ||
+    !txHash ||
+    !feltEquals(submitted.transactionHash, txHash)
+  ) {
+    throw new Error("No matching submitted escrow operation can be reconciled.");
+  }
+  const next: EscrowDealRecord = {
+    ...current,
+    operations: {
+      ...current.operations,
+      [operation]: {
+        state: outcome,
+        transactionHash: txHash,
         updatedAt: at,
       },
     },
@@ -712,7 +759,7 @@ export function releaseEscrowOperation(
   const parsedDealId = parseFelt(dealId, false);
   const current = parsedDealId ? state.deals[parsedDealId] : undefined;
   const reserved = current?.operations[operation];
-  if (!current || !reserved || reserved.state !== "pending") return current;
+  if (!current || !reserved || reserved.state !== "reserved") return current;
   const operations = { ...current.operations };
   delete operations[operation];
   const next = { ...current, operations, updatedAt: at };

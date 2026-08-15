@@ -10,6 +10,7 @@ import {
   contractDealMatchesFund,
   deriveEscrowClaimKey,
   loadEscrowState,
+  markEscrowOperationOutcome,
   markEscrowOperationSubmitted,
   parseEscrowContractDeal,
   parseEscrowFundPayload,
@@ -229,7 +230,7 @@ describe("escrow operation idempotency", () => {
     recordEscrowFund(...scope, fund, 100);
 
     expect(claimEscrowOperation(...scope, dealId, "fund", 101)).toMatchObject({
-      operations: { fund: { state: "pending" } },
+      operations: { fund: { state: "reserved" } },
     });
     expect(() =>
       claimEscrowOperation(...scope, dealId, "fund", 102),
@@ -277,14 +278,16 @@ describe("escrow operation idempotency", () => {
     expect(releaseEscrowOperation(...scope, dealId, "fill", 103)?.operations)
       .not.toHaveProperty("fill");
     claimEscrowOperation(...scope, dealId, "fill", 104);
-    confirmEscrowOperation(...scope, dealId, "fill", "0xdef", 105);
+    markEscrowOperationSubmitted(...scope, dealId, "fill", "0xdef", 105);
+    confirmEscrowOperation(...scope, dealId, "fill", "0xdef", 106);
     expect(() =>
       claimEscrowOperation(...scope, dealId, "fill", 106),
     ).toThrow(/no second transfer/i);
 
     recordEscrowChainDeal(...scope, dealId, { ...funded, status: "filled" }, 107);
     claimEscrowOperation(...scope, dealId, "claim", 108);
-    confirmEscrowOperation(...scope, dealId, "claim", "0xaaa", 109);
+    markEscrowOperationSubmitted(...scope, dealId, "claim", "0xaaa", 109);
+    confirmEscrowOperation(...scope, dealId, "claim", "0xaaa", 110);
     expect(() =>
       claimEscrowOperation(...scope, dealId, "claim", 110),
     ).toThrow(/no second transfer/i);
@@ -294,6 +297,46 @@ describe("escrow operation idempotency", () => {
         fill: { state: "confirmed" },
         claim: { state: "confirmed" },
       },
+    });
+  });
+
+  it("keeps unknown submissions blocked and permits a proven revert retry", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xa11ce"] as const;
+    recordEscrowFund(...scope, fundPayload(), 100);
+    claimEscrowOperation(...scope, dealId, "fund", 101);
+    markEscrowOperationSubmitted(...scope, dealId, "fund", "0xabc", 102);
+    expect(
+      markEscrowOperationOutcome(
+        ...scope,
+        dealId,
+        "fund",
+        "0xabc",
+        "unknown",
+        103,
+      ),
+    ).toMatchObject({ operations: { fund: { state: "unknown" } } });
+    expect(() => claimEscrowOperation(...scope, dealId, "fund", 104)).toThrow(
+      /no second transfer/i,
+    );
+
+    const retryStorage = new MemoryStorage();
+    const retryScope = [retryStorage, "SN_SEPOLIA", "0xa11ce"] as const;
+    recordEscrowFund(...retryScope, fundPayload(), 100);
+    claimEscrowOperation(...retryScope, dealId, "fund", 101);
+    markEscrowOperationSubmitted(...retryScope, dealId, "fund", "0xdef", 102);
+    expect(
+      markEscrowOperationOutcome(
+        ...retryScope,
+        dealId,
+        "fund",
+        "0xdef",
+        "reverted",
+        103,
+      ),
+    ).toMatchObject({ operations: { fund: { state: "reverted" } } });
+    expect(claimEscrowOperation(...retryScope, dealId, "fund", 104)).toMatchObject({
+      operations: { fund: { state: "reserved" } },
     });
   });
 });

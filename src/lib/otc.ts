@@ -60,12 +60,27 @@ export type DealStatus =
   | "declined"
   | "expired";
 
+export type ValueOperationState =
+  | "reserved"
+  | "submitted"
+  | "confirmed"
+  | "reverted"
+  | "unknown";
+
+export type ValueOperationRecord = {
+  state: ValueOperationState;
+  transactionHash?: string;
+  updatedAt: number;
+};
+
 export type DealRecord = {
   dealId: string;
   status: DealStatus;
   offer: OfferPayload;
   accept?: AcceptPayload;
   receipt?: ReceiptPayload;
+  acceptOperation?: ValueOperationRecord;
+  /** Legacy display/index fields; acceptOperation is the lifecycle authority. */
   acceptTxHash?: string;
   acceptPending?: boolean;
   settlementVerified?: boolean;
@@ -83,6 +98,8 @@ export type PaymentRecord = {
   /** Present only when this unsigned request was explicitly imported from /pay. */
   origin?: "payment_link";
   receipt?: ReceiptPayload;
+  paymentOperation?: ValueOperationRecord;
+  /** Legacy display/index fields; paymentOperation is the lifecycle authority. */
   paymentTxHash?: string;
   paymentPending?: boolean;
   paymentVerified?: boolean;
@@ -699,12 +716,50 @@ export function claimOtcAccept(
   const next = transitionDeal(current, { type: "accept", payload: accept }, at);
   const claimed = {
     ...next,
+    acceptOperation: { state: "reserved" as const, updatedAt: at },
+    acceptTxHash: undefined,
     acceptPending: true,
     settlementVerified: false,
   };
   state.deals[accept.dealId] = claimed;
   saveOtcState(storage, chainId, selfAddress, state);
   return claimed;
+}
+
+export function markOtcAcceptSubmitted(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  dealId: string,
+  transactionHash: string,
+  at = nowSeconds(),
+): DealRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.deals[dealId];
+  if (
+    !current ||
+    current.status !== "accepted" ||
+    !current.accept ||
+    current.acceptOperation?.state !== "reserved" ||
+    !isFelt(transactionHash)
+  ) {
+    throw new Error("No matching reserved OTC accept can be submitted.");
+  }
+  const next: DealRecord = {
+    ...current,
+    acceptOperation: {
+      state: "submitted",
+      transactionHash,
+      updatedAt: at,
+    },
+    acceptTxHash: transactionHash,
+    acceptPending: true,
+    settlementVerified: false,
+    updatedAt: at,
+  };
+  state.deals[dealId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
 }
 
 export function confirmOtcAccept(
@@ -721,19 +776,83 @@ export function confirmOtcAccept(
     !current ||
     current.status !== "accepted" ||
     !current.accept ||
+    current.acceptOperation?.state !== "submitted" ||
+    !current.acceptOperation.transactionHash ||
     !isFelt(transactionHash) ||
+    !feltEquals(current.acceptOperation.transactionHash, transactionHash) ||
     (current.acceptTxHash !== undefined &&
       !feltEquals(current.acceptTxHash, transactionHash))
   ) {
-    throw new Error("No matching reserved OTC accept can be confirmed.");
+    throw new Error("No matching submitted OTC accept can be confirmed.");
   }
-  const next = {
+  const next: DealRecord = {
     ...current,
+    acceptOperation: {
+      state: "confirmed",
+      transactionHash,
+      updatedAt: at,
+    },
     acceptTxHash: transactionHash,
     acceptPending: false,
     settlementVerified: true,
     updatedAt: at,
   };
+  state.deals[dealId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
+}
+
+export function markOtcAcceptOutcome(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  dealId: string,
+  transactionHash: string,
+  outcome: "reverted" | "unknown",
+  at = nowSeconds(),
+): DealRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.deals[dealId];
+  if (
+    !current ||
+    current.status !== "accepted" ||
+    current.acceptOperation?.state !== "submitted" ||
+    !current.acceptOperation.transactionHash ||
+    !isFelt(transactionHash) ||
+    !feltEquals(current.acceptOperation.transactionHash, transactionHash)
+  ) {
+    throw new Error("No matching submitted OTC accept can be reconciled.");
+  }
+  const operation: ValueOperationRecord = {
+    state: outcome,
+    transactionHash,
+    updatedAt: at,
+  };
+  const next: DealRecord =
+    outcome === "unknown"
+      ? {
+          ...current,
+          acceptOperation: operation,
+          acceptPending: true,
+          settlementVerified: false,
+          updatedAt: at,
+        }
+      : {
+          dealId: current.dealId,
+          status: offerIsExpired(current.offer, at) ? "expired" : "offered",
+          offer: current.offer,
+          acceptOperation: operation,
+          acceptTxHash: transactionHash,
+          acceptPending: false,
+          settlementVerified: false,
+          ...(current.counterpartyAcceptClaim
+            ? { counterpartyAcceptClaim: current.counterpartyAcceptClaim }
+            : {}),
+          ...(current.counterpartyReceiptClaim
+            ? { counterpartyReceiptClaim: current.counterpartyReceiptClaim }
+            : {}),
+          updatedAt: at,
+        };
   state.deals[dealId] = next;
   saveOtcState(storage, chainId, selfAddress, state);
   return next;
@@ -751,6 +870,7 @@ export function releaseOtcAccept(
   if (
     !current ||
     current.status !== "accepted" ||
+    current.acceptOperation?.state !== "reserved" ||
     !current.acceptPending ||
     current.acceptTxHash
   ) {
@@ -866,6 +986,8 @@ export function claimPayment(
   const claimed: PaymentRecord = {
     ...current,
     status: "paid",
+    paymentOperation: { state: "reserved", updatedAt: at },
+    paymentTxHash: undefined,
     paymentPending: true,
     paymentVerified: false,
     updatedAt: at,
@@ -909,6 +1031,41 @@ export function recordUnverifiedPaymentClaim(
   return next;
 }
 
+export function markPaymentSubmitted(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  requestId: string,
+  transactionHash: string,
+  at = nowSeconds(),
+): PaymentRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.payments[requestId];
+  if (
+    !current ||
+    current.status !== "paid" ||
+    current.paymentOperation?.state !== "reserved" ||
+    !isFelt(transactionHash)
+  ) {
+    throw new Error("No matching reserved payment can be submitted.");
+  }
+  const next: PaymentRecord = {
+    ...current,
+    paymentOperation: {
+      state: "submitted",
+      transactionHash,
+      updatedAt: at,
+    },
+    paymentTxHash: transactionHash,
+    paymentPending: true,
+    paymentVerified: false,
+    updatedAt: at,
+  };
+  state.payments[requestId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
+}
+
 export function confirmPayment(
   storage: StorageLike,
   chainId: string,
@@ -920,13 +1077,19 @@ export function confirmPayment(
 ): PaymentRecord {
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[requestId];
-  if (!current || current.status !== "paid") {
-    throw new Error("No reserved payment can be confirmed.");
+  if (
+    !current ||
+    current.status !== "paid" ||
+    current.paymentOperation?.state !== "submitted" ||
+    !current.paymentOperation.transactionHash
+  ) {
+    throw new Error("No submitted payment can be confirmed.");
   }
   if (
     receipt.dealId !== requestId ||
     !isFelt(transactionHash) ||
     !feltEquals(receipt.txHash, transactionHash) ||
+    !feltEquals(current.paymentOperation.transactionHash, transactionHash) ||
     (current.paymentTxHash !== undefined &&
       !feltEquals(current.paymentTxHash, transactionHash)) ||
     !transfersEqual(receipt.transfer, {
@@ -940,9 +1103,58 @@ export function confirmPayment(
   const next: PaymentRecord = {
     ...current,
     receipt,
+    paymentOperation: {
+      state: "confirmed",
+      transactionHash,
+      updatedAt: at,
+    },
     paymentTxHash: transactionHash,
     paymentPending: false,
     paymentVerified: true,
+    updatedAt: at,
+  };
+  state.payments[requestId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
+}
+
+export function markPaymentOutcome(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  requestId: string,
+  transactionHash: string,
+  outcome: "reverted" | "unknown",
+  at = nowSeconds(),
+): PaymentRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.payments[requestId];
+  if (
+    !current ||
+    current.status !== "paid" ||
+    current.paymentOperation?.state !== "submitted" ||
+    !current.paymentOperation.transactionHash ||
+    !isFelt(transactionHash) ||
+    !feltEquals(current.paymentOperation.transactionHash, transactionHash)
+  ) {
+    throw new Error("No matching submitted payment can be reconciled.");
+  }
+  const next: PaymentRecord = {
+    ...current,
+    status:
+      outcome === "reverted"
+        ? paymentRequestIsExpired(current.request, at)
+          ? "expired"
+          : "requested"
+        : "paid",
+    paymentOperation: {
+      state: outcome,
+      transactionHash,
+      updatedAt: at,
+    },
+    paymentTxHash: transactionHash,
+    paymentPending: outcome === "unknown",
+    paymentVerified: false,
     updatedAt: at,
   };
   state.payments[requestId] = next;
@@ -962,6 +1174,7 @@ export function releasePayment(
   if (
     !current ||
     current.status !== "paid" ||
+    current.paymentOperation?.state !== "reserved" ||
     !current.paymentPending ||
     current.paymentTxHash
   ) {

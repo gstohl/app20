@@ -7,6 +7,9 @@ import {
   buildMemoTransferActions,
   buildOtcAcceptActions,
   computeActionId,
+  Strk20RevertedError,
+  Strk20SubmissionCallbackError,
+  Strk20WaitTimeoutError,
   submitMail,
   submitOtcAccept,
 } from "./strk20";
@@ -213,7 +216,10 @@ describe("mail STRK20 actions", () => {
       batches.push(actions);
       return { transaction_hash: "0x999" };
     });
-    const wait = vi.fn(async () => ({ finality_status: "ACCEPTED_ON_L2" }));
+    const wait = vi.fn(async () => ({
+      finality_status: "ACCEPTED_ON_L2",
+      execution_status: "SUCCEEDED",
+    }));
     const account = {
       strk20InvokeTransaction: invoke,
     } as unknown as WalletAccountV6;
@@ -268,5 +274,87 @@ describe("mail STRK20 actions", () => {
       amount: "OPEN",
       recipient: "0xb0b",
     });
+    expect(wait).toHaveBeenCalledWith(
+      "0x999",
+      expect.objectContaining({
+        successStates: ["SUCCEEDED"],
+        errorStates: ["REVERTED", "REJECTED"],
+      }),
+    );
+  });
+
+  it("fails closed when an accepted receipt says execution reverted", async () => {
+    const account = {
+      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+    } as unknown as WalletAccountV6;
+    const provider = {
+      waitForTransaction: vi.fn(async () => ({
+        finality_status: "ACCEPTED_ON_L2",
+        execution_status: "REVERTED",
+      })),
+    } as unknown as ProviderInterface;
+
+    await expect(
+      submitMail({
+        account,
+        provider,
+        helperAddress: "0x123",
+        recoveryAddress: "0xb0b",
+        record,
+      }),
+    ).rejects.toBeInstanceOf(Strk20RevertedError);
+  });
+
+  it("keeps a submitted transaction unknown when confirmation times out", async () => {
+    const account = {
+      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+    } as unknown as WalletAccountV6;
+    const provider = {
+      waitForTransaction: vi.fn(() => new Promise(() => undefined)),
+    } as unknown as ProviderInterface;
+    const submitted = vi.fn();
+
+    await expect(
+      submitMail(
+        {
+          account,
+          provider,
+          helperAddress: "0x123",
+          recoveryAddress: "0xb0b",
+          record,
+        },
+        { timeoutMs: 5, onSubmitted: submitted },
+      ),
+    ).rejects.toBeInstanceOf(Strk20WaitTimeoutError);
+    expect(submitted).toHaveBeenCalledWith("0x999");
+  });
+
+  it("waits for execution but never treats a throwing submitted callback as verified", async () => {
+    const account = {
+      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+    } as unknown as WalletAccountV6;
+    const wait = vi.fn(async () => ({
+      finality_status: "ACCEPTED_ON_L2",
+      execution_status: "SUCCEEDED",
+    }));
+    const provider = { waitForTransaction: wait } as unknown as ProviderInterface;
+
+    await expect(
+      submitMail(
+        {
+          account,
+          provider,
+          helperAddress: "0x123",
+          recoveryAddress: "0xb0b",
+          record,
+        },
+        {
+          onSubmitted: () => {
+            throw new Error("storage failed");
+          },
+        },
+      ),
+    ).rejects.toBeInstanceOf(Strk20SubmissionCallbackError);
+    expect(wait).toHaveBeenCalledTimes(1);
   });
 });

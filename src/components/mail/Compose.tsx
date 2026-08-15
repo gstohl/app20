@@ -28,6 +28,7 @@ import {
   confirmEscrowOperation,
   deriveEscrowClaimKey,
   loadEscrowState,
+  markEscrowOperationOutcome,
   markEscrowOperationSubmitted,
   parseEscrowFundPayload,
   recordEscrowFund,
@@ -54,6 +55,8 @@ import {
   submitActions,
   submitMail,
   submitMemoTransfer,
+  transactionHashFromError,
+  transactionStateFromError,
 } from "@/lib/strk20";
 import { addrSTRK, myFrontendProviders } from "@/utils/constants";
 import { ProvingProgress } from "./OperationProgress";
@@ -583,7 +586,7 @@ export default function Compose({
     }
 
     let escrowReservation:
-      | { dealId: string; submitted: boolean }
+      | { dealId: string; transactionHash?: string }
       | undefined;
     let fundConfirmedHash: string | undefined;
     let documentSubmittedHash: string | undefined;
@@ -661,7 +664,7 @@ export default function Compose({
         if (existingFund?.state === "confirmed" && existingFund.transactionHash) {
           fundConfirmedHash = existingFund.transactionHash;
           transactionHashes.push(existingFund.transactionHash);
-        } else if (existingFund) {
+        } else if (existingFund && existingFund.state !== "reverted") {
           throw new Error(
             existingFund.transactionHash
               ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Quietline will not issue another Fund.`
@@ -677,7 +680,6 @@ export default function Compose({
           );
           escrowReservation = {
             dealId: document.escrow.dealId,
-            submitted: false,
           };
           setSendState({
             kind: "proving",
@@ -702,7 +704,7 @@ export default function Compose({
             }),
             {
               onSubmitted: (transactionHash) => {
-                escrowReservation!.submitted = true;
+                escrowReservation!.transactionHash = transactionHash;
                 markEscrowOperationSubmitted(
                   window.localStorage,
                   chainId,
@@ -814,12 +816,25 @@ export default function Compose({
         deliveryState: "confirmed",
       });
     } catch (error: unknown) {
-      if (
-        escrowReservation &&
-        !escrowReservation.submitted &&
-        chainId &&
-        senderAddress
-      ) {
+      const outcome = transactionStateFromError(error);
+      const escrowHash =
+        transactionHashFromError(error) ?? escrowReservation?.transactionHash;
+      if (escrowReservation && escrowHash && outcome && chainId && senderAddress) {
+        try {
+          markEscrowOperationOutcome(
+            window.localStorage,
+            chainId,
+            senderAddress,
+            escrowReservation.dealId,
+            "fund",
+            escrowHash,
+            outcome,
+          );
+        } catch {
+          // A transaction hash exists, so retaining the reservation is safer
+          // than risking a duplicate escrow deposit.
+        }
+      } else if (escrowReservation && !escrowHash && chainId && senderAddress) {
         releaseEscrowOperation(
           window.localStorage,
           chainId,
@@ -833,8 +848,8 @@ export default function Compose({
         ? `${base} The document transaction ${documentSubmittedHash} was submitted but confirmation was not observed. Its stable action id prevents a duplicate document or payment; check that transaction before retrying.`
         : fundConfirmedHash
           ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Quietline will skip funding.`
-          : escrowReservation?.submitted
-            ? `${base} Escrow funding was submitted and Quietline will not fund it again. The document was not submitted; verify funding before retrying.`
+          : escrowReservation?.transactionHash
+            ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Quietline will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
             : base;
       setSendState({
         kind: "error",

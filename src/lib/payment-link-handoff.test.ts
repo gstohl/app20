@@ -4,6 +4,7 @@ import {
   claimPayment,
   confirmPayment,
   loadOtcState,
+  markPaymentSubmitted,
   receiptForTransfer,
   type PaymentRequestPayload,
 } from "./otc";
@@ -98,6 +99,14 @@ describe("payment-link mailbox handoff", () => {
       to: request.requester,
     };
     const transactionHash = "0xabc";
+    markPaymentSubmitted(
+      local,
+      chainId,
+      payer,
+      request.requestId,
+      transactionHash,
+      1_900_000_003,
+    );
     confirmPayment(
       local,
       chainId,
@@ -105,7 +114,7 @@ describe("payment-link mailbox handoff", () => {
       request.requestId,
       transactionHash,
       receiptForTransfer(request.requestId, transfer, transactionHash),
-      1_900_000_003,
+      1_900_000_004,
     );
     expect(
       loadOtcState(local, chainId, payer).payments[request.requestId],

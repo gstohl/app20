@@ -37,6 +37,7 @@ import {
   deriveEscrowClaimKey,
   emptyEscrowState,
   loadEscrowState,
+  markEscrowOperationOutcome,
   markEscrowOperationSubmitted,
   parseEscrowClaimPayload,
   parseEscrowContractDeal,
@@ -89,6 +90,10 @@ import {
   emptyOtcState,
   expireStoredDeals,
   loadOtcState,
+  markOtcAcceptOutcome,
+  markOtcAcceptSubmitted,
+  markPaymentOutcome,
+  markPaymentSubmitted,
   parseAcceptPayload,
   parseDeclinePayload,
   parseOfferPayload,
@@ -110,6 +115,8 @@ import {
   computeActionId,
   strk20ErrorMessage,
   submitActions,
+  transactionHashFromError,
+  transactionStateFromError,
   submitMail,
   submitMemoTransfer,
   submitOtcAccept,
@@ -1185,7 +1192,7 @@ export default function InboxPage() {
   async function handleAccept(offer: OfferPayload, offerIndex?: number) {
     const actionKey = `deal:${offer.dealId}`;
     let claimed = false;
-    let walletSubmitted = false;
+    let submittedHash = "";
     try {
       const context = requireActionContext();
       const accept = acceptPayloadForOffer(offer, offerIndex);
@@ -1210,7 +1217,6 @@ export default function InboxPage() {
         recipientKey,
         encodeEnvelope("accept", accept),
       );
-      let submittedHash = "";
       const result = await submitOtcAccept(
         {
           account: context.walletAccount,
@@ -1224,8 +1230,7 @@ export default function InboxPage() {
         {
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
-            walletSubmitted = true;
-            confirmOtcAccept(
+            markOtcAcceptSubmitted(
               window.localStorage,
               context.chainId,
               context.address,
@@ -1235,34 +1240,57 @@ export default function InboxPage() {
             refreshOtcState();
             setActionState(actionKey, {
               pending: true,
-              message: "STRK transfer submitted; waiting before posting receipt…",
+              message: `STRK transfer submitted (${transactionHash}); confirmation pending before any receipt is posted.`,
             });
           },
         },
       );
-      const acceptHash = submittedHash || result.transactionHash;
-      if (!submittedHash) {
-        confirmOtcAccept(
-          window.localStorage,
-          context.chainId,
-          context.address,
-          offer.dealId,
-          acceptHash,
-        );
-      }
+      const acceptHash = result.transactionHash;
+      confirmOtcAccept(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        offer.dealId,
+        acceptHash,
+      );
+      refreshOtcState();
 
       setActionState(actionKey, {
         pending: true,
         message: "STRK transfer confirmed. Posting the separate receipt…",
       });
-      await postReceipt(offer, accept, acceptHash, recipientKey);
-      setActionState(actionKey, {
-        pending: false,
-        message: "Accept transfer and one-sided receipt confirmed.",
-      });
-      void scanInbox();
+      try {
+        await postReceipt(offer, accept, acceptHash, recipientKey);
+        setActionState(actionKey, {
+          pending: false,
+          message: "Accept transfer and one-sided receipt confirmed.",
+        });
+        void scanInbox();
+      } catch (receiptError: unknown) {
+        setActionState(actionKey, {
+          pending: false,
+          message: `STRK moved in confirmed transaction ${acceptHash}, but the separate receipt failed: ${strk20ErrorMessage(receiptError)} Use “Post receipt” to retry only the receipt; do not accept again.`,
+        });
+      }
     } catch (error: unknown) {
-      if (claimed && !walletSubmitted && address && chainId) {
+      const outcome = transactionStateFromError(error);
+      const hash = transactionHashFromError(error) ?? submittedHash;
+      if (claimed && hash && outcome && address && chainId) {
+        try {
+          markOtcAcceptOutcome(
+            window.localStorage,
+            chainId,
+            address,
+            offer.dealId,
+            hash,
+            outcome,
+          );
+        } catch {
+          // The submitted-state write may itself have failed. Keep the
+          // reservation blocked rather than risking a duplicate transfer.
+        }
+        refreshOtcState();
+      } else if (claimed && !hash && address && chainId) {
         releaseOtcAccept(
           window.localStorage,
           chainId,
@@ -1365,7 +1393,7 @@ export default function InboxPage() {
   async function handlePay(request: PaymentRequestPayload) {
     const actionKey = `payment:${request.requestId}`;
     let claimed = false;
-    let walletSubmitted = false;
+    let submittedHash = "";
     try {
       const context = requireActionContext();
       claimPayment(
@@ -1394,7 +1422,6 @@ export default function InboxPage() {
         key,
         encodeEnvelope("accept", paymentMemo),
       );
-      let submittedHash = "";
       const result = await submitMemoTransfer(
         {
           account: context.walletAccount,
@@ -1410,42 +1437,54 @@ export default function InboxPage() {
         {
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
-            walletSubmitted = true;
-            const receipt = receiptForTransfer(
-              request.requestId,
-              transfer,
-              transactionHash,
-            );
-            confirmPayment(
+            markPaymentSubmitted(
               window.localStorage,
               context.chainId,
               context.address,
               request.requestId,
               transactionHash,
-              receipt,
             );
             refreshOtcState();
+            setActionState(actionKey, {
+              pending: true,
+              message: `Private STRK payment submitted (${transactionHash}); confirmation pending.`,
+            });
           },
         },
       );
-      const transactionHash = submittedHash || result.transactionHash;
-      if (!submittedHash) {
-        confirmPayment(
-          window.localStorage,
-          context.chainId,
-          context.address,
-          request.requestId,
-          transactionHash,
-          receiptForTransfer(request.requestId, transfer, transactionHash),
-        );
-      }
+      const transactionHash = result.transactionHash;
+      confirmPayment(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        request.requestId,
+        transactionHash,
+        receiptForTransfer(request.requestId, transfer, transactionHash),
+      );
+      refreshOtcState();
       setActionState(actionKey, {
         pending: false,
         message: "Private STRK payment and encrypted memo confirmed.",
       });
       void scanInbox();
     } catch (error: unknown) {
-      if (claimed && !walletSubmitted && address && chainId) {
+      const outcome = transactionStateFromError(error);
+      const hash = transactionHashFromError(error) ?? submittedHash;
+      if (claimed && hash && outcome && address && chainId) {
+        try {
+          markPaymentOutcome(
+            window.localStorage,
+            chainId,
+            address,
+            request.requestId,
+            hash,
+            outcome,
+          );
+        } catch {
+          // Never release a reservation once a wallet hash exists.
+        }
+        refreshOtcState();
+      } else if (claimed && !hash && address && chainId) {
         releasePayment(
           window.localStorage,
           chainId,
@@ -1464,7 +1503,7 @@ export default function InboxPage() {
   async function handleEscrowFill(fund: EscrowFundPayload) {
     const actionKey = `escrow:${fund.dealId}`;
     let reserved = false;
-    let walletSubmitted = false;
+    let submittedHash = "";
     try {
       const context = requireActionContext();
       if (!escrowAddress || !escrowEnabled) {
@@ -1511,7 +1550,7 @@ export default function InboxPage() {
         }),
         {
           onSubmitted: (transactionHash) => {
-            walletSubmitted = true;
+            submittedHash = transactionHash;
             markEscrowOperationSubmitted(
               window.localStorage,
               context.chainId,
@@ -1545,7 +1584,25 @@ export default function InboxPage() {
           "Fill confirmed: leg A was released to the taker; leg B awaits the maker's signed claim.",
       });
     } catch (error: unknown) {
-      if (reserved && !walletSubmitted && address && chainId) {
+      const outcome = transactionStateFromError(error);
+      const hash = transactionHashFromError(error) ?? submittedHash;
+      if (reserved && hash && outcome && address && chainId) {
+        try {
+          markEscrowOperationOutcome(
+            window.localStorage,
+            chainId,
+            address,
+            fund.dealId,
+            "fill",
+            hash,
+            outcome,
+          );
+        } catch {
+          // A submitted hash must never release the duplicate-action guard.
+        }
+        refreshEscrowState();
+        void refreshEscrowChainDeals();
+      } else if (reserved && !hash && address && chainId) {
         releaseEscrowOperation(
           window.localStorage,
           chainId,
@@ -1568,7 +1625,7 @@ export default function InboxPage() {
   ) {
     const actionKey = `escrow:${fund.dealId}`;
     let reserved = false;
-    let walletSubmitted = false;
+    let submittedHash = "";
     let dynamicInvoke: LocalnetDynamicEscrowInvoke | undefined;
     let claimPrivateKey: Uint8Array | undefined;
     try {
@@ -1653,7 +1710,7 @@ export default function InboxPage() {
         actions,
         {
           onSubmitted: (transactionHash) => {
-            walletSubmitted = true;
+            submittedHash = transactionHash;
             markEscrowOperationSubmitted(
               window.localStorage,
               context.chainId,
@@ -1689,7 +1746,25 @@ export default function InboxPage() {
             : "Localnet timeout confirmed: the maker recovered leg A.",
       });
     } catch (error: unknown) {
-      if (reserved && !walletSubmitted && address && chainId) {
+      const outcome = transactionStateFromError(error);
+      const hash = transactionHashFromError(error) ?? submittedHash;
+      if (reserved && hash && outcome && address && chainId) {
+        try {
+          markEscrowOperationOutcome(
+            window.localStorage,
+            chainId,
+            address,
+            fund.dealId,
+            operation,
+            hash,
+            outcome,
+          );
+        } catch {
+          // A submitted hash must never release the duplicate-action guard.
+        }
+        refreshEscrowState();
+        void refreshEscrowChainDeals();
+      } else if (reserved && !hash && address && chainId) {
         releaseEscrowOperation(
           window.localStorage,
           chainId,
