@@ -9,6 +9,7 @@ import {
   type PaymentRequestPayload,
   type PaymentStatus,
 } from "@/lib/otc";
+import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
 type InvoiceCardProps = {
@@ -19,6 +20,7 @@ type InvoiceCardProps = {
   unverifiedClaim?: boolean;
   busy?: boolean;
   actionMessage?: string;
+  actionStartedAt?: number;
   onPay?: () => void;
 };
 
@@ -30,6 +32,7 @@ export default function InvoiceCard({
   unverifiedClaim = false,
   busy = false,
   actionMessage,
+  actionStartedAt,
   onPay,
 }: InvoiceCardProps) {
   const [ignored, setIgnored] = useState(false);
@@ -95,19 +98,19 @@ export default function InvoiceCard({
         </p>
       ) : null}
 
-      {!metadataConsistent ? (
-        <p className={styles.actionWarning}>
-          Quietline refuses this request: its STRK address has inconsistent
-          token metadata.
-        </p>
-      ) : !isStrk ? (
+      {metadataConsistent ? isStrk ? expired ? (
+        <p className={styles.actionWarning}>This payment request has expired.</p>
+      ) : null : (
         <p className={styles.actionWarning}>
           Non-STRK requests are display-only. Quietline v1 will not send this
           token.
         </p>
-      ) : expired ? (
-        <p className={styles.actionWarning}>This payment request has expired.</p>
-      ) : null}
+      ) : (
+        <p className={styles.actionWarning}>
+          Quietline refuses this request: its STRK address has inconsistent
+          token metadata.
+        </p>
+      )}
 
       {status === "requested" && !expired && !ignored ? (
         <div className={styles.sheetActions}>
@@ -134,6 +137,11 @@ export default function InvoiceCard({
       {ignored ? (
         <p className={styles.inlineStatus}>Ignored in this view; no transfer was sent.</p>
       ) : null}
+      <ProvingProgress
+        active={busy}
+        startedAt={actionStartedAt}
+        label="Preparing private payment action"
+      />
       {actionMessage ? (
         <p className={styles.inlineStatus} role="status">
           {actionMessage}

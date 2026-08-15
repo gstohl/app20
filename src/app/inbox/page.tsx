@@ -6,14 +6,17 @@ import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { useLocalnetTools } from "@/app/localnetToolsContext";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
+import ConversationList from "@/components/mail/ConversationList";
 import Onboard from "@/components/mail/Onboard";
+import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
 import Thread, {
   type LocalMailMessage,
   type ThreadActionState,
 } from "@/components/mail/Thread";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
-import { encodeEnvelope } from "@/lib/envelope";
+import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import type {
   DecryptedMail,
   EncryptedMailRecord,
@@ -79,6 +82,8 @@ type ActiveScanWorker = {
   reject: (error: Error) => void;
 };
 
+type ScanKind = "idle" | "scanning" | "ok" | "error";
+
 function helperForNetwork(providerIndex: number): string | null {
   const configured =
     providerIndex === 0
@@ -107,6 +112,16 @@ function mailKeyFingerprint(keypair: MailKeypair | null): string {
 
 function sortMailMessages(messages: LocalMailMessage[]): LocalMailMessage[] {
   return messages.sort((left, right) => {
+    const leftTime =
+      left.localCreatedAt ??
+      (left.blockTimestamp === undefined ? undefined : left.blockTimestamp * 1_000);
+    const rightTime =
+      right.localCreatedAt ??
+      (right.blockTimestamp === undefined ? undefined : right.blockTimestamp * 1_000);
+    if (leftTime !== undefined || rightTime !== undefined) {
+      const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
+      if (timeDifference) return timeDifference;
+    }
     const blockDifference =
       (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
     if (blockDifference) return blockDifference;
@@ -159,6 +174,7 @@ export default function InboxPage() {
   const chainId = useStoreWallet((state) => state.chain);
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
+  const renderLocalnetTools = useLocalnetTools();
   const [keypair, setKeypair] = useState<MailKeypair | null>(null);
   const [messages, setMessages] = useState<LocalMailMessage[]>([]);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
@@ -167,7 +183,15 @@ export default function InboxPage() {
     Record<string, ThreadActionState>
   >({});
   const [scanning, setScanning] = useState(false);
+  const [scanKind, setScanKind] = useState<ScanKind>("idle");
   const [scanMessage, setScanMessage] = useState("");
+  const [scanProgress, setScanProgress] = useState({
+    pages: 0,
+    events: 0,
+    maxPages: MAIL_SCAN_MAX_PAGES,
+  });
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const helperAddress = helperForNetwork(providerIndex);
   const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
@@ -962,15 +986,10 @@ export default function InboxPage() {
 
         <Thread
           messages={messages}
-          canScan={Boolean(keypair && helperAddress)}
-          scanning={scanning}
-          scanMessage={scanMessage}
           selfAddress={address}
           aliases={aliases}
           otcState={otcState}
           actionStates={actionStates}
-          onScan={() => void scanInbox("newer")}
-          onScanOlder={() => void scanInbox("older")}
           onAccept={(offer, index) => void handleAccept(offer, index)}
           onDecline={(offer) => void handleDecline(offer)}
           onPostReceipt={(offer) => void handlePostReceipt(offer)}

@@ -8,6 +8,7 @@ import {
   type DealStatus,
   type OfferPayload,
 } from "@/lib/otc";
+import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
 type OfferCardProps = {
@@ -18,6 +19,7 @@ type OfferCardProps = {
   unverifiedClaim?: boolean;
   busy?: boolean;
   actionMessage?: string;
+  actionStartedAt?: number;
   onAccept?: () => void;
   onDecline?: () => void;
   onPostReceipt?: () => void;
@@ -36,6 +38,7 @@ export default function OfferCard({
   unverifiedClaim = false,
   busy = false,
   actionMessage,
+  actionStartedAt,
   onAccept,
   onDecline,
   onPostReceipt,
@@ -113,19 +116,19 @@ export default function OfferCard({
         </p>
       ) : null}
 
-      {!metadataConsistent ? (
-        <p className={styles.actionWarning}>
-          Quietline refuses this offer: its STRK address has inconsistent token
-          metadata.
-        </p>
-      ) : !settlesStrk ? (
+      {metadataConsistent ? settlesStrk ? expired ? (
+        <p className={styles.actionWarning}>This offer has expired locally.</p>
+      ) : null : (
         <p className={styles.actionWarning}>
           Quietline refuses this offer: OTC v1 can settle only canonical STRK on
           the give leg.
         </p>
-      ) : expired ? (
-        <p className={styles.actionWarning}>This offer has expired locally.</p>
-      ) : null}
+      ) : (
+        <p className={styles.actionWarning}>
+          Quietline refuses this offer: its STRK address has inconsistent token
+          metadata.
+        </p>
+      )}
 
       {active && (onAccept || onDecline) ? (
         <div className={styles.sheetActions}>
@@ -162,6 +165,11 @@ export default function OfferCard({
           {busy ? "Posting receipt…" : "Post receipt"}
         </button>
       ) : null}
+      <ProvingProgress
+        active={busy}
+        startedAt={actionStartedAt}
+        label="Preparing private settlement action"
+      />
       {actionMessage ? (
         <p className={styles.inlineStatus} role="status">
           {actionMessage}

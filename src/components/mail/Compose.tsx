@@ -1,7 +1,10 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { validateAndParseAddress } from "starknet";
+import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
+import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
   loadAliases,
   resolveAliasInput,
@@ -9,7 +12,13 @@ import {
   type AliasRecord,
 } from "@/lib/aliases";
 import { encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
-import { encryptMail, publicKeyFromFelts } from "@/lib/mail";
+import {
+  encryptMailForRecipients,
+  MAX_MULTI_RECIPIENTS,
+  publicKeyFromFelts,
+  type EncryptedMailRecord,
+} from "@/lib/mail";
+import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import {
   createDealId,
   createRequestId,
@@ -17,16 +26,21 @@ import {
   type OfferPayload,
   type PaymentRequestPayload,
 } from "@/lib/otc";
-import { strk20ErrorMessage, submitMail } from "@/lib/strk20";
+import {
+  strk20ErrorMessage,
+  submitMail,
+  submitMemoTransfer,
+} from "@/lib/strk20";
 import { addrSTRK, myFrontendProviders } from "@/utils/constants";
-import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
-import { validateAndParseAddress } from "starknet";
+import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
 export type SentEnvelope = {
   type: EnvelopeType;
   payload: unknown;
+  record: EncryptedMailRecord;
+  transactionHash: string;
+  recipientCount: number;
 };
 
 type ComposeProps = {
@@ -38,13 +52,13 @@ type ComposeProps = {
 };
 
 type SendState = {
-  kind: "idle" | "pending" | "ok" | "error";
+  kind: "idle" | "lookup" | "encrypting" | "proving" | "ok" | "error";
   message?: string;
   transactionHash?: string;
+  startedAt?: number;
 };
 
-type ComposeMode = "letter" | "deal";
-type DealKind = "offer" | "request";
+type ComposeMode = "letter" | "deal" | "invoice";
 
 function expiryFromHours(value: string): number {
   const trimmed = value.trim();
@@ -54,6 +68,13 @@ function expiryFromHours(value: string): number {
     throw new Error("Expiry must be 0–8760 hours.");
   }
   return Math.floor(Date.now() / 1_000 + hours * 3_600);
+}
+
+function splitRecipientEntries(value: string): string[] {
+  return value
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 export default function Compose({
@@ -71,9 +92,10 @@ export default function Compose({
     (state) => state.currentFrontendProviderIndex,
   );
   const [mode, setMode] = useState<ComposeMode>("letter");
-  const [dealKind, setDealKind] = useState<DealKind>("offer");
   const [recipient, setRecipient] = useState("");
   const [body, setBody] = useState("");
+  const [attachPayment, setAttachPayment] = useState(false);
+  const [attachmentAmount, setAttachmentAmount] = useState("");
   const [giveStrk, setGiveStrk] = useState("0.01");
   const [wantAmount, setWantAmount] = useState("");
   const [wantSymbol, setWantSymbol] = useState("USDC");
@@ -96,6 +118,11 @@ export default function Compose({
     setAliases(loadAliases(window.localStorage, senderAddress));
   }, [senderAddress]);
 
+  const recipientEntries = useMemo(
+    () => splitRecipientEntries(recipient),
+    [recipient],
+  );
+
   let disabledReason = "";
   if (!helperAddress) {
     disabledReason = `No QuietlineMail helper is configured on ${networkName}. Sending is disabled.`;
@@ -107,10 +134,31 @@ export default function Compose({
     disabledReason = "Load this device's mail key before sending.";
   }
 
-  const sendDisabled = Boolean(disabledReason) || sendState.kind === "pending";
+  const sendPending = ["lookup", "encrypting", "proving"].includes(
+    sendState.kind,
+  );
+  const sendDisabled = Boolean(disabledReason) || sendPending;
 
-  function resolvedRecipient(): string {
-    return validateAndParseAddress(resolveAliasInput(aliases, recipient));
+  function resolvedRecipients(): string[] {
+    if (!recipientEntries.length) throw new Error("Add at least one recipient.");
+    if (recipientEntries.length > MAX_MULTI_RECIPIENTS) {
+      throw new Error(
+        `Multi-recipient mail supports at most ${MAX_MULTI_RECIPIENTS} recipients within the 140-felt ciphertext cap.`,
+      );
+    }
+
+    const addresses = recipientEntries.map((entry) =>
+      validateAndParseAddress(resolveAliasInput(aliases, entry)),
+    );
+    const fingerprints = new Set<string>();
+    for (const address of addresses) {
+      const fingerprint = BigInt(address).toString(16);
+      if (fingerprints.has(fingerprint)) {
+        throw new Error("Each recipient address must be unique.");
+      }
+      fingerprints.add(fingerprint);
+    }
+    return addresses;
   }
 
   function saveCurrentAlias() {
@@ -119,7 +167,10 @@ export default function Compose({
       return;
     }
     try {
-      const address = resolvedRecipient();
+      if (recipientEntries.length !== 1) {
+        throw new Error("Choose exactly one recipient when saving an alias.");
+      }
+      const [address] = resolvedRecipients();
       const next = saveAlias(
         window.localStorage,
         senderAddress,
@@ -137,15 +188,23 @@ export default function Compose({
     }
   }
 
-  function buildPayload(): SentEnvelope {
+  function appendAlias(alias: AliasRecord) {
+    const separator = recipient.trim() ? "\n" : "";
+    setRecipient((current) => `${current.trimEnd()}${separator}${alias.label}`);
+  }
+
+  function buildPayload(): { type: EnvelopeType; payload: unknown } {
     if (mode === "letter") {
       if (!body.trim()) throw new Error("Write a message before sending.");
       return { type: "text", payload: { body } };
     }
 
     const expiresAt = expiryFromHours(expiryHours);
-    if (dealKind === "offer") {
+    if (mode === "deal") {
       const decimals = Number(wantDecimals);
+      if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
+        throw new Error("Quoted token decimals must be an integer from 0 to 255.");
+      }
       const payload: OfferPayload = {
         dealId: createDealId(),
         give: {
@@ -164,7 +223,9 @@ export default function Compose({
         expiresAt,
         ...(dealNote.trim() ? { note: dealNote.trim() } : {}),
       };
-      if (!payload.want.token.symbol) throw new Error("Want-token symbol is required.");
+      if (!payload.want.token.symbol) {
+        throw new Error("Want-token symbol is required.");
+      }
       return { type: "offer", payload };
     }
 
@@ -197,270 +258,371 @@ export default function Compose({
       return;
     }
 
-    setSendState({ kind: "pending", message: "Looking up the recipient key…" });
-
     try {
-      const recipientAddress = resolvedRecipient();
-      const provider = myFrontendProviders[providerIndex];
-      const registeredKey = await provider.callContract({
-        contractAddress: helperAddress,
-        entrypoint: "get_pubkey",
-        calldata: [recipientAddress],
-      });
-      if (
-        registeredKey.length !== 2 ||
-        (BigInt(registeredKey[0]) === 0n && BigInt(registeredKey[1]) === 0n)
-      ) {
+      const recipientAddresses = resolvedRecipients();
+      if (mode !== "letter" && recipientAddresses.length !== 1) {
         throw new Error(
-          "The recipient has not registered a Quietline mail public key.",
+          "Deals and invoices are bilateral in v1. Address exactly one counterparty.",
         );
       }
-
+      if (attachPayment && recipientAddresses.length !== 1) {
+        throw new Error(
+          "An attached STRK payment has one private transfer destination. Send group letters without an attachment.",
+        );
+      }
+      const paymentAmount = attachPayment
+        ? parseOptionalStrkAmount(attachmentAmount)
+        : undefined;
+      if (attachPayment && paymentAmount === undefined) {
+        throw new Error("Enter the STRK amount to attach.");
+      }
       const message = buildPayload();
-      setSendState({ kind: "pending", message: "Encrypting locally…" });
-      const record = await encryptMail(
-        publicKeyFromFelts(registeredKey),
+      const provider = myFrontendProviders[providerIndex];
+
+      setSendState({
+        kind: "lookup",
+        message: `Looking up ${recipientAddresses.length} recipient mail key${
+          recipientAddresses.length === 1 ? "" : "s"
+        }…`,
+      });
+      const registeredKeys = await Promise.all(
+        recipientAddresses.map(async (address, index) => {
+          const registeredKey = await provider.callContract({
+            contractAddress: helperAddress,
+            entrypoint: "get_pubkey",
+            calldata: [address],
+          });
+          if (
+            registeredKey.length !== 2 ||
+            (BigInt(registeredKey[0]) === 0n && BigInt(registeredKey[1]) === 0n)
+          ) {
+            throw new Error(
+              `Recipient ${index + 1} has not registered a Quietline mail public key.`,
+            );
+          }
+          return publicKeyFromFelts(registeredKey);
+        }),
+      );
+
+      setSendState({
+        kind: "encrypting",
+        message: `Sealing one shared letter for ${registeredKeys.length} recipient${
+          registeredKeys.length === 1 ? "" : "s"
+        } on this device…`,
+      });
+      const record = await encryptMailForRecipients(
+        registeredKeys,
         encodeEnvelope(message.type, message.payload),
       );
-      const { transactionHash } = await submitMail(
-        {
-          account: walletAccount,
-          provider,
-          helperAddress,
-          recoveryAddress: senderAddress,
-          tokenAddress: addrSTRK,
-          record,
+      const startedAt = Date.now();
+      setSendState({
+        kind: "proving",
+        message: "Ready is preparing the private mail action…",
+        startedAt,
+      });
+
+      const options = {
+        onSubmitted: (hash: string) => {
+          setSendState({
+            kind: "proving" as const,
+            message: "Private action submitted. Waiting for confirmation…",
+            transactionHash: hash,
+            startedAt,
+          });
         },
-        {
-          onSubmitted: (hash) => {
-            setSendState({
-              kind: "pending",
-              message: "Private action submitted. Waiting for confirmation…",
-              transactionHash: hash,
-            });
-          },
-        },
-      );
+      };
+      const { transactionHash } =
+        paymentAmount === undefined
+          ? await submitMail(
+              {
+                account: walletAccount,
+                provider,
+                helperAddress,
+                recoveryAddress: senderAddress,
+                tokenAddress: addrSTRK,
+                record,
+              },
+              options,
+            )
+          : await submitMemoTransfer(
+              {
+                account: walletAccount,
+                provider,
+                helperAddress,
+                recoveryAddress: senderAddress,
+                tokenAddress: addrSTRK,
+                recipient: recipientAddresses[0],
+                amount: paymentAmount,
+                record,
+              },
+              options,
+            );
 
       setSendState({
         kind: "ok",
         message:
           message.type === "offer"
-            ? "Encrypted OTC offer confirmed. No asset moved."
+            ? "Encrypted deal confirmed. No asset moved."
             : message.type === "payment_request"
-              ? "Encrypted payment request confirmed. No asset moved."
-              : "Encrypted letter confirmed.",
+              ? "Encrypted invoice confirmed. No asset moved."
+              : paymentAmount === undefined
+                ? `Encrypted letter confirmed for ${recipientAddresses.length} recipient${
+                    recipientAddresses.length === 1 ? "" : "s"
+                  }.`
+                : "Encrypted letter and private STRK payment confirmed in one action.",
         transactionHash,
       });
       if (message.type === "text") setBody("");
       if (message.type === "offer") setDealNote("");
       if (message.type === "payment_request") setRequestMemo("");
-      onSent(message);
+      if (paymentAmount !== undefined) setAttachmentAmount("");
+      onSent({
+        ...message,
+        record,
+        transactionHash,
+        recipientCount: recipientAddresses.length,
+      });
     } catch (error: unknown) {
       setSendState({ kind: "error", message: strk20ErrorMessage(error) });
     }
   }
 
   return (
-    <section className={styles.card} aria-labelledby="compose-title">
-      <div className={styles.cardNumber}>02</div>
-      <div>
-        <p className={styles.kicker}>PRIVATE DELIVERY</p>
-        <h2 id="compose-title" className={styles.cardTitle}>
-          Compose
-        </h2>
+    <section className={styles.composerSheet} aria-labelledby="compose-title">
+      <div className={styles.composerHeading}>
+        <div>
+          <p className={styles.kicker}>PRIVATE DELIVERY</p>
+          <h2 id="compose-title">Compose a document</h2>
+        </div>
+        <span className={styles.sheetClip} aria-hidden="true">CLIP / 02</span>
       </div>
 
-      <div className={styles.composeToggle} aria-label="Compose type">
-        <button
-          type="button"
-          aria-pressed={mode === "letter"}
-          onClick={() => setMode("letter")}
+      <label className={styles.modePicker}>
+        <span>Document</span>
+        <select
+          value={mode}
+          onChange={(event) => setMode(event.target.value as ComposeMode)}
         >
-          Letter
-        </button>
-        <button
-          type="button"
-          aria-pressed={mode === "deal"}
-          onClick={() => setMode("deal")}
-        >
-          Deal
-        </button>
-      </div>
+          <option value="letter">Letter</option>
+          <option value="deal">Deal</option>
+          <option value="invoice">Invoice</option>
+        </select>
+        <small>
+          One composer, three typed envelopes. Deals and invoices remain
+          one-sided v1 documents, not escrow contracts.
+        </small>
+      </label>
 
       <div className={styles.disclosureGrid}>
         <p>
-          <strong>Private</strong>
-          Envelope contents, recipient link, and STRK transfer details.
+          <strong>Device-private / sealed</strong>
+          Body, recipient identities, local aliases, and attached transfer
+          details.
         </p>
         <p>
           <strong>Public</strong>
-          Ciphertext, helper use, pool transaction timing, and public key registration.
+          Recipient count, ciphertext size, helper and pool activity, and
+          timing. Shield and unshield legs are public.
         </p>
       </div>
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <label className={styles.field}>
-          <span>Recipient address or local alias</span>
-          <input
+          <span>
+            Recipient address or local alias
+            <em className={styles.fieldBadge}>COUNT PUBLIC</em>
+          </span>
+          <textarea
             value={recipient}
             onChange={(event) => setRecipient(event.target.value)}
-            placeholder="0x… or Alice"
+            placeholder={
+              mode === "letter"
+                ? "One address or alias per line"
+                : "One counterparty address or alias"
+            }
             autoComplete="off"
-            list="quietline-local-aliases"
+            rows={mode === "letter" ? 3 : 2}
             required
           />
-          <datalist id="quietline-local-aliases">
-            {aliases.map((record) => (
-              <option key={record.address} value={record.label}>
-                {record.address}
-              </option>
-            ))}
-          </datalist>
-          <small>Aliases stay in localStorage and are never put in a message.</small>
+          <small>
+            {recipientEntries.length || 0} / {MAX_MULTI_RECIPIENTS} recipients.
+            Count is public; identities are not in MessagePosted. Group delivery
+            is available for letters; deals and invoices are bilateral.
+          </small>
         </label>
+
+        {aliases.length ? (
+          <div className={styles.aliasChips} aria-label="Device-private aliases">
+            <span>ADD LOCAL:</span>
+            {aliases.map((alias) => (
+              <button
+                key={alias.address}
+                type="button"
+                onClick={() => appendAlias(alias)}
+              >
+                <bdi>{alias.label}</bdi>
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         <div className={styles.aliasEditor}>
           <input
             value={aliasLabel}
             onChange={(event) => setAliasLabel(event.target.value)}
-            placeholder="Local name for this address"
+            placeholder="Local name for one entered address"
             aria-label="Local alias label"
           />
           <button
             className={styles.secondaryButton}
             type="button"
             onClick={saveCurrentAlias}
-            disabled={!recipient.trim() || !aliasLabel.trim()}
+            disabled={recipientEntries.length !== 1 || !aliasLabel.trim()}
           >
-            Save locally
+            Save on device
           </button>
         </div>
         {aliasNotice ? <p className={styles.finePrint}>{aliasNotice}</p> : null}
 
         {mode === "letter" ? (
-          <label className={styles.field}>
-            <span>Letter</span>
-            <textarea
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              placeholder="Write a private note"
-              rows={6}
-              maxLength={4096}
-              required
-            />
-            <small>{body.length} / 4096 characters; typed envelope v1</small>
-          </label>
-        ) : (
           <>
-            <div className={styles.dealKindToggle} aria-label="Deal action">
-              <button
-                type="button"
-                aria-pressed={dealKind === "offer"}
-                onClick={() => setDealKind("offer")}
-              >
-                Make offer
-              </button>
-              <button
-                type="button"
-                aria-pressed={dealKind === "request"}
-                onClick={() => setDealKind("request")}
-              >
-                Request payment
-              </button>
+            <label className={styles.field}>
+              <span>Letter</span>
+              <textarea
+                className={styles.letterInput}
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                placeholder="Write a private letter"
+                rows={7}
+                maxLength={4096}
+                required
+              />
+              <small>{body.length} / 4096 characters; typed envelope v1</small>
+            </label>
+
+            <div className={styles.paymentAttachment}>
+              <label className={styles.attachmentToggle}>
+                <input
+                  type="checkbox"
+                  checked={attachPayment}
+                  onChange={(event) => setAttachPayment(event.target.checked)}
+                />
+                <span>
+                  <strong>Attach shielded STRK</strong>
+                  <small>Part of composing, not a separate Send tab</small>
+                </span>
+              </label>
+              {attachPayment ? (
+                <label className={styles.field}>
+                  <span>STRK amount</span>
+                  <input
+                    value={attachmentAmount}
+                    onChange={(event) => setAttachmentAmount(event.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.01"
+                    required
+                  />
+                  <small>
+                    One private in-pool transfer to one recipient in the same
+                    atomic wallet batch. Timing and pool activity stay public.
+                  </small>
+                </label>
+              ) : null}
             </div>
+          </>
+        ) : mode === "deal" ? (
+          <div className={styles.dealFields}>
+            <p className={styles.termsPreview}>
+              Offer to buy one STRK amount from this counterparty for one quoted
+              token amount.
+            </p>
+            <label className={styles.field}>
+              <span>STRK to buy</span>
+              <input
+                value={giveStrk}
+                onChange={(event) => setGiveStrk(event.target.value)}
+                inputMode="decimal"
+                placeholder="0.01"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Quoted token symbol</span>
+              <input
+                value={wantSymbol}
+                onChange={(event) => setWantSymbol(event.target.value)}
+                placeholder="USDC"
+                maxLength={32}
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Quoted token address</span>
+              <input
+                value={wantAddress}
+                onChange={(event) => setWantAddress(event.target.value)}
+                placeholder="0x…"
+                required
+              />
+            </label>
+            <div className={styles.amountPair}>
+              <label className={styles.field}>
+                <span>Token decimals</span>
+                <input
+                  value={wantDecimals}
+                  onChange={(event) => setWantDecimals(event.target.value)}
+                  inputMode="numeric"
+                  required
+                />
+              </label>
+              <label className={styles.field}>
+                <span>Quoted amount</span>
+                <input
+                  value={wantAmount}
+                  onChange={(event) => setWantAmount(event.target.value)}
+                  inputMode="decimal"
+                  placeholder="2.50"
+                  required
+                />
+              </label>
+            </div>
+            <label className={styles.field}>
+              <span>Note (optional)</span>
+              <input
+                value={dealNote}
+                onChange={(event) => setDealNote(event.target.value)}
+                maxLength={512}
+              />
+            </label>
+          </div>
+        ) : (
+          <div className={styles.dealFields}>
+            <p className={styles.termsPreview}>
+              Request one later private STRK payment from this counterparty.
+            </p>
+            <label className={styles.field}>
+              <span>STRK requested</span>
+              <input
+                value={requestAmount}
+                onChange={(event) => setRequestAmount(event.target.value)}
+                inputMode="decimal"
+                placeholder="0.01"
+                required
+              />
+            </label>
+            <label className={styles.field}>
+              <span>Invoice memo (optional)</span>
+              <input
+                value={requestMemo}
+                onChange={(event) => setRequestMemo(event.target.value)}
+                maxLength={512}
+              />
+            </label>
+          </div>
+        )}
 
-            {dealKind === "offer" ? (
-              <div className={styles.dealFields}>
-                <p className={styles.termsPreview}>
-                  You offer to buy one STRK amount from the recipient for one
-                  quoted token amount.
-                </p>
-                <label className={styles.field}>
-                  <span>STRK to buy</span>
-                  <input
-                    value={giveStrk}
-                    onChange={(event) => setGiveStrk(event.target.value)}
-                    inputMode="decimal"
-                    placeholder="0.01"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Quoted token symbol</span>
-                  <input
-                    value={wantSymbol}
-                    onChange={(event) => setWantSymbol(event.target.value)}
-                    placeholder="USDC"
-                    maxLength={32}
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Quoted token address</span>
-                  <input
-                    value={wantAddress}
-                    onChange={(event) => setWantAddress(event.target.value)}
-                    placeholder="0x…"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Quoted token decimals</span>
-                  <input
-                    value={wantDecimals}
-                    onChange={(event) => setWantDecimals(event.target.value)}
-                    inputMode="numeric"
-                    placeholder="6"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Quoted token amount</span>
-                  <input
-                    value={wantAmount}
-                    onChange={(event) => setWantAmount(event.target.value)}
-                    inputMode="decimal"
-                    placeholder="2.50"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Note (optional)</span>
-                  <input
-                    value={dealNote}
-                    onChange={(event) => setDealNote(event.target.value)}
-                    maxLength={512}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className={styles.dealFields}>
-                <p className={styles.termsPreview}>
-                  You request one STRK payment from the recipient in a later
-                  private transfer.
-                </p>
-                <label className={styles.field}>
-                  <span>STRK requested</span>
-                  <input
-                    value={requestAmount}
-                    onChange={(event) => setRequestAmount(event.target.value)}
-                    inputMode="decimal"
-                    placeholder="0.01"
-                    required
-                  />
-                </label>
-                <label className={styles.field}>
-                  <span>Invoice memo (optional)</span>
-                  <input
-                    value={requestMemo}
-                    onChange={(event) => setRequestMemo(event.target.value)}
-                    maxLength={512}
-                  />
-                </label>
-              </div>
-            )}
-
+        {mode === "letter" ? null : (
+          <>
             <label className={styles.field}>
               <span>Expiry in hours (0 = none)</span>
               <input
@@ -474,6 +636,7 @@ export default function Compose({
             <p className={styles.dealDisclosure}>
               Sending terms moves no asset. An accept or pay action can move
               only STRK, one way; any quoted non-STRK leg remains a promise.
+              No escrow or atomic settlement is claimed.
             </p>
           </>
         )}
@@ -484,22 +647,28 @@ export default function Compose({
           type="submit"
           disabled={sendDisabled}
         >
-          {sendState.kind === "pending"
-            ? "Sending through Ready…"
+          {sendPending
+            ? "Preparing sealed delivery…"
             : mode === "letter"
-              ? "Encrypt & send letter"
-              : dealKind === "offer"
-                ? "Encrypt & send offer"
-                : "Encrypt & request payment"}
+              ? attachPayment
+                ? "Encrypt letter & attach payment"
+                : "Encrypt & send letter"
+              : mode === "deal"
+                ? "Encrypt & send deal"
+                : "Encrypt & send invoice"}
         </button>
       </form>
 
-      {sendState.message ? (
+      <ProvingProgress
+        active={sendState.kind === "proving"}
+        startedAt={sendState.startedAt}
+      />
+      {sendState.message && sendState.kind !== "proving" ? (
         <div
           className={`${styles.status} ${
             sendState.kind === "error" ? styles.statusError : ""
           }`}
-          role="status"
+          role={sendState.kind === "error" ? "alert" : "status"}
         >
           {sendState.message}
           {sendState.transactionHash ? (

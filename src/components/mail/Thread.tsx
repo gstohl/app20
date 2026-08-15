@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { DecodedMail } from "@/lib/envelope";
 import type { EncryptedMailRecord } from "@/lib/mail";
+import { publicRecipientCount } from "@/lib/mail-recipient-count";
 import type { AliasRecord } from "@/lib/aliases";
 import { findAliasByAddress } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
@@ -32,24 +33,24 @@ export type LocalMailMessage = {
   blockNumber?: number;
   blockTimestamp?: number;
   eventIndex?: number;
+  direction?: "incoming" | "outgoing";
+  recipientCount?: number;
+  /** Set for locally sent mail so it sorts before the chain confirms a timestamp. */
+  localCreatedAt?: number;
 };
 
 export type ThreadActionState = {
   pending: boolean;
   message?: string;
+  startedAt?: number;
 };
 
 type ThreadProps = {
   messages: LocalMailMessage[];
-  canScan: boolean;
-  scanning: boolean;
-  scanMessage: string;
   selfAddress: string;
   aliases: AliasRecord[];
   otcState: OtcState;
   actionStates: Record<string, ThreadActionState>;
-  onScan: () => void;
-  onScanOlder: () => void;
   onAccept: (offer: OfferPayload, offerIndex?: number) => void;
   onDecline: (offer: OfferPayload) => void;
   onPostReceipt: (offer: OfferPayload) => void;
@@ -88,6 +89,8 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const { record } = message;
   const timestamp = isoBlockTimestamp(message.blockTimestamp);
+  const recipientCount =
+    message.recipientCount ?? publicRecipientCount(message.record);
   const preview = record.ciphertextFelts.slice(0, CIPHERTEXT_PREVIEW_FELTS);
   const hiddenFeltCount = record.ciphertextFelts.length - preview.length;
 
@@ -103,7 +106,7 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   }
 
   return (
-    <details className={styles.chainDisclosure}>
+    <details className={styles.chainDisclosure} open>
       <summary>
         <span>What the chain sees</span>
         <span className={styles.chainToggleHint}>PUBLIC EVIDENCE</span>
@@ -128,6 +131,19 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
             </dd>
           </div>
           <div className={styles.chainField}>
+            <dt>Recipient count</dt>
+            <dd>
+              <code>{recipientCount}</code>
+              <small>PUBLIC FORMAT METADATA</small>
+            </dd>
+          </div>
+          <div className={`${styles.chainField} ${styles.chainFieldWide}`}>
+            <dt>Transaction hash</dt>
+            <dd>
+              <code>{message.transactionHash}</code>
+            </dd>
+          </div>
+          <div className={`${styles.chainField} ${styles.chainFieldWide}`}>
             <dt>Block timestamp</dt>
             <dd>
               {timestamp && message.blockTimestamp !== undefined ? (
@@ -216,13 +232,13 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
             <code>ABSENT</code>
           </span>
           <span>
-            <b>Recipient address</b>
+            <b>Recipient identities</b>
             <code>ABSENT</code>
           </span>
         </div>
         <p className={styles.addressAbsence}>
-          No sender or recipient address appears anywhere in this MessagePosted
-          record.
+          Recipient count is public in the ciphertext format. No sender or
+          recipient address appears anywhere in this MessagePosted record.
         </p>
       </aside>
     </details>
@@ -231,15 +247,10 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
 
 export default function Thread({
   messages,
-  canScan,
-  scanning,
-  scanMessage,
   selfAddress,
   aliases,
   otcState,
   actionStates,
-  onScan,
-  onScanOlder,
   onAccept,
   onDecline,
   onPostReceipt,
@@ -250,11 +261,22 @@ export default function Thread({
     if (envelope.type === "unsupported") return <UnsupportedMessage />;
 
     if (envelope.type === "text") {
+      const recipientCount =
+        message.recipientCount ?? publicRecipientCount(message.record);
       return (
         <article className={styles.messageSheet}>
-          <span className={styles.sheetType}>
-            {envelope.version === 0 ? "LEGACY LETTER" : "PRIVATE LETTER"}
-          </span>
+          <div className={styles.sheetHeading}>
+            <span className={styles.sheetType}>
+              {envelope.version === 0 ? "LEGACY LETTER" : "PRIVATE LETTER"}
+            </span>
+            <span className={styles.proofStamp}>
+              {recipientCount} recipient{recipientCount === 1 ? "" : "s"} · count public
+            </span>
+          </div>
+          <p className={styles.recipientDisclosure}>
+            Recipient identities are sealed and absent from MessagePosted. The
+            count above is public ciphertext-format metadata.
+          </p>
           <p className={styles.letterBody}>{message.plaintext}</p>
         </article>
       );
@@ -277,6 +299,7 @@ export default function Thread({
           )}
           busy={action?.pending}
           actionMessage={action?.message}
+          actionStartedAt={action?.startedAt}
           onAccept={ownOffer ? undefined : () => onAccept(offer, safeOfferIndex(message.index))}
           onDecline={ownOffer ? undefined : () => onDecline(offer)}
           onPostReceipt={
@@ -366,76 +389,58 @@ export default function Thread({
         unverifiedClaim={Boolean(payment?.counterpartyPaymentClaim)}
         busy={action?.pending}
         actionMessage={action?.message}
+        actionStartedAt={action?.startedAt}
         onPay={ownRequest ? undefined : () => onPay(request)}
       />
     );
   }
 
   return (
-    <section className={`${styles.card} ${styles.threadCard}`}>
+    <section className={styles.threadPanel} aria-labelledby="thread-title">
       <div className={styles.threadHeading}>
         <div>
-          <p className={styles.kicker}>LOCAL PLAINTEXT ONLY</p>
-          <h2 className={styles.cardTitle}>Inbox</h2>
+          <p className={styles.kicker}>LOCAL PLAINTEXT / CARBON COPY</p>
+          <h2 id="thread-title">Correspondence</h2>
         </div>
-        <div className={styles.scanActions}>
-          <button
-            className={styles.secondaryButton}
-            type="button"
-            onClick={onScan}
-            disabled={!canScan || scanning}
-          >
-            {scanning ? "Scanning…" : "Scan recent events"}
-          </button>
-          <button
-            className={styles.secondaryButton}
-            type="button"
-            onClick={onScanOlder}
-            disabled={!canScan || scanning}
-          >
-            Scan older
-          </button>
-        </div>
+        <span className={styles.sheetClip} aria-hidden="true">CLIP / 01</span>
       </div>
-
-      <p className={styles.copy}>
-        Quietline downloads bounded pages of recent public ciphertext and
-        trial-decrypts them in this tab. Use Scan older explicitly for earlier
-        windows. Typed letters, offers, responses, receipts, and invoices are
-        rendered as paper sheets. Aliases and deal state stay in this browser;
-        clearing site data wipes them.
-      </p>
-
-      {scanMessage ? (
-        <p className={styles.scanMessage} role="status">
-          {scanMessage}
-        </p>
-      ) : null}
 
       {messages.length ? (
         <ol className={styles.threadList}>
-          {messages.map((message) => (
-            <li className={styles.message} key={message.id}>
-              <div className={styles.messageMeta}>
-                <span>Message #{message.index}</span>
-                <span>
-                  {message.blockNumber === undefined
-                    ? "confirmed event"
-                    : `block ${message.blockNumber}`}
+          {messages.map((message) => {
+            const recipientCount =
+              message.recipientCount ?? publicRecipientCount(message.record);
+            return (
+              <li className={styles.message} key={message.id}>
+                <div className={styles.messageMeta}>
+                  <span>
+                    {message.direction === "outgoing" ? "Sent" : "Opened"} ·
+                    record {message.index}
+                  </span>
+                  <span>
+                    {recipientCount} recipient{recipientCount === 1 ? "" : "s"}
+                    {message.blockNumber === undefined
+                      ? " · confirmed"
+                      : ` · block ${message.blockNumber}`}
+                  </span>
+                </div>
+                {renderEnvelope(message)}
+                <ChainRecordPanel message={message} />
+                <span className={styles.localLabel}>
+                  {message.direction === "outgoing"
+                    ? "sealed on this device"
+                    : "decrypted on this device"}
                 </span>
-              </div>
-              {renderEnvelope(message)}
-              <ChainRecordPanel message={message} />
-              <span className={styles.localLabel}>decrypted on this device</span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <div className={styles.emptyState}>
-          <strong>No locally decrypted mail yet.</strong>
+          <strong>Select an envelope or start a new letter.</strong>
           <span>
-            Load this device&apos;s key, then scan after someone sends to that
-            registered public key.
+            Opened plaintext stays on this device. The proof-teal rail below
+            each sheet shows the public event without inventing a sender.
           </span>
         </div>
       )}
