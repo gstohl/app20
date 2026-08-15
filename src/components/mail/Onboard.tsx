@@ -84,6 +84,7 @@ export default function Onboard({
   );
   const [setup, setSetup] = useState<SetupState>({ kind: "idle" });
   const [backupPhrase, setBackupPhrase] = useState("");
+  const [pendingKeypair, setPendingKeypair] = useState<MailKeypair | null>(null);
   const [copied, setCopied] = useState(false);
   const [restoreValue, setRestoreValue] = useState("");
   const [restoreNeedsConfirmation, setRestoreNeedsConfirmation] =
@@ -91,6 +92,7 @@ export default function Onboard({
 
   const disabled =
     setup.kind === "pending" ||
+    pendingKeypair !== null ||
     !walletAccount ||
     !address ||
     !chainId ||
@@ -127,11 +129,20 @@ export default function Onboard({
       });
 
       if (keysEqual(registered, publicKey)) {
-        onKeyReady(keypair);
-        setSetup({
-          kind: "ok",
-          message: "Device mail key loaded and matched the public directory.",
-        });
+        if (backupPhrase) {
+          setPendingKeypair(keypair);
+          setSetup({
+            kind: "ok",
+            message:
+              "Device mail key matched the public directory. Save its one-time backup before opening the mailbox.",
+          });
+        } else {
+          onKeyReady(keypair);
+          setSetup({
+            kind: "ok",
+            message: "Device mail key loaded and matched the public directory.",
+          });
+        }
         return;
       }
       if (
@@ -171,12 +182,22 @@ export default function Onboard({
         throw new Error("The helper did not return the registered public key.");
       }
 
-      onKeyReady(keypair);
-      setSetup({
-        kind: "ok",
-        message: "Device mail key registered and ready for local scans.",
-        transactionHash,
-      });
+      if (created) {
+        setPendingKeypair(keypair);
+        setSetup({
+          kind: "ok",
+          message:
+            "Device mail key registered. Save its one-time backup before opening the mailbox.",
+          transactionHash,
+        });
+      } else {
+        onKeyReady(keypair);
+        setSetup({
+          kind: "ok",
+          message: "Device mail key registered and ready for local scans.",
+          transactionHash,
+        });
+      }
     } catch (error: unknown) {
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
@@ -259,12 +280,12 @@ export default function Onboard({
         as a key source because signer output is not guaranteed deterministic.
         Signature-based wrapping and recovery are a later stretch.
       </p>
-      {!helperAddress ? (
+      {helperAddress ? null : (
         <p className={styles.notice}>
           No helper deployment is configured for this network. Registration is
           disabled until VITE_MAIL_HELPER_* is set.
         </p>
-      ) : null}
+      )}
       <button
         className={styles.primaryButton}
         type="button"
@@ -291,6 +312,19 @@ export default function Onboard({
           >
             {copied ? "Copied" : "Copy backup phrase"}
           </button>
+          {pendingKeypair ? (
+            <button
+              className={styles.primaryButton}
+              type="button"
+              onClick={() => {
+                const keypair = pendingKeypair;
+                setPendingKeypair(null);
+                onKeyReady(keypair);
+              }}
+            >
+              I saved the backup — open mailbox
+            </button>
+          ) : null}
         </div>
       ) : null}
 

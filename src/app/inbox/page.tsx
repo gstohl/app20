@@ -890,6 +890,10 @@ export default function InboxPage() {
         ? loadPersistedMailSeed(window.localStorage, chainId, address)
         : null,
     );
+    // A counterparty can advance an escrow while this mailbox is inactive.
+    // Refresh contract state when its device key is loaded so maker actions
+    // (notably Claim after Fill) do not remain stuck on a stale local snapshot.
+    void refreshEscrowChainDeals();
   }
 
   async function scanInbox(requested: "newer" | "older" = "newer") {
