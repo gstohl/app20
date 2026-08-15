@@ -79,8 +79,15 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import {
+  clearLocalMailboxStorage,
+  MAIL_SEED_STORAGE_PREFIX,
+} from "@/lib/local-mailbox-storage";
 import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
-import { loadPendingPayment } from "@/lib/pending-payment";
+import {
+  loadPendingPayment,
+  PENDING_PAYMENT_STORAGE_KEY,
+} from "@/lib/pending-payment";
 import {
   acceptPayloadForOffer,
   claimOtcAccept,
@@ -213,7 +220,9 @@ function loadPersistedMailSeed(
   chainId: string,
   address: string,
 ): Uint8Array | null {
-  const value = storage.getItem(`quietline/mailseed/v1/${chainId}/${address}`);
+  const value = storage.getItem(
+    `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`,
+  );
   if (!value || !/^[0-9a-f]{64}$/i.test(value)) return null;
   return Uint8Array.from(
     value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
@@ -420,6 +429,9 @@ export default function InboxPage() {
     useState<PaymentRequestPayload | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [storageNotice, setStorageNotice] = useState<
+    { kind: "ok" | "error"; message: string } | null
+  >(null);
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -500,6 +512,7 @@ export default function InboxPage() {
     setMobileDetailOpen(false);
     setSidebarOpen(false);
     setActionStates({});
+    setStorageNotice(null);
     if (address && chainId) {
       setAliases(loadAliases(window.localStorage, address));
       const storedOtc = expireStoredDeals(
@@ -1147,8 +1160,18 @@ export default function InboxPage() {
         refreshOtcState();
         refreshEscrowState();
         void refreshEscrowChainDeals();
-      } catch {
-        // Confirmed delivery stays visible in memory if localStorage is full.
+        setStorageNotice({
+          kind: "ok",
+          message:
+            "Sent copy saved in this browser profile (not encrypted at rest).",
+        });
+      } catch (error: unknown) {
+        setStorageNotice({
+          kind: "error",
+          message: `The message is confirmed on-chain, but its local Sent copy could not be saved. It remains visible only until this tab closes. ${
+            error instanceof Error ? error.message : "Browser storage failed."
+          }`,
+        });
       }
     }
   }
@@ -1845,15 +1868,33 @@ export default function InboxPage() {
     "All types";
 
   function persistDraft(draft: CompositeDraft) {
-    setDrafts(
-      saveDraft(
-        window.localStorage,
-        draftScopeChain,
-        draftScopeAddress,
-        draft,
-        draft.updatedAt,
-      ),
-    );
+    try {
+      setDrafts(
+        saveDraft(
+          window.localStorage,
+          draftScopeChain,
+          draftScopeAddress,
+          draft,
+          draft.updatedAt,
+        ),
+      );
+      setStorageNotice({
+        kind: "ok",
+        message:
+          "Draft saved in this browser profile (not encrypted at rest).",
+      });
+    } catch (error: unknown) {
+      setDrafts((current) =>
+        [draft, ...current.filter((candidate) => candidate.id !== draft.id)]
+          .sort((left, right) => right.updatedAt - left.updatedAt),
+      );
+      setStorageNotice({
+        kind: "error",
+        message: `Draft save failed. This edit exists only in memory and will be lost when the tab closes. ${
+          error instanceof Error ? error.message : "Browser storage failed."
+        }`,
+      });
+    }
   }
 
   function removeDraft(draftId: string, confirmDelete = true) {
@@ -1865,15 +1906,77 @@ export default function InboxPage() {
     ) {
       return;
     }
-    const next = deleteDraft(
-      window.localStorage,
-      draftScopeChain,
-      draftScopeAddress,
-      draftId,
-    );
-    setDrafts(next);
-    setSelectedDraftId(next[0]?.id ?? null);
-    if (selectedDraftId === draftId && !next.length) setComposerOpen(false);
+    try {
+      const next = deleteDraft(
+        window.localStorage,
+        draftScopeChain,
+        draftScopeAddress,
+        draftId,
+      );
+      setDrafts(next);
+      setSelectedDraftId(next[0]?.id ?? null);
+      if (selectedDraftId === draftId && !next.length) setComposerOpen(false);
+      setStorageNotice({
+        kind: "ok",
+        message: "Local draft deleted from this browser profile.",
+      });
+    } catch (error: unknown) {
+      setStorageNotice({
+        kind: "error",
+        message: `Draft deletion failed; the local copy remains. ${
+          error instanceof Error ? error.message : "Browser storage failed."
+        }`,
+      });
+    }
+  }
+
+  function forgetThisDevice() {
+    if (
+      !window.confirm(
+        "Forget this device and clear every Quietline mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again.",
+      )
+    ) {
+      return;
+    }
+    try {
+      const removed = clearLocalMailboxStorage(window.localStorage);
+      try {
+        window.sessionStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+      } catch {
+        // The payment-link handoff is not key material; local purge succeeded.
+      }
+      cancelActiveScanWorker();
+      scanGenerationRef.current += 1;
+      mailSeed?.fill(0);
+      keypair?.privateKey.fill(0);
+      setMailSeed(null);
+      setKeypair(null);
+      setMessages([]);
+      setDrafts([]);
+      setAliases([]);
+      setOtcState(emptyOtcState());
+      setEscrowState(emptyEscrowState());
+      setActionStates({});
+      setReadMessageIds(new Set());
+      setSelectedMessageId(null);
+      setSelectedDraftId(null);
+      setPendingPaymentRequest(null);
+      setComposerOpen(false);
+      setMobileDetailOpen(false);
+      setMailFolder("inbox");
+      setMailboxFilter("all");
+      setStorageNotice({
+        kind: "ok",
+        message: `Forgot this device: removed ${removed.length} local mailbox record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted mail.`,
+      });
+    } catch (error: unknown) {
+      setStorageNotice({
+        kind: "error",
+        message: `Quietline could not clear every local mailbox record. Do not leave this shared profile unattended. ${
+          error instanceof Error ? error.message : "Browser storage failed."
+        }`,
+      });
+    }
   }
 
   function selectMessage(messageId: string) {
@@ -2079,11 +2182,31 @@ export default function InboxPage() {
             ) : null}
           </section>
 
+          <section
+            className={styles.forgetDevice}
+            aria-labelledby="forget-device-title"
+          >
+            <span className={styles.sidebarLabel}>SHARED-MACHINE SAFETY</span>
+            <strong id="forget-device-title">Local data is unencrypted</strong>
+            <p>
+              Disconnecting is not logout. The raw mailbox seed, drafts, Sent
+              copies, aliases, payment/OTC state, and escrow state remain in
+              this browser profile until cleared.
+            </p>
+            <button
+              className={styles.warningButton}
+              type="button"
+              onClick={forgetThisDevice}
+            >
+              Forget this device / clear local mailbox
+            </button>
+          </section>
+
           <footer className={styles.sidebarFooter}>
             <a href="https://github.com/gstohl/quietline" target="_blank" rel="noreferrer">
               GitHub ↗
             </a>
-            <span>Ciphertext on-chain. Plaintext on this device.</span>
+            <span>Ciphertext is public on-chain. Local data is not encrypted at rest.</span>
           </footer>
         </aside>
 
@@ -2115,7 +2238,7 @@ export default function InboxPage() {
             </button>
             <div>
               <span className={styles.sidebarLabel}>
-                {composerOpen ? "DEVICE-PRIVATE DRAFT" : "LOCAL PLAINTEXT / CARBON COPY"}
+                {composerOpen ? "LOCAL DRAFT / NOT ENCRYPTED AT REST" : "LOCAL PLAINTEXT / CARBON COPY"}
               </span>
               <strong>{composerOpen ? "New document" : selectedMessage ? folderLabel : "Quietline"}</strong>
             </div>
@@ -2127,6 +2250,18 @@ export default function InboxPage() {
           </header>
 
           <div className={styles.readingScroll}>
+            {storageNotice ? (
+              <p
+                className={`${styles.storageNotice} ${
+                  storageNotice.kind === "error"
+                    ? styles.storageNoticeError
+                    : ""
+                }`}
+                role={storageNotice.kind === "error" ? "alert" : "status"}
+              >
+                {storageNotice.message}
+              </p>
+            ) : null}
             {!keypair && (composerOpen || selectedMessage) ? (
               <Onboard
                 key={`${providerIndex}:${address}`}

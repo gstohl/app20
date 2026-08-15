@@ -6,6 +6,7 @@ import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
+import { MAIL_SEED_STORAGE_PREFIX } from "@/lib/local-mailbox-storage";
 import {
   decodePaymentLinkFragment,
 } from "@/lib/payment-link";
@@ -14,8 +15,6 @@ import {
   paymentRequestIsExpired,
   type PaymentRequestPayload,
 } from "@/lib/otc";
-
-const MAIL_SEED_PREFIX = "quietline/mailseed/v1";
 
 export default function PayPage() {
   const navigate = useNavigate();
@@ -58,7 +57,7 @@ export default function PayPage() {
     try {
       setHasLocalMailSeed(
         window.localStorage.getItem(
-          `${MAIL_SEED_PREFIX}/${chainId}/${address}`,
+          `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`,
         ) !== null,
       );
     } catch {
@@ -75,7 +74,7 @@ export default function PayPage() {
       "The connected wallet does not declare STRK20 Wallet API 0.10 support. Quietline cannot make this private payment with it.";
   } else if (hasLocalMailSeed) {
     readinessMessage =
-      "A device mail key exists in this browser. The inbox will still require it to match the public registration before payment.";
+      "A raw, unencrypted mailbox seed exists in this browser profile. The inbox will still require it to match the public registration before payment. Clear the local mailbox when using a shared machine.";
   } else {
     readinessMessage =
       "This account is not onboarded in this browser. Continue to the inbox to create or restore and register its device mail key before paying.";

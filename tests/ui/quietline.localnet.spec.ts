@@ -524,4 +524,33 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
       await screenshot(page, `28-responsive-${width}`, testInfo);
     }
   });
+
+  await test.step("11. forget this device clears every sensitive local mailbox store", async () => {
+    page.once("dialog", (dialog) => dialog.accept());
+    await page
+      .getByRole("button", {
+        name: "Forget this device / clear local mailbox",
+      })
+      .click();
+    await expect(page.getByText(/Forgot this device: removed/)).toBeVisible();
+    const remaining = await page.evaluate(() => {
+      const sensitivePrefixes = [
+        "quietline/mailseed/v1",
+        "quietline/drafts/v1",
+        "quietline/sent/v1",
+        "quietline/aliases/v1",
+        "quietline/otc/v1",
+        "quietline/escrow/v1",
+        "quietline/mail-scan/v1",
+      ];
+      return Object.keys(localStorage).filter((key) =>
+        sensitivePrefixes.some(
+          (prefix) => key === prefix || key.startsWith(`${prefix}/`),
+        ),
+      );
+    });
+    expect(remaining).toEqual([]);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await screenshot(page, "29-forgotten-device", testInfo);
+  });
 });

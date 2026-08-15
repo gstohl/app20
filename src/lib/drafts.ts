@@ -2,7 +2,7 @@ import type { CompositeAttachment } from "./composite";
 import { createEscrowDealId } from "./escrow";
 import { createDealId, createRequestId } from "./otc";
 
-const DRAFT_STORAGE_PREFIX = "quietline/drafts/v1";
+export const DRAFT_STORAGE_PREFIX = "quietline/drafts/v1";
 
 export type TradeDraftFields = {
   giveStrk: string;

@@ -1444,6 +1444,30 @@
   background: var(--public-wash);
 }
 
+.forgetDevice {
+  padding: 12px;
+  border: 1px solid var(--ribbon);
+  background: var(--deal-quiet);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.forgetDevice strong {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 14px;
+}
+
+.forgetDevice p {
+  margin-top: 7px;
+}
+
+.forgetDevice .warningButton {
+  font-size: 11px;
+}
+
 .scanHeading {
   align-items: flex-start;
 }
@@ -1778,6 +1802,22 @@
   overflow-x: hidden;
   overflow-y: auto;
   padding: clamp(22px, 3vw, 46px);
+}
+
+.storageNotice {
+  width: min(820px, 100%);
+  margin: 0 auto 16px;
+  padding: 11px 13px;
+  border-left: 4px solid var(--teal);
+  background: var(--teal-soft);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.storageNoticeError {
+  border-left-color: var(--ribbon);
+  background: var(--deal-quiet);
 }
 
 .threadPanel,

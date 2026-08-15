@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
+import { MAIL_SEED_STORAGE_PREFIX } from "@/lib/local-mailbox-storage";
 import { strk20ErrorMessage } from "@/lib/strk20";
 import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
@@ -21,10 +22,8 @@ type SetupState = {
   transactionHash?: string;
 };
 
-const MAIL_SEED_PREFIX = "quietline/mailseed/v1";
-
 function seedStorageKey(chainId: string, address: string): string {
-  return `${MAIL_SEED_PREFIX}/${chainId}/${address}`;
+  return `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`;
 }
 
 function seedToHex(seed: Uint8Array): string {
@@ -275,10 +274,12 @@ export default function Onboard({
         wallet address to a mail public key in the on-chain directory.
       </p>
       <p className={styles.finePrint}>
-        Quietline generates 32 random bytes once per network and address, then
-        stores the seed in this browser profile. Wallet signatures are not used
-        as a key source because signer output is not guaranteed deterministic.
-        Signature-based wrapping and recovery are a later stretch.
+        <strong>Not encrypted at rest:</strong> Quietline stores the raw
+        32-byte mailbox seed as hexadecimal in this browser profile. Anyone who
+        can access this profile—including another user of a shared machine—can
+        read retained mail and derive any escrow claim keys. Disconnecting the
+        wallet does not clear it. Use “Forget this device” when finished, and
+        keep the offline backup private.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>

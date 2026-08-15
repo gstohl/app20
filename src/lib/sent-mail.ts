@@ -1,7 +1,7 @@
 import { decodeEnvelope, encodeEnvelope, type EnvelopeType } from "./envelope";
 import type { EncryptedMailRecord } from "./mail";
 
-const SENT_MAIL_STORAGE_PREFIX = "quietline/sent/v1";
+export const SENT_MAIL_STORAGE_PREFIX = "quietline/sent/v1";
 
 export type SentDeliveryState = "confirmed" | "partially_confirmed";
 

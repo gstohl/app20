@@ -866,18 +866,19 @@ export default function Compose({
     <section className={styles.composerSheet} aria-labelledby="compose-title">
       <div className={styles.composerHeading}>
         <div>
-          <p className={styles.kicker}>DEVICE-PRIVATE DRAFT</p>
+          <p className={styles.kicker}>LOCAL BROWSER DRAFT</p>
           <h2 id="compose-title">New document</h2>
         </div>
         <span className={styles.sheetClip} aria-hidden="true">
-          AUTO-SAVED
+          NOT ENCRYPTED AT REST
         </span>
       </div>
 
       <div className={styles.disclosureGrid}>
         <p>
-          <strong>Device-private / sealed</strong>
-          Draft, body, recipient identities, aliases, and attachment terms.
+          <strong>Stored locally—not encrypted at rest</strong>
+          Draft, body, recipient identities, aliases, Sent copies, and
+          attachment terms stay as readable browser storage until cleared.
         </p>
         <p>
           <strong>Public</strong>
