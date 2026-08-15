@@ -110,9 +110,9 @@ describe("mail STRK20 actions", () => {
     ]);
   });
 
-  it("binds a payment-request retry to one stable on-chain action id", () => {
-    const requestId = `0x${"24".repeat(32)}`;
-    const actionId = computeActionId("payment-request", requestId);
+  it("binds one payer-owned attempt to a stable unpredictable action id", () => {
+    const attemptId = `0x${"24".repeat(32)}`;
+    const actionId = computeActionId("payment-attempt", attemptId);
     const actions = buildMemoTransferActions({
       helperAddress: "0x123",
       recoveryAddress: "0xb0b",
@@ -126,9 +126,9 @@ describe("mail STRK20 actions", () => {
     const invoke = actions.at(-1);
     if (invoke?.type !== "invoke") throw new Error("Expected invoke.");
     expect(invoke.calldata.at(-1)).toBe(actionId);
-    expect(computeActionId("payment-request", requestId)).toBe(actionId);
+    expect(computeActionId("payment-attempt", attemptId)).toBe(actionId);
     expect(
-      computeActionId("payment-request", `0x${"25".repeat(32)}`),
+      computeActionId("payment-attempt", `0x${"25".repeat(32)}`),
     ).not.toBe(actionId);
   });
 
@@ -151,6 +151,7 @@ describe("mail STRK20 actions", () => {
       recoveryAddress: "0xb0b",
       record,
       offer,
+      actionId: computeActionId("otc-accept-attempt", `0x${"aa".repeat(32)}`),
     });
 
     expect(actions.map((action) => action.type)).toEqual([
@@ -179,6 +180,7 @@ describe("mail STRK20 actions", () => {
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
         record,
+        actionId: computeActionId("otc-accept-attempt", `0x${"bb".repeat(32)}`),
         offer: {
           ...offer,
           give: {
@@ -263,6 +265,7 @@ describe("mail STRK20 actions", () => {
       recoveryAddress: "0xb0b",
       offer,
       record,
+      actionId: computeActionId("otc-accept-attempt", `0x${"cc".repeat(32)}`),
     });
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(batches[1].map((action) => action.type)).toEqual([

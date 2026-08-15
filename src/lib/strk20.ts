@@ -26,9 +26,10 @@ export type MailInvokeBatchInput = {
 };
 
 /**
- * Deal and request ids are 32 random bytes, which can exceed the felt252 range,
- * so they are hashed into field-safe ids. Deterministic on purpose: a retry
- * reuses the id, so a duplicate submission reverts instead of paying twice.
+ * Payer-owned attempt ids are 32 random bytes, which can exceed felt252. Hash
+ * them into field-safe nullifiers. A reserved attempt reuses its id, while a
+ * proven revert gets a fresh attempt; the helper's on-chain nullifier remains
+ * the final duplicate-submission authority.
  */
 export function computeActionId(kind: string, id: string): string {
   return num.toHex(hash.starknetKeccak(`quietline/action/v1/${kind}/${id}`));
@@ -41,6 +42,8 @@ export type MemoTransferBatchInput = MailInvokeBatchInput & {
 
 export type OtcAcceptBatchInput = MailInvokeBatchInput & {
   offer: OfferPayload;
+  /** Payer-owned random attempt nullifier, persisted before wallet submission. */
+  actionId: string;
 };
 
 function assertConfiguredHelper(address: string): void {
@@ -134,7 +137,7 @@ export function buildOtcAcceptActions({
     tokenAddress: addrSTRK,
     recipient: offer.offerer,
     amount: offer.give.amount,
-    actionId: mail.actionId ?? computeActionId("otc-accept", offer.dealId),
+    actionId: mail.actionId,
   });
 }
 

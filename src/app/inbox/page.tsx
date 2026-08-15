@@ -1196,12 +1196,16 @@ export default function InboxPage() {
     try {
       const context = requireActionContext();
       const accept = acceptPayloadForOffer(offer, offerIndex);
-      claimOtcAccept(
+      const reservedAccept = claimOtcAccept(
         window.localStorage,
         context.chainId,
         context.address,
         accept,
       );
+      const attemptId = reservedAccept.acceptOperation?.attemptId;
+      if (!attemptId) {
+        throw new Error("The payer-owned OTC attempt id was not persisted.");
+      }
       claimed = true;
       refreshOtcState();
       setActionState(actionKey, {
@@ -1226,6 +1230,7 @@ export default function InboxPage() {
           tokenAddress: constants.addrSTRK,
           offer,
           record,
+          actionId: computeActionId("otc-accept-attempt", attemptId),
         },
         {
           onSubmitted: (transactionHash) => {
@@ -1396,12 +1401,17 @@ export default function InboxPage() {
     let submittedHash = "";
     try {
       const context = requireActionContext();
-      claimPayment(
+      const reservedPayment = claimPayment(
         window.localStorage,
         context.chainId,
         context.address,
-        request.requestId,
+        request,
       );
+      const payableRequest = reservedPayment.request;
+      const attemptId = reservedPayment.paymentOperation?.attemptId;
+      if (!attemptId) {
+        throw new Error("The payer-owned payment attempt id was not persisted.");
+      }
       claimed = true;
       refreshOtcState();
       setActionState(actionKey, {
@@ -1409,15 +1419,18 @@ export default function InboxPage() {
         message: "Preparing one private STRK payment and payment memo…",
       });
       const transfer = {
-        token: request.token,
-        amount: request.amount,
-        to: request.requester,
+        token: payableRequest.token,
+        amount: payableRequest.amount,
+        to: payableRequest.requester,
       };
       const paymentMemo: AcceptPayload = {
-        dealId: request.requestId,
+        dealId: payableRequest.requestId,
         transfer,
       };
-      const key = await lookupMailKey(context.helperAddress, request.requester);
+      const key = await lookupMailKey(
+        context.helperAddress,
+        payableRequest.requester,
+      );
       const record = await encryptMail(
         key,
         encodeEnvelope("accept", paymentMemo),
@@ -1429,10 +1442,10 @@ export default function InboxPage() {
           helperAddress: context.helperAddress,
           recoveryAddress: context.address,
           tokenAddress: constants.addrSTRK,
-          recipient: request.requester,
-          amount: request.amount,
+          recipient: payableRequest.requester,
+          amount: payableRequest.amount,
           record,
-          actionId: computeActionId("payment-request", request.requestId),
+          actionId: computeActionId("payment-attempt", attemptId),
         },
         {
           onSubmitted: (transactionHash) => {
@@ -1441,7 +1454,7 @@ export default function InboxPage() {
               window.localStorage,
               context.chainId,
               context.address,
-              request.requestId,
+              payableRequest.requestId,
               transactionHash,
             );
             refreshOtcState();
@@ -1457,9 +1470,9 @@ export default function InboxPage() {
         window.localStorage,
         context.chainId,
         context.address,
-        request.requestId,
+        payableRequest.requestId,
         transactionHash,
-        receiptForTransfer(request.requestId, transfer, transactionHash),
+        receiptForTransfer(payableRequest.requestId, transfer, transactionHash),
       );
       refreshOtcState();
       setActionState(actionKey, {

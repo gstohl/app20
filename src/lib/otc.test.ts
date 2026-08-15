@@ -283,12 +283,14 @@ describe("OTC local state", () => {
     );
     const accept = acceptPayloadForOffer(offer());
 
-    expect(claimOtcAccept(...scope, accept, 1_900_000_001)).toMatchObject({
+    const reserved = claimOtcAccept(...scope, accept, 1_900_000_001);
+    expect(reserved).toMatchObject({
       status: "accepted",
       acceptOperation: { state: "reserved" },
       acceptPending: true,
       settlementVerified: false,
     });
+    expect(reserved.acceptOperation?.attemptId).toMatch(/^0x[0-9a-f]{64}$/);
     expect(() => claimOtcAccept(...scope, accept, 1_900_000_002)).toThrow(
       /no second transfer/i,
     );
@@ -345,7 +347,11 @@ describe("OTC local state", () => {
       { type: "offer", payload: offer() },
       1_900_000_000,
     );
-    claimOtcAccept(...revertedScope, accept, 1_900_000_001);
+    const firstAttempt = claimOtcAccept(
+      ...revertedScope,
+      accept,
+      1_900_000_001,
+    ).acceptOperation?.attemptId;
     markOtcAcceptSubmitted(...revertedScope, dealId, "0xdef", 1_900_000_002);
     expect(
       markOtcAcceptOutcome(
@@ -360,9 +366,36 @@ describe("OTC local state", () => {
       acceptOperation: { state: "reverted", transactionHash: "0xdef" },
       settlementVerified: false,
     });
-    expect(claimOtcAccept(...revertedScope, accept, 1_900_000_004)).toMatchObject({
+    const retry = claimOtcAccept(...revertedScope, accept, 1_900_000_004);
+    expect(retry).toMatchObject({
       acceptOperation: { state: "reserved" },
     });
+    expect(retry.acceptOperation?.attemptId).not.toBe(firstAttempt);
+  });
+
+  it("rejects a duplicate deal id whose canonical terms differ", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordDealEvent(
+      ...scope,
+      { type: "offer", payload: offer() },
+      1_900_000_000,
+    );
+    expect(() =>
+      recordDealEvent(
+        ...scope,
+        {
+          type: "offer",
+          payload: offer({
+            give: { token: strk, amount: "20000000000000000" },
+          }),
+        },
+        1_900_000_001,
+      ),
+    ).toThrow(/conflicting OTC terms/i);
+    expect(loadOtcState(...scope).deals[dealId].offer.give.amount).toBe(
+      "10000000000000000",
+    );
   });
 
   it("expires an unaccepted offer and refuses acceptance", () => {
@@ -436,20 +469,39 @@ describe("payment request idempotency", () => {
     const storage = new MemoryStorage();
     const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
     recordPaymentRequest(...scope, request, 1_900_000_000);
-    expect(claimPayment(...scope, request.requestId, 1_900_000_001)).toMatchObject({
+    const reserved = claimPayment(...scope, request, 1_900_000_001);
+    expect(reserved).toMatchObject({
       status: "paid",
+      paymentOperation: { state: "reserved" },
       paymentPending: true,
     });
+    expect(reserved.paymentOperation?.attemptId).toMatch(/^0x[0-9a-f]{64}$/);
     expect(() =>
-      claimPayment(...scope, request.requestId, 1_900_000_002),
+      claimPayment(...scope, request, 1_900_000_002),
     ).toThrow(/no second transfer/i);
+  });
+
+  it("rejects duplicate request ids and reservation terms that conflict", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    const conflicting = { ...request, amount: "2000000000000000" };
+    expect(() =>
+      recordPaymentRequest(...scope, conflicting, 1_900_000_001),
+    ).toThrow(/conflicting payment terms/i);
+    expect(() => claimPayment(...scope, conflicting, 1_900_000_002)).toThrow(
+      /do not match the locally reviewed record/i,
+    );
+    expect(loadOtcState(...scope).payments[request.requestId].request.amount).toBe(
+      request.amount,
+    );
   });
 
   it("moves payment reserved to submitted to confirmed, never verifying unknown", () => {
     const storage = new MemoryStorage();
     const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
     recordPaymentRequest(...scope, request, 1_900_000_000);
-    claimPayment(...scope, request.requestId, 1_900_000_001);
+    claimPayment(...scope, request, 1_900_000_001);
     expect(
       markPaymentSubmitted(
         ...scope,
@@ -523,7 +575,7 @@ describe("payment request idempotency", () => {
         storage,
         "SN_SEPOLIA",
         "0xb0b",
-        nonStrk.requestId,
+        nonStrk,
         1_900_000_001,
       ),
     ).toThrow(/only STRK/i);
@@ -545,7 +597,7 @@ describe("payment request idempotency", () => {
         storage,
         "SN_SEPOLIA",
         "0xb0b",
-        expired.requestId,
+        expired,
         100,
       ),
     ).toThrow(/expired/i);

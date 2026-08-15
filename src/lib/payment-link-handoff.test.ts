@@ -88,7 +88,7 @@ describe("payment-link mailbox handoff", () => {
       local,
       chainId,
       payer,
-      request.requestId,
+      request,
       1_900_000_002,
     );
     expect(reserved).toMatchObject({ status: "paid", paymentPending: true });
@@ -130,8 +130,8 @@ describe("payment-link mailbox handoff", () => {
         local,
         chainId,
         payer,
-        request.requestId,
-        1_900_000_004,
+        request,
+        1_900_000_005,
       ),
     ).toThrow(/already paid; no second transfer/i);
   });

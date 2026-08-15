@@ -69,6 +69,8 @@ export type ValueOperationState =
 
 export type ValueOperationRecord = {
   state: ValueOperationState;
+  /** Payer-owned random nonce; unpredictable before this payer reserves. */
+  attemptId?: string;
   transactionHash?: string;
   updatedAt: number;
 };
@@ -361,6 +363,7 @@ function createRandom32ByteId(): string {
 
 export const createDealId = createRandom32ByteId;
 export const createRequestId = createRandom32ByteId;
+export const createPaymentAttemptId = createRandom32ByteId;
 
 export function parseDecimalToBaseUnits(value: string, decimals: number): string {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_TOKEN_DECIMALS) {
@@ -454,15 +457,49 @@ export function receiptForTransfer(
   };
 }
 
+function tokenRefsEqual(left: TokenRef, right: TokenRef): boolean {
+  return (
+    feltEquals(left.address, right.address) &&
+    left.symbol === right.symbol &&
+    left.decimals === right.decimals
+  );
+}
+
 function transfersEqual(
   left: AcceptPayload["transfer"],
   right: AcceptPayload["transfer"],
 ): boolean {
   return (
-    feltEquals(left.token.address, right.token.address) &&
-    left.token.decimals === right.token.decimals &&
+    tokenRefsEqual(left.token, right.token) &&
     left.amount === right.amount &&
     feltEquals(left.to, right.to)
+  );
+}
+
+function offersEqual(left: OfferPayload, right: OfferPayload): boolean {
+  return (
+    left.dealId === right.dealId &&
+    tokenRefsEqual(left.give.token, right.give.token) &&
+    left.give.amount === right.give.amount &&
+    tokenRefsEqual(left.want.token, right.want.token) &&
+    left.want.amount === right.want.amount &&
+    feltEquals(left.offerer, right.offerer) &&
+    left.expiresAt === right.expiresAt &&
+    (left.note ?? "") === (right.note ?? "")
+  );
+}
+
+function paymentRequestsEqual(
+  left: PaymentRequestPayload,
+  right: PaymentRequestPayload,
+): boolean {
+  return (
+    left.requestId === right.requestId &&
+    tokenRefsEqual(left.token, right.token) &&
+    left.amount === right.amount &&
+    (left.memo ?? "") === (right.memo ?? "") &&
+    left.expiresAt === right.expiresAt &&
+    feltEquals(left.requester, right.requester)
   );
 }
 
@@ -492,8 +529,12 @@ export function transitionDeal(
     const offer = parseOfferPayload(event.payload);
     if (!offer) throw new Error("Invalid OTC offer payload.");
     if (current) {
-      if (current.dealId === offer.dealId) return current;
-      throw new Error("Cannot replace an existing deal with another offer.");
+      if (current.dealId !== offer.dealId || !offersEqual(current.offer, offer)) {
+        throw new Error(
+          "Conflicting OTC terms reuse an existing deal id; the duplicate was rejected.",
+        );
+      }
+      return current;
     }
     return {
       dealId: offer.dealId,
@@ -716,7 +757,11 @@ export function claimOtcAccept(
   const next = transitionDeal(current, { type: "accept", payload: accept }, at);
   const claimed = {
     ...next,
-    acceptOperation: { state: "reserved" as const, updatedAt: at },
+    acceptOperation: {
+      state: "reserved" as const,
+      attemptId: createPaymentAttemptId(),
+      updatedAt: at,
+    },
     acceptTxHash: undefined,
     acceptPending: true,
     settlementVerified: false,
@@ -749,6 +794,7 @@ export function markOtcAcceptSubmitted(
     ...current,
     acceptOperation: {
       state: "submitted",
+      attemptId: current.acceptOperation.attemptId,
       transactionHash,
       updatedAt: at,
     },
@@ -789,6 +835,7 @@ export function confirmOtcAccept(
     ...current,
     acceptOperation: {
       state: "confirmed",
+      attemptId: current.acceptOperation.attemptId,
       transactionHash,
       updatedAt: at,
     },
@@ -825,6 +872,7 @@ export function markOtcAcceptOutcome(
   }
   const operation: ValueOperationRecord = {
     state: outcome,
+    attemptId: current.acceptOperation.attemptId,
     transactionHash,
     updatedAt: at,
   };
@@ -906,6 +954,11 @@ function recordPaymentRequestWithOrigin(
   const state = loadOtcState(storage, chainId, selfAddress);
   const existing = state.payments[parsed.requestId];
   if (existing) {
+    if (!paymentRequestsEqual(existing.request, parsed)) {
+      throw new Error(
+        "Conflicting payment terms reuse an existing request id; the duplicate was rejected.",
+      );
+    }
     if (origin === "payment_link" && existing.origin !== origin) {
       const imported = { ...existing, origin };
       state.payments[parsed.requestId] = imported;
@@ -964,12 +1017,22 @@ export function claimPayment(
   storage: StorageLike,
   chainId: string,
   selfAddress: string,
-  requestId: string,
+  expectedRequest: PaymentRequestPayload,
   at = nowSeconds(),
 ): PaymentRecord {
+  const parsedExpected = parsePaymentRequestPayload(expectedRequest);
+  if (!parsedExpected) throw new Error("Invalid expected payment request terms.");
   const state = loadOtcState(storage, chainId, selfAddress);
-  const current = state.payments[requestId];
-  if (!current || current.status !== "requested" || current.paymentPending) {
+  const current = state.payments[parsedExpected.requestId];
+  if (
+    !current ||
+    !paymentRequestsEqual(current.request, parsedExpected)
+  ) {
+    throw new Error(
+      "Payment request terms do not match the locally reviewed record.",
+    );
+  }
+  if (current.status !== "requested" || current.paymentPending) {
     throw new Error("This request was already paid; no second transfer was sent.");
   }
   assertPaysStrk(current.request);
@@ -979,20 +1042,24 @@ export function claimPayment(
       status: "expired",
       updatedAt: at,
     };
-    state.payments[requestId] = expired;
+    state.payments[parsedExpected.requestId] = expired;
     saveOtcState(storage, chainId, selfAddress, state);
     throw new Error("This payment request has expired.");
   }
   const claimed: PaymentRecord = {
     ...current,
     status: "paid",
-    paymentOperation: { state: "reserved", updatedAt: at },
+    paymentOperation: {
+      state: "reserved",
+      attemptId: createPaymentAttemptId(),
+      updatedAt: at,
+    },
     paymentTxHash: undefined,
     paymentPending: true,
     paymentVerified: false,
     updatedAt: at,
   };
-  state.payments[requestId] = claimed;
+  state.payments[parsedExpected.requestId] = claimed;
   saveOtcState(storage, chainId, selfAddress, state);
   return claimed;
 }
@@ -1053,6 +1120,7 @@ export function markPaymentSubmitted(
     ...current,
     paymentOperation: {
       state: "submitted",
+      attemptId: current.paymentOperation.attemptId,
       transactionHash,
       updatedAt: at,
     },
@@ -1105,6 +1173,7 @@ export function confirmPayment(
     receipt,
     paymentOperation: {
       state: "confirmed",
+      attemptId: current.paymentOperation.attemptId,
       transactionHash,
       updatedAt: at,
     },
@@ -1149,6 +1218,7 @@ export function markPaymentOutcome(
         : "paid",
     paymentOperation: {
       state: outcome,
+      attemptId: current.paymentOperation.attemptId,
       transactionHash,
       updatedAt: at,
     },
