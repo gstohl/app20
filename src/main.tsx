@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import LandingPage from "@/app/page";
 import InboxPage from "@/app/inbox/page";
+import PayPage from "@/app/pay/page";
 import "@/app/globals.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
@@ -38,8 +39,14 @@ const inboxRoute = createRoute({
   component: InboxPage,
 });
 
+const payRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pay",
+  component: PayPage,
+});
+
 const router = createRouter({
-  routeTree: rootRoute.addChildren([landingRoute, inboxRoute]),
+  routeTree: rootRoute.addChildren([landingRoute, inboxRoute, payRoute]),
 });
 
 declare module "@tanstack/react-router" {
