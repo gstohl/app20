@@ -43,6 +43,7 @@ function event(ciphertextLength = 2) {
         { length: ciphertextLength },
         (_, index) => `0x${(index + 1).toString(16)}`,
       ),
+      "0x0", // action_id follows the counted ciphertext
     ],
     transaction_hash: "0x000999",
     block_number: 10,
@@ -60,6 +61,12 @@ describe("bounded mail scanning", () => {
       },
     });
     expect(parseMailEvent(event(MAX_CT_FELTS + 1))).toBeNull();
+    expect(
+      parseMailEvent({
+        ...event(),
+        data: event().data.slice(0, -1),
+      }),
+    ).toBeNull();
     expect(
       parseMailEvent({
         ...event(),

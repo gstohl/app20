@@ -10,6 +10,7 @@ out/
 dist/
 build/
 .e2e-build/
+.quietline-localnet/
 .turbo/
 
 # env — never commit keys

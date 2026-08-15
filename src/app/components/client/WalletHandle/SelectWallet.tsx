@@ -29,6 +29,9 @@ export default function SelectWallet({
   const setMyWalletAccount = useStoreWallet(
     (state) => state.setMyWalletAccount
   );
+  const selectedWallet = useStoreWallet(
+    (state) => state.StarknetWalletObject
+  );
   const isConnected = useStoreWallet((state) => state.isConnected);
   const setConnected = useStoreWallet((state) => state.setConnected);
   const disconnect = useStoreWallet((state) => state.disconnect);
@@ -58,6 +61,47 @@ export default function SelectWallet({
     const unsubscribe = store.subscribe((next) => setWallets(next.slice()));
     return unsubscribe;
   }, []);
+
+  // Keep the app store in sync with wallet-standard account changes. Ready can
+  // use this for normal account switching; the dev-only localnet wallet uses it
+  // to move between Alice and Bob without bypassing WalletAccountV6.
+  useEffect(() => {
+    if (!selectedWallet || !isConnected) return;
+
+    return walletV6.subscribeWalletEvent(selectedWallet, (change) => {
+      if (!change.accounts) return;
+      const [account] = change.accounts;
+      if (!account) {
+        disconnect();
+        return;
+      }
+
+      const standardChain = account.chains[0];
+      const chainId = standardChain?.startsWith("starknet:")
+        ? standardChain.slice("starknet:".length)
+        : "";
+      if (!chainId || !isStrk20Chain(chainId)) {
+        disconnect();
+        return;
+      }
+
+      try {
+        const providerIndex = providerIndexForChain(chainId);
+        setAddressAccount(validateAndParseAddress(account.address));
+        setChain(chainId);
+        setCurrentFrontendProviderIndex(providerIndex);
+      } catch {
+        disconnect();
+      }
+    });
+  }, [
+    disconnect,
+    isConnected,
+    selectedWallet,
+    setAddressAccount,
+    setChain,
+    setCurrentFrontendProviderIndex,
+  ]);
 
   const pickable = wallets.filter(
     (wallet) => !normalizeId(wallet.name).includes("metamask")

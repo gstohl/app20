@@ -85,7 +85,10 @@ function helperForNetwork(providerIndex: number): string | null {
       ? constants.mailHelperMainnet
       : providerIndex === 2
         ? constants.mailHelperSepolia
-        : null;
+        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
+            constants.localnetWalletEnabled
+          ? constants.mailHelperLocalnet
+          : null;
   if (!isConfiguredMailHelper(configured)) return null;
 
   try {

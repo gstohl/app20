@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:localnet": "node scripts/localnet-app.mjs",
+    "localnet:stop": "node scripts/localnet-app.mjs --stop",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "deploy:cf": "npm run build && wrangler deploy",

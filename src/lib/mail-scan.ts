@@ -249,7 +249,8 @@ export function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
       !Number.isSafeInteger(ciphertextLength) ||
       ciphertextLength < 0 ||
       ciphertextLength > MAX_CT_FELTS ||
-      event.data.length !== 6 + ciphertextLength ||
+      // QuietlineMail appends action_id after the counted ciphertext felts.
+      event.data.length !== 7 + ciphertextLength ||
       !Number.isInteger(viewTag) ||
       viewTag < 0 ||
       viewTag > 255 ||
@@ -260,7 +261,10 @@ export function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
       return null;
     }
 
-    const ciphertextFelts = event.data.slice(6).map(canonicalFelt);
+    const ciphertextFelts = event.data
+      .slice(6, 6 + ciphertextLength)
+      .map(canonicalFelt);
+    canonicalFelt(event.data[6 + ciphertextLength]);
     return {
       index: BigInt(canonicalFelt(event.keys[1])).toString(),
       transactionHash: canonicalFelt(event.transaction_hash),
