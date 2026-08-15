@@ -1,0 +1,148 @@
+import { describe, expect, it } from "vitest";
+import { addrSTRK } from "../utils/constants";
+import {
+  claimPayment,
+  confirmPayment,
+  loadOtcState,
+  receiptForTransfer,
+  type PaymentRequestPayload,
+} from "./otc";
+import {
+  createPaymentLink,
+  decodePaymentLinkFragment,
+} from "./payment-link";
+import { importPendingPaymentIntoMailbox } from "./payment-link-handoff";
+import {
+  loadPendingPayment,
+  storePendingPayment,
+} from "./pending-payment";
+
+class MemoryStorage {
+  private readonly values = new Map<string, string>();
+
+  getItem(key: string): string | null {
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    this.values.set(key, value);
+  }
+
+  removeItem(key: string): void {
+    this.values.delete(key);
+  }
+}
+
+const request: PaymentRequestPayload = {
+  requestId: `0x${"52".repeat(32)}`,
+  token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+  amount: "1250000000000000000",
+  memo: "Invoice-link integration",
+  expiresAt: 2_000_000_000,
+  requester: "0x4567",
+};
+
+describe("payment-link mailbox handoff", () => {
+  it("decodes, waits for explicit handoff, imports once, and cannot pay twice", () => {
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    const chainId = "SN_SEPOLIA";
+    const payer = "0xb0b";
+
+    const link = createPaymentLink(request, "https://quietline.example/");
+    const reviewed = decodePaymentLinkFragment(new URL(link).hash);
+
+    // /pay only stages the reviewed request. Opening the link creates no local
+    // payment record and cannot submit or reserve a transfer.
+    storePendingPayment(session, reviewed);
+    expect(loadOtcState(local, chainId, payer).payments).toEqual({});
+    expect(loadPendingPayment(session)).toEqual(request);
+
+    const imported = importPendingPaymentIntoMailbox(
+      session,
+      local,
+      chainId,
+      payer,
+      1_900_000_000,
+    );
+    expect(imported).toMatchObject({
+      request,
+      status: "requested",
+      origin: "payment_link",
+    });
+    expect(imported).not.toHaveProperty("paymentPending");
+    expect(imported).not.toHaveProperty("paymentTxHash");
+    expect(loadPendingPayment(session)).toBeNull();
+    expect(
+      importPendingPaymentIntoMailbox(
+        session,
+        local,
+        chainId,
+        payer,
+        1_900_000_001,
+      ),
+    ).toBeNull();
+
+    const reserved = claimPayment(
+      local,
+      chainId,
+      payer,
+      request.requestId,
+      1_900_000_002,
+    );
+    expect(reserved).toMatchObject({ status: "paid", paymentPending: true });
+
+    const transfer = {
+      token: request.token,
+      amount: request.amount,
+      to: request.requester,
+    };
+    const transactionHash = "0xabc";
+    confirmPayment(
+      local,
+      chainId,
+      payer,
+      request.requestId,
+      transactionHash,
+      receiptForTransfer(request.requestId, transfer, transactionHash),
+      1_900_000_003,
+    );
+    expect(
+      loadOtcState(local, chainId, payer).payments[request.requestId],
+    ).toMatchObject({
+      status: "paid",
+      paymentPending: false,
+      paymentVerified: true,
+      paymentTxHash: transactionHash,
+      origin: "payment_link",
+    });
+    expect(() =>
+      claimPayment(
+        local,
+        chainId,
+        payer,
+        request.requestId,
+        1_900_000_004,
+      ),
+    ).toThrow(/already paid; no second transfer/i);
+  });
+
+  it("keeps the tab handoff when mailbox persistence fails", () => {
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    storePendingPayment(session, request);
+    local.setItem = () => {
+      throw new Error("storage denied");
+    };
+
+    expect(() =>
+      importPendingPaymentIntoMailbox(
+        session,
+        local,
+        "SN_SEPOLIA",
+        "0xb0b",
+      ),
+    ).toThrow(/storage denied/i);
+    expect(loadPendingPayment(session)).toEqual(request);
+  });
+});

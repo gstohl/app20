@@ -80,6 +80,8 @@ export type PaymentRecord = {
   requestId: string;
   status: PaymentStatus;
   request: PaymentRequestPayload;
+  /** Present only when this unsigned request was explicitly imported from /pay. */
+  origin?: "payment_link";
   receipt?: ReceiptPayload;
   paymentTxHash?: string;
   paymentPending?: boolean;
@@ -771,6 +773,39 @@ export function releaseOtcAccept(
   return next;
 }
 
+function recordPaymentRequestWithOrigin(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  request: PaymentRequestPayload,
+  at: number,
+  origin?: PaymentRecord["origin"],
+): PaymentRecord {
+  const parsed = parsePaymentRequestPayload(request);
+  if (!parsed) throw new Error("Invalid payment request payload.");
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const existing = state.payments[parsed.requestId];
+  if (existing) {
+    if (origin === "payment_link" && existing.origin !== origin) {
+      const imported = { ...existing, origin };
+      state.payments[parsed.requestId] = imported;
+      saveOtcState(storage, chainId, selfAddress, state);
+      return imported;
+    }
+    return existing;
+  }
+  const record: PaymentRecord = {
+    requestId: parsed.requestId,
+    status: paymentRequestIsExpired(parsed, at) ? "expired" : "requested",
+    request: parsed,
+    ...(origin ? { origin } : {}),
+    updatedAt: at,
+  };
+  state.payments[parsed.requestId] = record;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return record;
+}
+
 export function recordPaymentRequest(
   storage: StorageLike,
   chainId: string,
@@ -778,20 +813,31 @@ export function recordPaymentRequest(
   request: PaymentRequestPayload,
   at = nowSeconds(),
 ): PaymentRecord {
-  const parsed = parsePaymentRequestPayload(request);
-  if (!parsed) throw new Error("Invalid payment request payload.");
-  const state = loadOtcState(storage, chainId, selfAddress);
-  const existing = state.payments[parsed.requestId];
-  if (existing) return existing;
-  const record: PaymentRecord = {
-    requestId: parsed.requestId,
-    status: paymentRequestIsExpired(parsed, at) ? "expired" : "requested",
-    request: parsed,
-    updatedAt: at,
-  };
-  state.payments[parsed.requestId] = record;
-  saveOtcState(storage, chainId, selfAddress, state);
-  return record;
+  return recordPaymentRequestWithOrigin(
+    storage,
+    chainId,
+    selfAddress,
+    request,
+    at,
+  );
+}
+
+/** Persist an explicitly reviewed unsigned-link request for mailbox rendering. */
+export function recordPaymentLinkRequest(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  request: PaymentRequestPayload,
+  at = nowSeconds(),
+): PaymentRecord {
+  return recordPaymentRequestWithOrigin(
+    storage,
+    chainId,
+    selfAddress,
+    request,
+    at,
+    "payment_link",
+  );
 }
 
 export function claimPayment(

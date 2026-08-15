@@ -77,6 +77,8 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
+import { loadPendingPayment } from "@/lib/pending-payment";
 import {
   acceptPayloadForOffer,
   claimOtcAccept,
@@ -100,9 +102,11 @@ import {
   type AcceptPayload,
   type OfferPayload,
   type OtcState,
+  type PaymentRecord,
   type PaymentRequestPayload,
 } from "@/lib/otc";
 import {
+  computeActionId,
   strk20ErrorMessage,
   submitActions,
   submitMail,
@@ -240,10 +244,22 @@ function mergeMailMessages(
 ): LocalMailMessage[] {
   const byId = new Map(current.map((message) => [message.id, message]));
   for (const message of incoming) byId.set(message.id, message);
-  return sortMailMessages([...byId.values()]).slice(
-    0,
-    MAIL_SCAN_MAX_MESSAGES,
+
+  // When the same invoice later arrives as sealed mail, prefer its real
+  // MessagePosted evidence over the local unsigned-link projection.
+  const actualRequestIds = new Set(
+    [...byId.values()]
+      .filter((message) => message.transport !== "payment_link")
+      .flatMap(messagePaymentRequestIds),
   );
+  const deduplicated = [...byId.values()].filter(
+    (message) =>
+      message.transport !== "payment_link" ||
+      !messagePaymentRequestIds(message).some((requestId) =>
+        actualRequestIds.has(requestId),
+      ),
+  );
+  return sortMailMessages(deduplicated).slice(0, MAIL_SCAN_MAX_MESSAGES);
 }
 
 function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
@@ -261,6 +277,48 @@ function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
     recipientCount: message.recipientCount,
     localCreatedAt: message.createdAt,
   };
+}
+
+function paymentLinkToLocal(
+  request: PaymentRequestPayload,
+  updatedAt = Math.floor(Date.now() / 1_000),
+): LocalMailMessage {
+  return {
+    id: `payment-link:${request.requestId}`,
+    index: "unsigned-link",
+    plaintext: request.memo ?? "",
+    envelope: decodeEnvelope(encodeEnvelope("payment_request", request)),
+    // Link imports have no ciphertext. Thread deliberately suppresses the
+    // public-evidence panel for this transport instead of inventing one.
+    record: {
+      ephemeralPub: ["0x0", "0x0"],
+      viewTag: 0,
+      nonce: ["0x0", "0x0"],
+      ciphertextFelts: [],
+    },
+    transactionHash: "",
+    direction: "incoming",
+    transport: "payment_link",
+    localCreatedAt: updatedAt * 1_000,
+  };
+}
+
+function messagePaymentRequestIds(message: LocalMailMessage): string[] {
+  if (message.envelope.type === "payment_request") {
+    const request = parsePaymentRequestPayload(message.envelope.payload);
+    return request ? [request.requestId] : [];
+  }
+  if (message.envelope.type !== "composite") return [];
+  const composite = parseCompositePayload(message.envelope.payload);
+  return (composite?.attachments ?? [])
+    .filter((attachment) => attachment.type === "payment_request")
+    .map((attachment) => attachment.payload.requestId);
+}
+
+function paymentLinkRecords(state: OtcState): PaymentRecord[] {
+  return Object.values(state.payments).filter(
+    (payment) => payment.origin === "payment_link",
+  );
 }
 
 function draftMatchesFilter(
@@ -350,6 +408,8 @@ export default function InboxPage() {
   const [drafts, setDrafts] = useState<CompositeDraft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [pendingPaymentRequest, setPendingPaymentRequest] =
+    useState<PaymentRequestPayload | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -434,15 +494,26 @@ export default function InboxPage() {
     setActionStates({});
     if (address && chainId) {
       setAliases(loadAliases(window.localStorage, address));
+      const storedOtc = expireStoredDeals(
+        window.localStorage,
+        chainId,
+        address,
+      );
       setMessages(
-        loadSentMail(window.localStorage, chainId, address).map(
-          storedSentToLocal,
+        mergeMailMessages(
+          [],
+          [
+            ...loadSentMail(window.localStorage, chainId, address).map(
+              storedSentToLocal,
+            ),
+            ...paymentLinkRecords(storedOtc).map((payment) =>
+              paymentLinkToLocal(payment.request, payment.updatedAt),
+            ),
+          ],
         ),
       );
       setDrafts(loadDrafts(window.localStorage, chainId, address));
-      setOtcState(
-        expireStoredDeals(window.localStorage, chainId, address),
-      );
+      setOtcState(storedOtc);
       setEscrowState(loadEscrowState(window.localStorage, chainId, address));
     } else {
       setAliases([]);
@@ -461,6 +532,60 @@ export default function InboxPage() {
       cancelActiveScanWorker();
     };
   }, [address, chainId, providerIndex]);
+
+  useEffect(() => {
+    try {
+      const request = loadPendingPayment(window.sessionStorage);
+      if (!request) return;
+      const message = paymentLinkToLocal(request);
+      setPendingPaymentRequest(request);
+      setMessages((current) => mergeMailMessages(current, [message]));
+      setMailFolder("inbox");
+      setMailboxFilter("invoices");
+      setSelectedMessageId(message.id);
+      setComposerOpen(false);
+      setMobileDetailOpen(true);
+    } catch {
+      // /pay already reports blocked session storage. Do not invent a request.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pendingPaymentRequest || !address || !chainId) return;
+    const actionKey = `payment:${pendingPaymentRequest.requestId}`;
+    try {
+      const imported = importPendingPaymentIntoMailbox(
+        window.sessionStorage,
+        window.localStorage,
+        chainId,
+        address,
+      );
+      if (!imported) {
+        setPendingPaymentRequest(null);
+        return;
+      }
+      setOtcState(expireStoredDeals(window.localStorage, chainId, address));
+      const message = paymentLinkToLocal(imported.request, imported.updatedAt);
+      setMessages((current) => mergeMailMessages(current, [message]));
+      setPendingPaymentRequest(null);
+      setMailFolder("inbox");
+      setMailboxFilter("invoices");
+      setSelectedMessageId(message.id);
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          "Unsigned link imported for local review. No payment was submitted.",
+      });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          error instanceof Error
+            ? `${error.message} No payment was submitted.`
+            : "The payment link could not be imported. No payment was submitted.",
+      });
+    }
+  }, [address, chainId, pendingPaymentRequest]);
 
   useEffect(() => {
     if (mailFolder === "drafts") {
@@ -740,8 +865,18 @@ export default function InboxPage() {
     setScanning(false);
     setMessages(
       address && chainId
-        ? loadSentMail(window.localStorage, chainId, address).map(
-            storedSentToLocal,
+        ? mergeMailMessages(
+            [],
+            [
+              ...loadSentMail(window.localStorage, chainId, address).map(
+                storedSentToLocal,
+              ),
+              ...paymentLinkRecords(
+                expireStoredDeals(window.localStorage, chainId, address),
+              ).map((payment) =>
+                paymentLinkToLocal(payment.request, payment.updatedAt),
+              ),
+            ],
           )
         : [],
     );
@@ -1265,6 +1400,7 @@ export default function InboxPage() {
           recipient: request.requester,
           amount: request.amount,
           record,
+          actionId: computeActionId("payment-request", request.requestId),
         },
         {
           onSubmitted: (transactionHash) => {
@@ -1896,6 +2032,13 @@ export default function InboxPage() {
           </header>
 
           <div className={styles.readingScroll}>
+            {!keypair && (composerOpen || selectedMessage) ? (
+              <Onboard
+                key={`${providerIndex}:${address}`}
+                helperAddress={helperAddress}
+                onKeyReady={handleKeyReady}
+              />
+            ) : null}
             {composerOpen && activeDraft ? (
               <Compose
                 draft={activeDraft}

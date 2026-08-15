@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
@@ -281,12 +281,14 @@ export default function Compose({
     (state) => state.currentFrontendProviderIndex,
   );
   const [draft, setDraft] = useState(initialDraft);
+  const draftRef = useRef(initialDraft);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [aliasLabel, setAliasLabel] = useState("");
   const [aliasNotice, setAliasNotice] = useState("");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
 
   useEffect(() => {
+    draftRef.current = initialDraft;
     setDraft(initialDraft);
     setSendState({ kind: "idle" });
   }, [initialDraft.id]);
@@ -313,15 +315,15 @@ export default function Compose({
       | Partial<CompositeDraft>
       | ((current: CompositeDraft) => CompositeDraft),
   ) {
-    setDraft((current) => {
-      const next =
-        typeof update === "function"
-          ? update(current)
-          : { ...current, ...update };
-      const saved = { ...next, updatedAt: Date.now() };
-      onDraftChange(saved);
-      return saved;
-    });
+    const current = draftRef.current;
+    const next =
+      typeof update === "function"
+        ? update(current)
+        : { ...current, ...update };
+    const saved = { ...next, updatedAt: Date.now() };
+    draftRef.current = saved;
+    setDraft(saved);
+    onDraftChange(saved);
   }
 
   function updateAttachment(

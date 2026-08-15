@@ -49,6 +49,8 @@ export type LocalMailMessage = {
   blockTimestamp?: number;
   eventIndex?: number;
   direction?: "incoming" | "outgoing";
+  /** Unsigned request imported from /pay; it has no MessagePosted evidence. */
+  transport?: "payment_link";
   recipientCount?: number;
   /** Set for locally sent mail so it sorts before the chain confirms a timestamp. */
   localCreatedAt?: number;
@@ -557,22 +559,41 @@ export default function Thread({
       {messages.length ? (
         <ol className={styles.threadList}>
           {messages.map((message) => {
-            const recipientCount =
-              message.recipientCount ?? publicRecipientCount(message.record);
+            const paymentLink = message.transport === "payment_link";
+            const recipientCount = paymentLink
+              ? 0
+              : message.recipientCount ?? publicRecipientCount(message.record);
             return (
               <li className={styles.message} key={message.id}>
                 <div className={styles.messageMeta}>
-                  <span>
-                    {message.direction === "outgoing" ? "Sent" : "Opened"} ·
-                    record {message.index}
-                  </span>
-                  <span>
-                    {recipientCount} recipient{recipientCount === 1 ? "" : "s"}
-                    {message.blockNumber === undefined
-                      ? " · confirmed"
-                      : ` · block ${message.blockNumber}`}
-                  </span>
+                  {paymentLink ? (
+                    <>
+                      <span>Imported from unsigned payment link</span>
+                      <span>No transaction submitted</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        {message.direction === "outgoing" ? "Sent" : "Opened"} ·
+                        record {message.index}
+                      </span>
+                      <span>
+                        {recipientCount} recipient{recipientCount === 1 ? "" : "s"}
+                        {message.blockNumber === undefined
+                          ? " · confirmed"
+                          : ` · block ${message.blockNumber}`}
+                      </span>
+                    </>
+                  )}
                 </div>
+                {paymentLink ? (
+                  <p className={styles.actionWarning} role="status">
+                    This unsigned request was imported from a URL fragment for
+                    local review. It is not a MessagePosted event, cannot
+                    authenticate the requester, and opening or importing it did
+                    not submit a payment.
+                  </p>
+                ) : null}
                 {renderEnvelope(message)}
                 {message.transactionHashes &&
                 message.transactionHashes.length > 1 ? (
@@ -589,11 +610,13 @@ export default function Thread({
                     </span>
                   </aside>
                 ) : null}
-                <ChainRecordPanel message={message} />
+                {paymentLink ? null : <ChainRecordPanel message={message} />}
                 <span className={styles.localLabel}>
-                  {message.direction === "outgoing"
-                    ? "sealed on this device"
-                    : "decrypted on this device"}
+                  {paymentLink
+                    ? "decoded from this tab's URL fragment"
+                    : message.direction === "outgoing"
+                      ? "sealed on this device"
+                      : "decrypted on this device"}
                 </span>
               </li>
             );

@@ -4,7 +4,9 @@ import type { ProviderInterface, WalletAccountV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { addrSTRK } from "../utils/constants";
 import {
+  buildMemoTransferActions,
   buildOtcAcceptActions,
+  computeActionId,
   submitMail,
   submitOtcAccept,
 } from "./strk20";
@@ -103,6 +105,28 @@ describe("mail STRK20 actions", () => {
         ],
       },
     ]);
+  });
+
+  it("binds a payment-request retry to one stable on-chain action id", () => {
+    const requestId = `0x${"24".repeat(32)}`;
+    const actionId = computeActionId("payment-request", requestId);
+    const actions = buildMemoTransferActions({
+      helperAddress: "0x123",
+      recoveryAddress: "0xb0b",
+      tokenAddress: addrSTRK,
+      recipient: "0xa11ce",
+      amount: "1000",
+      record,
+      actionId,
+    });
+
+    const invoke = actions.at(-1);
+    if (invoke?.type !== "invoke") throw new Error("Expected invoke.");
+    expect(invoke.calldata.at(-1)).toBe(actionId);
+    expect(computeActionId("payment-request", requestId)).toBe(actionId);
+    expect(
+      computeActionId("payment-request", `0x${"25".repeat(32)}`),
+    ).not.toBe(actionId);
   });
 
   it("builds accept as transfer, recovery note, invoke and refuses non-STRK give", () => {
