@@ -1,31 +1,8 @@
 .page {
-  --paper: #f4f0e5;
-  --paper-deep: #e8e2d4;
-  --ink: #172220;
-  --muted: #5d6965;
-  --teal: #087d77;
-  --teal-soft: #dcebe6;
-  --ribbon: #7a3e55;
-  --proof-teal: #276a72;
-  --line: rgba(23, 34, 32, 0.2);
-
-  /* Variables consumed by the existing wallet picker. */
-  --bg: var(--paper);
-  --card: #faf7ef;
-  --inset: var(--paper-deep);
-  --inset-2: #ddd7ca;
-  --pink: var(--teal);
-  --pink-soft: var(--teal-soft);
-  --pink-soft-2: #c9dfd8;
-  --pink-text: #066a65;
-  --green: var(--teal);
-  --green-soft: var(--teal-soft);
-  --danger: var(--ink);
-
   min-height: 100vh;
   color: var(--ink);
   background:
-    linear-gradient(rgba(23, 34, 32, 0.035) 1px, transparent 1px),
+    linear-gradient(var(--page-rule) 1px, transparent 1px),
     var(--paper);
   background-size: 100% 32px;
   font-family: var(--font-body), system-ui, sans-serif;
@@ -150,7 +127,7 @@
   position: relative;
   padding: 28px;
   border: 1px solid var(--ink);
-  background: rgba(250, 247, 239, 0.94);
+  background: var(--surface-raised);
   box-shadow: 6px 6px 0 var(--paper-deep);
 }
 
@@ -317,7 +294,7 @@
 .restoreWarning {
   padding: 12px;
   border-left: 4px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.09);
+  background: var(--deal-quiet);
   color: var(--ink);
   font-size: 12px;
   line-height: 1.5;
@@ -451,7 +428,7 @@
   gap: 16px;
   padding: 16px;
   border-left: 4px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.07);
+  background: var(--deal-wash);
 }
 
 .termsPreview,
@@ -470,7 +447,7 @@
 .dealDisclosure {
   padding: 11px 12px;
   border-left: 3px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.07);
+  background: var(--deal-wash);
 }
 
 .field {
@@ -564,7 +541,7 @@
   margin-top: 14px;
   padding: 18px;
   border: 1px solid var(--line);
-  background: rgba(250, 247, 239, 0.72);
+  background: var(--surface-decrypted);
 }
 
 .dealSheet {
@@ -628,7 +605,7 @@
   margin-top: 16px;
   padding: 12px;
   border: 1px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.06);
+  background: var(--deal-wash);
 }
 
 .addressProof code,
@@ -679,7 +656,7 @@
 .actionWarning {
   padding: 10px 12px;
   border-left: 3px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.09);
+  background: var(--deal-quiet);
 }
 
 .inlineStatus {
@@ -707,7 +684,7 @@
 .chainDisclosure {
   margin-top: 14px;
   border: 1px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.035);
+  background: var(--public-wash);
 }
 
 .chainDisclosure > summary {
@@ -845,7 +822,7 @@
 .feltPair {
   padding: 9px 10px;
   border-left: 3px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.06);
+  background: var(--public-quiet);
 }
 
 .sealedValue {
@@ -863,7 +840,7 @@
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
-  background: rgba(39, 106, 114, 0.04);
+  background: var(--public-wash);
   list-style: none;
 }
 
@@ -1117,7 +1094,7 @@
   padding: 22px 18px 18px;
   border-right: 1px solid var(--ink);
   background:
-    linear-gradient(rgba(23, 34, 32, 0.035) 1px, transparent 1px),
+    linear-gradient(var(--page-rule) 1px, transparent 1px),
     var(--paper-deep);
   background-size: 100% 28px;
 }
@@ -1190,7 +1167,7 @@
   border: 1px solid var(--ink);
   color: var(--paper);
   background: var(--teal);
-  box-shadow: 3px 3px 0 rgba(23, 34, 32, 0.16);
+  box-shadow: 3px 3px 0 var(--shadow);
   font: inherit;
   font-size: 13px;
   font-weight: 800;
@@ -1244,12 +1221,12 @@
 }
 
 .mailboxNav button:hover {
-  background: rgba(250, 247, 239, 0.62);
+  background: var(--surface-raised);
 }
 
 .mailboxNav button[aria-current="page"] {
   border-left-color: var(--teal);
-  background: rgba(250, 247, 239, 0.9);
+  background: var(--surface-raised);
   color: var(--teal);
 }
 
@@ -1269,7 +1246,7 @@
   gap: 7px;
   padding: 8px 10px;
   border: 1px solid var(--line);
-  background: rgba(250, 247, 239, 0.62);
+  background: var(--surface-raised);
   font-size: 8px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -1292,8 +1269,8 @@
 .sidebarAccount {
   padding: 13px;
   border: 1px solid var(--ink);
-  background: rgba(250, 247, 239, 0.88);
-  box-shadow: 3px 3px 0 rgba(23, 34, 32, 0.08);
+  background: var(--surface-raised);
+  box-shadow: 3px 3px 0 var(--shadow-soft);
 }
 
 .accountHeading {
@@ -1428,14 +1405,14 @@
   margin-top: 9px;
   padding: 8px;
   border-left: 3px solid var(--ribbon);
-  background: rgba(122, 62, 85, 0.09);
+  background: var(--deal-quiet);
   font-size: 8px;
   line-height: 1.5;
 }
 
 .mainnetSafety {
   border-left-color: var(--proof-teal);
-  background: rgba(39, 106, 114, 0.08);
+  background: var(--public-quiet);
 }
 
 .walletResult {
@@ -1445,7 +1422,7 @@
 
 .walletResultError {
   border-left-color: var(--ribbon);
-  background: rgba(122, 62, 85, 0.09);
+  background: var(--deal-quiet);
 }
 
 .walletResult p,
@@ -1464,7 +1441,7 @@
 .sidebarScan {
   padding: 12px;
   border: 1px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.045);
+  background: var(--public-wash);
 }
 
 .scanHeading {
@@ -1552,7 +1529,7 @@
   flex-direction: column;
   overflow: hidden;
   border-right: 1px solid var(--ink);
-  background: rgba(244, 240, 229, 0.98);
+  background: var(--surface);
 }
 
 .railHeading {
@@ -1632,13 +1609,13 @@
 }
 
 .conversationItem:hover {
-  background: rgba(232, 226, 212, 0.6);
+  background: var(--surface-muted);
 }
 
 .conversationItemActive {
   border-left-color: var(--teal);
   background: var(--paper-deep);
-  box-shadow: inset -4px 0 0 rgba(39, 106, 114, 0.12);
+  box-shadow: inset -4px 0 0 var(--public-shadow);
 }
 
 .conversationTopline {
@@ -1746,8 +1723,8 @@
   flex-direction: column;
   overflow: hidden;
   background:
-    linear-gradient(rgba(23, 34, 32, 0.025) 1px, transparent 1px),
-    #f8f4e9;
+    linear-gradient(var(--page-rule) 1px, transparent 1px),
+    var(--surface-reading);
   background-size: 100% 32px;
 }
 
@@ -1757,7 +1734,7 @@
   gap: 15px;
   padding: 11px 22px;
   border-bottom: 1px solid var(--ink);
-  background: rgba(244, 240, 229, 0.96);
+  background: var(--surface);
 }
 
 .readingToolbar > div {
@@ -1826,7 +1803,7 @@
 }
 
 .threadPanel .messageSheet {
-  box-shadow: 4px 4px 0 rgba(39, 106, 114, 0.08);
+  box-shadow: 4px 4px 0 var(--public-shadow);
 }
 
 .recipientDisclosure {
@@ -1834,7 +1811,7 @@
   padding: 8px 10px;
   border-left: 3px solid var(--proof-teal);
   color: var(--muted);
-  background: rgba(39, 106, 114, 0.06);
+  background: var(--public-quiet);
   font-size: 9px;
   line-height: 1.5;
 }
@@ -1850,7 +1827,7 @@
 .composerSheet {
   padding: clamp(22px, 4vw, 42px);
   border: 1px solid var(--ink);
-  background: rgba(250, 247, 239, 0.96);
+  background: var(--surface-raised);
   box-shadow: 7px 7px 0 var(--paper-deep);
 }
 
@@ -1939,7 +1916,7 @@
 .paymentAttachment {
   padding: 13px;
   border: 1px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.05);
+  background: var(--public-wash);
 }
 
 .attachmentToggle {
@@ -1987,7 +1964,7 @@
   position: relative;
   padding: clamp(26px, 5vw, 56px);
   border: 1px solid var(--ink);
-  background: rgba(250, 247, 239, 0.96);
+  background: var(--surface-raised);
   box-shadow: 8px 8px 0 var(--paper-deep);
 }
 
@@ -2060,7 +2037,7 @@
   margin-top: 16px;
   padding: 11px 12px;
   border-left: 4px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.06);
+  background: var(--public-quiet);
 }
 
 .welcomeCompose {
@@ -2081,7 +2058,7 @@
   margin-top: 11px;
   padding: 9px;
   border: 1px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.06);
+  background: var(--public-quiet);
   font-size: 8px;
   line-height: 1.45;
 }
@@ -2191,7 +2168,7 @@
     width: min(300px, calc(100vw - 48px));
     transform: translateX(-105%);
     transition: transform 180ms ease;
-    box-shadow: 12px 0 30px rgba(23, 34, 32, 0.22);
+    box-shadow: 12px 0 30px var(--shadow);
   }
 
   .sidebarOpen {
@@ -2210,7 +2187,7 @@
     width: 100%;
     height: 100%;
     border: 0;
-    background: rgba(23, 34, 32, 0.42);
+    background: var(--overlay);
     cursor: pointer;
   }
 
@@ -2352,7 +2329,7 @@
   padding: 6px 7px;
   border: 1px solid var(--line);
   color: var(--muted);
-  background: rgba(250, 247, 239, 0.45);
+  background: var(--surface-raised);
   font: inherit;
   font-size: 8px;
   cursor: pointer;
@@ -2437,7 +2414,7 @@
 .compositeAttachment {
   padding: 15px;
   border: 1px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.035);
+  background: var(--public-wash);
 }
 
 .attachmentHeading {
@@ -2464,7 +2441,7 @@
 .submissionTransactions {
   padding: 11px 12px;
   border-left: 4px solid var(--proof-teal);
-  background: rgba(39, 106, 114, 0.07);
+  background: var(--public-quiet);
   font-size: 10px;
   line-height: 1.55;
 }
@@ -2496,7 +2473,7 @@
   margin-top: 14px;
   padding: 20px;
   border: 1px solid var(--ink);
-  background: rgba(250, 247, 239, 0.92);
+  background: var(--surface-raised);
 }
 
 .compositeCardStack {
@@ -2557,6 +2534,47 @@
   .attachmentButtons {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.themeSwitcher {
+  min-width: 0;
+  border: 0;
+}
+
+.themeSwitcher > legend {
+  margin: 0 4px 6px;
+}
+
+.themeSwitcher > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  background: var(--surface-inset);
+}
+
+.themeSwitcher button {
+  min-width: 0;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.themeSwitcher button:hover {
+  color: var(--ink);
+  background: var(--surface-raised);
+}
+
+.themeSwitcher button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--on-accent);
+  background: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

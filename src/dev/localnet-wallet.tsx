@@ -310,10 +310,10 @@ export function LocalnetDevTools({
   }
 
   const sidebar = variant === "sidebar";
-  const accent = sidebar ? "#087d77" : "#38bdf8";
-  const surface = sidebar ? "#e8e2d4" : "#07111f";
-  const ink = sidebar ? "#172220" : "#e0f2fe";
-  const quiet = sidebar ? "#5d6965" : "#7dd3fc";
+  const accent = "var(--accent)";
+  const surface = sidebar ? "var(--surface-muted)" : "var(--surface-reading)";
+  const ink = "var(--text)";
+  const quiet = "var(--text-muted)";
 
   return (
     <aside
@@ -321,7 +321,7 @@ export function LocalnetDevTools({
       data-dev-wallet-symbol={LOCALNET_DEV_WALLET_SENTINEL}
       style={{
         background: surface,
-        border: sidebar ? "1px solid rgba(23, 34, 32, 0.2)" : 0,
+        border: sidebar ? "1px solid var(--border)" : 0,
         borderBottom: sidebar ? undefined : `2px solid ${accent}`,
         color: ink,
         display: "grid",
@@ -368,7 +368,7 @@ export function LocalnetDevTools({
               background: selectedId === identity.id ? accent : surface,
               border: `1px solid ${accent}`,
               borderRadius: sidebar ? "2px" : "999px",
-              color: selectedId === identity.id ? (sidebar ? "#f4f0e5" : "#07111f") : ink,
+              color: selectedId === identity.id ? "var(--on-accent)" : ink,
               cursor: "pointer",
               fontWeight: 700,
               padding: "7px 14px",

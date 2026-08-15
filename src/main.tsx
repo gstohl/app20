@@ -72,10 +72,7 @@ async function start() {
       const message =
         error instanceof Error ? error.message : "Localnet wallet failed to start.";
       renderLocalnetTools = () => (
-        <aside
-          role="alert"
-          style={{ background: "#7f1d1d", color: "white", padding: "12px" }}
-        >
+        <aside role="alert" className="localnet-startup-error">
           Localnet wallet startup failed: {message}
         </aside>
       );

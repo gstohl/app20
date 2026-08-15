@@ -19,6 +19,7 @@ import Thread, {
   type LocalMailMessage,
   type ThreadActionState,
 } from "@/components/mail/Thread";
+import ThemeSwitcher from "@/components/mail/ThemeSwitcher";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
 import { parseCompositePayload } from "@/lib/composite";
@@ -1929,6 +1930,8 @@ export default function InboxPage() {
               </button>
             ))}
           </nav>
+
+          <ThemeSwitcher />
 
           <div className={styles.networkRow}>
             <span className={styles.networkDot} aria-hidden="true" />

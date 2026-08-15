@@ -8,12 +8,28 @@
       content="Encrypted on-chain mail and payment memos on the STRK20 privacy pool."
     />
     <link rel="icon" type="image/png" href="/src/app/icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&amp;family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&amp;family=Syne:wght@400;500;600;700;800&amp;display=swap"
-      rel="stylesheet"
-    />
+    <script>
+      (() => {
+        const root = document.documentElement;
+        let preference = "system";
+        try {
+          const stored = localStorage.getItem("quietline/theme");
+          if (stored === "light" || stored === "dark" || stored === "system") {
+            preference = stored;
+          }
+        } catch {
+          // Storage can be unavailable; system preference remains a safe default.
+        }
+        const dark =
+          preference === "dark" ||
+          (preference === "system" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        const theme = dark ? "dark" : "light";
+        root.dataset.theme = theme;
+        root.dataset.themePreference = preference;
+        root.style.colorScheme = theme;
+      })();
+    </script>
     <title>Quietline · Private mail on Starknet</title>
   </head>
   <body>
