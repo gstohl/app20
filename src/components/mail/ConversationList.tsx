@@ -345,7 +345,7 @@ export default function ConversationList({
             ✉
           </span>
           <strong>
-            {filterLabel === "All"
+            {filterLabel === "All" || filterLabel === "All types"
               ? "Nothing here yet"
               : `No ${filterLabel.toLowerCase()} yet`}
           </strong>
