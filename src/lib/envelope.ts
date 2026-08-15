@@ -13,13 +13,13 @@ export type EnvelopeType =
   | "escrow_claim"
   | "escrow_timeout";
 
-export type MailEnvelopeV1 = {
+type MailEnvelopeV1 = {
   version: 1;
   type: EnvelopeType;
   payload: unknown;
 };
 
-export type UnsupportedMail = {
+type UnsupportedMail = {
   version: number;
   type: "unsupported";
   payload: {
