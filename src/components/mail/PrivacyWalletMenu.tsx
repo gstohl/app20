@@ -185,7 +185,7 @@ export default function PrivacyWalletMenu() {
               title: `${actionName} submitted`,
               message: "Proof accepted; waiting for transaction confirmation…",
               transactionHash: hash,
-              startedAt,
+              startedAt: Date.now(),
             });
           },
         },

@@ -12,6 +12,7 @@ import {
   encryptMail,
   encryptMailForRecipients,
   packBytesToFelts,
+  projectEncryptedMailSize,
   publicKeyFromFelts,
   publicKeyToFelts,
   scanAndDecrypt,
@@ -425,6 +426,27 @@ describe("multi-recipient encrypted mail", () => {
       secondBytes.slice(bodyNonceOffset, bodyNonceOffset + 12),
     );
     expect(first.ciphertextFelts).not.toEqual(second.ciphertextFelts);
+  });
+
+  it("projects the exact single- and multi-recipient ciphertext budget", () => {
+    expect(projectEncryptedMailSize(4_293, 1)).toMatchObject({
+      ciphertextFelts: 140,
+      maxPlaintextBytes: 4_293,
+      fits: true,
+    });
+    expect(projectEncryptedMailSize(4_294, 1)).toMatchObject({
+      ciphertextFelts: 141,
+      fits: false,
+    });
+    expect(projectEncryptedMailSize(52, 66)).toMatchObject({
+      ciphertextFelts: 140,
+      maxPlaintextBytes: 52,
+      fits: true,
+    });
+    expect(projectEncryptedMailSize(53, 66)).toMatchObject({
+      ciphertextFelts: 141,
+      fits: false,
+    });
   });
 
   it("enforces the 66-recipient limit derived from 140 packed felts", async () => {

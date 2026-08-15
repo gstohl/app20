@@ -22,7 +22,11 @@ import {
   type DraftAttachment,
   type TradeDraftFields,
 } from "@/lib/drafts";
-import { encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
+import {
+  encodeEnvelope,
+  envelopeByteLength,
+  type EnvelopeType,
+} from "@/lib/envelope";
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
@@ -39,11 +43,13 @@ import { buildEscrowFundActions } from "@/lib/escrow-actions";
 import {
   encryptMailForRecipients,
   MAX_MULTI_RECIPIENTS,
+  projectEncryptedMailSize,
   publicKeyFromFelts,
   type EncryptedMailRecord,
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import {
+  formatBaseUnits,
   parseDecimalToBaseUnits,
   type AcceptPayload,
   type OfferPayload,
@@ -96,6 +102,20 @@ type SendState = {
   startedAt?: number;
   step?: number;
   totalSteps?: number;
+};
+
+type ComposePreflight = {
+  recipientCount: number;
+  plaintextBytes: number;
+  ciphertextFelts: number;
+  maxCiphertextFelts: number;
+  maxPlaintextBytes: number;
+  maxRecipientsForCurrentDocument: number;
+  fits: boolean;
+  walletPrompts: number;
+  transactions: number;
+  valueMoves: string[];
+  noValueAttachments: string[];
 };
 
 function expiryFromHours(value: string, escrow = false): number {
@@ -383,7 +403,6 @@ export default function Compose({
   const sendPending = ["lookup", "encrypting", "proving"].includes(
     sendState.kind,
   );
-  const sendDisabled = Boolean(disabledReason) || sendPending;
 
   function resolvedRecipients(): string[] {
     if (!recipientEntries.length) throw new Error("Add at least one recipient.");
@@ -575,6 +594,82 @@ export default function Compose({
     };
   }
 
+  let preflight: ComposePreflight | null = null;
+  let preflightIssue = "";
+  try {
+    const recipients = resolvedRecipients();
+    if (hasAnyAttachment && recipients.length !== 1) {
+      throw new Error(
+        "Attachments require exactly one counterparty; body-only messages may have multiple recipients.",
+      );
+    }
+    const document = buildDocument(recipients[0]);
+    const plaintextBytes = envelopeByteLength(document.type, document.payload);
+    const size = projectEncryptedMailSize(plaintextBytes, recipients.length);
+    let maxRecipientsForCurrentDocument = 0;
+    for (let count = 1; count <= MAX_MULTI_RECIPIENTS; count += 1) {
+      if (projectEncryptedMailSize(plaintextBytes, count).fits) {
+        maxRecipientsForCurrentDocument = count;
+      }
+    }
+    const valueMoves: string[] = [];
+    if (document.payment) {
+      valueMoves.push(
+        `${formatBaseUnits(document.payment.transfer.amount, 18)} STRK (${document.payment.transfer.amount} base units) privately to ${document.payment.transfer.to} in the message transaction`,
+      );
+    }
+    if (document.escrow) {
+      valueMoves.push(
+        `${formatBaseUnits(document.escrow.legA.amount, 18)} STRK (${document.escrow.legA.amount} base units) deposited into escrow ${document.escrow.escrowAddress} before the message transaction`,
+      );
+    }
+    const noValueAttachments = document.composite
+      ? document.composite.attachments
+          .filter(
+            (attachment) =>
+              attachment.type === "offer" ||
+              attachment.type === "payment_request",
+          )
+          .map((attachment) =>
+            attachment.type === "offer"
+              ? "OTC offer: terms only; sending does not settle it"
+              : "Invoice: request only; sending does not pay it",
+          )
+      : [];
+    const transactions = document.escrow ? 2 : 1;
+    preflight = {
+      recipientCount: recipients.length,
+      plaintextBytes,
+      ciphertextFelts: size.ciphertextFelts,
+      maxCiphertextFelts: size.maxCiphertextFelts,
+      maxPlaintextBytes: size.maxPlaintextBytes,
+      maxRecipientsForCurrentDocument,
+      fits: size.fits,
+      walletPrompts: transactions,
+      transactions,
+      valueMoves,
+      noValueAttachments,
+    };
+    if (!size.fits) {
+      preflightIssue = `Remove at least ${plaintextBytes - size.maxPlaintextBytes} encoded byte${plaintextBytes - size.maxPlaintextBytes === 1 ? "" : "s"}; nothing can be submitted at this size.`;
+    }
+  } catch (error: unknown) {
+    preflightIssue =
+      error instanceof Error
+        ? error.message
+        : "Complete the message fields to calculate its exact ciphertext budget.";
+  }
+
+  const sendDisabled =
+    Boolean(disabledReason) || sendPending || preflight?.fits === false;
+  const sendButtonLabel = sendPending
+    ? "Preparing private transaction…"
+    : preflight?.valueMoves.length
+      ? preflight.transactions === 2
+        ? `Approve ${preflight.valueMoves.length} value move${preflight.valueMoves.length === 1 ? "" : "s"} in 2 transactions`
+        : `Send ${preflight.valueMoves[0].split(" (")[0]} privately + message`
+      : "Send message (no asset transfer)";
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!helperAddress || !walletAccount || !senderAddress || !isStrk20Capable || !keyReady) {
@@ -599,6 +694,17 @@ export default function Compose({
         );
       }
       const document = buildDocument(recipientAddresses[0]);
+      const plaintextBytes = envelopeByteLength(document.type, document.payload);
+      const projectedSize = projectEncryptedMailSize(
+        plaintextBytes,
+        recipientAddresses.length,
+      );
+      if (!projectedSize.fits) {
+        throw new Error(
+          `This message would use ${projectedSize.ciphertextFelts} / ${projectedSize.maxCiphertextFelts} ciphertext felts. Remove at least ${plaintextBytes - projectedSize.maxPlaintextBytes} encoded byte${plaintextBytes - projectedSize.maxPlaintextBytes === 1 ? "" : "s"}. Nothing was submitted.`,
+        );
+      }
+      const encodedDocument = encodeEnvelope(document.type, document.payload);
       const provider = myFrontendProviders[providerIndex];
       const steps = document.composite
         ? planCompositeSubmission(document.composite)
@@ -646,7 +752,7 @@ export default function Compose({
       });
       const record = await encryptMailForRecipients(
         registeredKeys,
-        encodeEnvelope(document.type, document.payload),
+        encodedDocument,
       );
       const startedAt = Date.now();
 
@@ -716,7 +822,7 @@ export default function Compose({
                 setSendState({
                   kind: "proving",
                   message: `${submissionStepLabel(steps[0], 0, steps.length)} · submitted, waiting for confirmation`,
-                  startedAt,
+                  startedAt: Date.now(),
                   step: 1,
                   totalSteps: steps.length,
                   transactionHashes: [transactionHash],
@@ -741,7 +847,7 @@ export default function Compose({
       setSendState({
         kind: "proving",
         message: submissionStepLabel(steps[sendStepIndex], sendStepIndex, steps.length),
-        startedAt,
+        startedAt: Date.now(),
         step: sendStepIndex + 1,
         totalSteps: steps.length,
         transactionHashes,
@@ -752,7 +858,7 @@ export default function Compose({
           setSendState({
             kind: "proving" as const,
             message: `${submissionStepLabel(steps[sendStepIndex], sendStepIndex, steps.length)} · submitted, waiting for confirmation`,
-            startedAt,
+            startedAt: Date.now(),
             step: sendStepIndex + 1,
             totalSteps: steps.length,
             transactionHashes: [...transactionHashes, transactionHash],
@@ -888,6 +994,7 @@ export default function Compose({
       </div>
 
       <form className={styles.form} onSubmit={handleSubmit}>
+        <fieldset className={styles.composeFieldset} disabled={sendPending}>
         <label className={styles.field}>
           <span>
             To
@@ -1106,25 +1213,61 @@ export default function Compose({
           );
         })}
 
+        <section
+          className={`${styles.composePreflight} ${
+            preflight && !preflight.fits ? styles.composePreflightError : ""
+          }`}
+          aria-labelledby="compose-preflight-title"
+        >
+          <h3 id="compose-preflight-title">Review before wallet approval</h3>
+          {preflight ? (
+            <>
+              <p>
+                <strong>
+                  {preflight.walletPrompts} wallet approval
+                  {preflight.walletPrompts === 1 ? "" : "s"} · {preflight.transactions}{" "}
+                  transaction{preflight.transactions === 1 ? "" : "s"}
+                </strong>
+              </p>
+              <ul>
+                {preflight.valueMoves.length ? (
+                  preflight.valueMoves.map((movement) => (
+                    <li key={movement}>{movement}</li>
+                  ))
+                ) : (
+                  <li>No requested asset transfer; only the message transaction and its fee.</li>
+                )}
+                {preflight.noValueAttachments.map((attachment) => (
+                  <li key={attachment}>{attachment}</li>
+                ))}
+                <li>
+                  Wallet/network fees are additional and must be reviewed in Ready.
+                </li>
+              </ul>
+              <p className={styles.ciphertextBudget}>
+                <strong>
+                  {preflight.ciphertextFelts} / {preflight.maxCiphertextFelts} ciphertext felts
+                </strong>
+                {" · "}{preflight.plaintextBytes} encoded bytes · current document
+                fits at most {preflight.maxRecipientsForCurrentDocument} recipient
+                {preflight.maxRecipientsForCurrentDocument === 1 ? "" : "s"}.
+              </p>
+            </>
+          ) : (
+            <p>
+              Complete valid recipient and attachment fields to calculate the
+              exact wallet count, value movement, and 140-felt budget.
+            </p>
+          )}
+          {preflightIssue ? <p className={styles.preflightIssue}>{preflightIssue}</p> : null}
+        </section>
         {disabledReason ? <p className={styles.notice}>{disabledReason}</p> : null}
-        {hasEscrow ? (
-          <p className={styles.multiStepNotice}>
-            <strong>2 TRANSACTIONS</strong>
-            Step 1 funds escrow. Step 2 sends this entire document and any
-            private payment. Each step has a stable replay guard; a retry never
-            funds or sends twice.
-          </p>
-        ) : null}
         <button
           className={styles.primaryButton}
           type="submit"
           disabled={sendDisabled}
         >
-          {sendPending
-            ? "Preparing sealed delivery…"
-            : hasEscrow
-              ? "Fund escrow & send document"
-              : "Send document"}
+          {sendButtonLabel}
         </button>
         <button
           className={styles.deleteDraftButton}
@@ -1141,6 +1284,7 @@ export default function Compose({
         >
           Delete draft…
         </button>
+        </fieldset>
       </form>
 
       {sendState.step && sendState.totalSteps ? (

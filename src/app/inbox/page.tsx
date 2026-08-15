@@ -417,6 +417,7 @@ export default function InboxPage() {
     maxPages: MAIL_SCAN_MAX_PAGES,
   });
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [messageActivation, setMessageActivation] = useState(0);
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
@@ -451,6 +452,8 @@ export default function InboxPage() {
   const scanIdentityRef = useRef(scanIdentity);
   const recentLoadedRef = useRef(false);
   const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
+  const readingPaneRef = useRef<HTMLElement | null>(null);
+  const activatedMessageIdRef = useRef<string | null>(null);
   scanIdentityRef.current = scanIdentity;
 
   function cancelActiveScanWorker() {
@@ -507,6 +510,7 @@ export default function InboxPage() {
     setScanMessage("");
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setSelectedMessageId(null);
+    activatedMessageIdRef.current = null;
     setReadMessageIds(new Set());
     setComposerOpen(false);
     setMobileDetailOpen(false);
@@ -638,13 +642,6 @@ export default function InboxPage() {
     }
     const firstMessage = visibleMessages[0];
     setSelectedMessageId(firstMessage?.id ?? null);
-    if (firstMessage) {
-      setReadMessageIds((current) => {
-        const next = new Set(current);
-        next.add(firstMessage.id);
-        return next;
-      });
-    }
   }, [
     drafts,
     mailFolder,
@@ -653,6 +650,28 @@ export default function InboxPage() {
     selectedDraftId,
     selectedMessageId,
   ]);
+
+  useEffect(() => {
+    const messageId = selectedMessageId;
+    if (
+      !messageId ||
+      composerOpen ||
+      activatedMessageIdRef.current !== messageId
+    ) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => {
+      const pane = readingPaneRef.current;
+      if (!pane || pane.getClientRects().length === 0) return;
+      setReadMessageIds((current) => {
+        if (current.has(messageId)) return current;
+        const next = new Set(current);
+        next.add(messageId);
+        return next;
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [composerOpen, messageActivation, mobileDetailOpen, selectedMessageId]);
 
   function setActionState(key: string, state: ThreadActionState) {
     setActionStates((current) => ({ ...current, [key]: state }));
@@ -1234,6 +1253,7 @@ export default function InboxPage() {
       setActionState(actionKey, {
         pending: true,
         message: "Preparing one private STRK transfer and accept memo…",
+        startedAt: Date.now(),
       });
 
       const recipientKey = await lookupMailKey(
@@ -1269,6 +1289,7 @@ export default function InboxPage() {
             setActionState(actionKey, {
               pending: true,
               message: `STRK transfer submitted (${transactionHash}); confirmation pending before any receipt is posted.`,
+              startedAt: Date.now(),
             });
           },
         },
@@ -1440,6 +1461,7 @@ export default function InboxPage() {
       setActionState(actionKey, {
         pending: true,
         message: "Preparing one private STRK payment and payment memo…",
+        startedAt: Date.now(),
       });
       const transfer = {
         token: payableRequest.token,
@@ -1484,6 +1506,7 @@ export default function InboxPage() {
             setActionState(actionKey, {
               pending: true,
               message: `Private STRK payment submitted (${transactionHash}); confirmation pending.`,
+              startedAt: Date.now(),
             });
           },
         },
@@ -1600,7 +1623,7 @@ export default function InboxPage() {
               pending: true,
               message:
                 "Fill submitted. The contract releases leg A only after observing leg B…",
-              startedAt,
+              startedAt: Date.now(),
             });
           },
         },
@@ -1760,7 +1783,7 @@ export default function InboxPage() {
               pending: true,
               message:
                 "Destination-bound payout submitted; waiting for localnet confirmation…",
-              startedAt,
+              startedAt: Date.now(),
             });
           },
         },
@@ -1980,12 +2003,9 @@ export default function InboxPage() {
   }
 
   function selectMessage(messageId: string) {
+    activatedMessageIdRef.current = messageId;
     setSelectedMessageId(messageId);
-    setReadMessageIds((current) => {
-      const next = new Set(current);
-      next.add(messageId);
-      return next;
-    });
+    setMessageActivation((current) => current + 1);
     setComposerOpen(false);
     setMobileDetailOpen(true);
   }
@@ -2231,7 +2251,11 @@ export default function InboxPage() {
           />
         )}
 
-        <main className={styles.readingPane} aria-label="Reading pane">
+        <main
+          ref={readingPaneRef}
+          className={styles.readingPane}
+          aria-label="Reading pane"
+        >
           <header className={styles.readingToolbar}>
             <button className={styles.backToList} type="button" onClick={closeDetail}>
               ← Messages

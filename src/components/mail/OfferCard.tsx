@@ -97,8 +97,12 @@ export default function OfferCard({
       <p className={styles.riskCopy}>
         <strong>{giveAmount} STRK moves now, privately.</strong> The{" "}
         <bdi>{wantToken.symbol}</bdi> leg is NOT settled by Quietline — you are
-        trusting the counterparty.
-        Not an atomic swap.
+        trusting the counterparty. Not an atomic swap.
+      </p>
+      <p className={styles.actionWarning}>
+        Accepting requires 2 wallet approvals and 2 transactions: first the
+        STRK transfer plus accept memo, then a separate receipt. If receipt
+        posting fails, STRK has already moved; retry only “Post receipt.”
       </p>
       <p className={styles.sheetMeta}>
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…

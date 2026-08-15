@@ -366,10 +366,21 @@
 }
 
 .form {
+  margin-top: 20px;
+}
+
+.composeFieldset {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 16px;
-  margin-top: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.composeFieldset:disabled {
+  opacity: 0.72;
 }
 
 .composeToggle,
@@ -2136,6 +2147,20 @@
   transition: width 160ms linear;
 }
 
+.progressTrack span {
+  width: 35%;
+  animation: indeterminate-progress 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes indeterminate-progress {
+  from {
+    transform: translateX(-15%);
+  }
+  to {
+    transform: translateX(200%);
+  }
+}
+
 .envelopeProgress {
   height: 12px;
 }
@@ -2476,6 +2501,50 @@
   color: var(--ribbon);
 }
 
+.composePreflight {
+  padding: 14px;
+  border: 1px solid var(--proof-teal);
+  background: var(--public-quiet);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composePreflight h3 {
+  margin-bottom: 8px;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 18px;
+}
+
+.composePreflight ul {
+  margin: 8px 0 0 20px;
+}
+
+.composePreflight li + li {
+  margin-top: 5px;
+}
+
+.ciphertextBudget {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.preflightIssue {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.composePreflightError {
+  border-color: var(--ribbon);
+  background: var(--deal-quiet);
+}
+
+.composePreflightError .preflightIssue {
+  color: var(--ribbon);
+  font-weight: 700;
+}
+
 .multiStepNotice,
 .stepProgress,
 .submissionTransactions {
@@ -2622,5 +2691,12 @@
   .progressTrack span,
   .envelopeProgress span {
     transition: none;
+  }
+
+  .progressTrack span {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+    transform: none;
   }
 }

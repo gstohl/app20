@@ -170,6 +170,7 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
     await expect(walletRegion.getByText("10 STRK", { exact: true })).toBeVisible();
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
     await expect(page.getByText("Shield 10 STRK", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Indeterminate: elapsed time is not completion percentage/)).toBeVisible();
     await screenshot(page, "04-alice-shield-progress", testInfo);
     await expect(page.getByText("Shield confirmed", { exact: true })).toBeVisible({
       timeout: 180_000,
@@ -217,9 +218,13 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
       .getByLabel("Invoice memo (optional)")
       .fill("Invoice from composite document");
     await page.getByLabel(/Expiry in hours \(0 = none\)/).last().fill("24");
+    await expect(page.getByRole("heading", { name: "Review before wallet approval" })).toBeVisible();
+    await expect(page.getByText(/1 wallet approval · 1 transaction/)).toBeVisible();
+    await expect(page.getByText(/0\.1 STRK \(100000000000000000 base units\) privately to/)).toBeVisible();
+    await expect(page.getByText(/\/ 140 ciphertext felts/)).toBeVisible();
     await screenshot(page, "06-composite-document", testInfo);
 
-    await page.getByRole("button", { name: "Send document" }).click();
+    await page.getByRole("button", { name: "Send 0.1 STRK privately + message" }).click();
     await expect(page.getByText("Step 1 of 1", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("status").filter({ hasText: /sending document/i }),
@@ -232,6 +237,7 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
     await expect(threadBody(page, compositeBody)).toBeVisible();
     await expect(page.getByText("Transaction hash", { exact: true })).toBeVisible();
     await expect(page.getByText("1 recipient · confirmed", { exact: false })).toBeVisible();
+    await expect(messageRow(page, compositeBody)).toContainText("POSTED ON-CHAIN");
     await screenshot(page, "08-composite-in-sent", testInfo);
   });
 
@@ -240,8 +246,10 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
     await loadExistingKey(page);
     await scanRecent(page);
     await expect(messageRow(page, compositeBody)).toBeVisible({ timeout: 60_000 });
+    await expect(messageRow(page, compositeBody)).toContainText("UNREAD");
     await messageRow(page, compositeBody).click();
     await expect(threadBody(page, compositeBody)).toBeVisible();
+    await expect(messageRow(page, compositeBody)).toContainText("OPENED");
     await expect(page.getByText("PRIVATE PAYMENT MEMO", { exact: true })).toBeVisible();
     await expect(page.getByText("OTC OFFER / ONE-SIDED V1", { exact: true })).toBeVisible();
     await expect(
@@ -386,7 +394,9 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
     await page.getByLabel("Note (optional)").fill("Localnet full lifecycle");
     await page.getByLabel("Fill deadline in hours").fill("24");
     await screenshot(page, "17-escrow-compose", testInfo);
-    await page.getByRole("button", { name: "Fund escrow & send document" }).click();
+    await expect(page.getByText(/2 wallet approvals · 2 transactions/)).toBeVisible();
+    await expect(page.getByText(/0\.3 STRK \(300000000000000000 base units\) deposited into escrow/)).toBeVisible();
+    await page.getByRole("button", { name: "Approve 1 value move in 2 transactions" }).click();
     await expect(page.getByText("Step 1 of 2", { exact: true })).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: /funding escrow/i })).toBeVisible();
     await screenshot(page, "18-escrow-fund-progress", testInfo);
@@ -445,7 +455,7 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
         "Write a private message, or leave blank when sending attachments only",
       ),
     ).toHaveValue(draftBody);
-    await page.getByRole("button", { name: "Send document" }).click();
+    await page.getByRole("button", { name: "Send message (no asset transfer)" }).click();
     await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(0, {
       timeout: 180_000,
     });
@@ -465,7 +475,7 @@ test("all Quietline localnet journeys", async ({ page, browser, request }, testI
       .fill(multiBody);
     await expect(page.getByText(/2 \/ 66 recipients\. Recipient count is public/)).toBeVisible();
     await screenshot(page, "24-multi-recipient-compose", testInfo);
-    await page.getByRole("button", { name: "Send document" }).click();
+    await page.getByRole("button", { name: "Send message (no asset transfer)" }).click();
     await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(0, {
       timeout: 180_000,
     });

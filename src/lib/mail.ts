@@ -38,6 +38,51 @@ export const MAX_MULTI_RECIPIENTS = Math.floor(
   (MAX_PACKED_BYTES - MULTI_FIXED_BYTES) / MULTI_RECIPIENT_SLOT_BYTES,
 );
 
+export type EncryptedMailSizeProjection = {
+  plaintextBytes: number;
+  recipientCount: number;
+  ciphertextBytes: number;
+  ciphertextFelts: number;
+  maxCiphertextFelts: number;
+  maxPlaintextBytes: number;
+  fits: boolean;
+};
+
+/** Exact wire-size projection: AES-GCM length and recipient slots are fixed. */
+export function projectEncryptedMailSize(
+  plaintextBytes: number,
+  recipientCount: number,
+): EncryptedMailSizeProjection {
+  if (!Number.isSafeInteger(plaintextBytes) || plaintextBytes < 0) {
+    throw new Error("Plaintext byte length must be a non-negative integer.");
+  }
+  if (
+    !Number.isSafeInteger(recipientCount) ||
+    recipientCount < 1 ||
+    recipientCount > MAX_MULTI_RECIPIENTS
+  ) {
+    throw new Error(
+      `Recipient count must be between 1 and ${MAX_MULTI_RECIPIENTS}.`,
+    );
+  }
+  const fixedBytes =
+    recipientCount === 1
+      ? AES_TAG_BYTES
+      : MULTI_FIXED_BYTES + recipientCount * MULTI_RECIPIENT_SLOT_BYTES;
+  const ciphertextBytes = fixedBytes + plaintextBytes;
+  const ciphertextFelts =
+    1 + Math.ceil(ciphertextBytes / FELT_PAYLOAD_BYTES);
+  return {
+    plaintextBytes,
+    recipientCount,
+    ciphertextBytes,
+    ciphertextFelts,
+    maxCiphertextFelts: MAX_CT_FELTS,
+    maxPlaintextBytes: MAX_PACKED_BYTES - fixedBytes,
+    fits: ciphertextFelts <= MAX_CT_FELTS,
+  };
+}
+
 const EMPTY_BYTES = new Uint8Array();
 const textEncoder = new TextEncoder();
 const MULTI_RECIPIENT_MARKER = textEncoder.encode("QLM");

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { STRK20_WAIT_TIMEOUT_MS } from "@/lib/strk20";
 import styles from "./mail.module.css";
 
 function formatElapsed(totalSeconds: number): string {
@@ -36,23 +35,21 @@ export function ProvingProgress({
   const elapsed = useElapsedSeconds(active, startedAt);
   if (!active) return null;
 
-  const ceilingSeconds = Math.floor(STRK20_WAIT_TIMEOUT_MS / 1_000);
-  const progress = Math.min(100, (elapsed / ceilingSeconds) * 100);
-
   return (
-    <div className={styles.provingProgress} role="status" aria-live="polite">
+    <div className={styles.provingProgress} aria-busy="true">
       <div className={styles.progressHeading}>
-        <span>{label}</span>
-        <span className={styles.progressTime}>
-          {formatElapsed(elapsed)} elapsed · {formatElapsed(ceilingSeconds)} ceiling
+        <span role="status" aria-live="polite">{label}</span>
+        <span className={styles.progressTime} aria-hidden="true">
+          {formatElapsed(elapsed)} elapsed
         </span>
       </div>
       <div className={styles.progressTrack} aria-hidden="true">
-        <span style={{ width: `${Math.max(2, progress)}%` }} />
+        <span />
       </div>
       <p>
-        Ready may take 30 seconds or longer to prepare a private action. The
-        confirmation ceiling begins after a transaction hash is returned.
+        Indeterminate: elapsed time is not completion percentage. Ready may
+        spend 30 seconds or longer proving; after a hash appears, Quietline
+        waits separately for successful execution.
       </p>
     </div>
   );
@@ -81,10 +78,10 @@ export function ScanProgress({
 
   const progress = Math.min(100, (Math.max(0.25, pages) / maxPages) * 100);
   return (
-    <div className={styles.scanProgress} role="status" aria-live="polite">
+    <div className={styles.scanProgress} aria-busy="true">
       <div className={styles.progressHeading}>
-        <span>Checking sealed envelopes</span>
-        <span className={styles.progressTime}>{formatElapsed(elapsed)}</span>
+        <span role="status" aria-live="polite">Checking sealed envelopes</span>
+        <span className={styles.progressTime} aria-hidden="true">{formatElapsed(elapsed)}</span>
       </div>
       <div className={styles.envelopeProgress} aria-hidden="true">
         <span style={{ width: `${progress}%` }}>✉ ✉ ✉</span>

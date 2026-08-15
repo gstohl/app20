@@ -201,11 +201,10 @@ function unsupported(
   };
 }
 
-/** Encodes a v1 envelope as version byte, type byte, then a UTF-8 JSON object. */
-export function encodeEnvelope(
+function serializeEnvelopePayload(
   type: EnvelopeType,
   payload: unknown,
-): Uint8Array {
+): { typeByte: number; payloadBytes: Uint8Array } {
   const typeByte = ENVELOPE_TYPE_BYTES[type];
   if (typeByte === undefined) {
     throw new Error(`Unsupported envelope type: ${String(type)}.`);
@@ -213,15 +212,32 @@ export function encodeEnvelope(
   if (!isJsonObject(payload)) {
     throw new Error("Envelope payload must be a JSON object.");
   }
-
   const normalizedPayload =
     type === "composite" ? parseCompositeWirePayload(payload) : payload;
   if (!normalizedPayload) {
     throw new Error("Composite envelope payload is invalid.");
   }
   assertJsonSafe(normalizedPayload);
-  const json = JSON.stringify(normalizedPayload);
-  const payloadBytes = textEncoder.encode(json);
+  return {
+    typeByte,
+    payloadBytes: textEncoder.encode(JSON.stringify(normalizedPayload)),
+  };
+}
+
+/** Exact typed plaintext size before encryption, including the v1 header. */
+export function envelopeByteLength(
+  type: EnvelopeType,
+  payload: unknown,
+): number {
+  return 2 + serializeEnvelopePayload(type, payload).payloadBytes.length;
+}
+
+/** Encodes a v1 envelope as version byte, type byte, then a UTF-8 JSON object. */
+export function encodeEnvelope(
+  type: EnvelopeType,
+  payload: unknown,
+): Uint8Array {
+  const { typeByte, payloadBytes } = serializeEnvelopePayload(type, payload);
   if (
     type === "composite" &&
     2 + payloadBytes.length > MAX_COMPOSITE_ENVELOPE_BYTES

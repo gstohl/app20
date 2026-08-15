@@ -283,10 +283,11 @@ export default function ConversationList({
       </header>
 
       <div className={styles.railPrivacyNote}>
-        <strong>Device-private index</strong>
+        <strong>Local browser index—not encrypted at rest</strong>
         <span>
-          Plaintext and aliases stay local. Unsigned letters cannot reveal a
-          sender address, so Quietline labels them “Sealed sender.”
+          “Unread/opened” is session-only and changes only after you activate a
+          message while its reading pane is visible. Unsigned letters cannot
+          reveal a sender address, so Quietline labels them “Sealed sender.”
         </span>
       </div>
 
@@ -326,7 +327,7 @@ export default function ConversationList({
                       }
                     >
                       {message.direction === "outgoing"
-                        ? "✓ DELIVERED"
+                        ? "POSTED ON-CHAIN"
                         : unread
                           ? "● UNREAD"
                           : message.envelope.type === "unsupported"

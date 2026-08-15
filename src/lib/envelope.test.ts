@@ -11,6 +11,7 @@ import {
   UNSUPPORTED_MESSAGE,
   decodeEnvelope,
   encodeEnvelope,
+  envelopeByteLength,
   type EnvelopeType,
 } from "./envelope";
 
@@ -74,6 +75,7 @@ describe("mail envelope v1", () => {
     const payload = type === "composite" ? compositePayload() : { value: type };
     const encoded = encodeEnvelope(type, payload);
 
+    expect(envelopeByteLength(type, payload)).toBe(encoded.length);
     expect(encoded[0]).toBe(ENVELOPE_VERSION);
     expect(encoded[1]).toBe(byte);
     expect(decodeEnvelope(encoded)).toMatchObject({
