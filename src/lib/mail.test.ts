@@ -2,19 +2,47 @@ import { describe, expect, it } from "vitest";
 import { encodeEnvelope } from "./envelope";
 import {
   MAX_CT_FELTS,
+  MAX_MULTI_RECIPIENTS,
+  MULTI_RECIPIENT_SLOT_BYTES,
+  MULTI_RECIPIENT_VERSION,
+  MULTI_RECIPIENT_VIEW_TAG,
   decryptMail,
   deriveKeypair,
   deriveKeypairFromSource,
   encryptMail,
+  encryptMailForRecipients,
   packBytesToFelts,
   publicKeyFromFelts,
   publicKeyToFelts,
   scanAndDecrypt,
   unpackFeltsToBytes,
+  type EncryptedMailRecord,
 } from "./mail";
+
+const MULTI_HEADER_BYTES = 5;
+const MULTI_SLOT_TAG_BYTES = 16;
 
 function seed(byte: number): Uint8Array {
   return new Uint8Array(32).fill(byte);
+}
+
+function bytesFromHex(hex: string): Uint8Array {
+  return Uint8Array.from(hex.match(/../g) ?? [], (byte) =>
+    Number.parseInt(byte, 16),
+  );
+}
+
+function mutateCiphertext(
+  record: EncryptedMailRecord,
+  mutate: (bytes: Uint8Array) => void,
+): EncryptedMailRecord {
+  const bytes = unpackFeltsToBytes(record.ciphertextFelts);
+  mutate(bytes);
+  return { ...record, ciphertextFelts: packBytesToFelts(bytes) };
+}
+
+function xorFelt(felt: string): string {
+  return `0x${(BigInt(felt) ^ 1n).toString(16)}`;
 }
 
 function fuzzBytes(length: number, state: { value: number }): Uint8Array {
@@ -91,6 +119,32 @@ describe("encrypted mail", () => {
       type: "text",
       payload: { body: "hello from quietline" },
     });
+  });
+
+  it("decodes a locked legacy single-recipient record", async () => {
+    const privateKey = bytesFromHex(
+      "79814066f2e5266469807eaebd6c4a1ba2f2c452259afc2fd3398424c810008f",
+    );
+    const record: EncryptedMailRecord = {
+      ephemeralPub: [
+        "0xa095fa7b546caeb769c043147c9eb692",
+        "0x9f6391f37ce0ea1516111e00fb461530",
+      ],
+      viewTag: 21,
+      nonce: ["0x10203040506", "0x708090a0b0c"],
+      ciphertextFelts: [
+        "0x34",
+        "0x2aecabeecb6ffe30bfa3f96fd065eaafc55220ad873c65d770bd1ce6bb1784",
+        "0xfd9ee0e1905b2ae4f9c4f76ebbe1d1017ae5539164",
+      ],
+    };
+
+    expect(new TextDecoder().decode(await decryptMail(privateKey, record))).toBe(
+      "legacy fixture: hello from quietline",
+    );
+    await expect(scanAndDecrypt(privateKey, [record])).resolves.toMatchObject([
+      { plaintext: "legacy fixture: hello from quietline" },
+    ]);
   });
 
   it("rejects a wrong key", async () => {
@@ -186,5 +240,214 @@ describe("encrypted mail", () => {
 
     expect(message.plaintext).toBe(body);
     expect(message.plaintextBytes).toHaveLength(body.length);
+  });
+});
+
+describe("multi-recipient encrypted mail", () => {
+  it.each([1, 2, 8])(
+    "roundtrips identical plaintext to %i recipient(s)",
+    async (recipientCount) => {
+      const recipients = Array.from({ length: recipientCount }, (_, index) =>
+        deriveKeypair(seed(60 + index)),
+      );
+      const plaintext = `one record for ${recipientCount} recipient(s)`;
+      const record = await encryptMailForRecipients(
+        recipients.map((recipient) => recipient.publicKey),
+        plaintext,
+      );
+      const wireBytes = unpackFeltsToBytes(record.ciphertextFelts);
+
+      if (recipientCount === 1) {
+        // The one-recipient API remains the exact legacy ciphertext shape.
+        expect(wireBytes).toHaveLength(
+          new TextEncoder().encode(plaintext).length + 16,
+        );
+      } else {
+        expect(record.viewTag).toBe(MULTI_RECIPIENT_VIEW_TAG);
+        expect(wireBytes.slice(0, MULTI_HEADER_BYTES)).toEqual(
+          new Uint8Array([
+            0x51,
+            0x4c,
+            0x4d,
+            MULTI_RECIPIENT_VERSION,
+            recipientCount,
+          ]),
+        );
+      }
+
+      const messages = await Promise.all(
+        recipients.map((recipient) =>
+          scanAndDecrypt(recipient.privateKey, [record]),
+        ),
+      );
+      expect(messages.map(([message]) => message.plaintext)).toEqual(
+        new Array(recipientCount).fill(plaintext),
+      );
+    },
+  );
+
+  it("preserves an authenticated binary body for every recipient", async () => {
+    const recipients = [deriveKeypair(seed(70)), deriveKeypair(seed(71))];
+    const binary = new Uint8Array([0x00, 0xff, 0x80, 0x01, 0x00, 0xfe]);
+    const record = await encryptMailForRecipients(
+      recipients.map((recipient) => recipient.publicKey),
+      binary,
+    );
+
+    for (const recipient of recipients) {
+      await expect(decryptMail(recipient.privateKey, record)).resolves.toEqual(
+        binary,
+      );
+      const [message] = await scanAndDecrypt(recipient.privateKey, [record]);
+      expect(message.plaintextBytes).toEqual(binary);
+      expect(message.envelope.type).toBe("unsupported");
+    }
+  });
+
+  it("yields nothing to a non-recipient", async () => {
+    const recipients = [deriveKeypair(seed(72)), deriveKeypair(seed(73))];
+    const stranger = deriveKeypair(seed(74));
+    const record = await encryptMailForRecipients(
+      recipients.map((recipient) => recipient.publicKey),
+      "not for the stranger",
+    );
+
+    await expect(decryptMail(stranger.privateKey, record)).rejects.toThrow();
+    await expect(scanAndDecrypt(stranger.privateKey, [record])).resolves.toEqual(
+      [],
+    );
+  });
+
+  it("isolates a corrupted recipient slot", async () => {
+    const recipients = Array.from({ length: 3 }, (_, index) =>
+      deriveKeypair(seed(75 + index)),
+    );
+    const record = await encryptMailForRecipients(
+      recipients.map((recipient) => recipient.publicKey),
+      "slot isolation",
+    );
+    const corrupted = mutateCiphertext(record, (bytes) => {
+      bytes[MULTI_HEADER_BYTES + MULTI_SLOT_TAG_BYTES] ^= 1;
+    });
+
+    const results = await Promise.all(
+      recipients.map((recipient) =>
+        scanAndDecrypt(recipient.privateKey, [corrupted]),
+      ),
+    );
+    expect(results.map((messages) => messages.length).sort()).toEqual([0, 1, 1]);
+    expect(
+      results.flat().map((message) => message.plaintext),
+    ).toEqual(["slot isolation", "slot isolation"]);
+  });
+
+  it("rejects a spliced slot without harming other slots", async () => {
+    const recipients = Array.from({ length: 3 }, (_, index) =>
+      deriveKeypair(seed(78 + index)),
+    );
+    const publicKeys = recipients.map((recipient) => recipient.publicKey);
+    const source = await encryptMailForRecipients(publicKeys, "source");
+    const destination = await encryptMailForRecipients(publicKeys, "destination");
+    const sourceBytes = unpackFeltsToBytes(source.ciphertextFelts);
+    const spliced = mutateCiphertext(destination, (bytes) => {
+      const wrappedDekOffset = MULTI_HEADER_BYTES + MULTI_SLOT_TAG_BYTES;
+      bytes.set(
+        sourceBytes.subarray(
+          wrappedDekOffset,
+          MULTI_HEADER_BYTES + MULTI_RECIPIENT_SLOT_BYTES,
+        ),
+        wrappedDekOffset,
+      );
+    });
+
+    const results = await Promise.all(
+      recipients.map((recipient) =>
+        scanAndDecrypt(recipient.privateKey, [spliced]),
+      ),
+    );
+    expect(results.map((messages) => messages.length).sort()).toEqual([0, 1, 1]);
+    expect(
+      results.flat().map((message) => message.plaintext),
+    ).toEqual(["destination", "destination"]);
+  });
+
+  it("rejects authenticated-context and body tampering", async () => {
+    const recipients = Array.from({ length: 3 }, (_, index) =>
+      deriveKeypair(seed(81 + index)),
+    );
+    const record = await encryptMailForRecipients(
+      recipients.map((recipient) => recipient.publicKey),
+      "all context is bound",
+    );
+    const bodyNonceOffset =
+      MULTI_HEADER_BYTES + 3 * MULTI_RECIPIENT_SLOT_BYTES;
+    const variants: EncryptedMailRecord[] = [
+      {
+        ...record,
+        ephemeralPub: [xorFelt(record.ephemeralPub[0]), record.ephemeralPub[1]],
+      },
+      { ...record, nonce: [record.nonce[0], xorFelt(record.nonce[1])] },
+      { ...record, viewTag: MULTI_RECIPIENT_VIEW_TAG - 1 },
+      mutateCiphertext(record, (bytes) => {
+        bytes[3] ^= 1;
+      }),
+      mutateCiphertext(record, (bytes) => {
+        bytes[4] = 2;
+      }),
+      mutateCiphertext(record, (bytes) => {
+        bytes[bodyNonceOffset] ^= 1;
+      }),
+      mutateCiphertext(record, (bytes) => {
+        bytes[bytes.length - 1] ^= 1;
+      }),
+    ];
+
+    for (const variant of variants) {
+      for (const recipient of recipients) {
+        await expect(decryptMail(recipient.privateKey, variant)).rejects.toThrow();
+      }
+    }
+  });
+
+  it("uses fresh record and body nonces for each message", async () => {
+    const recipients = [deriveKeypair(seed(84)), deriveKeypair(seed(85))];
+    const publicKeys = recipients.map((recipient) => recipient.publicKey);
+    const first = await encryptMailForRecipients(publicKeys, "same plaintext");
+    const second = await encryptMailForRecipients(publicKeys, "same plaintext");
+    const bodyNonceOffset =
+      MULTI_HEADER_BYTES + recipients.length * MULTI_RECIPIENT_SLOT_BYTES;
+    const firstBytes = unpackFeltsToBytes(first.ciphertextFelts);
+    const secondBytes = unpackFeltsToBytes(second.ciphertextFelts);
+
+    expect(first.ephemeralPub).not.toEqual(second.ephemeralPub);
+    expect(first.nonce).not.toEqual(second.nonce);
+    expect(firstBytes.slice(bodyNonceOffset, bodyNonceOffset + 12)).not.toEqual(
+      secondBytes.slice(bodyNonceOffset, bodyNonceOffset + 12),
+    );
+    expect(first.ciphertextFelts).not.toEqual(second.ciphertextFelts);
+  });
+
+  it("enforces the 66-recipient limit derived from 140 packed felts", async () => {
+    expect(MAX_MULTI_RECIPIENTS).toBe(66);
+    const recipients = Array.from(
+      { length: MAX_MULTI_RECIPIENTS + 1 },
+      (_, index) => deriveKeypair(seed(100 + index)).publicKey,
+    );
+
+    await expect(
+      encryptMailForRecipients(recipients, new Uint8Array()),
+    ).rejects.toThrow(/at most 66 recipients.*140-felt/i);
+    await expect(
+      encryptMailForRecipients(
+        recipients.slice(0, MAX_MULTI_RECIPIENTS),
+        new Uint8Array(53),
+      ),
+    ).rejects.toThrow(/exceeds the 140-felt/i);
+
+    const boundaryRecord = await encryptMailForRecipients(
+      recipients.slice(0, MAX_MULTI_RECIPIENTS),
+      new Uint8Array(52),
+    );
+    expect(boundaryRecord.ciphertextFelts).toHaveLength(MAX_CT_FELTS);
   });
 });
