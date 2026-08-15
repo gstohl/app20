@@ -77,6 +77,8 @@ export default function EscrowCard({
       <div className={styles.addressProof}>
         <strong>QuietlineEscrow contract</strong>
         <code>{canonicalizeStarknetAddress(fund.escrowAddress)}</code>
+        <strong>Claimed maker address · unauthenticated</strong>
+        <code>{canonicalizeStarknetAddress(fund.maker)}</code>
         <span>Deal {fund.dealId.slice(0, 14)}…</span>
       </div>
 
@@ -92,9 +94,7 @@ export default function EscrowCard({
         payouts expose token amounts publicly. Escrow stays off the mainnet
         scoring path until reviewed.
       </p>
-      <p className={styles.sheetMeta}>
-        {expiryLabel(fund.deadline)} · Claimed maker {fund.maker.slice(0, 12)}…
-      </p>
+      <p className={styles.sheetMeta}>{expiryLabel(fund.deadline)}</p>
       <p className={styles.authWarning}>
         The maker address is an unauthenticated envelope claim and is not stored
         by the contract. The per-deal claim public key and settlement terms are

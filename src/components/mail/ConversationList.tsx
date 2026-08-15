@@ -105,21 +105,17 @@ function envelopeLabel(message: LocalMailMessage): string {
   }
 }
 
-function shortAddress(value: string): string {
-  return value.length <= 18
-    ? value
-    : `${value.slice(0, 10)}…${value.slice(-6)}`;
-}
+export type ConversationCorrespondent = {
+  primary: string;
+  detail?: string;
+  fullAddress?: string;
+};
 
-function displayAddress(address: string, aliases: AliasRecord[]): string {
-  return findAliasByAddress(aliases, address)?.label ?? shortAddress(address);
-}
-
-function correspondent(
+export function conversationCorrespondent(
   message: LocalMailMessage,
   aliases: AliasRecord[],
   selfAddress: string,
-): string {
+): ConversationCorrespondent {
   const payload =
     message.envelope.type === "unsupported" ? null : message.envelope.payload;
   const address = (() => {
@@ -147,15 +143,27 @@ function correspondent(
   })();
 
   if (address && (!selfAddress || !feltEquals(address, selfAddress))) {
-    return displayAddress(address, aliases);
+    const alias = findAliasByAddress(aliases, address)?.label;
+    return {
+      primary: `Claimed address: ${address}`,
+      detail: alias
+        ? `Unauthenticated payload claim · local alias “${alias}”`
+        : "Unauthenticated payload claim · verify out-of-band",
+      fullAddress: address,
+    };
   }
   if (message.envelope.type === "text") {
-    return message.direction === "outgoing"
-      ? "Private recipient"
-      : "Sealed sender";
+    return {
+      primary:
+        message.direction === "outgoing"
+          ? "Private recipient"
+          : "Sealed sender",
+    };
   }
-  if (message.direction === "outgoing") return "Private recipient";
-  return "Sealed counterparty";
+  if (message.direction === "outgoing") {
+    return { primary: "Private recipient" };
+  }
+  return { primary: "Sealed counterparty" };
 }
 
 function messagePreview(message: LocalMailMessage): string {
@@ -295,6 +303,11 @@ export default function ConversationList({
         <ol className={styles.conversationList}>
           {messages.map((message) => {
             const selected = selectedMessageId === message.id;
+            const correspondent = conversationCorrespondent(
+              message,
+              aliases,
+              selfAddress,
+            );
             const unread =
               message.direction !== "outgoing" &&
               !readMessageIds.has(message.id);
@@ -309,9 +322,14 @@ export default function ConversationList({
                   onClick={() => onSelect(message.id)}
                 >
                   <span className={styles.conversationTopline}>
-                    <strong>
-                      {correspondent(message, aliases, selfAddress)}
-                    </strong>
+                    <span className={styles.correspondentIdentity}>
+                      <strong title={correspondent.fullAddress}>
+                        <bdi>{correspondent.primary}</bdi>
+                      </strong>
+                      {correspondent.detail ? (
+                        <small>{correspondent.detail}</small>
+                      ) : null}
+                    </span>
                     <time>{messageTime(message)}</time>
                   </span>
                   <span className={styles.conversationPreview}>

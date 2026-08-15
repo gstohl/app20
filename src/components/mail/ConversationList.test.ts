@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../../utils/constants";
 import { decodeEnvelope, encodeEnvelope } from "../../lib/envelope";
 import type { LocalMailMessage } from "./Thread";
-import { mailboxMatchesFilter } from "./ConversationList";
+import {
+  conversationCorrespondent,
+  mailboxMatchesFilter,
+} from "./ConversationList";
 
 const strk = { symbol: "STRK", address: addrSTRK, decimals: 18 };
 const usdc = { symbol: "USDC", address: "0x53c", decimals: 6 };
@@ -66,4 +69,20 @@ describe("foldered composite reachability", () => {
       expect(mailboxMatchesFilter(message, "deals")).toBe(false);
     },
   );
+
+  it("keeps the raw unauthenticated financial address primary when an alias exists", () => {
+    const message = compositeMessage("incoming");
+    const correspondent = conversationCorrespondent(
+      message,
+      [{ address: "0xa11ce", label: "Alice", addedAt: 1 }],
+      "0xb0b",
+    );
+
+    expect(correspondent).toEqual({
+      primary: "Claimed address: 0xa11ce",
+      detail: "Unauthenticated payload claim · local alias “Alice”",
+      fullAddress: "0xa11ce",
+    });
+    expect(correspondent.primary).not.toBe("Alice");
+  });
 });

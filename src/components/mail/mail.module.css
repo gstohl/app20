@@ -1657,12 +1657,26 @@
   gap: 10px;
 }
 
+.correspondentIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .conversationTopline strong {
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.correspondentIdentity small {
+  color: var(--ribbon);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .conversationTopline time {
