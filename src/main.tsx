@@ -5,21 +5,21 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   RouterProvider,
 } from "@tanstack/react-router";
-import LandingPage from "@/app/page";
 import InboxPage from "@/app/inbox/page";
 import PayPage from "@/app/pay/page";
+import { LocalnetToolsContext } from "@/app/localnetToolsContext";
 import "@/app/globals.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
 
 function RootLayout() {
   return (
-    <>
-      {renderLocalnetTools?.()}
+    <LocalnetToolsContext.Provider value={renderLocalnetTools}>
       <Outlet />
-    </>
+    </LocalnetToolsContext.Provider>
   );
 }
 
@@ -27,16 +27,18 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 });
 
-const landingRoute = createRoute({
+const mailboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: LandingPage,
+  component: InboxPage,
 });
 
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
-  component: InboxPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/", replace: true });
+  },
 });
 
 const payRoute = createRoute({
@@ -46,7 +48,7 @@ const payRoute = createRoute({
 });
 
 const router = createRouter({
-  routeTree: rootRoute.addChildren([landingRoute, inboxRoute, payRoute]),
+  routeTree: rootRoute.addChildren([mailboxRoute, inboxRoute, payRoute]),
 });
 
 declare module "@tanstack/react-router" {
