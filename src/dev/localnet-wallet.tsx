@@ -32,7 +32,9 @@ export type LocalnetWalletConfig = {
   rpcUrl: string;
   poolAddress: string;
   helperAddress: string;
+  escrowAddress: string;
   tokenAddress: string;
+  counterTokenAddress: string;
   proofMode: string;
   identities: LocalnetIdentity[];
 };
@@ -403,7 +405,22 @@ export function LocalnetDevTools({
         ))}
         {copied === "error" ? <span>Clipboard denied.</span> : null}
         <span>Pool {shortAddress(wallet.config.poolAddress)}</span>
-        <span>Helper {shortAddress(wallet.config.helperAddress)}</span>
+        <span>Mail {shortAddress(wallet.config.helperAddress)}</span>
+        <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
+        <button
+          type="button"
+          onClick={() => void navigator.clipboard.writeText(wallet.config.counterTokenAddress)}
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "#bae6fd",
+            cursor: "pointer",
+            padding: 0,
+            textDecoration: "underline",
+          }}
+        >
+          Copy escrow leg-B ETH address
+        </button>
       </div>
     </aside>
   );

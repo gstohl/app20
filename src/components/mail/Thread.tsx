@@ -18,6 +18,16 @@ import {
   type OtcState,
   type PaymentRequestPayload,
 } from "@/lib/otc";
+import {
+  contractDealMatchesFund,
+  parseEscrowClaimPayload,
+  parseEscrowFillPayload,
+  parseEscrowFundPayload,
+  parseEscrowTimeoutPayload,
+  type EscrowFundPayload,
+  type EscrowState,
+} from "@/lib/escrow";
+import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
 import ReceiptCard from "./ReceiptCard";
@@ -50,11 +60,15 @@ type ThreadProps = {
   selfAddress: string;
   aliases: AliasRecord[];
   otcState: OtcState;
+  escrowState: EscrowState;
   actionStates: Record<string, ThreadActionState>;
   onAccept: (offer: OfferPayload, offerIndex?: number) => void;
   onDecline: (offer: OfferPayload) => void;
   onPostReceipt: (offer: OfferPayload) => void;
   onPay: (request: PaymentRequestPayload) => void;
+  onEscrowFill: (fund: EscrowFundPayload) => void;
+  onEscrowClaim?: (fund: EscrowFundPayload) => void;
+  onEscrowTimeout?: (fund: EscrowFundPayload) => void;
 };
 
 function safeOfferIndex(index: string): number | undefined {
@@ -250,11 +264,15 @@ export default function Thread({
   selfAddress,
   aliases,
   otcState,
+  escrowState,
   actionStates,
   onAccept,
   onDecline,
   onPostReceipt,
   onPay,
+  onEscrowFill,
+  onEscrowClaim,
+  onEscrowTimeout,
 }: ThreadProps) {
   function renderEnvelope(message: LocalMailMessage) {
     const { envelope } = message;
@@ -372,6 +390,67 @@ export default function Thread({
           receipt={receipt}
           wantSymbol={otcState.deals[receipt.dealId]?.offer.want.token.symbol}
         />
+      );
+    }
+
+    if (envelope.type === "escrow_fund") {
+      const fund = parseEscrowFundPayload(envelope.payload);
+      if (!fund) return <UnsupportedMessage />;
+      const deal = escrowState.deals[fund.dealId];
+      const action = actionStates[`escrow:${fund.dealId}`];
+      const ownDeal = feltEquals(selfAddress, fund.maker);
+      return (
+        <EscrowCard
+          fund={fund}
+          status={deal?.chainStatus}
+          termsVerified={Boolean(
+            deal?.chainDeal &&
+              deal.chainDeal.status !== "empty" &&
+              contractDealMatchesFund(deal.chainDeal, fund),
+          )}
+          ownDeal={ownDeal}
+          busy={action?.pending}
+          actionMessage={action?.message}
+          actionStartedAt={action?.startedAt}
+          onFill={ownDeal ? undefined : () => onEscrowFill(fund)}
+          onClaim={
+            ownDeal && onEscrowClaim ? () => onEscrowClaim(fund) : undefined
+          }
+          onTimeout={
+            ownDeal && onEscrowTimeout ? () => onEscrowTimeout(fund) : undefined
+          }
+        />
+      );
+    }
+
+    if (
+      envelope.type === "escrow_fill" ||
+      envelope.type === "escrow_claim" ||
+      envelope.type === "escrow_timeout"
+    ) {
+      const update =
+        envelope.type === "escrow_fill"
+          ? parseEscrowFillPayload(envelope.payload)
+          : envelope.type === "escrow_claim"
+            ? parseEscrowClaimPayload(envelope.payload)
+            : parseEscrowTimeoutPayload(envelope.payload);
+      if (!update) return <UnsupportedMessage />;
+      const operation = envelope.type.slice("escrow_".length).toUpperCase();
+      return (
+        <article className={styles.messageSheet}>
+          <div className={styles.sheetHeading}>
+            <span className={styles.sheetType}>ESCROW {operation} NOTICE</span>
+            <span className={styles.proofStamp}>Unverified coordination memo</span>
+          </div>
+          <p className={styles.termsSentence}>
+            A counterparty posted an encrypted {operation.toLowerCase()} notice
+            for deal {update.dealId.slice(0, 12)}…
+          </p>
+          <p className={styles.riskCopy}>
+            This message does not prove a state transition. Quietline reads the
+            QuietlineEscrow contract before enabling another asset action.
+          </p>
+        </article>
       );
     }
 

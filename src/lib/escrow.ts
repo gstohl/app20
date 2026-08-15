@@ -20,7 +20,6 @@ export const ESCROW_TIMEOUT_OPERATION = "TIMEOUT";
 const MAIL_SEED_BYTES = 32;
 const CLAIM_KEY_BYTES = 32;
 const DEAL_ID_BYTES = 32;
-const RETRY_COUNTER_BYTES = 4;
 const MAX_TOKEN_DECIMALS = 255;
 const U128_MAX = 2n ** 128n - 1n;
 const U64_MAX = 2n ** 64n - 1n;
@@ -28,6 +27,7 @@ const CLAIM_KEY_SALT = new TextEncoder().encode(ESCROW_CLAIM_KEY_LABEL);
 
 /** Stark-curve scalar order, distinct from the Starknet felt field modulus. */
 export const STARK_CURVE_SCALAR_ORDER = ec.starkCurve.CURVE.n;
+export const STARK_FIELD_PRIME = ec.starkCurve.CURVE.p;
 
 export type EscrowLeg = {
   token: TokenRef;
@@ -131,7 +131,7 @@ function parseFelt(value: unknown, allowZero = true): string | null {
   if (typeof value !== "string") return null;
   try {
     const parsed = BigInt(value);
-    if (parsed < 0n || parsed >= 2n ** 251n || (!allowZero && parsed === 0n)) {
+    if (parsed < 0n || parsed >= STARK_FIELD_PRIME || (!allowZero && parsed === 0n)) {
       return null;
     }
     return num.toHex(parsed);
@@ -397,11 +397,15 @@ export function signEscrowPayout(
   noteId: string,
 ): EscrowSignature {
   const claimKey = deriveEscrowClaimKey(mailSeed, dealId);
-  const signature = ec.starkCurve.sign(
-    computeEscrowClaimMessage(escrowAddress, dealId, operation, noteId),
-    claimKey.privateKey,
-  );
-  return { sigR: num.toHex(signature.r), sigS: num.toHex(signature.s) };
+  try {
+    const signature = ec.starkCurve.sign(
+      computeEscrowClaimMessage(escrowAddress, dealId, operation, noteId),
+      claimKey.privateKey,
+    );
+    return { sigR: num.toHex(signature.r), sigS: num.toHex(signature.s) };
+  } finally {
+    claimKey.privateKey.fill(0);
+  }
 }
 
 const CONTRACT_STATUSES: EscrowContractStatus[] = [
@@ -500,9 +504,21 @@ export function recordEscrowFund(
   const state = loadEscrowState(storage, chainId, selfAddress);
   const existing = state.deals[fund.dealId];
   if (existing) {
+    const prior = existing.fund;
     if (
-      !feltEquals(existing.fund.escrowAddress, fund.escrowAddress) ||
-      existing.fund.claimPubkey !== fund.claimPubkey
+      !feltEquals(prior.escrowAddress, fund.escrowAddress) ||
+      !feltEquals(prior.maker, fund.maker) ||
+      !feltEquals(prior.legA.token.address, fund.legA.token.address) ||
+      prior.legA.token.symbol !== fund.legA.token.symbol ||
+      prior.legA.token.decimals !== fund.legA.token.decimals ||
+      prior.legA.amount !== fund.legA.amount ||
+      !feltEquals(prior.legB.token.address, fund.legB.token.address) ||
+      prior.legB.token.symbol !== fund.legB.token.symbol ||
+      prior.legB.token.decimals !== fund.legB.token.decimals ||
+      prior.legB.amount !== fund.legB.amount ||
+      prior.deadline !== fund.deadline ||
+      prior.claimPubkey !== fund.claimPubkey ||
+      prior.note !== fund.note
     ) {
       throw new Error("Cannot replace an existing escrow deal announcement.");
     }
@@ -554,6 +570,7 @@ export function recordEscrowUpdateClaim(
 function assertOperationAllowed(
   record: EscrowDealRecord,
   operation: EscrowOperation,
+  at: number,
 ): void {
   if (record.operations[operation]) {
     throw new Error(
@@ -570,11 +587,17 @@ function assertOperationAllowed(
   if (operation === "fill" && status !== "funded") {
     throw new Error("Only a chain-verified funded escrow can be filled.");
   }
+  if (operation === "fill" && at >= record.fund.deadline) {
+    throw new Error("This escrow fill deadline has passed.");
+  }
   if (operation === "claim" && status !== "filled") {
     throw new Error("Only a chain-verified filled escrow can be claimed.");
   }
   if (operation === "timeout" && status !== "funded") {
     throw new Error("Only an unfilled funded escrow can time out.");
+  }
+  if (operation === "timeout" && at < record.fund.deadline) {
+    throw new Error("This escrow deal has not reached its timeout deadline.");
   }
 }
 
@@ -591,7 +614,7 @@ export function claimEscrowOperation(
   const state = loadEscrowState(storage, chainId, selfAddress);
   const current = parsedDealId ? state.deals[parsedDealId] : undefined;
   if (!current) throw new Error("The referenced escrow deal is not stored locally.");
-  assertOperationAllowed(current, operation);
+  assertOperationAllowed(current, operation, at);
   const next: EscrowDealRecord = {
     ...current,
     operations: {

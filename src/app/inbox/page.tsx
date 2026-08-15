@@ -1,5 +1,6 @@
 "use client";
 
+import type { WALLET_API } from "@starknet-io/types-js";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
@@ -16,7 +17,33 @@ import Thread, {
   type ThreadActionState,
 } from "@/components/mail/Thread";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
+import { feltEquals } from "@/lib/addresses";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
+import {
+  claimEscrowOperation,
+  confirmEscrowOperation,
+  deriveEscrowClaimKey,
+  emptyEscrowState,
+  loadEscrowState,
+  markEscrowOperationSubmitted,
+  parseEscrowClaimPayload,
+  parseEscrowContractDeal,
+  parseEscrowFillPayload,
+  parseEscrowFundPayload,
+  parseEscrowTimeoutPayload,
+  recordEscrowChainDeal,
+  recordEscrowFund,
+  recordEscrowUpdateClaim,
+  releaseEscrowOperation,
+  type EscrowFundPayload,
+  type EscrowState,
+} from "@/lib/escrow";
+import {
+  ESCROW_OPERATION_VARIANT,
+  OPEN_NOTE_ID_PLACEHOLDER,
+  POOL_ADDRESS_PLACEHOLDER,
+  buildEscrowFillActions,
+} from "@/lib/escrow-actions";
 import type {
   DecryptedMail,
   EncryptedMailRecord,
@@ -66,6 +93,7 @@ import {
 } from "@/lib/otc";
 import {
   strk20ErrorMessage,
+  submitActions,
   submitMail,
   submitMemoTransfer,
   submitOtcAccept,
@@ -84,6 +112,22 @@ type ActiveScanWorker = {
 
 type ScanKind = "idle" | "scanning" | "ok" | "error";
 
+type LocalnetEscrowSigner = {
+  private_key: string;
+  operation: "claim" | "timeout";
+  open_note_index: number;
+};
+
+type LocalnetDynamicEscrowInvoke = WALLET_API.STRK20_INVOKE_ACTION & {
+  quietline_escrow_signer: LocalnetEscrowSigner;
+};
+
+function secretKeyHex(bytes: Uint8Array): string {
+  return `0x${Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
+}
+
 function helperForNetwork(providerIndex: number): string | null {
   const configured =
     providerIndex === 0
@@ -101,6 +145,36 @@ function helperForNetwork(providerIndex: number): string | null {
   } catch {
     return null;
   }
+}
+
+function escrowForNetwork(providerIndex: number): string | null {
+  const configured =
+    providerIndex === 0
+      ? constants.escrowHelperMainnet
+      : providerIndex === 2
+        ? constants.escrowHelperSepolia
+        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
+            constants.localnetWalletEnabled
+          ? constants.escrowHelperLocalnet
+          : null;
+  if (!isConfiguredMailHelper(configured)) return null;
+  try {
+    return validateAndParseAddress(configured);
+  } catch {
+    return null;
+  }
+}
+
+function loadPersistedMailSeed(
+  storage: Pick<Storage, "getItem">,
+  chainId: string,
+  address: string,
+): Uint8Array | null {
+  const value = storage.getItem(`quietline/mailseed/v1/${chainId}/${address}`);
+  if (!value || !/^[0-9a-f]{64}$/i.test(value)) return null;
+  return Uint8Array.from(
+    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
+  );
 }
 
 function mailKeyFingerprint(keypair: MailKeypair | null): string {
@@ -176,9 +250,13 @@ export default function InboxPage() {
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
   const renderLocalnetTools = useLocalnetTools();
   const [keypair, setKeypair] = useState<MailKeypair | null>(null);
+  const [mailSeed, setMailSeed] = useState<Uint8Array | null>(null);
   const [messages, setMessages] = useState<LocalMailMessage[]>([]);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
+  const [escrowState, setEscrowState] = useState<EscrowState>(
+    emptyEscrowState(),
+  );
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});
@@ -194,6 +272,8 @@ export default function InboxPage() {
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
 
   const helperAddress = helperForNetwork(providerIndex);
+  const escrowAddress = escrowForNetwork(providerIndex);
+  const escrowEnabled = providerIndex !== 0 && escrowAddress !== null;
   const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
   const keyFingerprint = mailKeyFingerprint(keypair);
   const scanIdentity = [
@@ -253,6 +333,7 @@ export default function InboxPage() {
     recentLoadedRef.current = false;
     setScanning(false);
     setKeypair(null);
+    setMailSeed(null);
     setMessages([]);
     setScanMessage("");
     setActionStates({});
@@ -261,9 +342,11 @@ export default function InboxPage() {
       setOtcState(
         expireStoredDeals(window.localStorage, chainId, address),
       );
+      setEscrowState(loadEscrowState(window.localStorage, chainId, address));
     } else {
       setAliases([]);
       setOtcState(emptyOtcState());
+      setEscrowState(emptyEscrowState());
     }
     return () => {
       scanGenerationRef.current += 1;
@@ -278,6 +361,47 @@ export default function InboxPage() {
   function refreshOtcState() {
     if (!address || !chainId) return;
     setOtcState(expireStoredDeals(window.localStorage, chainId, address));
+  }
+
+  function refreshEscrowState() {
+    if (!address || !chainId) return;
+    setEscrowState(loadEscrowState(window.localStorage, chainId, address));
+  }
+
+  async function refreshEscrowChainDeals() {
+    if (!address || !chainId || !escrowAddress) return;
+    const scopeAddress = address;
+    const scopeChainId = chainId;
+    const state = loadEscrowState(
+      window.localStorage,
+      scopeChainId,
+      scopeAddress,
+    );
+    const provider = constants.myFrontendProviders[providerIndex];
+    await Promise.all(
+      Object.values(state.deals).map(async (record) => {
+        if (!feltEquals(record.fund.escrowAddress, escrowAddress)) return;
+        try {
+          const result = await provider.callContract({
+            contractAddress: escrowAddress,
+            entrypoint: "get_deal",
+            calldata: [record.dealId],
+          });
+          recordEscrowChainDeal(
+            window.localStorage,
+            scopeChainId,
+            scopeAddress,
+            record.dealId,
+            parseEscrowContractDeal(result),
+          );
+        } catch {
+          // A failed/mismatched read never upgrades an encrypted claim to proof.
+        }
+      }),
+    );
+    if (address === scopeAddress && chainId === scopeChainId) {
+      refreshEscrowState();
+    }
   }
 
   function requireActionContext() {
@@ -377,12 +501,57 @@ export default function InboxPage() {
               request,
             );
           }
+        } else if (envelope.type === "escrow_fund") {
+          const fund = parseEscrowFundPayload(envelope.payload);
+          if (fund) {
+            recordEscrowFund(
+              window.localStorage,
+              chainId,
+              address,
+              fund,
+            );
+          }
+        } else if (envelope.type === "escrow_fill") {
+          const update = parseEscrowFillPayload(envelope.payload);
+          if (update) {
+            recordEscrowUpdateClaim(
+              window.localStorage,
+              chainId,
+              address,
+              "fill",
+              update,
+            );
+          }
+        } else if (envelope.type === "escrow_claim") {
+          const update = parseEscrowClaimPayload(envelope.payload);
+          if (update) {
+            recordEscrowUpdateClaim(
+              window.localStorage,
+              chainId,
+              address,
+              "claim",
+              update,
+            );
+          }
+        } else if (envelope.type === "escrow_timeout") {
+          const update = parseEscrowTimeoutPayload(envelope.payload);
+          if (update) {
+            recordEscrowUpdateClaim(
+              window.localStorage,
+              chainId,
+              address,
+              "timeout",
+              update,
+            );
+          }
         }
       } catch {
         // A malformed or out-of-order payload cannot poison the local inbox.
       }
     }
     refreshOtcState();
+    refreshEscrowState();
+    void refreshEscrowChainDeals();
   }
 
   function handleKeyReady(nextKeypair: MailKeypair) {
@@ -393,6 +562,11 @@ export default function InboxPage() {
     setMessages([]);
     setScanMessage("");
     setKeypair(nextKeypair);
+    setMailSeed(
+      address && chainId
+        ? loadPersistedMailSeed(window.localStorage, chainId, address)
+        : null,
+    );
   }
 
   async function scanInbox(requested: "newer" | "older" = "newer") {
@@ -613,8 +787,20 @@ export default function InboxPage() {
               request,
             );
           }
+        } else if (message.type === "escrow_fund") {
+          const fund = parseEscrowFundPayload(message.payload);
+          if (fund) {
+            recordEscrowFund(
+              window.localStorage,
+              chainId,
+              address,
+              fund,
+            );
+          }
         }
         refreshOtcState();
+        refreshEscrowState();
+        void refreshEscrowChainDeals();
       } catch {
         // The confirmed ciphertext remains valid even if localStorage is full.
       }
@@ -936,6 +1122,258 @@ export default function InboxPage() {
     }
   }
 
+  async function handleEscrowFill(fund: EscrowFundPayload) {
+    const actionKey = `escrow:${fund.dealId}`;
+    let reserved = false;
+    let walletSubmitted = false;
+    try {
+      const context = requireActionContext();
+      if (!escrowAddress || !escrowEnabled) {
+        throw new Error(
+          networkName === "MAINNET"
+            ? "Escrow stays off the mainnet scoring path until reviewed."
+            : "No reviewed QuietlineEscrow deployment is configured.",
+        );
+      }
+      if (!feltEquals(fund.escrowAddress, escrowAddress)) {
+        throw new Error("This deal names a different escrow deployment.");
+      }
+      if (feltEquals(fund.maker, context.address)) {
+        throw new Error("The maker cannot fill their own escrow deal.");
+      }
+
+      claimEscrowOperation(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        fund.dealId,
+        "fill",
+      );
+      reserved = true;
+      refreshEscrowState();
+      const startedAt = Date.now();
+      setActionState(actionKey, {
+        pending: true,
+        message:
+          "Preparing leg B deposit and the taker's OPEN leg A destination…",
+        startedAt,
+      });
+
+      const result = await submitActions(
+        context.walletAccount,
+        context.provider,
+        buildEscrowFillActions({
+          escrowAddress,
+          recoveryAddress: context.address,
+          dealId: fund.dealId,
+          token: fund.legB.token.address,
+          amount: fund.legB.amount,
+          payoutToken: fund.legA.token.address,
+        }),
+        {
+          onSubmitted: (transactionHash) => {
+            walletSubmitted = true;
+            markEscrowOperationSubmitted(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              fund.dealId,
+              "fill",
+              transactionHash,
+            );
+            refreshEscrowState();
+            setActionState(actionKey, {
+              pending: true,
+              message:
+                "Fill submitted. The contract releases leg A only after observing leg B…",
+              startedAt,
+            });
+          },
+        },
+      );
+      confirmEscrowOperation(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        fund.dealId,
+        "fill",
+        result.transactionHash,
+      );
+      await refreshEscrowChainDeals();
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          "Fill confirmed: leg A was released to the taker; leg B awaits the maker's signed claim.",
+      });
+    } catch (error: unknown) {
+      if (reserved && !walletSubmitted && address && chainId) {
+        releaseEscrowOperation(
+          window.localStorage,
+          chainId,
+          address,
+          fund.dealId,
+          "fill",
+        );
+        refreshEscrowState();
+      }
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    }
+  }
+
+  async function handleLocalnetEscrowPayout(
+    fund: EscrowFundPayload,
+    operation: "claim" | "timeout",
+  ) {
+    const actionKey = `escrow:${fund.dealId}`;
+    let reserved = false;
+    let walletSubmitted = false;
+    let dynamicInvoke: LocalnetDynamicEscrowInvoke | undefined;
+    let claimPrivateKey: Uint8Array | undefined;
+    try {
+      if (
+        providerIndex !== constants.LOCALNET_PROVIDER_INDEX ||
+        !constants.localnetWalletEnabled
+      ) {
+        throw new Error(
+          "Destination-bound escrow payouts are unavailable through this wallet.",
+        );
+      }
+      const context = requireActionContext();
+      if (!escrowAddress || !mailSeed) {
+        throw new Error("Load the localnet mailbox seed and escrow deployment.");
+      }
+      if (!feltEquals(fund.escrowAddress, escrowAddress)) {
+        throw new Error("This deal names a different escrow deployment.");
+      }
+      if (!feltEquals(fund.maker, context.address)) {
+        throw new Error("Only this deal's maker mailbox can derive the claim key.");
+      }
+
+      claimEscrowOperation(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        fund.dealId,
+        operation,
+      );
+      reserved = true;
+      refreshEscrowState();
+      const claimKey = deriveEscrowClaimKey(mailSeed, fund.dealId);
+      claimPrivateKey = claimKey.privateKey;
+      if (!feltEquals(claimKey.claimPubkey, fund.claimPubkey)) {
+        throw new Error(
+          "This restored mailbox seed does not match the deal's on-chain claim key.",
+        );
+      }
+      const payoutToken =
+        operation === "claim"
+          ? fund.legB.token.address
+          : fund.legA.token.address;
+      dynamicInvoke = {
+        type: "invoke",
+        contract: escrowAddress,
+        calldata: [
+          operation === "claim"
+            ? ESCROW_OPERATION_VARIANT.Claim
+            : ESCROW_OPERATION_VARIANT.Timeout,
+          "${quietlineEscrowSigR}",
+          "${quietlineEscrowSigS}",
+          fund.dealId,
+          POOL_ADDRESS_PLACEHOLDER,
+          OPEN_NOTE_ID_PLACEHOLDER,
+        ],
+        quietline_escrow_signer: {
+          private_key: secretKeyHex(claimKey.privateKey),
+          operation,
+          open_note_index: 0,
+        },
+      };
+      const actions = [
+        {
+          type: "transfer" as const,
+          token: payoutToken,
+          amount: "OPEN" as const,
+          recipient: context.address,
+        },
+        dynamicInvoke,
+      ] as WALLET_API.STRK20_ACTION[];
+      const startedAt = Date.now();
+      setActionState(actionKey, {
+        pending: true,
+        message:
+          "Localnet compiler is assembling the payout note before signing it…",
+        startedAt,
+      });
+
+      const result = await submitActions(
+        context.walletAccount,
+        context.provider,
+        actions,
+        {
+          onSubmitted: (transactionHash) => {
+            walletSubmitted = true;
+            markEscrowOperationSubmitted(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              fund.dealId,
+              operation,
+              transactionHash,
+            );
+            refreshEscrowState();
+            setActionState(actionKey, {
+              pending: true,
+              message:
+                "Destination-bound payout submitted; waiting for localnet confirmation…",
+              startedAt,
+            });
+          },
+        },
+      );
+      confirmEscrowOperation(
+        window.localStorage,
+        context.chainId,
+        context.address,
+        fund.dealId,
+        operation,
+        result.transactionHash,
+      );
+      await refreshEscrowChainDeals();
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          operation === "claim"
+            ? "Localnet claim confirmed: the maker received leg B."
+            : "Localnet timeout confirmed: the maker recovered leg A.",
+      });
+    } catch (error: unknown) {
+      if (reserved && !walletSubmitted && address && chainId) {
+        releaseEscrowOperation(
+          window.localStorage,
+          chainId,
+          address,
+          fund.dealId,
+          operation,
+        );
+        refreshEscrowState();
+      }
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    } finally {
+      // The scalar is localnet-only, never persisted, and erased from mutable
+      // buffers immediately after the compiler request completes.
+      claimPrivateKey?.fill(0);
+      if (dynamicInvoke) {
+        dynamicInvoke.quietline_escrow_signer.private_key = "0x0";
+      }
+    }
+  }
+
   return (
     <div className={styles.page}>
       <nav className={styles.nav}>
@@ -977,6 +1415,9 @@ export default function InboxPage() {
           />
           <Compose
             helperAddress={helperAddress}
+            escrowAddress={escrowAddress}
+            escrowEnabled={escrowEnabled}
+            mailSeed={mailSeed}
             keyReady={Boolean(keypair)}
             networkName={networkName}
             onSent={handleSent}
@@ -989,11 +1430,23 @@ export default function InboxPage() {
           selfAddress={address}
           aliases={aliases}
           otcState={otcState}
+          escrowState={escrowState}
           actionStates={actionStates}
           onAccept={(offer, index) => void handleAccept(offer, index)}
           onDecline={(offer) => void handleDecline(offer)}
           onPostReceipt={(offer) => void handlePostReceipt(offer)}
           onPay={(request) => void handlePay(request)}
+          onEscrowFill={(fund) => void handleEscrowFill(fund)}
+          onEscrowClaim={
+            providerIndex === constants.LOCALNET_PROVIDER_INDEX
+              ? (fund) => void handleLocalnetEscrowPayout(fund, "claim")
+              : undefined
+          }
+          onEscrowTimeout={
+            providerIndex === constants.LOCALNET_PROVIDER_INDEX
+              ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
+              : undefined
+          }
         />
       </main>
 

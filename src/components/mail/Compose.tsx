@@ -13,6 +13,18 @@ import {
 } from "@/lib/aliases";
 import { encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
 import {
+  claimEscrowOperation,
+  confirmEscrowOperation,
+  createEscrowDealId,
+  deriveEscrowClaimKey,
+  markEscrowOperationSubmitted,
+  parseEscrowFundPayload,
+  recordEscrowFund,
+  releaseEscrowOperation,
+  type EscrowFundPayload,
+} from "@/lib/escrow";
+import { buildEscrowFundActions } from "@/lib/escrow-actions";
+import {
   encryptMailForRecipients,
   MAX_MULTI_RECIPIENTS,
   publicKeyFromFelts,
@@ -28,6 +40,7 @@ import {
 } from "@/lib/otc";
 import {
   strk20ErrorMessage,
+  submitActions,
   submitMail,
   submitMemoTransfer,
 } from "@/lib/strk20";
@@ -45,6 +58,9 @@ export type SentEnvelope = {
 
 type ComposeProps = {
   helperAddress: string | null;
+  escrowAddress: string | null;
+  escrowEnabled: boolean;
+  mailSeed: Uint8Array | null;
   keyReady: boolean;
   networkName: string;
   onSent: (message: SentEnvelope) => void;
@@ -58,7 +74,7 @@ type SendState = {
   startedAt?: number;
 };
 
-type ComposeMode = "letter" | "deal" | "invoice";
+type ComposeMode = "letter" | "deal" | "escrow" | "invoice";
 
 function expiryFromHours(value: string): number {
   const trimmed = value.trim();
@@ -79,6 +95,9 @@ function splitRecipientEntries(value: string): string[] {
 
 export default function Compose({
   helperAddress,
+  escrowAddress,
+  escrowEnabled,
+  mailSeed,
   keyReady,
   networkName,
   onSent,
@@ -86,12 +105,16 @@ export default function Compose({
 }: ComposeProps) {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const senderAddress = useStoreWallet((state) => state.address);
+  const chainId = useStoreWallet((state) => state.chain);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
   const [mode, setMode] = useState<ComposeMode>("letter");
+  const [escrowDraftDealId, setEscrowDraftDealId] = useState(() =>
+    createEscrowDealId(),
+  );
   const [recipient, setRecipient] = useState("");
   const [body, setBody] = useState("");
   const [attachPayment, setAttachPayment] = useState(false);
@@ -132,6 +155,16 @@ export default function Compose({
     disabledReason = "This wallet does not declare STRK20 Wallet API 0.10 support.";
   } else if (!keyReady) {
     disabledReason = "Load this device's mail key before sending.";
+  } else if (
+    mode === "escrow" &&
+    (!escrowEnabled || !escrowAddress)
+  ) {
+    disabledReason =
+      networkName === "MAINNET"
+        ? "Escrow stays off the mainnet scoring path until reviewed."
+        : `No reviewed QuietlineEscrow deployment is configured on ${networkName}.`;
+  } else if (mode === "escrow" && (!mailSeed || !chainId)) {
+    disabledReason = "Reload the mailbox seed before funding escrow.";
   }
 
   const sendPending = ["lookup", "encrypting", "proving"].includes(
@@ -200,32 +233,65 @@ export default function Compose({
     }
 
     const expiresAt = expiryFromHours(expiryHours);
-    if (mode === "deal") {
+    if (mode === "deal" || mode === "escrow") {
       const decimals = Number(wantDecimals);
       if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
         throw new Error("Quoted token decimals must be an integer from 0 to 255.");
       }
+      const legA = {
+        token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+        amount: parseDecimalToBaseUnits(giveStrk, 18),
+      };
+      const legB = {
+        token: {
+          symbol: wantSymbol.trim(),
+          address: validateAndParseAddress(wantAddress.trim()),
+          decimals,
+        },
+        amount: parseDecimalToBaseUnits(wantAmount, decimals),
+      };
+      if (!legB.token.symbol) {
+        throw new Error("Want-token symbol is required.");
+      }
+
+      if (mode === "escrow") {
+        if (!escrowAddress || !escrowEnabled || !mailSeed) {
+          throw new Error(
+            disabledReason || "QuietlineEscrow is unavailable on this network.",
+          );
+        }
+        if (expiresAt === 0) {
+          throw new Error("Escrow requires a future fill deadline.");
+        }
+        const claimKey = deriveEscrowClaimKey(mailSeed, escrowDraftDealId);
+        const claimPubkey = claimKey.claimPubkey;
+        claimKey.privateKey.fill(0);
+        const payload = parseEscrowFundPayload({
+          dealId: escrowDraftDealId,
+          escrowAddress,
+          maker: validateAndParseAddress(senderAddress),
+          legA,
+          legB,
+          deadline: expiresAt,
+          claimPubkey,
+          ...(dealNote.trim() ? { note: dealNote.trim() } : {}),
+        });
+        if (!payload) {
+          throw new Error(
+            "Escrow legs require different tokens and valid u128 amounts.",
+          );
+        }
+        return { type: "escrow_fund", payload };
+      }
+
       const payload: OfferPayload = {
         dealId: createDealId(),
-        give: {
-          token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
-          amount: parseDecimalToBaseUnits(giveStrk, 18),
-        },
-        want: {
-          token: {
-            symbol: wantSymbol.trim(),
-            address: validateAndParseAddress(wantAddress.trim()),
-            decimals,
-          },
-          amount: parseDecimalToBaseUnits(wantAmount, decimals),
-        },
+        give: legA,
+        want: legB,
         offerer: validateAndParseAddress(senderAddress),
         expiresAt,
         ...(dealNote.trim() ? { note: dealNote.trim() } : {}),
       };
-      if (!payload.want.token.symbol) {
-        throw new Error("Want-token symbol is required.");
-      }
       return { type: "offer", payload };
     }
 
@@ -258,11 +324,14 @@ export default function Compose({
       return;
     }
 
+    let escrowReservation:
+      | { dealId: string; submitted: boolean }
+      | undefined;
     try {
       const recipientAddresses = resolvedRecipients();
       if (mode !== "letter" && recipientAddresses.length !== 1) {
         throw new Error(
-          "Deals and invoices are bilateral in v1. Address exactly one counterparty.",
+          "Deals, escrow, and invoices are bilateral. Address exactly one counterparty.",
         );
       }
       if (attachPayment && recipientAddresses.length !== 1) {
@@ -278,6 +347,27 @@ export default function Compose({
       }
       const message = buildPayload();
       const provider = myFrontendProviders[providerIndex];
+
+      if (message.type === "escrow_fund") {
+        if (!chainId) throw new Error("Connect the escrow mailbox account first.");
+        const fund = message.payload as EscrowFundPayload;
+        const stored = recordEscrowFund(
+          window.localStorage,
+          chainId,
+          senderAddress,
+          fund,
+        );
+        if (!stored.operations.fund) {
+          claimEscrowOperation(
+            window.localStorage,
+            chainId,
+            senderAddress,
+            fund.dealId,
+            "fund",
+          );
+          escrowReservation = { dealId: fund.dealId, submitted: false };
+        }
+      }
 
       setSendState({
         kind: "lookup",
@@ -322,58 +412,130 @@ export default function Compose({
       });
 
       const options = {
-        onSubmitted: (hash: string) => {
+        onSubmitted: (transactionHash: string) => {
           setSendState({
             kind: "proving" as const,
             message: "Private action submitted. Waiting for confirmation…",
-            transactionHash: hash,
+            transactionHash,
             startedAt,
           });
         },
       };
-      const { transactionHash } =
-        paymentAmount === undefined
-          ? await submitMail(
-              {
-                account: walletAccount,
-                provider,
-                helperAddress,
-                recoveryAddress: senderAddress,
-                tokenAddress: addrSTRK,
-                record,
+      let transactionHash: string;
+      if (message.type === "escrow_fund") {
+        if (!escrowAddress) throw new Error("QuietlineEscrow is unavailable.");
+        const fund = message.payload as EscrowFundPayload;
+        if (escrowReservation) {
+          const fundResult = await submitActions(
+            walletAccount,
+            provider,
+            buildEscrowFundActions({
+              escrowAddress,
+              dealId: fund.dealId,
+              token: fund.legA.token.address,
+              amount: fund.legA.amount,
+              counterToken: fund.legB.token.address,
+              counterAmount: fund.legB.amount,
+              deadline: fund.deadline,
+              claimPubkey: fund.claimPubkey,
+            }),
+            {
+              onSubmitted: (fundTransactionHash) => {
+                if (!chainId) return;
+                escrowReservation!.submitted = true;
+                markEscrowFundSubmitted(
+                  chainId,
+                  senderAddress,
+                  fund.dealId,
+                  fundTransactionHash,
+                );
+                setSendState({
+                  kind: "proving",
+                  message: "Leg A funding submitted; waiting for confirmation…",
+                  transactionHash: fundTransactionHash,
+                  startedAt,
+                });
               },
-              options,
-            )
-          : await submitMemoTransfer(
-              {
-                account: walletAccount,
-                provider,
-                helperAddress,
-                recoveryAddress: senderAddress,
-                tokenAddress: addrSTRK,
-                recipient: recipientAddresses[0],
-                amount: paymentAmount,
-                record,
-              },
-              options,
-            );
+            },
+          );
+          if (!chainId) throw new Error("Escrow mailbox scope disappeared.");
+          confirmEscrowOperation(
+            window.localStorage,
+            chainId,
+            senderAddress,
+            fund.dealId,
+            "fund",
+            fundResult.transactionHash,
+          );
+        }
+        setSendState({
+          kind: "proving",
+          message:
+            "Leg A is funded. Posting the encrypted escrow terms in a separate pool action…",
+          startedAt,
+        });
+        ({ transactionHash } = await submitMail(
+          {
+            account: walletAccount,
+            provider,
+            helperAddress,
+            recoveryAddress: senderAddress,
+            tokenAddress: addrSTRK,
+            record,
+          },
+          options,
+        ));
+      } else if (paymentAmount === undefined) {
+        ({ transactionHash } = await submitMail(
+          {
+            account: walletAccount,
+            provider,
+            helperAddress,
+            recoveryAddress: senderAddress,
+            tokenAddress: addrSTRK,
+            record,
+          },
+          options,
+        ));
+      } else {
+        ({ transactionHash } = await submitMemoTransfer(
+          {
+            account: walletAccount,
+            provider,
+            helperAddress,
+            recoveryAddress: senderAddress,
+            tokenAddress: addrSTRK,
+            recipient: recipientAddresses[0],
+            amount: paymentAmount,
+            record,
+          },
+          options,
+        ));
+      }
 
       setSendState({
         kind: "ok",
         message:
-          message.type === "offer"
-            ? "Encrypted deal confirmed. No asset moved."
-            : message.type === "payment_request"
-              ? "Encrypted invoice confirmed. No asset moved."
-              : paymentAmount === undefined
-                ? `Encrypted letter confirmed for ${recipientAddresses.length} recipient${
-                    recipientAddresses.length === 1 ? "" : "s"
-                  }.`
-                : "Encrypted letter and private STRK payment confirmed in one action.",
+          message.type === "escrow_fund"
+            ? "Leg A is held by QuietlineEscrow and the encrypted terms are confirmed."
+            : message.type === "offer"
+              ? "Encrypted deal confirmed. No asset moved."
+              : message.type === "payment_request"
+                ? "Encrypted invoice confirmed. No asset moved."
+                : paymentAmount === undefined
+                  ? `Encrypted letter confirmed for ${recipientAddresses.length} recipient${
+                      recipientAddresses.length === 1 ? "" : "s"
+                    }.`
+                  : "Encrypted letter and private STRK payment confirmed in one action.",
         transactionHash,
       });
       if (message.type === "text") setBody("");
-      if (message.type === "offer") setDealNote("");
+      if (message.type === "offer" || message.type === "escrow_fund") {
+        setDealNote("");
+      }
+      if (message.type === "escrow_fund") {
+        setEscrowDraftDealId(createEscrowDealId());
+      }
       if (message.type === "payment_request") setRequestMemo("");
       if (paymentAmount !== undefined) setAttachmentAmount("");
       onSent({
@@ -383,8 +545,46 @@ export default function Compose({
         recipientCount: recipientAddresses.length,
       });
     } catch (error: unknown) {
-      setSendState({ kind: "error", message: strk20ErrorMessage(error) });
+      if (
+        escrowReservation &&
+        !escrowReservation.submitted &&
+        chainId &&
+        senderAddress
+      ) {
+        releaseEscrowOperation(
+          window.localStorage,
+          chainId,
+          senderAddress,
+          escrowReservation.dealId,
+          "fund",
+        );
+      }
+      const message = strk20ErrorMessage(error);
+      setSendState({
+        kind: "error",
+        message: escrowReservation?.submitted
+          ? `${message} Leg A was already submitted and Quietline will not fund it again; retry the unchanged terms to post the encrypted notice.`
+          : message,
+      });
     }
+  }
+
+  function markEscrowFundSubmitted(
+    scopeChainId: string,
+    scopeAddress: string,
+    dealId: string,
+    transactionHash: string,
+  ) {
+    // Kept as a small local wrapper so the callback cannot accidentally reserve
+    // a different operation than the Fund batch it just emitted.
+    markEscrowOperationSubmitted(
+      window.localStorage,
+      scopeChainId,
+      scopeAddress,
+      dealId,
+      "fund",
+      transactionHash,
+    );
   }
 
   return (
@@ -404,12 +604,13 @@ export default function Compose({
           onChange={(event) => setMode(event.target.value as ComposeMode)}
         >
           <option value="letter">Letter</option>
-          <option value="deal">Deal</option>
+          <option value="deal">Deal · one-sided v1</option>
+          <option value="escrow">Escrow deal · contract-backed</option>
           <option value="invoice">Invoice</option>
         </select>
         <small>
-          One composer, three typed envelopes. Deals and invoices remain
-          one-sided v1 documents, not escrow contracts.
+          One-sided v1 deals trust the quoted counterparty. Escrow makes both
+          legs contract-backed, but it is not a single-transaction atomic swap.
         </small>
       </label>
 
@@ -447,7 +648,7 @@ export default function Compose({
           <small>
             {recipientEntries.length || 0} / {MAX_MULTI_RECIPIENTS} recipients.
             Count is public; identities are not in MessagePosted. Group delivery
-            is available for letters; deals and invoices are bilateral.
+            is available for letters; deals, escrow, and invoices are bilateral.
           </small>
         </label>
 
@@ -530,14 +731,15 @@ export default function Compose({
               ) : null}
             </div>
           </>
-        ) : mode === "deal" ? (
+        ) : mode === "deal" || mode === "escrow" ? (
           <div className={styles.dealFields}>
             <p className={styles.termsPreview}>
-              Offer to buy one STRK amount from this counterparty for one quoted
-              token amount.
+              {mode === "escrow"
+                ? "Deposit leg A into QuietlineEscrow and ask the counterparty to deposit leg B before receiving it."
+                : "Offer to buy one STRK amount from this counterparty for one quoted token amount."}
             </p>
             <label className={styles.field}>
-              <span>STRK to buy</span>
+              <span>{mode === "escrow" ? "Leg A STRK to deposit" : "STRK to buy"}</span>
               <input
                 value={giveStrk}
                 onChange={(event) => setGiveStrk(event.target.value)}
@@ -624,7 +826,11 @@ export default function Compose({
         {mode === "letter" ? null : (
           <>
             <label className={styles.field}>
-              <span>Expiry in hours (0 = none)</span>
+              <span>
+                {mode === "escrow"
+                  ? "Fill deadline in hours"
+                  : "Expiry in hours (0 = none)"}
+              </span>
               <input
                 value={expiryHours}
                 onChange={(event) => setExpiryHours(event.target.value)}
@@ -634,9 +840,24 @@ export default function Compose({
               />
             </label>
             <p className={styles.dealDisclosure}>
-              Sending terms moves no asset. An accept or pay action can move
-              only STRK, one way; any quoted non-STRK leg remains a promise.
-              No escrow or atomic settlement is claimed.
+              {mode === "escrow" ? (
+                <>
+                  Funding withdraws leg A into the contract, so escrow token
+                  amounts and contract activity are public. Funding and the
+                  encrypted notice are two sequential wallet actions because a
+                  pool transaction has one external-invoke phase. The taker
+                  cannot receive leg A without depositing leg B; the maker claims
+                  leg B afterward with a signature. This is not a
+                  single-transaction atomic swap. Escrow stays off the mainnet
+                  scoring path until reviewed.
+                </>
+              ) : (
+                <>
+                  Sending terms moves no asset. An accept or pay action can move
+                  only STRK, one way; any quoted non-STRK leg remains a promise.
+                  No escrow or atomic settlement is claimed.
+                </>
+              )}
             </p>
           </>
         )}
@@ -655,7 +876,9 @@ export default function Compose({
                 : "Encrypt & send letter"
               : mode === "deal"
                 ? "Encrypt & send deal"
-                : "Encrypt & send invoice"}
+                : mode === "escrow"
+                  ? "Fund leg A & send escrow terms"
+                  : "Encrypt & send invoice"}
         </button>
       </form>
 

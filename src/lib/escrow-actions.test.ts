@@ -31,7 +31,7 @@ describe("QuietlineEscrow STRK20 action batches", () => {
       }),
     ).toEqual([
       {
-        type: "transfer",
+        type: "withdraw",
         token: tokenA,
         amount: "0x1f4",
         recipient: escrowAddress,
@@ -66,7 +66,7 @@ describe("QuietlineEscrow STRK20 action batches", () => {
 
     expect(actions).toEqual([
       {
-        type: "transfer",
+        type: "withdraw",
         token: tokenB,
         amount: "0x2bc",
         recipient: escrowAddress,

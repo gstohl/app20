@@ -341,6 +341,47 @@ async function deployHelper(env, starknet) {
   };
 }
 
+async function deployEscrow(env, starknet) {
+  const artifactRoot = join(ROOT, "cairo", "target", "dev");
+  const sierra = starknet.json.parse(
+    readFileSync(
+      join(artifactRoot, "quietline_mail_QuietlineEscrow.contract_class.json"),
+      "utf8",
+    ),
+  );
+  const casm = starknet.json.parse(
+    readFileSync(
+      join(
+        artifactRoot,
+        "quietline_mail_QuietlineEscrow.compiled_contract_class.json",
+      ),
+      "utf8",
+    ),
+  );
+  const declaration = await env.admin.declare({ contract: sierra, casm });
+  await waitForSuccess(
+    env.node,
+    declaration.transaction_hash,
+    "QuietlineEscrow declaration",
+  );
+  const deployment = await env.admin.deployContract({
+    classHash: declaration.class_hash,
+    constructorCalldata: [env.privacy.address],
+  });
+  await waitForSuccess(
+    env.node,
+    deployment.transaction_hash,
+    "QuietlineEscrow deployment",
+  );
+  const address = deployment.contract_address ?? deployment.address;
+  if (!address) fail("QuietlineEscrow deployment returned no address.");
+  return {
+    address,
+    declareTransactionHash: declaration.transaction_hash,
+    deployTransactionHash: deployment.transaction_hash,
+  };
+}
+
 function makePrivacyRuntime(
   account,
   passphrase,
@@ -412,6 +453,154 @@ function toCoreCallAndProof(prepared) {
   };
 }
 
+const OPEN_NOTE_PLACEHOLDER = /^\$\{openNoteIds\[(\d+)\]\}$/;
+const LOCAL_ESCROW_SIG_R = "${quietlineEscrowSigR}";
+const LOCAL_ESCROW_SIG_S = "${quietlineEscrowSigS}";
+const ESCROW_CLAIM_TAG = "QUIETLINE_ESCROW_CLAIM_V1";
+
+function resolveLocalPlaceholder(item, args, starknet) {
+  const openNote = OPEN_NOTE_PLACEHOLDER.exec(String(item));
+  if (openNote) {
+    const note = args.openNotes[Number(openNote[1])];
+    if (!note) fail(`${item} references an unavailable OPEN note.`);
+    return starknet.num.toHex(note.noteId);
+  }
+  if (item === "${poolAddress}") {
+    return starknet.num.toHex(args.poolAddress);
+  }
+  return starknet.num.toHex(starknet.num.toBigInt(item));
+}
+
+function localEscrowSignature(action, args, starknet, escrowAddress) {
+  const signer = action.quietline_escrow_signer;
+  if (!signer || typeof signer !== "object") return null;
+  if (starknet.num.toBigInt(action.contract) !== starknet.num.toBigInt(escrowAddress)) {
+    fail("dynamic escrow signing is restricted to the deployed local contract.");
+  }
+  if (!/^0x[0-9a-f]{1,64}$/i.test(String(signer.private_key))) {
+    fail("dynamic escrow signing received an invalid ephemeral claim key.");
+  }
+  const variant = starknet.num.toBigInt(action.calldata[0]);
+  const operation =
+    variant === 2n ? "CLAIM" : variant === 3n ? "TIMEOUT" : null;
+  if (!operation || signer.operation !== operation.toLowerCase()) {
+    fail("dynamic escrow signing received an invalid payout operation.");
+  }
+  const noteIndex = Number(signer.open_note_index);
+  const note = args.openNotes[noteIndex];
+  if (!Number.isSafeInteger(noteIndex) || noteIndex < 0 || !note) {
+    fail("dynamic escrow signing could not resolve its payout note.");
+  }
+  const dealId = resolveLocalPlaceholder(action.calldata[3], args, starknet);
+  const noteId = starknet.num.toHex(note.noteId);
+  const message = starknet.hash.computePoseidonHashOnElements([
+    starknet.shortString.encodeShortString(ESCROW_CLAIM_TAG),
+    action.contract,
+    dealId,
+    starknet.shortString.encodeShortString(operation),
+    noteId,
+  ]);
+  const signature = starknet.ec.starkCurve.sign(message, signer.private_key);
+  return {
+    noteIndex,
+    noteId,
+    sigR: starknet.num.toHex(signature.r),
+    sigS: starknet.num.toHex(signature.s),
+  };
+}
+
+/**
+ * Localnet-only compiler seam. Production Wallet API cannot sign over an OPEN
+ * note because it does not expose args.openNotes. The vendored compiler does,
+ * so this callback derives the destination-bound signature after assembly.
+ */
+async function proveLocalEscrowActions(
+  identity,
+  actions,
+  escrowAddress,
+  { sdk, starknet },
+) {
+  if (!actions.some((action) => action.quietline_escrow_signer)) {
+    return identity.prover.prove(actions);
+  }
+  const builder = identity.prover.transfers.build({
+    autoRegister: true,
+    autoSetup: true,
+    autoSelectNotes: "naive",
+    autoDiscover: { channels: "refresh", notes: "refresh" },
+    registry: sdk.createEmptyRegistry(),
+  });
+
+  for (const action of actions) {
+    switch (action.type) {
+      case "deposit":
+        builder.with(action.token).deposit({
+          amount: starknet.num.toBigInt(action.amount),
+        });
+        break;
+      case "withdraw":
+        builder.with(action.token).withdraw({
+          recipient: action.recipient,
+          amount: starknet.num.toBigInt(action.amount),
+        });
+        break;
+      case "transfer":
+        builder.with(action.token).transfer({
+          recipient: action.recipient,
+          amount:
+            action.amount === "OPEN"
+              ? sdk.Open
+              : starknet.num.toBigInt(action.amount),
+        });
+        break;
+      case "invoke":
+        builder.invoke((args) => {
+          const signature = localEscrowSignature(
+            action,
+            args,
+            starknet,
+            escrowAddress,
+          );
+          return {
+            contractAddress: action.contract,
+            calldata: action.calldata.map((item) => {
+              if (item === LOCAL_ESCROW_SIG_R) {
+                if (!signature) fail("missing dynamic escrow signature r.");
+                return signature.sigR;
+              }
+              if (item === LOCAL_ESCROW_SIG_S) {
+                if (!signature) fail("missing dynamic escrow signature s.");
+                return signature.sigS;
+              }
+              if (signature && item === `\${openNoteIds[${signature.noteIndex}]}`) {
+                return signature.noteId;
+              }
+              return resolveLocalPlaceholder(item, args, starknet);
+            }),
+          };
+        });
+        break;
+      default:
+        fail(`unsupported local escrow action: ${String(action.type)}.`);
+    }
+  }
+
+  const result = await builder.execute();
+  const callAndProof = result.callAndProof;
+  return {
+    call: {
+      contract_address: String(callAndProof.call.contractAddress),
+      entry_point: callAndProof.call.entrypoint,
+      calldata: callAndProof.call.calldata ?? [],
+    },
+    proof: {
+      data: callAndProof.proof.data,
+      output: callAndProof.proof.output,
+      proof_facts: callAndProof.proof.proofFacts,
+    },
+  };
+}
+
 function normalizeIdentity(value, identities) {
   if (value !== "alice" && value !== "bob") {
     fail("wallet request identity must be alice or bob.");
@@ -459,6 +648,24 @@ function assertCalls(value) {
   });
 }
 
+async function createDevnetBlocks(rpcUrl, count = 10) {
+  for (let index = 0; index < count; index += 1) {
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: index + 1,
+        method: "devnet_createBlock",
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok || payload.error) {
+      fail("devnet could not mature the seeded escrow notes.");
+    }
+  }
+}
+
 async function approveDeposits(identity, actions, env, starknet) {
   const totals = new Map();
   for (const action of actions) {
@@ -481,6 +688,28 @@ async function approveDeposits(identity, actions, env, starknet) {
       `${identity.label} pool approval`,
     );
   }
+}
+
+async function seedEscrowPrivateBalances(identities, env, starknet) {
+  // Local demo only: start Alice with leg-A STRK and Bob with leg-B ETH so the
+  // browser can exercise Fund -> Fill -> Claim without adding a generic
+  // multi-token faucet to production UI. Both deposits remain public on devnet.
+  const amount = 10n * 10n ** 18n;
+  for (const [identity, token] of [
+    [identities.alice, env.strk],
+    [identities.bob, env.eth],
+  ]) {
+    const actions = [
+      { type: "deposit", token, amount: starknet.num.toHex(amount) },
+    ];
+    await approveDeposits(identity, actions, env, starknet);
+    const prepared = await identity.prover.prove(actions);
+    const receipt = await devnet.executeOutside(toCoreCallAndProof(prepared));
+    if (!receipt.isSuccess()) {
+      fail(`${identity.label} escrow demo balance seed reverted.`);
+    }
+  }
+  await createDevnetBlocks(devnet.url);
 }
 
 async function fundHelperRecovery(
@@ -558,7 +787,15 @@ async function readRequestBody(request) {
   }
 }
 
-function startApi({ config, identities, env, helperAddress, starknet }) {
+function startApi({
+  config,
+  identities,
+  env,
+  helperAddress,
+  escrowAddress,
+  runtime,
+  starknet,
+}) {
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", BACKEND_TARGET);
@@ -570,6 +807,7 @@ function startApi({ config, identities, env, helperAddress, starknet }) {
             appUrl: APP_URL,
             poolAddress: env.privacy.address,
             helperAddress,
+            escrowAddress,
             operations: operationLog,
           },
         });
@@ -620,7 +858,12 @@ function startApi({ config, identities, env, helperAddress, starknet }) {
               env,
               starknet,
             );
-            const prepared = await identity.prover.prove(actions);
+            const prepared = await proveLocalEscrowActions(
+              identity,
+              actions,
+              escrowAddress,
+              runtime,
+            );
             if (
               prepared.proof.data !== undefined &&
               prepared.proof.data !== ""
@@ -677,13 +920,19 @@ function startApi({ config, identities, env, helperAddress, starknet }) {
   });
 }
 
-function writeGeneratedEnv({ rpcTarget, helperAddress, poolAddress }) {
+function writeGeneratedEnv({
+  rpcTarget,
+  helperAddress,
+  escrowAddress,
+  poolAddress,
+}) {
   const contents = [
     "# Generated by npm run dev:localnet. Do not edit or commit.",
     "VITE_E2E_WALLET=true",
     `VITE_LOCALNET_WALLET_URL=${WALLET_PROXY_PATH}`,
     `VITE_LOCALNET_RPC_URL=${RPC_PROXY_PATH}`,
     `VITE_MAIL_HELPER_LOCALNET=${helperAddress}`,
+    `VITE_ESCROW_HELPER_LOCALNET=${escrowAddress}`,
     `VITE_LOCALNET_POOL_ADDRESS=${poolAddress}`,
     `QUIETLINE_LOCALNET_BACKEND_TARGET=${BACKEND_TARGET}`,
     `QUIETLINE_LOCALNET_RPC_TARGET=${rpcTarget}`,
@@ -743,9 +992,10 @@ try {
   const { env } = await runtime.testing.createDevnetTestEnv(devnet);
   const poolClassHash = await env.node.getClassHashAt(env.privacy.address);
 
-  currentStage = "QuietlineMail deployment";
-  console.log("\n==> deploying QuietlineMail against the real pool");
+  currentStage = "Quietline helpers deployment";
+  console.log("\n==> deploying QuietlineMail and QuietlineEscrow against the real pool");
   const helper = await deployHelper(env, runtime.starknet);
+  const escrow = await deployEscrow(env, runtime.starknet);
 
   const identities = {
     alice: {
@@ -764,13 +1014,19 @@ try {
       ...makePrivacyRuntime(env.bob, "quietline-localnet-bob-v1", env, runtime),
     },
   };
+  currentStage = "local escrow balance seed";
+  console.log("\n==> seeding local Alice STRK and Bob ETH private balances");
+  await seedEscrowPrivateBalances(identities, env, runtime.starknet);
+
   const config = {
     walletName: "Localnet (dev)",
     chainId: LOCALNET_CHAIN_ID,
     rpcUrl: RPC_PROXY_PATH,
     poolAddress: env.privacy.address,
     helperAddress: helper.address,
+    escrowAddress: escrow.address,
     tokenAddress: env.strk,
+    counterTokenAddress: env.eth,
     proofMode: "upstream devnet mock proof · no STARK bytes",
     identities: Object.values(identities).map((identity) => ({
       id: identity.id,
@@ -785,11 +1041,14 @@ try {
     identities,
     env,
     helperAddress: helper.address,
+    escrowAddress: escrow.address,
+    runtime,
     starknet: runtime.starknet,
   });
   writeGeneratedEnv({
     rpcTarget: devnet.url,
     helperAddress: helper.address,
+    escrowAddress: escrow.address,
     poolAddress: env.privacy.address,
   });
 
@@ -801,6 +1060,7 @@ try {
     VITE_LOCALNET_WALLET_URL: WALLET_PROXY_PATH,
     VITE_LOCALNET_RPC_URL: RPC_PROXY_PATH,
     VITE_MAIL_HELPER_LOCALNET: helper.address,
+    VITE_ESCROW_HELPER_LOCALNET: escrow.address,
     VITE_LOCALNET_POOL_ADDRESS: env.privacy.address,
     QUIETLINE_LOCALNET_BACKEND_TARGET: BACKEND_TARGET,
     QUIETLINE_LOCALNET_RPC_TARGET: devnet.url,
@@ -846,6 +1106,9 @@ try {
     helperAddress: helper.address,
     helperDeclareTransactionHash: helper.declareTransactionHash,
     helperDeployTransactionHash: helper.deployTransactionHash,
+    escrowAddress: escrow.address,
+    escrowDeclareTransactionHash: escrow.declareTransactionHash,
+    escrowDeployTransactionHash: escrow.deployTransactionHash,
     aliceAddress: identities.alice.account.address,
     bobAddress: identities.bob.account.address,
   };
@@ -860,6 +1123,8 @@ try {
   console.log(`  privacy_Privacy:    ${env.privacy.address}`);
   console.log(`  pool class hash:    ${poolClassHash}`);
   console.log(`  QuietlineMail:      ${helper.address}`);
+  console.log(`  QuietlineEscrow:    ${escrow.address}`);
+  console.log(`  Counter token ETH:  ${env.eth}`);
   console.log(`  Alice:              ${identities.alice.account.address}`);
   console.log(`  Bob:                ${identities.bob.account.address}`);
   console.log(

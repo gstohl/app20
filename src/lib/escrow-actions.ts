@@ -4,7 +4,7 @@ import {
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
 } from "./strk20";
-import type { EscrowSignature } from "./escrow";
+import { STARK_FIELD_PRIME, type EscrowSignature } from "./escrow";
 
 export { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER };
 
@@ -62,6 +62,9 @@ function assertConfiguredEscrow(address: string): void {
 }
 
 function boundedHex(value: FeltInput, max: bigint, label: string): string {
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(`${label} must be a safe integer or integer string.`);
+  }
   if (
     typeof value === "string" &&
     !/^(?:0[xX][0-9a-fA-F]+|0|[1-9]\d*)$/.test(value)
@@ -85,31 +88,38 @@ function positiveU128(value: string | bigint, label: string): string {
 }
 
 function felt(value: FeltInput, label: string, allowZero = false): string {
+  if (typeof value === "number" && !Number.isSafeInteger(value)) {
+    throw new Error(`${label} must be a safe integer or integer string.`);
+  }
   let parsed: bigint;
   try {
     parsed = BigInt(value);
   } catch {
     throw new Error(`${label} must be a felt.`);
   }
-  if (parsed < 0n || parsed >= 2n ** 251n || (!allowZero && parsed === 0n)) {
+  if (
+    parsed < 0n ||
+    parsed >= STARK_FIELD_PRIME ||
+    (!allowZero && parsed === 0n)
+  ) {
     throw new Error(`${label} must be ${allowZero ? "a" : "a non-zero"} felt.`);
   }
   return num.toHex(parsed);
 }
 
-function transfer(
+function withdrawToEscrow(
   token: string,
   amount: string,
   recipient: string,
-): WALLET_API.STRK20_TRANSFER_ACTION {
-  return { type: "transfer", token, amount, recipient };
+): WALLET_API.STRK20_WITHDRAW_ACTION {
+  return { type: "withdraw", token, amount, recipient };
 }
 
 function openNote(
   token: string,
   recipient: string,
 ): WALLET_API.STRK20_TRANSFER_ACTION {
-  return transfer(token, "OPEN", recipient);
+  return { type: "transfer", token, amount: "OPEN", recipient };
 }
 
 function invoke(
@@ -121,8 +131,8 @@ function invoke(
 }
 
 /**
- * Fund flattening: enum tag, FundParams fields, then privacy_invoke's deal,
- * pool-placeholder, and unused note id.
+ * Fund first withdraws leg A from the private pool into the escrow contract,
+ * then flattens enum tag, FundParams, deal, pool placeholder, and unused note.
  */
 export function buildEscrowFundActions({
   escrowAddress,
@@ -137,7 +147,7 @@ export function buildEscrowFundActions({
   assertConfiguredEscrow(escrowAddress);
   const fundingAmount = positiveU128(amount, "Funding amount");
   return [
-    transfer(token, fundingAmount, escrowAddress),
+    withdrawToEscrow(token, fundingAmount, escrowAddress),
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT.Fund,
       token,
@@ -153,8 +163,8 @@ export function buildEscrowFundActions({
 }
 
 /**
- * Fill deposits leg B, creates the taker's OPEN leg-A destination, then invokes
- * the flattened Fill variant. The contract will not release A unless it
+ * Fill withdraws leg B into escrow, creates the taker's OPEN leg-A destination,
+ * then invokes the flattened Fill variant. The contract will not release A unless it
  * observes at least the agreed leg-B amount.
  */
 export function buildEscrowFillActions({
@@ -167,7 +177,11 @@ export function buildEscrowFillActions({
 }: EscrowFillBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
   return [
-    transfer(token, positiveU128(amount, "Fill amount"), escrowAddress),
+    withdrawToEscrow(
+      token,
+      positiveU128(amount, "Fill amount"),
+      escrowAddress,
+    ),
     openNote(payoutToken, recoveryAddress),
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT.Fill,

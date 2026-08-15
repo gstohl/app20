@@ -72,3 +72,13 @@ export const mailHelperMainnet =
 export const mailHelperLocalnet = localnetWalletEnabled
   ? import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0"
   : "0x0";
+
+// QuietlineEscrow remains 0x0 unless a reviewed deployment is configured.
+// It is intentionally excluded from the mainnet scoring path.
+export const escrowHelperSepolia =
+  import.meta.env.VITE_ESCROW_HELPER_SEPOLIA ?? "0x0";
+export const escrowHelperMainnet =
+  import.meta.env.VITE_ESCROW_HELPER_MAINNET ?? "0x0";
+export const escrowHelperLocalnet = localnetWalletEnabled
+  ? import.meta.env.VITE_ESCROW_HELPER_LOCALNET ?? "0x0"
+  : "0x0";

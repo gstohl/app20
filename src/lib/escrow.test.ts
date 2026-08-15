@@ -10,6 +10,7 @@ import {
   contractDealMatchesFund,
   deriveEscrowClaimKey,
   loadEscrowState,
+  markEscrowOperationSubmitted,
   parseEscrowContractDeal,
   parseEscrowFundPayload,
   recordEscrowChainDeal,
@@ -61,6 +62,7 @@ function fundPayload(): EscrowFundPayload {
  * FROZEN V1 VECTORS. Changing IKM/salt/info length or ordering, HKDF length,
  * the 252-bit mask, or rejection rule silently destroys existing claim access.
  * Any such change requires a version bump from quietline/escrow-claim/v1.
+ * These are public test-only seeds/scalars, never a persisted user claim key.
  */
 const CLAIM_KEY_VECTORS = [
   {
@@ -233,15 +235,25 @@ describe("escrow operation idempotency", () => {
       claimEscrowOperation(...scope, dealId, "fund", 102),
     ).toThrow(/no second transfer/i);
     expect(
-      confirmEscrowOperation(...scope, dealId, "fund", "0xabc", 103),
+      markEscrowOperationSubmitted(...scope, dealId, "fund", "0xabc", 103),
+    ).toMatchObject({
+      operations: {
+        fund: { state: "submitted", transactionHash: "0xabc" },
+      },
+    });
+    expect(releaseEscrowOperation(...scope, dealId, "fund", 104)).toMatchObject({
+      operations: { fund: { state: "submitted" } },
+    });
+    expect(() =>
+      claimEscrowOperation(...scope, dealId, "fund", 105),
+    ).toThrow(/no second transfer/i);
+    expect(
+      confirmEscrowOperation(...scope, dealId, "fund", "0xabc", 106),
     ).toMatchObject({
       operations: {
         fund: { state: "confirmed", transactionHash: "0xabc" },
       },
     });
-    expect(() =>
-      claimEscrowOperation(...scope, dealId, "fund", 104),
-    ).toThrow(/no second transfer/i);
   });
 
   it("allows release only before submission and blocks second Fill and Claim", () => {

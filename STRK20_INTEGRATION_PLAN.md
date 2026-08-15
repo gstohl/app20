@@ -334,6 +334,28 @@ private transfer. The card always discloses that raw, unauthenticated address.
 - No viewing keys, spending keys, or Alchemy keys in git.
 - Do not build a hosted inbox that accepts users’ viewing keys.
 
+## 10.1 Finding — destination-bound escrow payouts and Wallet API
+
+QuietlineEscrow deliberately includes the payout `note_id` in Claim and Timeout
+signatures. That binding prevents a calldata observer from copying a valid
+signature and winning the race with a different destination note; replay
+protection alone cannot stop the copied transaction from being the first use.
+The current Wallet API assembles `${openNoteIds[0]}` inside the wallet, but does
+not expose that id before assembly and has no signing placeholder that can sign
+over assembled note ids. Therefore Fund and Fill are wired through Ready today,
+while Claim and Timeout stay visibly disabled on the production Wallet API
+route. Funds remain claimable through a compatible signing path.
+
+The ecosystem seam needed is either (a) a pre-assembly open-note id returned to
+the dapp without exposing note secrets, or (b) a wallet-resolved signing
+callback/placeholder over the assembled note id. Quietline does not weaken the
+contract's destination binding to hide this gap. The gated localnet wallet uses
+the vendored compiler's `args.openNotes` callback to assemble the id and sign in
+one local compiler pass, demonstrating Fund → Fill → Claim without changing the
+production contract or Wallet API claims.
+
+Escrow remains off the mainnet scoring path until reviewed.
+
 ## 11. Open items to re-verify at build time
 
 - Freshness script / WalletAccount guide.

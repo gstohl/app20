@@ -17,7 +17,9 @@ const config: LocalnetWalletConfig = {
   rpcUrl: "/__quietline_localnet_rpc",
   poolAddress: "0x100",
   helperAddress: "0x200",
+  escrowAddress: "0x250",
   tokenAddress: "0x300",
+  counterTokenAddress: "0x400",
   proofMode: "mock proof",
   identities: [
     { id: "alice", label: "Alice", address: "0x111" },
