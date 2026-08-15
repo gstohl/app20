@@ -1,5 +1,12 @@
+import {
+  parseCompositePayload,
+  type CompositePayload,
+} from "./composite";
+
 export const ENVELOPE_VERSION = 1 as const;
 export const UNSUPPORTED_MESSAGE = "unsupported message" as const;
+/** Single-recipient AES-GCM plaintext ceiling implied by 140 packed felts. */
+export const MAX_COMPOSITE_ENVELOPE_BYTES = 4_293;
 
 export type EnvelopeType =
   | "text"
@@ -11,13 +18,20 @@ export type EnvelopeType =
   | "escrow_fund"
   | "escrow_fill"
   | "escrow_claim"
-  | "escrow_timeout";
+  | "escrow_timeout"
+  | "composite";
 
-type MailEnvelopeV1 = {
-  version: 1;
-  type: EnvelopeType;
-  payload: unknown;
-};
+type MailEnvelopeV1 =
+  | {
+      version: 1;
+      type: "composite";
+      payload: CompositePayload;
+    }
+  | {
+      version: 1;
+      type: Exclude<EnvelopeType, "composite">;
+      payload: unknown;
+    };
 
 type UnsupportedMail = {
   version: number;
@@ -51,6 +65,7 @@ export const ENVELOPE_TYPE_BYTES: Readonly<Record<EnvelopeType, number>> = {
   escrow_fill: 0x08,
   escrow_claim: 0x09,
   escrow_timeout: 0x0a,
+  composite: 0x0b,
 };
 
 const TYPES_BY_BYTE = new Map<number, EnvelopeType>(
@@ -153,9 +168,22 @@ export function encodeEnvelope(
     throw new Error("Envelope payload must be a JSON object.");
   }
 
-  assertJsonSafe(payload);
-  const json = JSON.stringify(payload);
+  const normalizedPayload =
+    type === "composite" ? parseCompositePayload(payload) : payload;
+  if (!normalizedPayload) {
+    throw new Error("Composite envelope payload is invalid.");
+  }
+  assertJsonSafe(normalizedPayload);
+  const json = JSON.stringify(normalizedPayload);
   const payloadBytes = textEncoder.encode(json);
+  if (
+    type === "composite" &&
+    2 + payloadBytes.length > MAX_COMPOSITE_ENVELOPE_BYTES
+  ) {
+    throw new Error(
+      "Composite document exceeds the 140-felt ciphertext cap; remove text or attachments.",
+    );
+  }
   const bytes = new Uint8Array(2 + payloadBytes.length);
   bytes[0] = ENVELOPE_VERSION;
   bytes[1] = typeByte;
@@ -193,6 +221,18 @@ export function decodeEnvelope(input: Uint8Array): DecodedMail {
     const payload: unknown = JSON.parse(fatalTextDecoder.decode(bytes.subarray(2)));
     if (!isJsonObject(payload)) {
       return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
+    }
+    if (type === "composite") {
+      const composite = parseCompositePayload(payload);
+      if (!composite) {
+        return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
+      }
+      return {
+        version: ENVELOPE_VERSION,
+        type: "composite",
+        payload: composite,
+        bytes,
+      };
     }
     return { version: ENVELOPE_VERSION, type, payload, bytes };
   } catch {
