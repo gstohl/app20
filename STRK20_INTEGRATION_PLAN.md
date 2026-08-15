@@ -157,15 +157,39 @@ The local e2e deploys the helper, registers a recipient key, encrypts an exact p
 The optional `pool-harness/` tier pins upstream `PRIVACY-0.14.3-RC.5`, builds it
 with a repository-local Scarb 2.17.0, and uses native Starknet Devnet
 0.8.0-rc.3. `npm run test:e2e:pool` deploys the actual `privacy_Privacy`
-contract and exercises Bob registration, Alice's screened 100-unit STRK deposit
-plus 50-unit private transfer, direct contract discovery, and Bob's 50-unit
-withdrawal. It complements rather than replaces the mock-pool mail e2e.
+contract and retains the upstream lifecycle: Bob registration, Alice's screened
+100-unit STRK deposit plus 50-unit private transfer, direct contract discovery,
+and Bob's 50-unit withdrawal.
 
-This hardening tier uses upstream's simulated proof provider and the canonical
-public **test-only** screening key `0xCAFEBABE`. Devnet does not implement
-`starknet_getStorageProof`; a real STARK proof still requires hosted proving
-services and a storage-proof-capable node such as Pathfinder. Ready plus the
-manual Sepolia two-wallet gate therefore remains open.
+A second test now deploys the team-written `QuietlineMail` with that real pool
+as its constructor authority, compiles the production `src/lib/mail.ts` and
+`src/lib/strk20.ts`, and submits `buildMailInvokeActions` through the vendored
+client's proving adapter. Localnet therefore exercises the same
+`${poolAddress}` and `${openNoteIds[0]}` substitution path, including the
+required preceding `transfer(..., amount: "OPEN")`, that the client integration
+would use. It proves all of the following through the genuine pool contract:
+
+- the pool invokes `QuietlineMail` and the helper emits `MessagePosted` from its
+  deployed address;
+- Bob decrypts the exact plaintext while an unrelated key discovers nothing;
+- replaying the same non-zero `action_id` produces an on-chain
+  `ACTION_ID_USED` revert and does not increment `message_count`;
+- two submissions with `action_id = 0` both succeed; and
+- helper dust is approved, pulled by the pool, emitted as
+  `OpenNoteDeposited`, and discovered in Alice's credited recovery open note.
+
+The harness pre-funds 7 STRK base units of helper dust before each successful
+mail. That is intentional: the real pool rejects an OPEN note that its invoke
+does not fund with `UNDEPOSITED_OPEN_NOTES`, so the test exercises the actual
+dust/echo recovery path rather than weakening or mocking that invariant.
+
+This hardening tier still uses upstream's simulated proof provider and the
+canonical public **test-only** screening key `0xCAFEBABE`. Devnet does not
+implement `starknet_getStorageProof`; a real STARK proof requires hosted proving
+services and a storage-proof-capable node such as Pathfinder. The remaining
+Ready gate is now specifically Ready's own action assembly/extension UI and its
+proof + relayer submission path, not whether Quietline's production batch shape
+can execute against the real pool.
 
 ### 6.5 Why there is no programmatic Sepolia test
 
@@ -190,9 +214,15 @@ oversight.
   available, a hybrid harness is viable: shield once through the wallet, then
   prove and submit private transfers and `privacy_invoke` mail locally.
 
-Consequence: Ready plus a human is the only route to a real pool transaction on
-Sepolia or mainnet today, which is why the manual gate in the runbook is the
-validation step rather than a convenience.
+Consequence: localnet now proves Quietline's production action shape,
+placeholder semantics, helper authorization/event/decryption path, recovery
+open-note settlement, and action-ID nullifier against the genuine pool Cairo.
+What remains Ready-only is a real STARK proof against hosted infrastructure,
+Ready's own action assembly and extension UI, Ready/paymaster relayer
+submission, and live Sepolia/mainnet screening (especially the mainnet screener
+key rather than `0xCAFEBABE`). Ready plus a human is still the only route to
+those live-network facts, but it is no longer needed to establish that the
+Quietline batch itself reaches the helper or rejects a duplicate action ID.
 
 ## 7. Phase 3 — discover + decrypt + memo
 

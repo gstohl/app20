@@ -114,7 +114,7 @@ into the browser and must be treated as public. Cairo commands run from the
 | `npm run devnet` | root | Starts the Docker Starknet Devnet used by the local integration test |
 | `npm run test:e2e` | root | Builds and deploys the helper, registers a key, posts mail, scans/decrypts, rejects a wrong key, and exercises dust echo against the mock pool caller |
 | `npm run pool:setup` | root | One-time pinned vendor/toolchain build for the isolated real-pool harness (Node >=24) |
-| `npm run test:e2e:pool` | root | Deploys the real `privacy_Privacy` pool, then runs register → deposit/private transfer → discover → withdraw |
+| `npm run test:e2e:pool` | root | Runs the upstream real-pool lifecycle plus Quietline's production OPEN-note + mail invoke batch, decryption, recovery-note credit, and action-ID replay checks |
 | `scarb build` | `cairo/` | Compiles the Cairo helper and mock ERC-20 |
 | `snforge test` | `cairo/` | Runs helper authorization, ciphertext-cap, caller-isolated directory, event, zero-balance, and dust tests |
 
@@ -133,12 +133,23 @@ It does not run the real STRK20 pool, Ready, SNIP-36 proving, wallet placeholder
 resolution, or private note discovery.
 
 **Real-pool caveat:** `npm run test:e2e:pool` exercises the **real pool + real
-direct contract discovery + upstream's SIMULATED proof**. Devnet cannot serve
-`starknet_getStorageProof`, so real STARK proving needs hosted proving services
-and a storage-proof-capable node such as Pathfinder. Deposit screening uses the
-canonical public test key `0xCAFEBABE`, which is test-only material. This tier
-still does not exercise Ready or close the intentionally configured
-Sepolia/manual validation gap. Neither local tier claims a Sepolia/mainnet send.
+direct contract discovery + upstream's SIMULATED proof**. In addition to the
+upstream lifecycle, it compiles `src/lib/strk20.ts`, deploys `QuietlineMail`
+against that pool, and passes the production OPEN-note + invoke action array
+through the vendored client's `${poolAddress}` / `${openNoteIds[0]}`
+substitution. It proves that the helper emits mail through the pool, Bob
+decrypts while a wrong key cannot, helper dust is pulled into Alice's recovery
+note, the same non-zero action ID reverts with `ACTION_ID_USED`, and zero IDs
+remain repeatable. Each successful mail is deliberately given fresh 7-base-unit
+helper dust so the real pool's `UNDEPOSITED_OPEN_NOTES` invariant is satisfied
+and the recovery path is exercised rather than bypassed.
+
+Devnet cannot serve `starknet_getStorageProof`, so real STARK proving still
+needs hosted proving services and a storage-proof-capable node such as
+Pathfinder. Deposit screening uses the canonical public test key `0xCAFEBABE`,
+which is test-only material. Local substitution through the vendored client
+does not test Ready's own action assembly, extension UI, proof/relayer path, or
+live mainnet screening. Neither local tier claims a Sepolia/mainnet send.
 
 ```bash
 npm run typecheck
