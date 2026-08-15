@@ -21,7 +21,9 @@ import styles from "./mail.module.css";
 
 export type MailboxFilter = "all" | "letters" | "deals" | "invoices" | "escrow";
 
-export function mailboxCategory(message: LocalMailMessage): Exclude<MailboxFilter, "all"> {
+export function mailboxCategory(
+  message: LocalMailMessage,
+): Exclude<MailboxFilter, "all"> {
   switch (message.envelope.type) {
     case "text":
       return "letters";
@@ -65,13 +67,12 @@ function envelopeLabel(message: LocalMailMessage): string {
 }
 
 function shortAddress(value: string): string {
-  return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
+  return value.length <= 18
+    ? value
+    : `${value.slice(0, 10)}…${value.slice(-6)}`;
 }
 
-function displayAddress(
-  address: string,
-  aliases: AliasRecord[],
-): string {
+function displayAddress(address: string, aliases: AliasRecord[]): string {
   return findAliasByAddress(aliases, address)?.label ?? shortAddress(address);
 }
 
@@ -80,7 +81,8 @@ function correspondent(
   aliases: AliasRecord[],
   selfAddress: string,
 ): string {
-  const payload = message.envelope.type === "unsupported" ? null : message.envelope.payload;
+  const payload =
+    message.envelope.type === "unsupported" ? null : message.envelope.payload;
   const address = (() => {
     switch (message.envelope.type) {
       case "offer":
@@ -98,14 +100,17 @@ function correspondent(
     return displayAddress(address, aliases);
   }
   if (message.envelope.type === "text") {
-    return message.direction === "outgoing" ? "Private recipient" : "Sealed sender";
+    return message.direction === "outgoing"
+      ? "Private recipient"
+      : "Sealed sender";
   }
   if (message.direction === "outgoing") return "Private recipient";
   return "Sealed counterparty";
 }
 
 function messagePreview(message: LocalMailMessage): string {
-  const payload = message.envelope.type === "unsupported" ? null : message.envelope.payload;
+  const payload =
+    message.envelope.type === "unsupported" ? null : message.envelope.payload;
   switch (message.envelope.type) {
     case "text": {
       const body = message.plaintext.replace(/\s+/g, " ").trim();
@@ -126,7 +131,9 @@ function messagePreview(message: LocalMailMessage): string {
     case "decline":
       return parseDeclinePayload(payload)?.reason || "Deal declined";
     case "receipt":
-      return parseReceiptPayload(payload) ? "Transfer receipt claim" : "Receipt";
+      return parseReceiptPayload(payload)
+        ? "Transfer receipt claim"
+        : "Receipt";
     case "payment_request": {
       const request = parsePaymentRequestPayload(payload);
       return request
@@ -140,11 +147,17 @@ function messagePreview(message: LocalMailMessage): string {
         : "Escrow deal";
     }
     case "escrow_fill":
-      return parseEscrowFillPayload(payload) ? "Escrow fill notice" : "Escrow update";
+      return parseEscrowFillPayload(payload)
+        ? "Escrow fill notice"
+        : "Escrow update";
     case "escrow_claim":
-      return parseEscrowClaimPayload(payload) ? "Escrow claim notice" : "Escrow update";
+      return parseEscrowClaimPayload(payload)
+        ? "Escrow claim notice"
+        : "Escrow update";
     case "escrow_timeout":
-      return parseEscrowTimeoutPayload(payload) ? "Escrow timeout notice" : "Escrow update";
+      return parseEscrowTimeoutPayload(payload)
+        ? "Escrow timeout notice"
+        : "Escrow update";
     default:
       return "Unsupported decrypted record";
   }
@@ -153,7 +166,9 @@ function messagePreview(message: LocalMailMessage): string {
 function messageTime(message: LocalMailMessage): string {
   const milliseconds =
     message.localCreatedAt ??
-    (message.blockTimestamp === undefined ? undefined : message.blockTimestamp * 1_000);
+    (message.blockTimestamp === undefined
+      ? undefined
+      : message.blockTimestamp * 1_000);
   if (milliseconds === undefined) return "—";
   const date = new Date(milliseconds);
   const today = new Date();
@@ -210,7 +225,9 @@ export default function ConversationList({
         <ol className={styles.conversationList}>
           {messages.map((message) => {
             const selected = selectedMessageId === message.id;
-            const unread = message.direction !== "outgoing" && !readMessageIds.has(message.id);
+            const unread =
+              message.direction !== "outgoing" &&
+              !readMessageIds.has(message.id);
             return (
               <li key={message.id}>
                 <button
@@ -222,16 +239,28 @@ export default function ConversationList({
                   onClick={() => onSelect(message.id)}
                 >
                   <span className={styles.conversationTopline}>
-                    <strong>{correspondent(message, aliases, selfAddress)}</strong>
+                    <strong>
+                      {correspondent(message, aliases, selfAddress)}
+                    </strong>
                     <time>{messageTime(message)}</time>
                   </span>
                   <span className={styles.conversationPreview}>
                     {messagePreview(message)}
                   </span>
                   <span className={styles.conversationMeta}>
-                    <em className={styles.typeBadge}>{envelopeLabel(message)}</em>
-                    <span className={unread ? styles.unreadIndicator : styles.readIndicator}>
-                      {unread ? "● UNREAD" : message.envelope.type === "unsupported" ? "UNSUPPORTED" : "OPENED"}
+                    <em className={styles.typeBadge}>
+                      {envelopeLabel(message)}
+                    </em>
+                    <span
+                      className={
+                        unread ? styles.unreadIndicator : styles.readIndicator
+                      }
+                    >
+                      {unread
+                        ? "● UNREAD"
+                        : message.envelope.type === "unsupported"
+                          ? "UNSUPPORTED"
+                          : "OPENED"}
                     </span>
                   </span>
                 </button>
@@ -241,8 +270,14 @@ export default function ConversationList({
         </ol>
       ) : (
         <div className={styles.railEmptyState}>
-          <span className={styles.emptyEnvelope} aria-hidden="true">✉</span>
-          <strong>No {filterLabel.toLowerCase()}</strong>
+          <span className={styles.emptyEnvelope} aria-hidden="true">
+            ✉
+          </span>
+          <strong>
+            {filterLabel === "All"
+              ? "Nothing here yet"
+              : `No ${filterLabel.toLowerCase()} yet`}
+          </strong>
           <span>
             Check sealed envelopes, choose another mailbox, or compose a new
             document.
