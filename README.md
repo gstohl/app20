@@ -86,9 +86,87 @@ find it. `strk20.json` is intentionally unchanged by the framework migration.
 Phase 1 wallet plumbing is in: connect Ready, detect Wallet API/spec ≥ 0.10,
 and request shield / private transfer / unshield / balance actions. Phase 2 is
 code-complete locally: encrypted-mail primitives, the `QuietlineMail` helper,
-the inbox UI, and a deterministic mock-pool devnet test. No Sepolia or mainnet
-helper is configured by default, so the inbox honestly disables sending until a
+the inbox UI, the deterministic mock-pool test, and a browser-viewable real-pool
+localnet using a dev-only Wallet Standard wallet. No Sepolia or mainnet helper
+is configured by default, so ordinary builds honestly disable sending until a
 network-specific helper address is supplied. This is not a gambling product.
+
+## Local demo (no Ready extension)
+
+Quietline has a dev-only Wallet Standard wallet and a two-person localnet. It
+uses deterministic prefunded Alice/Bob accounts, deploys the **real** pinned
+`privacy_Privacy` pool and a fresh `QuietlineMail`, then serves the normal app
+through `WalletAccountV6`. No browser extension or Alchemy key is needed.
+
+One-time prerequisites are Node >=24, Scarb 2.18.x for `cairo/`, and the pinned
+real-pool toolchain:
+
+```bash
+npm ci
+npm run pool:setup
+```
+
+Start and stop the demo from the repository root (stop may run in a second
+terminal):
+
+```bash
+npm run dev:localnet
+# open http://127.0.0.1:5173
+npm run localnet:stop
+```
+
+Startup checks the pinned vendor build, compiles `QuietlineMail`, boots native
+Devnet, deploys the pool and helper, writes an ignored
+`.env.localnet.local`, starts Vite, and verifies both `/` and `/inbox`. Repeating
+the start command while it is healthy is a no-op. The dark blue development
+bar shows the deployed addresses and has the Alice/Bob identity switcher. For a
+pristine recording, use a private browser window or clear site data first.
+
+### Two-identity walkthrough
+
+1. In the normal **Connect Ready** picker choose **Localnet (dev)**. This wallet
+   is discovered through Wallet Standard; Quietline does not bypass
+   `SelectWallet` or `WalletAccountV6`.
+2. As **Alice**, click **Shield** on the wallet-actions page, open **Inbox**, and
+   click **Load device key & register**. Save the one-time local mail-key backup
+   if this is not a throwaway browser profile.
+3. Use the blue bar to switch to **Bob**. Shield Bob from **Wallet actions**,
+   return to the inbox, and register Bob's mail key. The switch is a live
+   wallet-standard account-change event; reconnecting is not required.
+4. Copy Bob's address from the development bar, switch to Alice, load Alice's
+   existing device key, paste Bob as recipient, write a letter, and click
+   **Encrypt & send letter**.
+5. Switch to Bob, load his existing device key, and click **Scan recent
+   events**. The plaintext appears after browser-local decryption. Expand
+   **What the chain sees** to inspect the public event index, timestamp,
+   ephemeral key, view tag, nonce, and ciphertext; sender and recipient are
+   absent from the event.
+6. For OTC, Alice selects **Deal → Make offer** and sends terms to Bob. Bob
+   scans and clicks **Accept & send … STRK**; one private transfer plus encrypted
+   accept memo is submitted, followed by the explicitly one-sided receipt.
+7. For an invoice, Alice selects **Deal → Request payment**. Bob scans and
+   clicks **Pay … STRK privately**. The warnings remain intentional: quoted
+   non-STRK consideration is not atomic or proven.
+
+The local wallet sends the production action arrays to the vendored client,
+which resolves `${poolAddress}` and `${openNoteIds[0]}`, uses direct contract
+discovery, generates upstream's devnet mock proof facts, and submits by outside
+execution. It also funds the helper with 7 STRK base units per mail so the real
+pool's recovery open-note invariant is exercised. This is the real Cairo pool
+and real app path, but **not a real STARK proof**: Devnet proof bytes are empty,
+the screener key is public test material, and no Ready UI/relayer is involved.
+
+The wallet code is gated by the same build-time pattern as StarkWare's bridge
+E2E wallet. `VITE_E2E_WALLET` defaults to the boolean `false`, allowing Rollup
+to remove the gated dynamic import and its chunk. Verify the production bundle:
+
+```bash
+npm run build
+! grep -R "QUIETLINE_LOCALNET_DEV_WALLET_SENTINEL_7C91E2" dist/
+```
+
+The grep must print nothing and exit 0. Never set `VITE_E2E_WALLET=true` for a
+production deployment.
 
 ## Local development and testing
 
@@ -107,7 +185,9 @@ into the browser and must be treated as public. Cairo commands run from the
 
 | Command | Directory | What it checks |
 | --- | --- | --- |
-| `npm run dev` | root | Starts the Vite development server |
+| `npm run dev` | root | Starts the ordinary Vite development server |
+| `npm run dev:localnet` | root | Deploys the real pool + helper, starts the dev-only two-identity wallet API, and serves Vite |
+| `npm run localnet:stop` | root | Stops the local demo's Vite, wallet API, and native Devnet processes |
 | `npm run build` | root | Type-checks and emits the production SPA to `dist/` |
 | `npm run preview` | root | Serves the production build locally |
 | `npm test` | root | Mail crypto, felt packing, view-tag scanning, and STRK20 mail-action assembly |

@@ -191,6 +191,56 @@ Ready gate is now specifically Ready's own action assembly/extension UI and its
 proof + relayer submission path, not whether Quietline's production batch shape
 can execute against the real pool.
 
+### 6.4.1 Browser-viewable real-pool localnet · complete 2026-08-15
+
+`npm run dev:localnet` turns the harness boundary into a filmable product demo.
+It checks the pinned vendor install, boots native Devnet, deploys the genuine
+`privacy_Privacy` class and `QuietlineMail`, starts a localhost wallet API, and
+serves Vite. The generated `.env.localnet.local` and process state are ignored
+and removed by `npm run localnet:stop`.
+
+The browser wallet is labeled **Localnet (dev)** and registers through Wallet
+Standard, so discovery, `SelectWallet`, `WalletAccountV6.connect`, account
+permissions, chain selection, public key registration, STRK20 capability
+checks, invocation, and balance reads all use the production seams. Its dev bar
+switches one connected session between deterministic prefunded Alice and Bob
+through a standard account-change event. This makes the following click path
+local and extension-free:
+
+- shield Alice and Bob through the real pool;
+- register both app-specific x25519 mail keys with the real helper;
+- encrypt as Alice, submit the production recovery-note + invoke action array,
+  switch to Bob, scan public events, and decrypt locally;
+- inspect the public chain-evidence panel;
+- send and accept a typed OTC offer, including its private STRK transfer and
+  one-sided receipt; and
+- send and pay a STRK invoice.
+
+The backend uses `CorePrivateTransfersProver`, direct contract discovery,
+`ScreeningCallMockProofProvider`, and outside execution. The vendored client
+still performs `${poolAddress}` / `${openNoteIds[0]}` resolution. The local
+adapter supplies the SDK builder's self-surplus recipient for numeric transfer
+change (the same upstream `surplusTo(user)` pattern used by simple private
+transfers), and supplies 7 base units of helper dust for every recovery open
+note. It rejects unresolved placeholders and any mock proof-fact vector that is
+not nine felts before broadcasting.
+
+The local chain has a distinct dapp-facing chain id and is admitted only when
+the build-time `VITE_E2E_WALLET` boolean is true. Production keeps the original
+SN_MAIN/SN_SEPOLIA allowlist. The wallet is a gated dynamic import; a normal
+`npm run build` emits no dev-wallet chunk and a grep for
+`QUIETLINE_LOCALNET_DEV_WALLET_SENTINEL_7C91E2` in `dist/` is empty.
+
+**Demonstrated locally now:** real pool/helper Cairo, production browser action
+assembly, vendored placeholder compilation, real note/channel discovery and
+settlement, helper authorization/events/recovery, two app identities, local
+mail crypto/scanning, and the OTC/invoice UI.
+
+**Still Ready-only:** a real SNIP-36 STARK proof (rather than empty Devnet proof
+bytes), Ready's own approval screens and action assembler, its viewing-key
+custody, proof/relayer/paymaster submission, hosted indexer/prover behavior, and
+live Sepolia/mainnet screening. Localnet does not claim those facts.
+
 ### 6.5 Why there is no programmatic Sepolia test
 
 We investigated running a Node e2e against the real Sepolia pool and concluded
@@ -268,7 +318,7 @@ private transfer. The card always discloses that raw, unauthenticated address.
 
 **Cairo (from `cairo/`):** `scarb build` · `snforge test`.
 
-**Local integration:** `npm run devnet` · `npm run test:e2e` covers the mock-pool scope in §6.3. After the optional one-time `npm run pool:setup`, `npm run test:e2e:pool` covers the §6.4 real-pool/simulated-proof tier. Neither is a real STARK proof.
+**Local integration:** `npm run devnet` · `npm run test:e2e` covers the mock-pool scope in §6.3. After the one-time `npm run pool:setup`, `npm run test:e2e:pool` covers the §6.4 real-pool/simulated-proof tier, while `npm run dev:localnet` / `npm run localnet:stop` serves the two-identity browser path in §6.4.1. None is a real STARK proof.
 
 **Manual — Phase 1:** Ready connect, degrade, Sepolia shield / transfer / unshield.
 
