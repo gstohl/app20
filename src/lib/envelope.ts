@@ -1,8 +1,3 @@
-import {
-  parseCompositePayload,
-  type CompositePayload,
-} from "./composite";
-
 export const ENVELOPE_VERSION = 1 as const;
 export const UNSUPPORTED_MESSAGE = "unsupported message" as const;
 /** Single-recipient AES-GCM plaintext ceiling implied by 140 packed felts. */
@@ -21,11 +16,20 @@ export type EnvelopeType =
   | "escrow_timeout"
   | "composite";
 
+type CompositeWirePayload = {
+  documentId: string;
+  body: string;
+  attachments: Array<{
+    type: "payment" | "offer" | "payment_request" | "escrow_fund";
+    payload: Record<string, unknown>;
+  }>;
+};
+
 type MailEnvelopeV1 =
   | {
       version: 1;
       type: "composite";
-      payload: CompositePayload;
+      payload: CompositeWirePayload;
     }
   | {
       version: 1;
@@ -137,6 +141,48 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function parseCompositeWirePayload(
+  value: unknown,
+): CompositeWirePayload | null {
+  if (
+    !isJsonObject(value) ||
+    typeof value.documentId !== "string" ||
+    !/^0x[0-9a-fA-F]{64}$/.test(value.documentId) ||
+    typeof value.body !== "string" ||
+    value.body.length > 4_096 ||
+    !Array.isArray(value.attachments) ||
+    value.attachments.length > 4
+  ) {
+    return null;
+  }
+  const attachments: CompositeWirePayload["attachments"] = [];
+  const seen = new Set<string>();
+  for (const attachment of value.attachments) {
+    if (
+      !isJsonObject(attachment) ||
+      ![
+        "payment",
+        "offer",
+        "payment_request",
+        "escrow_fund",
+      ].includes(String(attachment.type)) ||
+      seen.has(String(attachment.type)) ||
+      !isJsonObject(attachment.payload)
+    ) {
+      return null;
+    }
+    const type = attachment.type as CompositeWirePayload["attachments"][number]["type"];
+    seen.add(type);
+    attachments.push({ type, payload: attachment.payload });
+  }
+  if (!value.body.trim() && attachments.length === 0) return null;
+  return {
+    documentId: value.documentId,
+    body: value.body,
+    attachments,
+  };
+}
+
 function unsupported(
   bytes: Uint8Array,
   reason: UnsupportedMail["payload"]["reason"],
@@ -169,7 +215,7 @@ export function encodeEnvelope(
   }
 
   const normalizedPayload =
-    type === "composite" ? parseCompositePayload(payload) : payload;
+    type === "composite" ? parseCompositeWirePayload(payload) : payload;
   if (!normalizedPayload) {
     throw new Error("Composite envelope payload is invalid.");
   }
@@ -223,7 +269,7 @@ export function decodeEnvelope(input: Uint8Array): DecodedMail {
       return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
     }
     if (type === "composite") {
-      const composite = parseCompositePayload(payload);
+      const composite = parseCompositeWirePayload(payload);
       if (!composite) {
         return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
       }

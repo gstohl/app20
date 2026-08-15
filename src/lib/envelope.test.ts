@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../utils/constants";
-import type { CompositePayload } from "./composite";
+import {
+  parseCompositePayload,
+  type CompositePayload,
+} from "./composite";
 import {
   ENVELOPE_TYPE_BYTES,
   ENVELOPE_VERSION,
@@ -109,6 +112,13 @@ describe("mail envelope v1", () => {
       }),
     ).toThrow(/140-felt ciphertext cap/i);
     expect(MAX_COMPOSITE_ENVELOPE_BYTES).toBe(4_293);
+    expect(
+      parseCompositePayload({
+        documentId,
+        body: "",
+        attachments: [{ type: "payment", payload: { amount: "not valid" } }],
+      }),
+    ).toBeNull();
   });
 
   it("preserves legacy raw UTF-8 as a synthesized text envelope", () => {
