@@ -7,14 +7,9 @@ import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
 import { MAIL_SEED_STORAGE_PREFIX } from "@/lib/local-mailbox-storage";
-import {
-  decodePaymentLinkFragment,
-} from "@/lib/payment-link";
+import { decodePaymentLinkFragment } from "@/lib/payment-link";
 import { storePendingPayment } from "@/lib/pending-payment";
-import {
-  paymentRequestIsExpired,
-  type PaymentRequestPayload,
-} from "@/lib/otc";
+import { paymentRequestIsExpired, type PaymentRequestPayload } from "@/lib/otc";
 
 export default function PayPage() {
   const navigate = useNavigate();
@@ -45,7 +40,8 @@ export default function PayPage() {
 
     decodeCurrentFragment();
     window.addEventListener("hashchange", decodeCurrentFragment);
-    return () => window.removeEventListener("hashchange", decodeCurrentFragment);
+    return () =>
+      window.removeEventListener("hashchange", decodeCurrentFragment);
   }, []);
 
   useEffect(() => {

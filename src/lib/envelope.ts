@@ -160,18 +160,16 @@ function parseCompositeWirePayload(
   for (const attachment of value.attachments) {
     if (
       !isJsonObject(attachment) ||
-      ![
-        "payment",
-        "offer",
-        "payment_request",
-        "escrow_fund",
-      ].includes(String(attachment.type)) ||
+      !["payment", "offer", "payment_request", "escrow_fund"].includes(
+        String(attachment.type),
+      ) ||
       seen.has(String(attachment.type)) ||
       !isJsonObject(attachment.payload)
     ) {
       return null;
     }
-    const type = attachment.type as CompositeWirePayload["attachments"][number]["type"];
+    const type =
+      attachment.type as CompositeWirePayload["attachments"][number]["type"];
     seen.add(type);
     attachments.push({ type, payload: attachment.payload });
   }
@@ -280,14 +278,21 @@ export function decodeEnvelope(input: Uint8Array): DecodedMail {
   }
 
   try {
-    const payload: unknown = JSON.parse(fatalTextDecoder.decode(bytes.subarray(2)));
+    const payload: unknown = JSON.parse(
+      fatalTextDecoder.decode(bytes.subarray(2)),
+    );
     if (!isJsonObject(payload)) {
       return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
     }
     if (type === "composite") {
       const composite = parseCompositeWirePayload(payload);
       if (!composite) {
-        return unsupported(bytes, "invalid_payload", ENVELOPE_VERSION, typeByte);
+        return unsupported(
+          bytes,
+          "invalid_payload",
+          ENVELOPE_VERSION,
+          typeByte,
+        );
       }
       return {
         version: ENVELOPE_VERSION,

@@ -104,10 +104,20 @@ export default function InvoiceCard({
     }
   }
 
+  const headingId = `invoice-${request.requestId.slice(2)}`;
+
   return (
-    <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
+    <article
+      className={`${styles.messageSheet} ${styles.dealSheet}`}
+      aria-labelledby={headingId}
+    >
       <div className={styles.sheetHeading}>
-        <span className={styles.sheetType}>PAYMENT REQUEST / ONE-SIDED V1</span>
+        <h3 id={headingId} className={styles.sheetType}>
+          <span aria-hidden="true">PAYMENT REQUEST / ONE-SIDED V1</span>
+          <span className={styles.srOnly}>
+            Payment request: {amount} {token.symbol}
+          </span>
+        </h3>
         {unverifiedClaim || (status === "paid" && !paymentVerified) ? (
           <span className={styles.proofStamp}>
             Unverified counterparty claim
@@ -117,9 +127,15 @@ export default function InvoiceCard({
         ) : null}
       </div>
       <p className={styles.termsSentence}>
-        This unsigned message requests <strong>{amount} <bdi>{token.symbol}</bdi></strong>
+        This unsigned message requests{" "}
+        <strong>
+          {amount} <bdi>{token.symbol}</bdi>
+        </strong>
         {memo ? (
-          <> for “<bdi>{memo}</bdi>”.</>
+          <>
+            {" "}
+            for “<bdi>{memo}</bdi>”.
+          </>
         ) : (
           "."
         )}
@@ -139,7 +155,9 @@ export default function InvoiceCard({
         </span>
       </div>
       <p className={styles.riskCopy}>
-        <strong>{amount} <bdi>{token.symbol}</bdi> moves now, privately.</strong>{" "}
+        <strong>
+          {amount} <bdi>{token.symbol}</bdi> moves now, privately.
+        </strong>{" "}
         Anything else quoted is NOT settled by Quietline — you are trusting the
         counterparty. Not an atomic swap.
       </p>
@@ -201,18 +219,26 @@ export default function InvoiceCard({
         </p>
       ) : null}
 
-      {claimedPaymentAddress ? metadataConsistent ? isStrk ? expired ? (
-        <p className={styles.actionWarning}>This payment request has expired.</p>
-      ) : null : (
-        <p className={styles.actionWarning}>
-          Non-STRK requests are display-only. Quietline v1 will not send this
-          token.
-        </p>
-      ) : (
-        <p className={styles.actionWarning}>
-          Quietline refuses this request: its STRK address has inconsistent
-          token metadata.
-        </p>
+      {claimedPaymentAddress ? (
+        metadataConsistent ? (
+          isStrk ? (
+            expired ? (
+              <p className={styles.actionWarning}>
+                This payment request has expired.
+              </p>
+            ) : null
+          ) : (
+            <p className={styles.actionWarning}>
+              Non-STRK requests are display-only. Quietline v1 will not send
+              this token.
+            </p>
+          )
+        ) : (
+          <p className={styles.actionWarning}>
+            Quietline refuses this request: its STRK address has inconsistent
+            token metadata.
+          </p>
+        )
       ) : (
         <p className={styles.actionWarning}>
           Quietline refuses this request: its requester is not a bounded
@@ -243,7 +269,9 @@ export default function InvoiceCard({
         </div>
       ) : null}
       {ignored ? (
-        <p className={styles.inlineStatus}>Ignored in this view; no transfer was sent.</p>
+        <p className={styles.inlineStatus}>
+          Ignored in this view; no transfer was sent.
+        </p>
       ) : null}
       <ProvingProgress
         active={busy}

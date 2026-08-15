@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../utils/constants";
-import {
-  parseCompositePayload,
-  type CompositePayload,
-} from "./composite";
+import { parseCompositePayload, type CompositePayload } from "./composite";
 import {
   ENVELOPE_TYPE_BYTES,
   ENVELOPE_VERSION,
@@ -69,21 +66,23 @@ function compositePayload(): CompositePayload {
 }
 
 describe("mail envelope v1", () => {
-  it.each(
-    Object.entries(ENVELOPE_TYPE_BYTES) as [EnvelopeType, number][],
-  )("encodes and decodes %s with its locked type byte", (type, byte) => {
-    const payload = type === "composite" ? compositePayload() : { value: type };
-    const encoded = encodeEnvelope(type, payload);
+  it.each(Object.entries(ENVELOPE_TYPE_BYTES) as [EnvelopeType, number][])(
+    "encodes and decodes %s with its locked type byte",
+    (type, byte) => {
+      const payload =
+        type === "composite" ? compositePayload() : { value: type };
+      const encoded = encodeEnvelope(type, payload);
 
-    expect(envelopeByteLength(type, payload)).toBe(encoded.length);
-    expect(encoded[0]).toBe(ENVELOPE_VERSION);
-    expect(encoded[1]).toBe(byte);
-    expect(decodeEnvelope(encoded)).toMatchObject({
-      version: 1,
-      type,
-      payload,
-    });
-  });
+      expect(envelopeByteLength(type, payload)).toBe(encoded.length);
+      expect(encoded[0]).toBe(ENVELOPE_VERSION);
+      expect(encoded[1]).toBe(byte);
+      expect(decodeEnvelope(encoded)).toMatchObject({
+        version: 1,
+        type,
+        payload,
+      });
+    },
+  );
 
   it("round-trips body plus payment, offer, invoice, and escrow as one document", () => {
     const payload = compositePayload();
@@ -169,9 +168,7 @@ describe("mail envelope v1", () => {
       type: "unsupported",
       payload: { reason: "invalid_legacy_utf8" },
     });
-    expect(
-      decodeEnvelope(new Uint8Array([0x01, 0x01, 0x7b])),
-    ).toMatchObject({
+    expect(decodeEnvelope(new Uint8Array([0x01, 0x01, 0x7b]))).toMatchObject({
       version: 1,
       type: "unsupported",
       payload: { reason: "invalid_payload" },

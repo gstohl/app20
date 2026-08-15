@@ -38,7 +38,9 @@ export function ProvingProgress({
   return (
     <div className={styles.provingProgress} aria-busy="true">
       <div className={styles.progressHeading}>
-        <span role="status" aria-live="polite">{label}</span>
+        <span role="status" aria-live="polite">
+          {label}
+        </span>
         <span className={styles.progressTime} aria-hidden="true">
           {formatElapsed(elapsed)} elapsed
         </span>
@@ -80,8 +82,12 @@ export function ScanProgress({
   return (
     <div className={styles.scanProgress} aria-busy="true">
       <div className={styles.progressHeading}>
-        <span role="status" aria-live="polite">Checking sealed envelopes</span>
-        <span className={styles.progressTime} aria-hidden="true">{formatElapsed(elapsed)}</span>
+        <span role="status" aria-live="polite">
+          Checking sealed envelopes
+        </span>
+        <span className={styles.progressTime} aria-hidden="true">
+          {formatElapsed(elapsed)}
+        </span>
       </div>
       <div className={styles.envelopeProgress} aria-hidden="true">
         <span style={{ width: `${progress}%` }}>✉ ✉ ✉</span>

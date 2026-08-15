@@ -24,28 +24,22 @@ export default function SelectWallet({
   variant?: "nav" | "ctaBig";
 }) {
   const setMyWallet = useStoreWallet(
-    (state) => state.setMyStarknetWalletObject
+    (state) => state.setMyStarknetWalletObject,
   );
   const setMyWalletAccount = useStoreWallet(
-    (state) => state.setMyWalletAccount
+    (state) => state.setMyWalletAccount,
   );
-  const selectedWallet = useStoreWallet(
-    (state) => state.StarknetWalletObject
-  );
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const setConnected = useStoreWallet((state) => state.setConnected);
   const disconnect = useStoreWallet((state) => state.disconnect);
   const address = useStoreWallet((state) => state.address);
   const setWalletApi = useStoreWallet((state) => state.setWalletApiList);
-  const setStrk20Capable = useStoreWallet(
-    (state) => state.setStrk20Capable
-  );
+  const setStrk20Capable = useStoreWallet((state) => state.setStrk20Capable);
   const setChain = useStoreWallet((state) => state.setChain);
-  const setAddressAccount = useStoreWallet(
-    (state) => state.setAddressAccount
-  );
+  const setAddressAccount = useStoreWallet((state) => state.setAddressAccount);
   const setCurrentFrontendProviderIndex = useFrontendProvider(
-    (state) => state.setCurrentFrontendProviderIndex
+    (state) => state.setCurrentFrontendProviderIndex,
   );
 
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
@@ -104,11 +98,11 @@ export default function SelectWallet({
   ]);
 
   const pickable = wallets.filter(
-    (wallet) => !normalizeId(wallet.name).includes("metamask")
+    (wallet) => !normalizeId(wallet.name).includes("metamask"),
   );
 
   async function handleSelectedWallet(
-    selectedWallet: WalletWithStarknetFeatures
+    selectedWallet: WalletWithStarknetFeatures,
   ) {
     // Determine the wallet's write chain before constructing WalletAccountV6.
     // Reads must use the matching provider: mainnet index 0, Sepolia index 2.
@@ -121,7 +115,7 @@ export default function SelectWallet({
 
     const walletAccount = await WalletAccountV6.connect(
       provider,
-      selectedWallet
+      selectedWallet,
     );
     const accounts = await walletV6.requestAccounts(selectedWallet);
     const permissions = await walletV6.getPermissions(selectedWallet);
@@ -173,7 +167,10 @@ export default function SelectWallet({
       className={styles.modalOverlay}
       onClick={() => !connectingWallet && setPickerOpen(false)}
     >
-      <div className={styles.modal} onClick={(event) => event.stopPropagation()}>
+      <div
+        className={styles.modal}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className={styles.modalHead}>
           <span className={styles.modalTitle}>Connect a wallet</span>
           <button
@@ -206,11 +203,7 @@ export default function SelectWallet({
         ) : (
           <div className={styles.walletHint}>
             No Starknet wallet detected. Install{" "}
-            <a
-              href="https://www.ready.co/"
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
               Ready
             </a>{" "}
             to use Quietline privacy actions.

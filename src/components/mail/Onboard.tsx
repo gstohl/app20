@@ -27,19 +27,21 @@ function seedStorageKey(chainId: string, address: string): string {
 }
 
 function seedToHex(seed: Uint8Array): string {
-  return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 function seedFromHex(value: string): Uint8Array | null {
   if (!/^[0-9a-f]{64}$/i.test(value)) return null;
   return Uint8Array.from(
-    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? []
+    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
   );
 }
 
 function loadOrCreateSeed(
   chainId: string,
-  address: string
+  address: string,
 ): { seed: Uint8Array; created: boolean } {
   const key = seedStorageKey(chainId, address);
   const existing = window.localStorage.getItem(key);
@@ -47,7 +49,7 @@ function loadOrCreateSeed(
     const seed = seedFromHex(existing);
     if (!seed) {
       throw new Error(
-        "The saved Quietline device key is invalid. Refusing to overwrite it."
+        "The saved Quietline device key is invalid. Refusing to overwrite it.",
       );
     }
     return { seed, created: false };
@@ -71,19 +73,18 @@ function keysEqual(left: readonly string[], right: readonly string[]): boolean {
   );
 }
 
-export default function Onboard({
-  helperAddress,
-  onKeyReady,
-}: OnboardProps) {
+export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const address = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const providerIndex = useFrontendProvider(
-    (state) => state.currentFrontendProviderIndex
+    (state) => state.currentFrontendProviderIndex,
   );
   const [setup, setSetup] = useState<SetupState>({ kind: "idle" });
   const [backupPhrase, setBackupPhrase] = useState("");
-  const [pendingKeypair, setPendingKeypair] = useState<MailKeypair | null>(null);
+  const [pendingKeypair, setPendingKeypair] = useState<MailKeypair | null>(
+    null,
+  );
   const [copied, setCopied] = useState(false);
   const [restoreValue, setRestoreValue] = useState("");
   const [restoreNeedsConfirmation, setRestoreNeedsConfirmation] =
@@ -149,7 +150,7 @@ export default function Onboard({
         (BigInt(registered[0]) !== 0n || BigInt(registered[1]) !== 0n)
       ) {
         throw new Error(
-          "A different device mail key is registered. Quietline will not overwrite it; use the original device or its backup."
+          "A different device mail key is registered. Quietline will not overwrite it; use the original device or its backup.",
         );
       }
 
@@ -157,11 +158,13 @@ export default function Onboard({
         kind: "pending",
         message: "Waiting for approval of the public key registration…",
       });
-      const { transaction_hash: transactionHash } = await walletAccount.execute({
-        contractAddress: helperAddress,
-        entrypoint: "register_pubkey",
-        calldata: publicKey,
-      });
+      const { transaction_hash: transactionHash } = await walletAccount.execute(
+        {
+          contractAddress: helperAddress,
+          entrypoint: "register_pubkey",
+          calldata: publicKey,
+        },
+      );
 
       setSetup({
         kind: "pending",
@@ -274,12 +277,12 @@ export default function Onboard({
         wallet address to a mail public key in the on-chain directory.
       </p>
       <p className={styles.finePrint}>
-        <strong>Not encrypted at rest:</strong> Quietline stores the raw
-        32-byte mailbox seed as hexadecimal in this browser profile. Anyone who
-        can access this profile—including another user of a shared machine—can
-        read retained mail and derive any escrow claim keys. Disconnecting the
-        wallet does not clear it. Use “Forget this device” when finished, and
-        keep the offline backup private.
+        <strong>Not encrypted at rest:</strong> Quietline stores the raw 32-byte
+        mailbox seed as hexadecimal in this browser profile. Anyone who can
+        access this profile—including another user of a shared machine—can read
+        retained mail and derive any escrow claim keys. Disconnecting the wallet
+        does not clear it. Use “Forget this device” when finished, and keep the
+        offline backup private.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
@@ -293,9 +296,7 @@ export default function Onboard({
         onClick={loadAndRegister}
         disabled={disabled}
       >
-        {setup.kind === "pending"
-          ? "Waiting…"
-          : "Load device key & register"}
+        {setup.kind === "pending" ? "Waiting…" : "Load device key & register"}
       </button>
 
       {backupPhrase ? (

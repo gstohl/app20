@@ -106,7 +106,9 @@ export type EscrowDealRecord = {
   chainDeal?: EscrowContractDeal;
   operations: Partial<Record<EscrowOperation, EscrowOperationRecord>>;
   /** Decrypted update envelopes are coordination hints, never chain proof. */
-  counterpartyClaims: Partial<Record<Exclude<EscrowOperation, "fund">, boolean>>;
+  counterpartyClaims: Partial<
+    Record<Exclude<EscrowOperation, "fund">, boolean>
+  >;
   updatedAt: number;
 };
 
@@ -136,7 +138,11 @@ function parseFelt(value: unknown, allowZero = true): string | null {
   if (typeof value !== "string") return null;
   try {
     const parsed = BigInt(value);
-    if (parsed < 0n || parsed >= STARK_FIELD_PRIME || (!allowZero && parsed === 0n)) {
+    if (
+      parsed < 0n ||
+      parsed >= STARK_FIELD_PRIME ||
+      (!allowZero && parsed === 0n)
+    ) {
       return null;
     }
     return num.toHex(parsed);
@@ -213,7 +219,9 @@ function parseNote(value: unknown): string | undefined | null {
   return sanitizeUntrustedText(value);
 }
 
-export function parseEscrowFundPayload(value: unknown): EscrowFundPayload | null {
+export function parseEscrowFundPayload(
+  value: unknown,
+): EscrowFundPayload | null {
   if (!isObject(value)) return null;
   const dealId = parseFelt(value.dealId, false);
   const escrowAddress = parseAddress(value.escrowAddress);
@@ -379,16 +387,16 @@ export function computeEscrowClaimMessage(
   const deal = parseFelt(dealId, false);
   const note = parseFelt(noteId);
   if (!escrow || !deal || !note) {
-    throw new Error("Escrow address, deal id, and payout note id must be felts.");
+    throw new Error(
+      "Escrow address, deal id, and payout note id must be felts.",
+    );
   }
   return hash.computePoseidonHashOnElements([
     shortString.encodeShortString(ESCROW_CLAIM_TAG),
     escrow,
     deal,
     shortString.encodeShortString(
-      operation === "claim"
-        ? ESCROW_CLAIM_OPERATION
-        : ESCROW_TIMEOUT_OPERATION,
+      operation === "claim" ? ESCROW_CLAIM_OPERATION : ESCROW_TIMEOUT_OPERATION,
     ),
     note,
   ]);
@@ -479,7 +487,10 @@ export function loadEscrowState(
     if (!isObject(value) || value.version !== 1 || !isObject(value.deals)) {
       return emptyEscrowState();
     }
-    return { version: 1, deals: value.deals as Record<string, EscrowDealRecord> };
+    return {
+      version: 1,
+      deals: value.deals as Record<string, EscrowDealRecord>,
+    };
   } catch {
     return emptyEscrowState();
   }
@@ -619,7 +630,8 @@ export function claimEscrowOperation(
   const parsedDealId = parseFelt(dealId, false);
   const state = loadEscrowState(storage, chainId, selfAddress);
   const current = parsedDealId ? state.deals[parsedDealId] : undefined;
-  if (!current) throw new Error("The referenced escrow deal is not stored locally.");
+  if (!current)
+    throw new Error("The referenced escrow deal is not stored locally.");
   assertOperationAllowed(current, operation, at);
   const next: EscrowDealRecord = {
     ...current,
@@ -648,13 +660,19 @@ export function markEscrowOperationSubmitted(
   const current = state.deals[num.toHex(dealId)];
   const reserved = current?.operations[operation];
   if (!current || !reserved || reserved.state !== "reserved" || !txHash) {
-    throw new Error("No matching escrow operation reservation can be submitted.");
+    throw new Error(
+      "No matching escrow operation reservation can be submitted.",
+    );
   }
   const next: EscrowDealRecord = {
     ...current,
     operations: {
       ...current.operations,
-      [operation]: { state: "submitted", transactionHash: txHash, updatedAt: at },
+      [operation]: {
+        state: "submitted",
+        transactionHash: txHash,
+        updatedAt: at,
+      },
     },
     updatedAt: at,
   };
@@ -727,7 +745,9 @@ export function markEscrowOperationOutcome(
     !txHash ||
     !feltEquals(submitted.transactionHash, txHash)
   ) {
-    throw new Error("No matching submitted escrow operation can be reconciled.");
+    throw new Error(
+      "No matching submitted escrow operation can be reconciled.",
+    );
   }
   const next: EscrowDealRecord = {
     ...current,
@@ -779,9 +799,15 @@ export function recordEscrowChainDeal(
   const state = loadEscrowState(storage, chainId, selfAddress);
   const parsedDealId = parseFelt(dealId, false);
   const current = parsedDealId ? state.deals[parsedDealId] : undefined;
-  if (!current) throw new Error("The referenced escrow deal is not stored locally.");
-  if (chainDeal.status !== "empty" && !contractDealMatchesFund(chainDeal, current.fund)) {
-    throw new Error("On-chain escrow terms do not match the encrypted announcement.");
+  if (!current)
+    throw new Error("The referenced escrow deal is not stored locally.");
+  if (
+    chainDeal.status !== "empty" &&
+    !contractDealMatchesFund(chainDeal, current.fund)
+  ) {
+    throw new Error(
+      "On-chain escrow terms do not match the encrypted announcement.",
+    );
   }
   const next = {
     ...current,

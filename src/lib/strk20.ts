@@ -1,12 +1,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
-import {
-  hash,
-  num,
-  TransactionExecutionStatus,
-  walletV6,
-} from "starknet";
+import { hash, num, TransactionExecutionStatus, walletV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { assertSettlesStrk, type OfferPayload } from "./otc";
 import { addrSTRK } from "../utils/constants";
@@ -59,7 +54,8 @@ function baseUnitAmountHex(amount: string | bigint): string {
     throw new Error("Transfer amount must be a decimal base-unit string.");
   }
   const parsed = BigInt(amount);
-  if (parsed <= 0n) throw new Error("Transfer amount must be greater than zero.");
+  if (parsed <= 0n)
+    throw new Error("Transfer amount must be greater than zero.");
   return num.toHex(parsed);
 }
 
@@ -163,7 +159,7 @@ function supportsWalletApi010(version: string): boolean {
  * fail for unrelated reasons, and leaks an unnecessary request.
  */
 export async function detectStrk20Capability(
-  wallet: WalletWithStarknetFeatures
+  wallet: WalletWithStarknetFeatures,
 ): Promise<Strk20Capability> {
   const [walletApiResult, specsResult] = await Promise.allSettled([
     walletV6.supportedWalletApi(wallet),
@@ -179,7 +175,7 @@ export async function detectStrk20Capability(
 
   return {
     supported: [...walletApiVersions, ...specVersions].some(
-      supportsWalletApi010
+      supportsWalletApi010,
     ),
     walletApiVersions,
     specVersions,
@@ -274,9 +270,7 @@ function assertSuccessfulReceipt(
   const combined = [execution, finality, status].filter(Boolean);
 
   if (
-    combined.some((candidate) =>
-      ["REVERTED", "REJECTED"].includes(candidate),
-    )
+    combined.some((candidate) => ["REVERTED", "REJECTED"].includes(candidate))
   ) {
     throw new Strk20RevertedError(transactionHash, receipt);
   }
@@ -332,11 +326,7 @@ async function waitForStrk20Transaction(
       throw new Strk20RevertedError(transactionHash, undefined, error);
     }
     if (error instanceof Strk20UnknownOutcomeError) throw error;
-    throw new Strk20UnknownOutcomeError(
-      transactionHash,
-      undefined,
-      error,
-    );
+    throw new Strk20UnknownOutcomeError(transactionHash, undefined, error);
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -422,7 +412,12 @@ export function submitMail(
   { account, provider, ...batch }: SubmitMailInput,
   options: SubmitActionsOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(account, provider, buildMailInvokeActions(batch), options);
+  return submitActions(
+    account,
+    provider,
+    buildMailInvokeActions(batch),
+    options,
+  );
 }
 
 /** Submits one wallet batch containing a transfer, recovery note, and memo. */
@@ -443,7 +438,12 @@ export function submitOtcAccept(
   { account, provider, ...batch }: SubmitOtcAcceptInput,
   options: SubmitActionsOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(account, provider, buildOtcAcceptActions(batch), options);
+  return submitActions(
+    account,
+    provider,
+    buildOtcAcceptActions(batch),
+    options,
+  );
 }
 
 function errorDetails(error: unknown): string {
@@ -463,7 +463,9 @@ function errorDetails(error: unknown): string {
 export function strk20ErrorMessage(error: unknown): string {
   const details = errorDetails(error);
 
-  if (/screen|sanction|compliance|blocked depositor|privacy_leak/i.test(details)) {
+  if (
+    /screen|sanction|compliance|blocked depositor|privacy_leak/i.test(details)
+  ) {
     return "The deposit was declined by STRK20 protocol screening. No privacy action was submitted.";
   }
   if (/user.*(refus|reject)|rejected by user/i.test(details)) {

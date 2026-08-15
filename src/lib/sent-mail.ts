@@ -121,7 +121,8 @@ export function saveSentMail(
   message: StoredSentMail,
 ): StoredSentMail[] {
   const parsed = parseStoredSentMail(message);
-  if (!parsed) throw new Error("Confirmed sent mail could not be indexed locally.");
+  if (!parsed)
+    throw new Error("Confirmed sent mail could not be indexed locally.");
   const messages = loadSentMail(storage, chainId, address).filter(
     (item) => item.documentId !== parsed.documentId,
   );

@@ -95,9 +95,7 @@ describe("OTC payloads", () => {
     expect(parseDecimalToBaseUnits("0.01", 18)).toBe("10000000000000000");
     expect(parseDecimalToBaseUnits("2.5", 6)).toBe("2500000");
     expect(formatBaseUnits("2500000", 6)).toBe("2.5");
-    expect(() => parseDecimalToBaseUnits("0.0000001", 6)).toThrow(
-      /6 decimal/i,
-    );
+    expect(() => parseDecimalToBaseUnits("0.0000001", 6)).toThrow(/6 decimal/i);
   });
 
   it("canonicalizes addresses and strips controls from symbols and notes", () => {
@@ -267,9 +265,9 @@ describe("OTC local state", () => {
     expect(otcStorageKey("SN_SEPOLIA", "0xB0B")).toBe(
       "quietline/otc/v1/SN_SEPOLIA/0xB0B",
     );
-    expect(loadOtcState(storage, "SN_SEPOLIA", "0xB0B").deals[dealId]).toMatchObject(
-      { status: "offered" },
-    );
+    expect(
+      loadOtcState(storage, "SN_SEPOLIA", "0xB0B").deals[dealId],
+    ).toMatchObject({ status: "offered" });
     expect(loadOtcState(storage, "SN_MAIN", "0xB0B").deals).toEqual({});
   });
 
@@ -336,9 +334,9 @@ describe("OTC local state", () => {
       acceptOperation: { state: "unknown", transactionHash: "0xabc" },
       settlementVerified: false,
     });
-    expect(() => claimOtcAccept(...unknownScope, accept, 1_900_000_004)).toThrow(
-      /no second transfer/i,
-    );
+    expect(() =>
+      claimOtcAccept(...unknownScope, accept, 1_900_000_004),
+    ).toThrow(/no second transfer/i);
 
     const revertedStorage = new MemoryStorage();
     const revertedScope = [revertedStorage, "SN_SEPOLIA", "0xb0b"] as const;
@@ -347,11 +345,8 @@ describe("OTC local state", () => {
       { type: "offer", payload: offer() },
       1_900_000_000,
     );
-    const firstAttempt = claimOtcAccept(
-      ...revertedScope,
-      accept,
-      1_900_000_001,
-    ).acceptOperation?.attemptId;
+    const firstAttempt = claimOtcAccept(...revertedScope, accept, 1_900_000_001)
+      .acceptOperation?.attemptId;
     markOtcAcceptSubmitted(...revertedScope, dealId, "0xdef", 1_900_000_002);
     expect(
       markOtcAcceptOutcome(
@@ -476,9 +471,9 @@ describe("payment request idempotency", () => {
       paymentPending: true,
     });
     expect(reserved.paymentOperation?.attemptId).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(() =>
-      claimPayment(...scope, request, 1_900_000_002),
-    ).toThrow(/no second transfer/i);
+    expect(() => claimPayment(...scope, request, 1_900_000_002)).toThrow(
+      /no second transfer/i,
+    );
   });
 
   it("rejects duplicate request ids and reservation terms that conflict", () => {
@@ -492,9 +487,9 @@ describe("payment request idempotency", () => {
     expect(() => claimPayment(...scope, conflicting, 1_900_000_002)).toThrow(
       /do not match the locally reviewed record/i,
     );
-    expect(loadOtcState(...scope).payments[request.requestId].request.amount).toBe(
-      request.amount,
-    );
+    expect(
+      loadOtcState(...scope).payments[request.requestId].request.amount,
+    ).toBe(request.amount);
   });
 
   it("moves payment reserved to submitted to confirmed, never verifying unknown", () => {
@@ -503,12 +498,7 @@ describe("payment request idempotency", () => {
     recordPaymentRequest(...scope, request, 1_900_000_000);
     claimPayment(...scope, request, 1_900_000_001);
     expect(
-      markPaymentSubmitted(
-        ...scope,
-        request.requestId,
-        "0xabc",
-        1_900_000_002,
-      ),
+      markPaymentSubmitted(...scope, request.requestId, "0xabc", 1_900_000_002),
     ).toMatchObject({
       paymentOperation: { state: "submitted", transactionHash: "0xabc" },
       paymentVerified: false,
@@ -541,20 +531,12 @@ describe("payment request idempotency", () => {
     const claim = { dealId: request.requestId, transfer };
 
     expect(
-      recordUnverifiedPaymentClaim(
-        ...scope,
-        claim,
-        1_900_000_001,
-      ),
+      recordUnverifiedPaymentClaim(...scope, claim, 1_900_000_001),
     ).toMatchObject({
       status: "requested",
       counterpartyPaymentClaim: claim,
     });
-    const stored = recordUnverifiedPaymentClaim(
-      ...scope,
-      claim,
-      1_900_000_002,
-    );
+    const stored = recordUnverifiedPaymentClaim(...scope, claim, 1_900_000_002);
     expect(stored.status).toBe("requested");
     expect(stored.paymentTxHash).toBeUndefined();
     expect(stored.receipt).toBeUndefined();
@@ -571,13 +553,7 @@ describe("payment request idempotency", () => {
       1_900_000_000,
     );
     expect(() =>
-      claimPayment(
-        storage,
-        "SN_SEPOLIA",
-        "0xb0b",
-        nonStrk,
-        1_900_000_001,
-      ),
+      claimPayment(storage, "SN_SEPOLIA", "0xb0b", nonStrk, 1_900_000_001),
     ).toThrow(/only STRK/i);
 
     const expired = {
@@ -585,21 +561,9 @@ describe("payment request idempotency", () => {
       requestId: `0x${"33".repeat(32)}`,
       expiresAt: 100,
     };
-    recordPaymentRequest(
-      storage,
-      "SN_SEPOLIA",
-      "0xb0b",
-      expired,
-      99,
-    );
+    recordPaymentRequest(storage, "SN_SEPOLIA", "0xb0b", expired, 99);
     expect(() =>
-      claimPayment(
-        storage,
-        "SN_SEPOLIA",
-        "0xb0b",
-        expired,
-        100,
-      ),
+      claimPayment(storage, "SN_SEPOLIA", "0xb0b", expired, 100),
     ).toThrow(/expired/i);
   });
 });

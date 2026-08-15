@@ -2,8 +2,7 @@
   min-height: 100vh;
   color: var(--ink);
   background:
-    linear-gradient(var(--page-rule) 1px, transparent 1px),
-    var(--paper);
+    linear-gradient(var(--page-rule) 1px, transparent 1px), var(--paper);
   background-size: 100% 32px;
   font-family: var(--font-body), system-ui, sans-serif;
 }
@@ -182,7 +181,10 @@
   font-family: var(--font-body), sans-serif;
   font-weight: 700;
   cursor: pointer;
-  transition: background 120ms, color 120ms, opacity 120ms;
+  transition:
+    background 120ms,
+    color 120ms,
+    opacity 120ms;
 }
 
 .primaryButton {
@@ -1105,8 +1107,7 @@
   padding: 22px 18px 18px;
   border-right: 1px solid var(--ink);
   background:
-    linear-gradient(var(--page-rule) 1px, transparent 1px),
-    var(--paper-deep);
+    linear-gradient(var(--page-rule) 1px, transparent 1px), var(--paper-deep);
   background-size: 100% 28px;
 }
 

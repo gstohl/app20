@@ -1,12 +1,6 @@
 import { canonicalizeStarknetAddress } from "@/lib/addresses";
-import {
-  formatBaseUnits,
-  normalizeTokenRef,
-} from "@/lib/otc";
-import type {
-  EscrowContractStatus,
-  EscrowFundPayload,
-} from "@/lib/escrow";
+import { formatBaseUnits, normalizeTokenRef } from "@/lib/otc";
+import type { EscrowContractStatus, EscrowFundPayload } from "@/lib/escrow";
 import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
@@ -57,21 +51,35 @@ export default function EscrowCard({
   const canFill = status === "funded" && termsVerified && !expired && !ownDeal;
   const payoutNeedsCompatibleWallet =
     ownDeal && (status === "filled" || (status === "funded" && expired));
+  const headingId = `escrow-${fund.dealId.slice(2)}`;
 
   return (
-    <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
+    <article
+      className={`${styles.messageSheet} ${styles.dealSheet}`}
+      aria-labelledby={headingId}
+    >
       <div className={styles.sheetHeading}>
-        <span className={styles.sheetType}>OTC ESCROW / CONTRACT-BACKED</span>
+        <h3 id={headingId} className={styles.sheetType}>
+          <span aria-hidden="true">OTC ESCROW / CONTRACT-BACKED</span>
+          <span className={styles.srOnly}>
+            Escrow: deposit {legAAmount} {legAToken.symbol}
+          </span>
+        </h3>
         <span className={styles.proofStamp}>
           {status ? STATUS_LABELS[status] : "Checking contract state"}
         </span>
       </div>
 
       <p className={styles.termsSentence}>
-        The maker deposits <strong>{legAAmount} <bdi>{legAToken.symbol}</bdi></strong>{" "}
-        as leg A. The taker must deposit at least <strong>{legBAmount}{" "}
-        <bdi>{legBToken.symbol}</bdi></strong> as leg B before the contract releases
-        leg A to the taker.
+        The maker deposits{" "}
+        <strong>
+          {legAAmount} <bdi>{legAToken.symbol}</bdi>
+        </strong>{" "}
+        as leg A. The taker must deposit at least{" "}
+        <strong>
+          {legBAmount} <bdi>{legBToken.symbol}</bdi>
+        </strong>{" "}
+        as leg B before the contract releases leg A to the taker.
       </p>
 
       <div className={styles.addressProof}>
@@ -83,11 +91,12 @@ export default function EscrowCard({
       </div>
 
       <p className={styles.riskCopy}>
-        Unlike Quietline&apos;s one-sided v1 deals, settlement does not rely only
-        on an accept memo: the contract will not let the taker take leg A
-        without depositing leg B. <strong>This is not a single-transaction atomic
-        swap.</strong> Fill releases leg A first; the maker claims leg B afterward
-        with a destination-bound signature.
+        Unlike Quietline&apos;s one-sided v1 deals, settlement does not rely
+        only on an accept memo: the contract will not let the taker take leg A
+        without depositing leg B.{" "}
+        <strong>This is not a single-transaction atomic swap.</strong> Fill
+        releases leg A first; the maker claims leg B afterward with a
+        destination-bound signature.
       </p>
       <p className={styles.actionWarning}>
         Escrow withdrawals into the contract, contract events, and OPEN-note
@@ -168,11 +177,11 @@ export default function EscrowCard({
       ((status === "filled" && !onClaim) ||
         (status === "funded" && expired && !onTimeout)) ? (
         <p className={styles.actionWarning}>
-          {status === "filled" ? "Claiming" : "Refunding"} is unavailable through
-          this wallet. The signature must bind the payout note, and the Wallet
-          API does not expose that note before it assembles the transaction.
-          Funds are not lost: they remain claimable once a compatible signing
-          path exists.
+          {status === "filled" ? "Claiming" : "Refunding"} is unavailable
+          through this wallet. The signature must bind the payout note, and the
+          Wallet API does not expose that note before it assembles the
+          transaction. Funds are not lost: they remain claimable once a
+          compatible signing path exists.
         </p>
       ) : null}
 

@@ -8,15 +8,9 @@ import {
   receiptForTransfer,
   type PaymentRequestPayload,
 } from "./otc";
-import {
-  createPaymentLink,
-  decodePaymentLinkFragment,
-} from "./payment-link";
+import { createPaymentLink, decodePaymentLinkFragment } from "./payment-link";
 import { importPendingPaymentIntoMailbox } from "./payment-link-handoff";
-import {
-  loadPendingPayment,
-  storePendingPayment,
-} from "./pending-payment";
+import { loadPendingPayment, storePendingPayment } from "./pending-payment";
 
 class MemoryStorage {
   private readonly values = new Map<string, string>();
@@ -126,13 +120,7 @@ describe("payment-link mailbox handoff", () => {
       origin: "payment_link",
     });
     expect(() =>
-      claimPayment(
-        local,
-        chainId,
-        payer,
-        request,
-        1_900_000_005,
-      ),
+      claimPayment(local, chainId, payer, request, 1_900_000_005),
     ).toThrow(/already paid; no second transfer/i);
   });
 
@@ -145,12 +133,7 @@ describe("payment-link mailbox handoff", () => {
     };
 
     expect(() =>
-      importPendingPaymentIntoMailbox(
-        session,
-        local,
-        "SN_SEPOLIA",
-        "0xb0b",
-      ),
+      importPendingPaymentIntoMailbox(session, local, "SN_SEPOLIA", "0xb0b"),
     ).toThrow(/storage denied/i);
     expect(loadPendingPayment(session)).toEqual(request);
   });

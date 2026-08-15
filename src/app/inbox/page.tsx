@@ -240,10 +240,14 @@ function sortMailMessages(messages: LocalMailMessage[]): LocalMailMessage[] {
   return messages.sort((left, right) => {
     const leftTime =
       left.localCreatedAt ??
-      (left.blockTimestamp === undefined ? undefined : left.blockTimestamp * 1_000);
+      (left.blockTimestamp === undefined
+        ? undefined
+        : left.blockTimestamp * 1_000);
     const rightTime =
       right.localCreatedAt ??
-      (right.blockTimestamp === undefined ? undefined : right.blockTimestamp * 1_000);
+      (right.blockTimestamp === undefined
+        ? undefined
+        : right.blockTimestamp * 1_000);
     if (leftTime !== undefined || rightTime !== undefined) {
       const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
       if (timeDifference) return timeDifference;
@@ -416,7 +420,9 @@ export default function InboxPage() {
     events: 0,
     maxPages: MAIL_SCAN_MAX_PAGES,
   });
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
+    null,
+  );
   const [messageActivation, setMessageActivation] = useState(0);
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
     () => new Set(),
@@ -430,9 +436,10 @@ export default function InboxPage() {
     useState<PaymentRequestPayload | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [storageNotice, setStorageNotice] = useState<
-    { kind: "ok" | "error"; message: string } | null
-  >(null);
+  const [storageNotice, setStorageNotice] = useState<{
+    kind: "ok" | "error";
+    message: string;
+  } | null>(null);
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -789,24 +796,20 @@ export default function InboxPage() {
         } else if (envelope.type === "offer") {
           const offer = parseOfferPayload(envelope.payload);
           if (offer) {
-            recordDealEvent(
-              window.localStorage,
-              chainId,
-              address,
-              { type: "offer", payload: offer },
-            );
+            recordDealEvent(window.localStorage, chainId, address, {
+              type: "offer",
+              payload: offer,
+            });
           }
         } else if (envelope.type === "accept") {
           const accept = parseAcceptPayload(envelope.payload);
           if (!accept) continue;
           const state = loadOtcState(window.localStorage, chainId, address);
           if (state.deals[accept.dealId]) {
-            recordDealEvent(
-              window.localStorage,
-              chainId,
-              address,
-              { type: "accept_claim", payload: accept },
-            );
+            recordDealEvent(window.localStorage, chainId, address, {
+              type: "accept_claim",
+              payload: accept,
+            });
           } else if (state.payments[accept.dealId]) {
             recordUnverifiedPaymentClaim(
               window.localStorage,
@@ -818,22 +821,18 @@ export default function InboxPage() {
         } else if (envelope.type === "decline") {
           const decline = parseDeclinePayload(envelope.payload);
           if (decline) {
-            recordDealEvent(
-              window.localStorage,
-              chainId,
-              address,
-              { type: "decline", payload: decline },
-            );
+            recordDealEvent(window.localStorage, chainId, address, {
+              type: "decline",
+              payload: decline,
+            });
           }
         } else if (envelope.type === "receipt") {
           const receipt = parseReceiptPayload(envelope.payload);
           if (receipt) {
-            recordDealEvent(
-              window.localStorage,
-              chainId,
-              address,
-              { type: "receipt_claim", payload: receipt },
-            );
+            recordDealEvent(window.localStorage, chainId, address, {
+              type: "receipt_claim",
+              payload: receipt,
+            });
           }
         } else if (envelope.type === "payment_request") {
           const request = parsePaymentRequestPayload(envelope.payload);
@@ -848,12 +847,7 @@ export default function InboxPage() {
         } else if (envelope.type === "escrow_fund") {
           const fund = parseEscrowFundPayload(envelope.payload);
           if (fund) {
-            recordEscrowFund(
-              window.localStorage,
-              chainId,
-              address,
-              fund,
-            );
+            recordEscrowFund(window.localStorage, chainId, address, fund);
           }
         } else if (envelope.type === "escrow_fill") {
           const update = parseEscrowFillPayload(envelope.payload);
@@ -1210,10 +1204,7 @@ export default function InboxPage() {
       accept.transfer,
       acceptTransactionHash,
     );
-    const record = await encryptMail(
-      key,
-      encodeEnvelope("receipt", receipt),
-    );
+    const record = await encryptMail(key, encodeEnvelope("receipt", receipt));
     await submitMail({
       account: context.walletAccount,
       provider: context.provider,
@@ -1222,12 +1213,10 @@ export default function InboxPage() {
       tokenAddress: constants.addrSTRK,
       record,
     });
-    recordDealEvent(
-      window.localStorage,
-      context.chainId,
-      context.address,
-      { type: "receipt", payload: receipt },
-    );
+    recordDealEvent(window.localStorage, context.chainId, context.address, {
+      type: "receipt",
+      payload: receipt,
+    });
     refreshOtcState();
   }
 
@@ -1340,12 +1329,7 @@ export default function InboxPage() {
         }
         refreshOtcState();
       } else if (claimed && !hash && address && chainId) {
-        releaseOtcAccept(
-          window.localStorage,
-          chainId,
-          address,
-          offer.dealId,
-        );
+        releaseOtcAccept(window.localStorage, chainId, address, offer.dealId);
         refreshOtcState();
       }
       setActionState(actionKey, {
@@ -1373,10 +1357,7 @@ export default function InboxPage() {
       });
       const decline = { dealId: offer.dealId };
       const key = await lookupMailKey(context.helperAddress, offer.offerer);
-      const record = await encryptMail(
-        key,
-        encodeEnvelope("decline", decline),
-      );
+      const record = await encryptMail(key, encodeEnvelope("decline", decline));
       await submitMail({
         account: context.walletAccount,
         provider: context.provider,
@@ -1385,12 +1366,10 @@ export default function InboxPage() {
         tokenAddress: constants.addrSTRK,
         record,
       });
-      recordDealEvent(
-        window.localStorage,
-        context.chainId,
-        context.address,
-        { type: "decline", payload: decline },
-      );
+      recordDealEvent(window.localStorage, context.chainId, context.address, {
+        type: "decline",
+        payload: decline,
+      });
       refreshOtcState();
       setActionState(actionKey, {
         pending: false,
@@ -1419,7 +1398,9 @@ export default function InboxPage() {
         !deal.settlementVerified ||
         deal.status !== "accepted"
       ) {
-        throw new Error("No locally verified accept transfer is waiting for a receipt.");
+        throw new Error(
+          "No locally verified accept transfer is waiting for a receipt.",
+        );
       }
       setActionState(actionKey, {
         pending: true,
@@ -1454,7 +1435,9 @@ export default function InboxPage() {
       const payableRequest = reservedPayment.request;
       const attemptId = reservedPayment.paymentOperation?.attemptId;
       if (!attemptId) {
-        throw new Error("The payer-owned payment attempt id was not persisted.");
+        throw new Error(
+          "The payer-owned payment attempt id was not persisted.",
+        );
       }
       claimed = true;
       refreshOtcState();
@@ -1698,13 +1681,17 @@ export default function InboxPage() {
       }
       const context = requireActionContext();
       if (!escrowAddress || !mailSeed) {
-        throw new Error("Load the localnet mailbox seed and escrow deployment.");
+        throw new Error(
+          "Load the localnet mailbox seed and escrow deployment.",
+        );
       }
       if (!feltEquals(fund.escrowAddress, escrowAddress)) {
         throw new Error("This deal names a different escrow deployment.");
       }
       if (!feltEquals(fund.maker, context.address)) {
-        throw new Error("Only this deal's maker mailbox can derive the claim key.");
+        throw new Error(
+          "Only this deal's maker mailbox can derive the claim key.",
+        );
       }
 
       claimEscrowOperation(
@@ -1903,13 +1890,14 @@ export default function InboxPage() {
       );
       setStorageNotice({
         kind: "ok",
-        message:
-          "Draft saved in this browser profile (not encrypted at rest).",
+        message: "Draft saved in this browser profile (not encrypted at rest).",
       });
     } catch (error: unknown) {
       setDrafts((current) =>
-        [draft, ...current.filter((candidate) => candidate.id !== draft.id)]
-          .sort((left, right) => right.updatedAt - left.updatedAt),
+        [
+          draft,
+          ...current.filter((candidate) => candidate.id !== draft.id),
+        ].sort((left, right) => right.updatedAt - left.updatedAt),
       );
       setStorageNotice({
         kind: "error",
@@ -2069,7 +2057,11 @@ export default function InboxPage() {
           <span className={styles.brandMark}>Q</span>
           <span>Quietline</span>
         </a>
-        <button className={styles.mobileCompose} type="button" onClick={openComposer}>
+        <button
+          className={styles.mobileCompose}
+          type="button"
+          onClick={openComposer}
+        >
           New
         </button>
       </header>
@@ -2109,9 +2101,15 @@ export default function InboxPage() {
               ×
             </button>
           </div>
-          <p className={styles.sidebarTagline}>PRIVATE MAIL / PUBLIC CIPHERTEXT</p>
+          <p className={styles.sidebarTagline}>
+            PRIVATE MAIL / PUBLIC CIPHERTEXT
+          </p>
 
-          <button className={styles.composeButton} type="button" onClick={openComposer}>
+          <button
+            className={styles.composeButton}
+            type="button"
+            onClick={openComposer}
+          >
             <span aria-hidden="true">＋</span>
             New
           </button>
@@ -2131,7 +2129,10 @@ export default function InboxPage() {
             ))}
           </nav>
 
-          <nav className={styles.typeFilterNav} aria-label="Filter current folder">
+          <nav
+            className={styles.typeFilterNav}
+            aria-label="Filter current folder"
+          >
             <span className={styles.sidebarLabel}>SHOW</span>
             {TYPE_FILTERS.map((filter) => (
               <button
@@ -2151,7 +2152,9 @@ export default function InboxPage() {
           <div className={styles.networkRow}>
             <span className={styles.networkDot} aria-hidden="true" />
             <span>{networkName}</span>
-            <small>{helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}</small>
+            <small>
+              {helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}
+            </small>
           </div>
 
           <PrivacyWalletMenu />
@@ -2166,7 +2169,9 @@ export default function InboxPage() {
                 <span className={styles.sidebarLabel}>PUBLIC RAIL</span>
                 <strong id="scan-title">Sealed envelopes</strong>
               </div>
-              <span className={styles.sealGlyph} aria-hidden="true">✉</span>
+              <span className={styles.sealGlyph} aria-hidden="true">
+                ✉
+              </span>
             </div>
             <div className={styles.scanActions}>
               <button
@@ -2223,10 +2228,17 @@ export default function InboxPage() {
           </section>
 
           <footer className={styles.sidebarFooter}>
-            <a href="https://github.com/gstohl/quietline" target="_blank" rel="noreferrer">
+            <a
+              href="https://github.com/gstohl/quietline"
+              target="_blank"
+              rel="noreferrer"
+            >
               GitHub ↗
             </a>
-            <span>Ciphertext is public on-chain. Local data is not encrypted at rest.</span>
+            <span>
+              Ciphertext is public on-chain. Local data is not encrypted at
+              rest.
+            </span>
           </footer>
         </aside>
 
@@ -2257,17 +2269,33 @@ export default function InboxPage() {
           aria-label="Reading pane"
         >
           <header className={styles.readingToolbar}>
-            <button className={styles.backToList} type="button" onClick={closeDetail}>
+            <button
+              className={styles.backToList}
+              type="button"
+              onClick={closeDetail}
+            >
               ← Messages
             </button>
             <div>
               <span className={styles.sidebarLabel}>
-                {composerOpen ? "LOCAL DRAFT / NOT ENCRYPTED AT REST" : "LOCAL PLAINTEXT / CARBON COPY"}
+                {composerOpen
+                  ? "LOCAL DRAFT / NOT ENCRYPTED AT REST"
+                  : "LOCAL PLAINTEXT / CARBON COPY"}
               </span>
-              <strong>{composerOpen ? "New document" : selectedMessage ? folderLabel : "Quietline"}</strong>
+              <strong>
+                {composerOpen
+                  ? "New document"
+                  : selectedMessage
+                    ? folderLabel
+                    : "Quietline"}
+              </strong>
             </div>
             {composerOpen ? (
-              <button className={styles.closeCompose} type="button" onClick={closeDetail}>
+              <button
+                className={styles.closeCompose}
+                type="button"
+                onClick={closeDetail}
+              >
                 Close
               </button>
             ) : null}
@@ -2344,31 +2372,37 @@ export default function InboxPage() {
                   <p className={styles.eyebrow}>QUIETLINE / PRIVATE MAIL</p>
                   <h1>Private words, public ciphertext.</h1>
                   <p className={styles.welcomeCopy}>
-                    Quietline is encrypted on-chain mail for letters, private STRK
-                    payment memos, invoices, one-sided deals, and experimental escrow.
-                    Your mailbox key decrypts locally; Quietline never posts plaintext.
+                    Quietline is encrypted on-chain mail for letters, private
+                    STRK payment memos, invoices, one-sided deals, and
+                    experimental escrow. Your mailbox key decrypts locally;
+                    Quietline never posts plaintext.
                   </p>
                   <div className={styles.privacySummary}>
                     <div>
                       <strong>HIDDEN IN THE POOL</strong>
                       <span>
-                        Sender, recipient identities, message body, and in-pool amounts.
+                        Sender, recipient identities, message body, and in-pool
+                        amounts.
                       </span>
                     </div>
                     <div>
                       <strong>VISIBLE ON-CHAIN</strong>
                       <span>
-                        Pool and helper use, timing, ciphertext, size, and recipient count.
-                        Shield and unshield legs are public.
+                        Pool and helper use, timing, ciphertext, size, and
+                        recipient count. Shield and unshield legs are public.
                       </span>
                     </div>
                   </div>
                   <p className={styles.honestyNote}>
-                    Privacy is not invisibility: timing and pool use remain public. For
-                    multi-recipient mail, the recipient count is public while identities
-                    are absent from MessagePosted.
+                    Privacy is not invisibility: timing and pool use remain
+                    public. For multi-recipient mail, the recipient count is
+                    public while identities are absent from MessagePosted.
                   </p>
-                  <button className={styles.welcomeCompose} type="button" onClick={openComposer}>
+                  <button
+                    className={styles.welcomeCompose}
+                    type="button"
+                    onClick={openComposer}
+                  >
                     Write a private document
                   </button>
                 </div>

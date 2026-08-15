@@ -133,7 +133,8 @@ export function conversationCorrespondent(
           if (attachment.type === "payment_request") {
             return attachment.payload.requester;
           }
-          if (attachment.type === "escrow_fund") return attachment.payload.maker;
+          if (attachment.type === "escrow_fund")
+            return attachment.payload.maker;
         }
         return undefined;
       }

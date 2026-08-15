@@ -1,7 +1,4 @@
-import {
-  formatBaseUnits,
-  type ReceiptPayload,
-} from "@/lib/otc";
+import { formatBaseUnits, type ReceiptPayload } from "@/lib/otc";
 import styles from "./mail.module.css";
 
 type ReceiptCardProps = {
@@ -21,20 +18,33 @@ export default function ReceiptCard({
     receipt.transfer.amount,
     receipt.transfer.token.decimals,
   );
+  const headingId = `receipt-${receipt.dealId.slice(2)}`;
 
   return (
-    <article className={styles.messageSheet}>
+    <article className={styles.messageSheet} aria-labelledby={headingId}>
       <div className={styles.sheetHeading}>
-        <span className={styles.sheetType}>
-          {standalonePayment ? "PRIVATE PAYMENT MEMO" : "PRIVATE TRANSFER CLAIM"}
-        </span>
+        <h3 id={headingId} className={styles.sheetType}>
+          <span aria-hidden="true">
+            {standalonePayment
+              ? "PRIVATE PAYMENT MEMO"
+              : "PRIVATE TRANSFER CLAIM"}
+          </span>
+          <span className={styles.srOnly}>
+            {standalonePayment
+              ? "Private payment memo"
+              : "Private transfer claim"}
+            : {amount} {receipt.transfer.token.symbol}
+          </span>
+        </h3>
         <span className={styles.proofStamp}>
-          {locallySubmitted ? "Locally submitted" : "Unverified counterparty claim"}
+          {locallySubmitted
+            ? "Locally submitted"
+            : "Unverified counterparty claim"}
         </span>
       </div>
       <p className={styles.termsSentence}>
-        {locallySubmitted ? "This device submitted" : "A counterparty claims"} the{" "}
-        {amount} <bdi>{receipt.transfer.token.symbol}</bdi>{" "}
+        {locallySubmitted ? "This device submitted" : "A counterparty claims"}{" "}
+        the {amount} <bdi>{receipt.transfer.token.symbol}</bdi>{" "}
         {standalonePayment ? "payment" : "leg"} in transaction {receipt.txHash}.
       </p>
       <p className={styles.riskCopy}>
@@ -43,8 +53,9 @@ export default function ReceiptCard({
           : "This encrypted memo and its MessagePosted transaction do not independently prove a private transfer. Verify payment independently."}
         {standalonePayment ? null : (
           <>
-            {" "}Do not release the <bdi>{wantSymbol}</bdi> leg without
-            verification; this is not an atomic swap.
+            {" "}
+            Do not release the <bdi>{wantSymbol}</bdi> leg without verification;
+            this is not an atomic swap.
           </>
         )}
       </p>

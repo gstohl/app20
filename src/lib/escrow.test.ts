@@ -32,21 +32,24 @@ class MemoryStorage {
 }
 
 function hex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 const tokenA = {
   symbol: "STRK",
-  address:
-    "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
   decimals: 18,
 };
 const tokenB = { symbol: "USDC", address: "0x53c", decimals: 6 };
 const dealId = "0x1234";
 
 function fundPayload(): EscrowFundPayload {
-  const claimPubkey = deriveEscrowClaimKey(new Uint8Array(32).fill(9), dealId)
-    .claimPubkey;
+  const claimPubkey = deriveEscrowClaimKey(
+    new Uint8Array(32).fill(9),
+    dealId,
+  ).claimPubkey;
   return {
     dealId,
     escrowAddress: "0xe5c",
@@ -86,8 +89,7 @@ const CLAIM_KEY_VECTORS = [
   },
   {
     seed: new Uint8Array(32).fill(0xff),
-    dealId:
-      "0x11111111111111111111111111111111111111111111111111111111111111",
+    dealId: "0x11111111111111111111111111111111111111111111111111111111111111",
     attempt: 1,
     privateKey:
       "0648ff4960a228b4fa6262bf536565e299a71429ae4287da12fef026a76a5060",
@@ -111,7 +113,10 @@ describe("escrow claim-key derivation", () => {
   });
 
   it("restoring the mailbox backup restores every per-deal claim key", () => {
-    const originalSeed = Uint8Array.from({ length: 32 }, (_, index) => 255 - index);
+    const originalSeed = Uint8Array.from(
+      { length: 32 },
+      (_, index) => 255 - index,
+    );
     const before = deriveEscrowClaimKey(originalSeed, dealId);
     const restored = restoreMailSeed(exportMailSeed(originalSeed));
     const after = deriveEscrowClaimKey(restored.seed, dealId);
@@ -232,9 +237,9 @@ describe("escrow operation idempotency", () => {
     expect(claimEscrowOperation(...scope, dealId, "fund", 101)).toMatchObject({
       operations: { fund: { state: "reserved" } },
     });
-    expect(() =>
-      claimEscrowOperation(...scope, dealId, "fund", 102),
-    ).toThrow(/no second transfer/i);
+    expect(() => claimEscrowOperation(...scope, dealId, "fund", 102)).toThrow(
+      /no second transfer/i,
+    );
     expect(
       markEscrowOperationSubmitted(...scope, dealId, "fund", "0xabc", 103),
     ).toMatchObject({
@@ -242,12 +247,14 @@ describe("escrow operation idempotency", () => {
         fund: { state: "submitted", transactionHash: "0xabc" },
       },
     });
-    expect(releaseEscrowOperation(...scope, dealId, "fund", 104)).toMatchObject({
-      operations: { fund: { state: "submitted" } },
-    });
-    expect(() =>
-      claimEscrowOperation(...scope, dealId, "fund", 105),
-    ).toThrow(/no second transfer/i);
+    expect(releaseEscrowOperation(...scope, dealId, "fund", 104)).toMatchObject(
+      {
+        operations: { fund: { state: "submitted" } },
+      },
+    );
+    expect(() => claimEscrowOperation(...scope, dealId, "fund", 105)).toThrow(
+      /no second transfer/i,
+    );
     expect(
       confirmEscrowOperation(...scope, dealId, "fund", "0xabc", 106),
     ).toMatchObject({
@@ -275,22 +282,28 @@ describe("escrow operation idempotency", () => {
     recordEscrowChainDeal(...scope, dealId, funded, 101);
 
     claimEscrowOperation(...scope, dealId, "fill", 102);
-    expect(releaseEscrowOperation(...scope, dealId, "fill", 103)?.operations)
-      .not.toHaveProperty("fill");
+    expect(
+      releaseEscrowOperation(...scope, dealId, "fill", 103)?.operations,
+    ).not.toHaveProperty("fill");
     claimEscrowOperation(...scope, dealId, "fill", 104);
     markEscrowOperationSubmitted(...scope, dealId, "fill", "0xdef", 105);
     confirmEscrowOperation(...scope, dealId, "fill", "0xdef", 106);
-    expect(() =>
-      claimEscrowOperation(...scope, dealId, "fill", 106),
-    ).toThrow(/no second transfer/i);
+    expect(() => claimEscrowOperation(...scope, dealId, "fill", 106)).toThrow(
+      /no second transfer/i,
+    );
 
-    recordEscrowChainDeal(...scope, dealId, { ...funded, status: "filled" }, 107);
+    recordEscrowChainDeal(
+      ...scope,
+      dealId,
+      { ...funded, status: "filled" },
+      107,
+    );
     claimEscrowOperation(...scope, dealId, "claim", 108);
     markEscrowOperationSubmitted(...scope, dealId, "claim", "0xaaa", 109);
     confirmEscrowOperation(...scope, dealId, "claim", "0xaaa", 110);
-    expect(() =>
-      claimEscrowOperation(...scope, dealId, "claim", 110),
-    ).toThrow(/no second transfer/i);
+    expect(() => claimEscrowOperation(...scope, dealId, "claim", 110)).toThrow(
+      /no second transfer/i,
+    );
     expect(loadEscrowState(...scope).deals[dealId]).toMatchObject({
       chainStatus: "filled",
       operations: {
@@ -335,7 +348,9 @@ describe("escrow operation idempotency", () => {
         103,
       ),
     ).toMatchObject({ operations: { fund: { state: "reverted" } } });
-    expect(claimEscrowOperation(...retryScope, dealId, "fund", 104)).toMatchObject({
+    expect(
+      claimEscrowOperation(...retryScope, dealId, "fund", 104),
+    ).toMatchObject({
       operations: { fund: { state: "reserved" } },
     });
   });

@@ -54,11 +54,20 @@ export default function OfferCard({
   const settlesStrk = isCanonicalStrkToken(offer.give.token);
   const active = status === "offered" && !expired;
   const claimedPaymentAddress = canonicalizeStarknetAddress(offer.offerer);
+  const headingId = `offer-${offer.dealId.slice(2)}`;
 
   return (
-    <article className={`${styles.messageSheet} ${styles.dealSheet}`}>
+    <article
+      className={`${styles.messageSheet} ${styles.dealSheet}`}
+      aria-labelledby={headingId}
+    >
       <div className={styles.sheetHeading}>
-        <span className={styles.sheetType}>OTC OFFER / ONE-SIDED V1</span>
+        <h3 id={headingId} className={styles.sheetType}>
+          <span aria-hidden="true">OTC OFFER / ONE-SIDED V1</span>
+          <span className={styles.srOnly}>
+            OTC offer: send {giveAmount} STRK
+          </span>
+        </h3>
         {unverifiedClaim ||
         ((status === "accepted" || status === "closed") &&
           !settlementVerified) ? (
@@ -76,7 +85,11 @@ export default function OfferCard({
 
       <p className={styles.termsSentence}>
         This unsigned message offers to buy <strong>{giveAmount} STRK</strong>{" "}
-        from you for <strong>{wantAmount} <bdi>{wantToken.symbol}</bdi></strong>.
+        from you for{" "}
+        <strong>
+          {wantAmount} <bdi>{wantToken.symbol}</bdi>
+        </strong>
+        .
       </p>
 
       <div className={styles.addressProof}>
@@ -90,8 +103,8 @@ export default function OfferCard({
         <span>verify this address out-of-band before accepting</span>
       </div>
       <p className={styles.authWarning}>
-        Messages are not sender-authenticated in v1. The claimed payment
-        address above came from the encrypted offer payload.
+        Messages are not sender-authenticated in v1. The claimed payment address
+        above came from the encrypted offer payload.
       </p>
 
       <p className={styles.riskCopy}>
@@ -100,9 +113,9 @@ export default function OfferCard({
         trusting the counterparty. Not an atomic swap.
       </p>
       <p className={styles.actionWarning}>
-        Accepting requires 2 wallet approvals and 2 transactions: first the
-        STRK transfer plus accept memo, then a separate receipt. If receipt
-        posting fails, STRK has already moved; retry only “Post receipt.”
+        Accepting requires 2 wallet approvals and 2 transactions: first the STRK
+        transfer plus accept memo, then a separate receipt. If receipt posting
+        fails, STRK has already moved; retry only “Post receipt.”
       </p>
       <p className={styles.sheetMeta}>
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…
@@ -120,13 +133,19 @@ export default function OfferCard({
         </p>
       ) : null}
 
-      {metadataConsistent ? settlesStrk ? expired ? (
-        <p className={styles.actionWarning}>This offer has expired locally.</p>
-      ) : null : (
-        <p className={styles.actionWarning}>
-          Quietline refuses this offer: OTC v1 can settle only canonical STRK on
-          the give leg.
-        </p>
+      {metadataConsistent ? (
+        settlesStrk ? (
+          expired ? (
+            <p className={styles.actionWarning}>
+              This offer has expired locally.
+            </p>
+          ) : null
+        ) : (
+          <p className={styles.actionWarning}>
+            Quietline refuses this offer: OTC v1 can settle only canonical STRK
+            on the give leg.
+          </p>
+        )
       ) : (
         <p className={styles.actionWarning}>
           Quietline refuses this offer: its STRK address has inconsistent token

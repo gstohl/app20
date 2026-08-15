@@ -181,10 +181,7 @@ function TradeFields({
   escrow,
   update,
 }: {
-  attachment: Extract<
-    DraftAttachment,
-    { type: "offer" | "escrow_fund" }
-  >;
+  attachment: Extract<DraftAttachment, { type: "offer" | "escrow_fund" }>;
   escrow: boolean;
   update: (fields: Partial<TradeDraftFields>) => void;
 }) {
@@ -254,7 +251,9 @@ function TradeFields({
         />
       </label>
       <label className={styles.field}>
-        <span>{escrow ? "Fill deadline in hours" : "Expiry in hours (0 = none)"}</span>
+        <span>
+          {escrow ? "Fill deadline in hours" : "Expiry in hours (0 = none)"}
+        </span>
         <input
           value={attachment.expiryHours}
           onChange={(event) => update({ expiryHours: event.target.value })}
@@ -362,7 +361,8 @@ export default function Compose({
   }
 
   function addAttachment(type: DraftAttachment["type"]) {
-    if (draft.attachments.some((attachment) => attachment.type === type)) return;
+    if (draft.attachments.some((attachment) => attachment.type === type))
+      return;
     const attachment =
       type === "payment"
         ? createDraftAttachment("payment")
@@ -388,7 +388,8 @@ export default function Compose({
   } else if (!isConnected || !walletAccount || !senderAddress) {
     disabledReason = "Connect Ready before sending mail.";
   } else if (!isStrk20Capable) {
-    disabledReason = "This wallet does not declare STRK20 Wallet API 0.10 support.";
+    disabledReason =
+      "This wallet does not declare STRK20 Wallet API 0.10 support.";
   } else if (!keyReady) {
     disabledReason = "Load this device's mail key before sending.";
   } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
@@ -405,7 +406,8 @@ export default function Compose({
   );
 
   function resolvedRecipients(): string[] {
-    if (!recipientEntries.length) throw new Error("Add at least one recipient.");
+    if (!recipientEntries.length)
+      throw new Error("Add at least one recipient.");
     if (recipientEntries.length > MAX_MULTI_RECIPIENTS) {
       throw new Error(
         `Multi-recipient mail supports at most ${MAX_MULTI_RECIPIENTS} recipients within the 140-felt ciphertext cap.`,
@@ -460,15 +462,14 @@ export default function Compose({
   }
 
   function tradePayload(
-    attachment: Extract<
-      DraftAttachment,
-      { type: "offer" | "escrow_fund" }
-    >,
+    attachment: Extract<DraftAttachment, { type: "offer" | "escrow_fund" }>,
     recipientAddress: string,
   ): OfferPayload | EscrowFundPayload {
     const decimals = Number(attachment.wantDecimals);
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-      throw new Error("Quoted token decimals must be an integer from 0 to 255.");
+      throw new Error(
+        "Quoted token decimals must be an integer from 0 to 255.",
+      );
     }
     const legA = {
       token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
@@ -521,9 +522,7 @@ export default function Compose({
     };
   }
 
-  function buildDocument(
-    recipientAddress: string,
-  ): {
+  function buildDocument(recipientAddress: string): {
     type: EnvelopeType;
     payload: unknown;
     composite: CompositePayload | null;
@@ -537,7 +536,8 @@ export default function Compose({
     for (const attachment of draft.attachments) {
       if (attachment.type === "payment") {
         const amount = parseOptionalStrkAmount(attachment.amount);
-        if (amount === undefined) throw new Error("Enter the STRK amount to attach.");
+        if (amount === undefined)
+          throw new Error("Enter the STRK amount to attach.");
         payment = {
           dealId: attachment.paymentId,
           transfer: {
@@ -672,7 +672,13 @@ export default function Compose({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!helperAddress || !walletAccount || !senderAddress || !isStrk20Capable || !keyReady) {
+    if (
+      !helperAddress ||
+      !walletAccount ||
+      !senderAddress ||
+      !isStrk20Capable ||
+      !keyReady
+    ) {
       setSendState({
         kind: "error",
         message: disabledReason || "Mail sending is not ready.",
@@ -694,7 +700,10 @@ export default function Compose({
         );
       }
       const document = buildDocument(recipientAddresses[0]);
-      const plaintextBytes = envelopeByteLength(document.type, document.payload);
+      const plaintextBytes = envelopeByteLength(
+        document.type,
+        document.payload,
+      );
       const projectedSize = projectEncryptedMailSize(
         plaintextBytes,
         recipientAddresses.length,
@@ -746,7 +755,8 @@ export default function Compose({
 
       setSendState({
         kind: "encrypting",
-        message: "Sealing the body and every attachment as one document on this device…",
+        message:
+          "Sealing the body and every attachment as one document on this device…",
         step: 1,
         totalSteps: steps.length,
       });
@@ -767,7 +777,10 @@ export default function Compose({
           document.escrow,
         );
         const existingFund = stored.operations.fund;
-        if (existingFund?.state === "confirmed" && existingFund.transactionHash) {
+        if (
+          existingFund?.state === "confirmed" &&
+          existingFund.transactionHash
+        ) {
           fundConfirmedHash = existingFund.transactionHash;
           transactionHashes.push(existingFund.transactionHash);
         } else if (existingFund && existingFund.state !== "reverted") {
@@ -846,7 +859,11 @@ export default function Compose({
       const sendStepIndex = steps.length - 1;
       setSendState({
         kind: "proving",
-        message: submissionStepLabel(steps[sendStepIndex], sendStepIndex, steps.length),
+        message: submissionStepLabel(
+          steps[sendStepIndex],
+          sendStepIndex,
+          steps.length,
+        ),
         startedAt: Date.now(),
         step: sendStepIndex + 1,
         totalSteps: steps.length,
@@ -925,7 +942,13 @@ export default function Compose({
       const outcome = transactionStateFromError(error);
       const escrowHash =
         transactionHashFromError(error) ?? escrowReservation?.transactionHash;
-      if (escrowReservation && escrowHash && outcome && chainId && senderAddress) {
+      if (
+        escrowReservation &&
+        escrowHash &&
+        outcome &&
+        chainId &&
+        senderAddress
+      ) {
         try {
           markEscrowOperationOutcome(
             window.localStorage,
@@ -995,160 +1018,134 @@ export default function Compose({
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <fieldset className={styles.composeFieldset} disabled={sendPending}>
-        <label className={styles.field}>
-          <span>
-            To
-            <em className={styles.fieldBadge}>COUNT PUBLIC</em>
-          </span>
-          <textarea
-            value={draft.recipient}
-            onChange={(event) => updateDraft({ recipient: event.target.value })}
-            placeholder={
-              hasAnyAttachment
-                ? "One counterparty address or local alias"
-                : "One address or alias per line"
-            }
-            autoComplete="off"
-            rows={hasAnyAttachment ? 2 : 3}
-            required
-          />
-          <small>
-            {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
-            Recipient count is public; identities are absent from
-            MessagePosted. Attachments are bilateral; body-only delivery can be
-            multi-recipient.
-          </small>
-        </label>
+          <label className={styles.field}>
+            <span>
+              To
+              <em className={styles.fieldBadge}>COUNT PUBLIC</em>
+            </span>
+            <textarea
+              value={draft.recipient}
+              onChange={(event) =>
+                updateDraft({ recipient: event.target.value })
+              }
+              placeholder={
+                hasAnyAttachment
+                  ? "One counterparty address or local alias"
+                  : "One address or alias per line"
+              }
+              autoComplete="off"
+              rows={hasAnyAttachment ? 2 : 3}
+              required
+            />
+            <small>
+              {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
+              Recipient count is public; identities are absent from
+              MessagePosted. Attachments are bilateral; body-only delivery can
+              be multi-recipient.
+            </small>
+          </label>
 
-        {aliases.length ? (
-          <div className={styles.aliasChips} aria-label="Device-private aliases">
-            <span>ADD LOCAL:</span>
-            {aliases.map((alias) => (
-              <button
-                key={alias.address}
-                type="button"
-                onClick={() => appendAlias(alias)}
-              >
-                <bdi>{alias.label}</bdi>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        <div className={styles.aliasEditor}>
-          <input
-            value={aliasLabel}
-            onChange={(event) => setAliasLabel(event.target.value)}
-            placeholder="Local name for one entered address"
-            aria-label="Local alias label"
-          />
-          <button
-            className={styles.secondaryButton}
-            type="button"
-            onClick={saveCurrentAlias}
-            disabled={recipientEntries.length !== 1 || !aliasLabel.trim()}
-          >
-            Save on device
-          </button>
-        </div>
-        {aliasNotice ? <p className={styles.finePrint}>{aliasNotice}</p> : null}
-
-        <label className={styles.field}>
-          <span>Message</span>
-          <textarea
-            className={styles.letterInput}
-            value={draft.body}
-            onChange={(event) => updateDraft({ body: event.target.value })}
-            placeholder="Write a private message, or leave blank when sending attachments only"
-            rows={8}
-            maxLength={4_096}
-          />
-          <small>{draft.body.length} / 4096 characters</small>
-        </label>
-
-        <section className={styles.attachmentTray} aria-labelledby="attach-title">
-          <header>
-            <div>
-              <span className={styles.sidebarLabel}>OPTIONAL</span>
-              <strong id="attach-title">Add attachments</strong>
-            </div>
-            <span>{draft.attachments.length} / 4</span>
-          </header>
-          <div className={styles.attachmentButtons}>
-            {(
-              [
-                "payment",
-                "offer",
-                "payment_request",
-                "escrow_fund",
-              ] as const
-            ).map((type) => {
-              const attached = draft.attachments.some(
-                (attachment) => attachment.type === type,
-              );
-              return (
+          {aliases.length ? (
+            <div
+              className={styles.aliasChips}
+              aria-label="Device-private aliases"
+            >
+              <span>ADD LOCAL:</span>
+              {aliases.map((alias) => (
                 <button
-                  key={type}
+                  key={alias.address}
                   type="button"
-                  disabled={attached}
-                  onClick={() => addAttachment(type)}
+                  onClick={() => appendAlias(alias)}
                 >
-                  {attached ? "✓" : "+"} {attachmentLabel(type)}
+                  <bdi>{alias.label}</bdi>
                 </button>
-              );
-            })}
-          </div>
-          <p>
-            This is one document, not a mode picker. Add any combination; text
-            and existing attachments are never cleared.
-          </p>
-        </section>
+              ))}
+            </div>
+          ) : null}
 
-        {draft.attachments.map((attachment) => {
-          if (attachment.type === "payment") {
-            return (
-              <AttachmentShell
-                key={attachment.type}
-                type={attachment.type}
-                onRemove={() => removeAttachment(attachment.type)}
-              >
-                <label className={styles.field}>
-                  <span>Private STRK amount</span>
-                  <input
-                    value={attachment.amount}
-                    onChange={(event) =>
-                      updateAttachment("payment", (current) => ({
-                        ...(current as typeof attachment),
-                        amount: event.target.value,
-                      }))
-                    }
-                    inputMode="decimal"
-                    placeholder="0.01"
-                    required
-                  />
-                  <small>
-                    The private transfer and mail helper invoke share the
-                    document transaction. Timing and pool activity remain
-                    public.
-                  </small>
-                </label>
-              </AttachmentShell>
-            );
-          }
-          if (attachment.type === "payment_request") {
-            return (
-              <AttachmentShell
-                key={attachment.type}
-                type={attachment.type}
-                onRemove={() => removeAttachment(attachment.type)}
-              >
-                <div className={styles.dealFields}>
+          <div className={styles.aliasEditor}>
+            <input
+              value={aliasLabel}
+              onChange={(event) => setAliasLabel(event.target.value)}
+              placeholder="Local name for one entered address"
+              aria-label="Local alias label"
+            />
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              onClick={saveCurrentAlias}
+              disabled={recipientEntries.length !== 1 || !aliasLabel.trim()}
+            >
+              Save on device
+            </button>
+          </div>
+          {aliasNotice ? (
+            <p className={styles.finePrint}>{aliasNotice}</p>
+          ) : null}
+
+          <label className={styles.field}>
+            <span>Message</span>
+            <textarea
+              className={styles.letterInput}
+              value={draft.body}
+              onChange={(event) => updateDraft({ body: event.target.value })}
+              placeholder="Write a private message, or leave blank when sending attachments only"
+              rows={8}
+              maxLength={4_096}
+            />
+            <small>{draft.body.length} / 4096 characters</small>
+          </label>
+
+          <section
+            className={styles.attachmentTray}
+            aria-labelledby="attach-title"
+          >
+            <header>
+              <div>
+                <span className={styles.sidebarLabel}>OPTIONAL</span>
+                <strong id="attach-title">Add attachments</strong>
+              </div>
+              <span>{draft.attachments.length} / 4</span>
+            </header>
+            <div className={styles.attachmentButtons}>
+              {(
+                ["payment", "offer", "payment_request", "escrow_fund"] as const
+              ).map((type) => {
+                const attached = draft.attachments.some(
+                  (attachment) => attachment.type === type,
+                );
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    disabled={attached}
+                    onClick={() => addAttachment(type)}
+                  >
+                    {attached ? "✓" : "+"} {attachmentLabel(type)}
+                  </button>
+                );
+              })}
+            </div>
+            <p>
+              This is one document, not a mode picker. Add any combination; text
+              and existing attachments are never cleared.
+            </p>
+          </section>
+
+          {draft.attachments.map((attachment) => {
+            if (attachment.type === "payment") {
+              return (
+                <AttachmentShell
+                  key={attachment.type}
+                  type={attachment.type}
+                  onRemove={() => removeAttachment(attachment.type)}
+                >
                   <label className={styles.field}>
-                    <span>STRK requested</span>
+                    <span>Private STRK amount</span>
                     <input
                       value={attachment.amount}
                       onChange={(event) =>
-                        updateAttachment("payment_request", (current) => ({
+                        updateAttachment("payment", (current) => ({
                           ...(current as typeof attachment),
                           amount: event.target.value,
                         }))
@@ -1157,133 +1154,177 @@ export default function Compose({
                       placeholder="0.01"
                       required
                     />
+                    <small>
+                      The private transfer and mail helper invoke share the
+                      document transaction. Timing and pool activity remain
+                      public.
+                    </small>
                   </label>
-                  <label className={styles.field}>
-                    <span>Invoice memo (optional)</span>
-                    <input
-                      value={attachment.memo}
-                      onChange={(event) =>
-                        updateAttachment("payment_request", (current) => ({
-                          ...(current as typeof attachment),
-                          memo: event.target.value,
-                        }))
-                      }
-                      maxLength={512}
-                    />
-                  </label>
-                  <label className={styles.field}>
-                    <span>Expiry in hours (0 = none)</span>
-                    <input
-                      value={attachment.expiryHours}
-                      onChange={(event) =>
-                        updateAttachment("payment_request", (current) => ({
-                          ...(current as typeof attachment),
-                          expiryHours: event.target.value,
-                        }))
-                      }
-                      inputMode="decimal"
-                      required
-                    />
-                  </label>
-                  <p className={styles.dealDisclosure}>
-                    Sending a request moves no asset. A later encrypted payment
-                    claim is not proof; settlement is independently verified.
-                  </p>
-                </div>
+                </AttachmentShell>
+              );
+            }
+            if (attachment.type === "payment_request") {
+              return (
+                <AttachmentShell
+                  key={attachment.type}
+                  type={attachment.type}
+                  onRemove={() => removeAttachment(attachment.type)}
+                >
+                  <div className={styles.dealFields}>
+                    <label className={styles.field}>
+                      <span>STRK requested</span>
+                      <input
+                        value={attachment.amount}
+                        onChange={(event) =>
+                          updateAttachment("payment_request", (current) => ({
+                            ...(current as typeof attachment),
+                            amount: event.target.value,
+                          }))
+                        }
+                        inputMode="decimal"
+                        placeholder="0.01"
+                        required
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Invoice memo (optional)</span>
+                      <input
+                        value={attachment.memo}
+                        onChange={(event) =>
+                          updateAttachment("payment_request", (current) => ({
+                            ...(current as typeof attachment),
+                            memo: event.target.value,
+                          }))
+                        }
+                        maxLength={512}
+                      />
+                    </label>
+                    <label className={styles.field}>
+                      <span>Expiry in hours (0 = none)</span>
+                      <input
+                        value={attachment.expiryHours}
+                        onChange={(event) =>
+                          updateAttachment("payment_request", (current) => ({
+                            ...(current as typeof attachment),
+                            expiryHours: event.target.value,
+                          }))
+                        }
+                        inputMode="decimal"
+                        required
+                      />
+                    </label>
+                    <p className={styles.dealDisclosure}>
+                      Sending a request moves no asset. A later encrypted
+                      payment claim is not proof; settlement is independently
+                      verified.
+                    </p>
+                  </div>
+                </AttachmentShell>
+              );
+            }
+            return (
+              <AttachmentShell
+                key={attachment.type}
+                type={attachment.type}
+                onRemove={() => removeAttachment(attachment.type)}
+              >
+                <TradeFields
+                  attachment={attachment}
+                  escrow={attachment.type === "escrow_fund"}
+                  update={(fields) =>
+                    updateAttachment(attachment.type, (current) => ({
+                      ...(current as typeof attachment),
+                      ...fields,
+                    }))
+                  }
+                />
               </AttachmentShell>
             );
-          }
-          return (
-            <AttachmentShell
-              key={attachment.type}
-              type={attachment.type}
-              onRemove={() => removeAttachment(attachment.type)}
-            >
-              <TradeFields
-                attachment={attachment}
-                escrow={attachment.type === "escrow_fund"}
-                update={(fields) =>
-                  updateAttachment(attachment.type, (current) => ({
-                    ...(current as typeof attachment),
-                    ...fields,
-                  }))
-                }
-              />
-            </AttachmentShell>
-          );
-        })}
+          })}
 
-        <section
-          className={`${styles.composePreflight} ${
-            preflight && !preflight.fits ? styles.composePreflightError : ""
-          }`}
-          aria-labelledby="compose-preflight-title"
-        >
-          <h3 id="compose-preflight-title">Review before wallet approval</h3>
-          {preflight ? (
-            <>
+          <section
+            className={`${styles.composePreflight} ${
+              preflight && !preflight.fits ? styles.composePreflightError : ""
+            }`}
+            aria-labelledby="compose-preflight-title"
+          >
+            <h3 id="compose-preflight-title">Review before wallet approval</h3>
+            {preflight ? (
+              <>
+                <p>
+                  <strong>
+                    {preflight.walletPrompts} wallet approval
+                    {preflight.walletPrompts === 1 ? "" : "s"} ·{" "}
+                    {preflight.transactions} transaction
+                    {preflight.transactions === 1 ? "" : "s"}
+                  </strong>
+                </p>
+                <ul>
+                  {preflight.valueMoves.length ? (
+                    preflight.valueMoves.map((movement) => (
+                      <li key={movement}>{movement}</li>
+                    ))
+                  ) : (
+                    <li>
+                      No requested asset transfer; only the message transaction
+                      and its fee.
+                    </li>
+                  )}
+                  {preflight.noValueAttachments.map((attachment) => (
+                    <li key={attachment}>{attachment}</li>
+                  ))}
+                  <li>
+                    Wallet/network fees are additional and must be reviewed in
+                    Ready.
+                  </li>
+                </ul>
+                <p className={styles.ciphertextBudget}>
+                  <strong>
+                    {preflight.ciphertextFelts} / {preflight.maxCiphertextFelts}{" "}
+                    ciphertext felts
+                  </strong>
+                  {" · "}
+                  {preflight.plaintextBytes} encoded bytes · current document
+                  fits at most {preflight.maxRecipientsForCurrentDocument}{" "}
+                  recipient
+                  {preflight.maxRecipientsForCurrentDocument === 1 ? "" : "s"}.
+                </p>
+              </>
+            ) : (
               <p>
-                <strong>
-                  {preflight.walletPrompts} wallet approval
-                  {preflight.walletPrompts === 1 ? "" : "s"} · {preflight.transactions}{" "}
-                  transaction{preflight.transactions === 1 ? "" : "s"}
-                </strong>
+                Complete valid recipient and attachment fields to calculate the
+                exact wallet count, value movement, and 140-felt budget.
               </p>
-              <ul>
-                {preflight.valueMoves.length ? (
-                  preflight.valueMoves.map((movement) => (
-                    <li key={movement}>{movement}</li>
-                  ))
-                ) : (
-                  <li>No requested asset transfer; only the message transaction and its fee.</li>
-                )}
-                {preflight.noValueAttachments.map((attachment) => (
-                  <li key={attachment}>{attachment}</li>
-                ))}
-                <li>
-                  Wallet/network fees are additional and must be reviewed in Ready.
-                </li>
-              </ul>
-              <p className={styles.ciphertextBudget}>
-                <strong>
-                  {preflight.ciphertextFelts} / {preflight.maxCiphertextFelts} ciphertext felts
-                </strong>
-                {" · "}{preflight.plaintextBytes} encoded bytes · current document
-                fits at most {preflight.maxRecipientsForCurrentDocument} recipient
-                {preflight.maxRecipientsForCurrentDocument === 1 ? "" : "s"}.
-              </p>
-            </>
-          ) : (
-            <p>
-              Complete valid recipient and attachment fields to calculate the
-              exact wallet count, value movement, and 140-felt budget.
-            </p>
-          )}
-          {preflightIssue ? <p className={styles.preflightIssue}>{preflightIssue}</p> : null}
-        </section>
-        {disabledReason ? <p className={styles.notice}>{disabledReason}</p> : null}
-        <button
-          className={styles.primaryButton}
-          type="submit"
-          disabled={sendDisabled}
-        >
-          {sendButtonLabel}
-        </button>
-        <button
-          className={styles.deleteDraftButton}
-          type="button"
-          onClick={() => {
-            if (
-              window.confirm(
-                "Delete this device-private draft? It has never been uploaded and cannot be restored.",
-              )
-            ) {
-              onDeleteDraft(draft.id);
-            }
-          }}
-        >
-          Delete draft…
-        </button>
+            )}
+            {preflightIssue ? (
+              <p className={styles.preflightIssue}>{preflightIssue}</p>
+            ) : null}
+          </section>
+          {disabledReason ? (
+            <p className={styles.notice}>{disabledReason}</p>
+          ) : null}
+          <button
+            className={styles.primaryButton}
+            type="submit"
+            disabled={sendDisabled}
+          >
+            {sendButtonLabel}
+          </button>
+          <button
+            className={styles.deleteDraftButton}
+            type="button"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Delete this device-private draft? It has never been uploaded and cannot be restored.",
+                )
+              ) {
+                onDeleteDraft(draft.id);
+              }
+            }}
+          >
+            Delete draft…
+          </button>
         </fieldset>
       </form>
 

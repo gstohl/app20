@@ -1,7 +1,4 @@
-import {
-  canonicalizeStarknetAddress,
-  feltEquals,
-} from "./addresses";
+import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
 import { sanitizeUntrustedText } from "./text";
 import { addrSTRK } from "./tokens";
 
@@ -365,8 +362,15 @@ export const createDealId = createRandom32ByteId;
 export const createRequestId = createRandom32ByteId;
 export const createPaymentAttemptId = createRandom32ByteId;
 
-export function parseDecimalToBaseUnits(value: string, decimals: number): string {
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_TOKEN_DECIMALS) {
+export function parseDecimalToBaseUnits(
+  value: string,
+  decimals: number,
+): string {
+  if (
+    !Number.isInteger(decimals) ||
+    decimals < 0 ||
+    decimals > MAX_TOKEN_DECIMALS
+  ) {
     throw new Error("Token decimals must be an integer from 0 to 255.");
   }
   const match = /^(\d+)(?:\.(\d+))?$/.exec(value.trim());
@@ -384,11 +388,14 @@ export function parseDecimalToBaseUnits(value: string, decimals: number): string
 
 export function formatBaseUnits(amount: string, decimals: number): string {
   if (!BASE_UNITS_PATTERN.test(amount)) return amount;
-  if (!Number.isInteger(decimals) || decimals <= 0) return BigInt(amount).toString();
+  if (!Number.isInteger(decimals) || decimals <= 0)
+    return BigInt(amount).toString();
   const padded = amount.padStart(decimals + 1, "0");
   const whole = padded.slice(0, -decimals);
   const fraction = padded.slice(-decimals).replace(/0+$/, "");
-  return fraction ? `${BigInt(whole).toString()}.${fraction}` : BigInt(whole).toString();
+  return fraction
+    ? `${BigInt(whole).toString()}.${fraction}`
+    : BigInt(whole).toString();
 }
 
 export function offerIsExpired(
@@ -412,7 +419,9 @@ export function assertSettlesStrk(offer: OfferPayload): void {
     );
   }
   if (!hasConsistentTokenMetadata(offer.want.token)) {
-    throw new Error("The offered want leg contains inconsistent STRK metadata.");
+    throw new Error(
+      "The offered want leg contains inconsistent STRK metadata.",
+    );
   }
 }
 
@@ -447,7 +456,9 @@ export function receiptForTransfer(
   txHash: string,
 ): ReceiptPayload {
   if (!isRandom32ByteId(id) || !isFelt(txHash)) {
-    throw new Error("A valid id and transaction hash are required for a receipt.");
+    throw new Error(
+      "A valid id and transaction hash are required for a receipt.",
+    );
   }
   return {
     dealId: id,
@@ -529,7 +540,10 @@ export function transitionDeal(
     const offer = parseOfferPayload(event.payload);
     if (!offer) throw new Error("Invalid OTC offer payload.");
     if (current) {
-      if (current.dealId !== offer.dealId || !offersEqual(current.offer, offer)) {
+      if (
+        current.dealId !== offer.dealId ||
+        !offersEqual(current.offer, offer)
+      ) {
         throw new Error(
           "Conflicting OTC terms reuse an existing deal id; the duplicate was rejected.",
         );
@@ -544,7 +558,8 @@ export function transitionDeal(
     };
   }
 
-  if (!current) throw new Error("The referenced OTC offer is not stored locally.");
+  if (!current)
+    throw new Error("The referenced OTC offer is not stored locally.");
 
   if (event.type === "expire") {
     if (current.status === "offered" && offerIsExpired(current.offer, at)) {
@@ -585,7 +600,9 @@ export function transitionDeal(
       current.acceptTxHash &&
       !feltEquals(receipt.txHash, current.acceptTxHash)
     ) {
-      throw new Error("Receipt transaction hash does not match the recorded accept transaction.");
+      throw new Error(
+        "Receipt transaction hash does not match the recorded accept transaction.",
+      );
     }
     return {
       ...current,
@@ -595,7 +612,8 @@ export function transitionDeal(
   }
 
   if (event.type === "accept") {
-    if (current.status === "accepted" || current.status === "closed") return current;
+    if (current.status === "accepted" || current.status === "closed")
+      return current;
     if (current.status !== "offered") {
       throw new Error(`Cannot accept a ${current.status} deal.`);
     }
@@ -698,7 +716,8 @@ export function recordDealEvent(
 ): DealRecord {
   const state = loadOtcState(storage, chainId, selfAddress);
   const dealId = event.type === "expire" ? "" : event.payload.dealId;
-  if (!dealId) throw new Error("recordDealEvent requires an event with a dealId.");
+  if (!dealId)
+    throw new Error("recordDealEvent requires an event with a dealId.");
   const next = transitionDeal(state.deals[dealId], event, at);
   state.deals[dealId] = next;
   saveOtcState(storage, chainId, selfAddress, state);
@@ -750,9 +769,12 @@ export function claimOtcAccept(
 ): DealRecord {
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.deals[accept.dealId];
-  if (!current) throw new Error("The referenced OTC offer is not stored locally.");
+  if (!current)
+    throw new Error("The referenced OTC offer is not stored locally.");
   if (current.status !== "offered" || current.acceptPending) {
-    throw new Error("This deal was already accepted; no second transfer was sent.");
+    throw new Error(
+      "This deal was already accepted; no second transfer was sent.",
+    );
   }
   const next = transitionDeal(current, { type: "accept", payload: accept }, at);
   const claimed = {
@@ -1021,19 +1043,19 @@ export function claimPayment(
   at = nowSeconds(),
 ): PaymentRecord {
   const parsedExpected = parsePaymentRequestPayload(expectedRequest);
-  if (!parsedExpected) throw new Error("Invalid expected payment request terms.");
+  if (!parsedExpected)
+    throw new Error("Invalid expected payment request terms.");
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[parsedExpected.requestId];
-  if (
-    !current ||
-    !paymentRequestsEqual(current.request, parsedExpected)
-  ) {
+  if (!current || !paymentRequestsEqual(current.request, parsedExpected)) {
     throw new Error(
       "Payment request terms do not match the locally reviewed record.",
     );
   }
   if (current.status !== "requested" || current.paymentPending) {
-    throw new Error("This request was already paid; no second transfer was sent.");
+    throw new Error(
+      "This request was already paid; no second transfer was sent.",
+    );
   }
   assertPaysStrk(current.request);
   if (paymentRequestIsExpired(current.request, at)) {
@@ -1075,7 +1097,8 @@ export function recordUnverifiedPaymentClaim(
   if (!accept) throw new Error("Invalid payment claim payload.");
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[accept.dealId];
-  if (!current) throw new Error("The referenced payment request is not stored locally.");
+  if (!current)
+    throw new Error("The referenced payment request is not stored locally.");
   if (paymentRequestIsExpired(current.request, at)) {
     throw new Error("This payment request is no longer payable.");
   }
@@ -1086,7 +1109,9 @@ export function recordUnverifiedPaymentClaim(
     to: current.request.requester,
   };
   if (!transfersEqual(accept.transfer, expected)) {
-    throw new Error("Payment claim does not match the requested STRK transfer.");
+    throw new Error(
+      "Payment claim does not match the requested STRK transfer.",
+    );
   }
   const next: PaymentRecord = {
     ...current,
@@ -1166,7 +1191,9 @@ export function confirmPayment(
       to: current.request.requester,
     })
   ) {
-    throw new Error("Payment receipt does not match the requested STRK transfer.");
+    throw new Error(
+      "Payment receipt does not match the requested STRK transfer.",
+    );
   }
   const next: PaymentRecord = {
     ...current,

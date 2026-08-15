@@ -17,8 +17,7 @@ const MULTI_SLOT_TAG_BYTES = 16;
 const WRAPPED_DEK_BYTES = AES_KEY_BYTES + AES_TAG_BYTES;
 export const MULTI_RECIPIENT_SLOT_BYTES =
   MULTI_SLOT_TAG_BYTES + WRAPPED_DEK_BYTES;
-const MULTI_FIXED_BYTES =
-  MULTI_HEADER_BYTES + NONCE_BYTES + AES_TAG_BYTES;
+const MULTI_FIXED_BYTES = MULTI_HEADER_BYTES + NONCE_BYTES + AES_TAG_BYTES;
 
 /**
  * Multi-recipient ciphertexts use outer view_tag 0xff as a scan marker. Because
@@ -70,8 +69,7 @@ export function projectEncryptedMailSize(
       ? AES_TAG_BYTES
       : MULTI_FIXED_BYTES + recipientCount * MULTI_RECIPIENT_SLOT_BYTES;
   const ciphertextBytes = fixedBytes + plaintextBytes;
-  const ciphertextFelts =
-    1 + Math.ceil(ciphertextBytes / FELT_PAYLOAD_BYTES);
+  const ciphertextFelts = 1 + Math.ceil(ciphertextBytes / FELT_PAYLOAD_BYTES);
   return {
     plaintextBytes,
     recipientCount,
@@ -179,7 +177,9 @@ function compareBytes(left: Uint8Array, right: Uint8Array): number {
 }
 
 function bytesToFingerprint(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 function bytesToBigInt(bytes: Uint8Array): bigint {
@@ -233,13 +233,16 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 export function packBytesToFelts(bytes: Uint8Array): Felt[] {
   const felts = [toHex(BigInt(bytes.length))];
   for (let offset = 0; offset < bytes.length; offset += FELT_PAYLOAD_BYTES) {
-    felts.push(toHex(bytesToBigInt(bytes.subarray(offset, offset + FELT_PAYLOAD_BYTES))));
+    felts.push(
+      toHex(bytesToBigInt(bytes.subarray(offset, offset + FELT_PAYLOAD_BYTES))),
+    );
   }
   return felts;
 }
 
 export function unpackFeltsToBytes(felts: readonly FeltInput[]): Uint8Array {
-  if (felts.length === 0) throw new Error("Packed felts are missing a byte length.");
+  if (felts.length === 0)
+    throw new Error("Packed felts are missing a byte length.");
   if (felts.length > MAX_CT_FELTS) {
     throw new Error(`Packed ciphertext exceeds ${MAX_CT_FELTS} felts.`);
   }
@@ -278,7 +281,8 @@ export function publicKeyToFelts(publicKey: Uint8Array): FeltPair {
 }
 
 export function publicKeyFromFelts(pair: readonly FeltInput[]): Uint8Array {
-  if (pair.length !== 2) throw new Error("x25519 public key requires two felts.");
+  if (pair.length !== 2)
+    throw new Error("x25519 public key requires two felts.");
   return concatBytes(
     bigIntToFixedBytes(pair[0], 16, "public key limb 0"),
     bigIntToFixedBytes(pair[1], 16, "public key limb 1"),
@@ -305,12 +309,21 @@ function deriveMailSecrets(sharedSecret: Uint8Array): {
   aesKey: Uint8Array;
   viewTag: number;
 } {
-  const aesKey = hkdf(sha256, sharedSecret, EMPTY_BYTES, MAIL_KEY_INFO, AES_KEY_BYTES);
+  const aesKey = hkdf(
+    sha256,
+    sharedSecret,
+    EMPTY_BYTES,
+    MAIL_KEY_INFO,
+    AES_KEY_BYTES,
+  );
   const viewTag = hkdf(sha256, sharedSecret, EMPTY_BYTES, VIEW_TAG_INFO, 1)[0];
   return { aesKey, viewTag };
 }
 
-function mailAad(ephemeralPublicKey: Uint8Array, nonce: Uint8Array): Uint8Array {
+function mailAad(
+  ephemeralPublicKey: Uint8Array,
+  nonce: Uint8Array,
+): Uint8Array {
   return concatBytes(AAD_DOMAIN, ephemeralPublicKey, nonce);
 }
 
@@ -637,11 +650,7 @@ export async function encryptMailForRecipients(
     }
   }
 
-  const aadPrefix = multiAadPrefix(
-    ephemeralPublicKey,
-    nonce,
-    materials.length,
-  );
+  const aadPrefix = multiAadPrefix(ephemeralPublicKey, nonce, materials.length);
   const slots = await Promise.all(
     materials.map(async (material, index) => {
       const wrappedDek = await aesGcmEncrypt(
@@ -690,7 +699,8 @@ async function decryptLegacyMail(
   ciphertext: Uint8Array,
 ): Promise<Uint8Array> {
   const { aesKey, viewTag } = deriveMailSecrets(sharedSecret);
-  if (record.viewTag !== viewTag) throw new Error("Mail view tag does not match.");
+  if (record.viewTag !== viewTag)
+    throw new Error("Mail view tag does not match.");
   return aesGcmDecrypt(
     aesKey,
     nonce,
@@ -711,11 +721,7 @@ async function decryptMultiRecipientMail(
     nonce,
     parsed.slotCount,
   );
-  const aadPrefix = multiAadPrefix(
-    ephemeralPublicKey,
-    nonce,
-    parsed.slotCount,
-  );
+  const aadPrefix = multiAadPrefix(ephemeralPublicKey, nonce, parsed.slotCount);
   let foundCandidate = false;
 
   for (const slot of parsed.slots) {

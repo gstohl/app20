@@ -129,7 +129,13 @@ export default function PrivacyWalletMenu() {
       return;
     }
     void refreshBalance();
-  }, [connectedAddress, isConnected, isStrk20Capable, providerIndex, walletAccount]);
+  }, [
+    connectedAddress,
+    isConnected,
+    isStrk20Capable,
+    providerIndex,
+    walletAccount,
+  ]);
 
   async function runAction(
     actions: WALLET_API.STRK20_ACTION[],
@@ -258,11 +264,16 @@ export default function PrivacyWalletMenu() {
         : null;
 
   return (
-    <section className={styles.sidebarAccount} aria-label="Wallet and shielded balance">
+    <section
+      className={styles.sidebarAccount}
+      aria-label="Wallet and shielded balance"
+    >
       <div className={styles.accountHeading}>
         <div>
           <span className={styles.sidebarLabel}>IDENTITY</span>
-          <strong>{isConnected ? "Mailbox account" : "Wallet disconnected"}</strong>
+          <strong>
+            {isConnected ? "Mailbox account" : "Wallet disconnected"}
+          </strong>
         </div>
         <SelectWallet variant="nav" />
       </div>
@@ -272,7 +283,9 @@ export default function PrivacyWalletMenu() {
           {connectedAddress}
         </code>
       ) : (
-        <p className={styles.accountHint}>Connect Ready to open this mailbox.</p>
+        <p className={styles.accountHint}>
+          Connect Ready to open this mailbox.
+        </p>
       )}
 
       <div className={styles.sidebarBalance}>
@@ -306,18 +319,23 @@ export default function PrivacyWalletMenu() {
         </button>
       </div>
 
-      {isConnected ? isStrk20Capable ? null : (
-        <p className={styles.walletError} role="alert">
-          This wallet did not declare Wallet API/spec 0.10 support. Connect Ready
-          for privacy actions.
-        </p>
+      {isConnected ? (
+        isStrk20Capable ? null : (
+          <p className={styles.walletError} role="alert">
+            This wallet did not declare Wallet API/spec 0.10 support. Connect
+            Ready for privacy actions.
+          </p>
+        )
       ) : null}
       {balance.kind === "error" ? (
-        <p className={styles.walletError} role="alert">{balance.message}</p>
+        <p className={styles.walletError} role="alert">
+          {balance.message}
+        </p>
       ) : null}
       {providerIndex === 0 ? (
         <p className={styles.mainnetSafety} role="note">
-          Use Sepolia for Phase 1 checks; do not send Quietline mail on mainnet yet.
+          Use Sepolia for Phase 1 checks; do not send Quietline mail on mainnet
+          yet.
         </p>
       ) : null}
 

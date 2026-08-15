@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { parseCompositePayload, type CompositeAttachment } from "@/lib/composite";
+import {
+  parseCompositePayload,
+  type CompositeAttachment,
+} from "@/lib/composite";
 import type { DecodedMail } from "@/lib/envelope";
 import type { EncryptedMailRecord } from "@/lib/mail";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
@@ -85,8 +88,8 @@ function safeOfferIndex(index: string): number | undefined {
 
 function UnsupportedMessage() {
   return (
-    <article className={styles.messageSheet}>
-      <span className={styles.sheetType}>UNSUPPORTED</span>
+    <article className={styles.messageSheet} aria-label="Unsupported message">
+      <h3 className={styles.sheetType}>UNSUPPORTED</h3>
       <p className={styles.termsSentence}>unsupported message</p>
     </article>
   );
@@ -283,6 +286,7 @@ export default function Thread({
 }: ThreadProps) {
   function renderEnvelope(message: LocalMailMessage) {
     const { envelope } = message;
+    const headingId = `message-${message.id.replace(/[^a-zA-Z0-9_-]/g, "-")}-${envelope.type}`;
     if (envelope.type === "unsupported") return <UnsupportedMessage />;
 
     if (envelope.type === "composite") {
@@ -325,9 +329,14 @@ export default function Thread({
         );
       }
       return (
-        <article className={styles.compositeDocument}>
+        <article
+          className={styles.compositeDocument}
+          aria-labelledby={headingId}
+        >
           <div className={styles.sheetHeading}>
-            <span className={styles.sheetType}>COMPOSITE DOCUMENT</span>
+            <h3 id={headingId} className={styles.sheetType}>
+              COMPOSITE DOCUMENT
+            </h3>
             <span className={styles.proofStamp}>
               {composite.attachments.length} attachment
               {composite.attachments.length === 1 ? "" : "s"}
@@ -335,8 +344,8 @@ export default function Thread({
           </div>
           <p className={styles.recipientDisclosure}>
             {recipientCount} recipient{recipientCount === 1 ? "" : "s"}; the
-            count is public ciphertext metadata while identities are absent
-            from MessagePosted.
+            count is public ciphertext metadata while identities are absent from
+            MessagePosted.
           </p>
           {composite.body ? (
             <p className={styles.letterBody}>{composite.body}</p>
@@ -354,13 +363,14 @@ export default function Thread({
       const recipientCount =
         message.recipientCount ?? publicRecipientCount(message.record);
       return (
-        <article className={styles.messageSheet}>
+        <article className={styles.messageSheet} aria-labelledby={headingId}>
           <div className={styles.sheetHeading}>
-            <span className={styles.sheetType}>
+            <h3 id={headingId} className={styles.sheetType}>
               {envelope.version === 0 ? "LEGACY LETTER" : "PRIVATE LETTER"}
-            </span>
+            </h3>
             <span className={styles.proofStamp}>
-              {recipientCount} recipient{recipientCount === 1 ? "" : "s"} · count public
+              {recipientCount} recipient{recipientCount === 1 ? "" : "s"} ·
+              count public
             </span>
           </div>
           <p className={styles.recipientDisclosure}>
@@ -390,12 +400,14 @@ export default function Thread({
           busy={action?.pending}
           actionMessage={action?.message}
           actionStartedAt={action?.startedAt}
-          onAccept={ownOffer ? undefined : () => onAccept(offer, safeOfferIndex(message.index))}
+          onAccept={
+            ownOffer
+              ? undefined
+              : () => onAccept(offer, safeOfferIndex(message.index))
+          }
           onDecline={ownOffer ? undefined : () => onDecline(offer)}
           onPostReceipt={
-            ownOffer ||
-            deal?.status !== "accepted" ||
-            !deal.settlementVerified
+            ownOffer || deal?.status !== "accepted" || !deal.settlementVerified
               ? undefined
               : () => onPostReceipt(offer)
           }
@@ -408,21 +420,23 @@ export default function Thread({
       if (!accept) return <UnsupportedMessage />;
       const isPayment = Boolean(otcState.payments[accept.dealId]);
       return (
-        <article className={styles.messageSheet}>
+        <article className={styles.messageSheet} aria-labelledby={headingId}>
           <div className={styles.sheetHeading}>
-            <span className={styles.sheetType}>
+            <h3 id={headingId} className={styles.sheetType}>
               {isPayment ? "PAYMENT MEMO" : "OTC ACCEPT MEMO"}
-            </span>
+            </h3>
             <span className={styles.proofStamp}>
               Unverified counterparty claim
             </span>
           </div>
           <p className={styles.termsSentence}>
             A counterparty claims they sent{" "}
-            {formatBaseUnits(accept.transfer.amount, accept.transfer.token.decimals)}{" "}
+            {formatBaseUnits(
+              accept.transfer.amount,
+              accept.transfer.token.decimals,
+            )}{" "}
             <bdi>{accept.transfer.token.symbol}</bdi> for{" "}
-            {isPayment ? "request" : "deal"}{" "}
-            {accept.dealId.slice(0, 12)}…
+            {isPayment ? "request" : "deal"} {accept.dealId.slice(0, 12)}…
           </p>
           <p className={styles.riskCopy}>
             This decrypted memo and its MessagePosted transaction do not prove
@@ -437,9 +451,11 @@ export default function Thread({
       const decline = parseDeclinePayload(envelope.payload);
       if (!decline) return <UnsupportedMessage />;
       return (
-        <article className={styles.messageSheet}>
+        <article className={styles.messageSheet} aria-labelledby={headingId}>
           <div className={styles.sheetHeading}>
-            <span className={styles.sheetType}>OTC RESPONSE</span>
+            <h3 id={headingId} className={styles.sheetType}>
+              OTC RESPONSE
+            </h3>
             <span className={styles.proofStamp}>Declined</span>
           </div>
           <p className={styles.termsSentence}>
@@ -509,10 +525,14 @@ export default function Thread({
       if (!update) return <UnsupportedMessage />;
       const operation = envelope.type.slice("escrow_".length).toUpperCase();
       return (
-        <article className={styles.messageSheet}>
+        <article className={styles.messageSheet} aria-labelledby={headingId}>
           <div className={styles.sheetHeading}>
-            <span className={styles.sheetType}>ESCROW {operation} NOTICE</span>
-            <span className={styles.proofStamp}>Unverified coordination memo</span>
+            <h3 id={headingId} className={styles.sheetType}>
+              ESCROW {operation} NOTICE
+            </h3>
+            <span className={styles.proofStamp}>
+              Unverified coordination memo
+            </span>
           </div>
           <p className={styles.termsSentence}>
             A counterparty posted an encrypted {operation.toLowerCase()} notice
@@ -553,7 +573,9 @@ export default function Thread({
           <p className={styles.kicker}>LOCAL PLAINTEXT / CARBON COPY</p>
           <h2 id="thread-title">Correspondence</h2>
         </div>
-        <span className={styles.sheetClip} aria-hidden="true">CLIP / 01</span>
+        <span className={styles.sheetClip} aria-hidden="true">
+          CLIP / 01
+        </span>
       </div>
 
       {messages.length ? (
@@ -562,7 +584,8 @@ export default function Thread({
             const paymentLink = message.transport === "payment_link";
             const recipientCount = paymentLink
               ? 0
-              : message.recipientCount ?? publicRecipientCount(message.record);
+              : (message.recipientCount ??
+                publicRecipientCount(message.record));
             return (
               <li className={styles.message} key={message.id}>
                 <div className={styles.messageMeta}>
@@ -578,7 +601,8 @@ export default function Thread({
                         record {message.index}
                       </span>
                       <span>
-                        {recipientCount} recipient{recipientCount === 1 ? "" : "s"}
+                        {recipientCount} recipient
+                        {recipientCount === 1 ? "" : "s"}
                         {message.blockNumber === undefined
                           ? " · confirmed"
                           : ` · block ${message.blockNumber}`}

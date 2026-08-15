@@ -10,7 +10,9 @@ import {
 const strk = { symbol: "STRK", address: addrSTRK, decimals: 18 };
 const usdc = { symbol: "USDC", address: "0x53c", decimals: 6 };
 
-function compositeMessage(direction: "incoming" | "outgoing"): LocalMailMessage {
+function compositeMessage(
+  direction: "incoming" | "outgoing",
+): LocalMailMessage {
   const envelope = decodeEnvelope(
     encodeEnvelope("composite", {
       documentId: `0x${"21".repeat(32)}`,

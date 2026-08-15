@@ -82,10 +82,10 @@ describe("felt packing", () => {
     expect(() => unpackFeltsToBytes(["0x20", "0x1"])).toThrow(/count/i);
     expect(() => unpackFeltsToBytes(["0x1", "0x100"])).toThrow(/fit/i);
     expect(() =>
-      unpackFeltsToBytes(new Array(MAX_CT_FELTS + 1).fill("0x0"))
+      unpackFeltsToBytes(new Array(MAX_CT_FELTS + 1).fill("0x0")),
     ).toThrow(/140 felts/i);
     expect(() =>
-      unpackFeltsToBytes([`0x${(31 * MAX_CT_FELTS).toString(16)}`])
+      unpackFeltsToBytes([`0x${(31 * MAX_CT_FELTS).toString(16)}`]),
     ).toThrow(/payload limit/i);
   });
 
@@ -109,7 +109,10 @@ describe("mail key derivation", () => {
 describe("encrypted mail", () => {
   it("encrypts and decrypts a recipient roundtrip", async () => {
     const recipient = deriveKeypair(seed(11));
-    const record = await encryptMail(recipient.publicKey, "hello from quietline");
+    const record = await encryptMail(
+      recipient.publicKey,
+      "hello from quietline",
+    );
 
     const messages = await scanAndDecrypt(recipient.privateKey, [record]);
     expect(messages).toHaveLength(1);
@@ -140,9 +143,9 @@ describe("encrypted mail", () => {
       ],
     };
 
-    expect(new TextDecoder().decode(await decryptMail(privateKey, record))).toBe(
-      "legacy fixture: hello from quietline",
-    );
+    expect(
+      new TextDecoder().decode(await decryptMail(privateKey, record)),
+    ).toBe("legacy fixture: hello from quietline");
     await expect(scanAndDecrypt(privateKey, [record])).resolves.toMatchObject([
       { plaintext: "legacy fixture: hello from quietline" },
     ]);
@@ -154,9 +157,9 @@ describe("encrypted mail", () => {
     const record = await encryptMail(recipient.publicKey, "recipient only");
 
     await expect(decryptMail(stranger.privateKey, record)).rejects.toThrow();
-    await expect(scanAndDecrypt(stranger.privateKey, [record])).resolves.toEqual(
-      [],
-    );
+    await expect(
+      scanAndDecrypt(stranger.privateKey, [record]),
+    ).resolves.toEqual([]);
   });
 
   it("keeps authenticated binary payloads that are not valid UTF-8", async () => {
@@ -314,9 +317,9 @@ describe("multi-recipient encrypted mail", () => {
     );
 
     await expect(decryptMail(stranger.privateKey, record)).rejects.toThrow();
-    await expect(scanAndDecrypt(stranger.privateKey, [record])).resolves.toEqual(
-      [],
-    );
+    await expect(
+      scanAndDecrypt(stranger.privateKey, [record]),
+    ).resolves.toEqual([]);
   });
 
   it("isolates a corrupted recipient slot", async () => {
@@ -336,10 +339,13 @@ describe("multi-recipient encrypted mail", () => {
         scanAndDecrypt(recipient.privateKey, [corrupted]),
       ),
     );
-    expect(results.map((messages) => messages.length).sort()).toEqual([0, 1, 1]);
-    expect(
-      results.flat().map((message) => message.plaintext),
-    ).toEqual(["slot isolation", "slot isolation"]);
+    expect(results.map((messages) => messages.length).sort()).toEqual([
+      0, 1, 1,
+    ]);
+    expect(results.flat().map((message) => message.plaintext)).toEqual([
+      "slot isolation",
+      "slot isolation",
+    ]);
   });
 
   it("rejects a spliced slot without harming other slots", async () => {
@@ -348,7 +354,10 @@ describe("multi-recipient encrypted mail", () => {
     );
     const publicKeys = recipients.map((recipient) => recipient.publicKey);
     const source = await encryptMailForRecipients(publicKeys, "source");
-    const destination = await encryptMailForRecipients(publicKeys, "destination");
+    const destination = await encryptMailForRecipients(
+      publicKeys,
+      "destination",
+    );
     const sourceBytes = unpackFeltsToBytes(source.ciphertextFelts);
     const spliced = mutateCiphertext(destination, (bytes) => {
       const wrappedDekOffset = MULTI_HEADER_BYTES + MULTI_SLOT_TAG_BYTES;
@@ -366,10 +375,13 @@ describe("multi-recipient encrypted mail", () => {
         scanAndDecrypt(recipient.privateKey, [spliced]),
       ),
     );
-    expect(results.map((messages) => messages.length).sort()).toEqual([0, 1, 1]);
-    expect(
-      results.flat().map((message) => message.plaintext),
-    ).toEqual(["destination", "destination"]);
+    expect(results.map((messages) => messages.length).sort()).toEqual([
+      0, 1, 1,
+    ]);
+    expect(results.flat().map((message) => message.plaintext)).toEqual([
+      "destination",
+      "destination",
+    ]);
   });
 
   it("rejects authenticated-context and body tampering", async () => {
@@ -380,8 +392,7 @@ describe("multi-recipient encrypted mail", () => {
       recipients.map((recipient) => recipient.publicKey),
       "all context is bound",
     );
-    const bodyNonceOffset =
-      MULTI_HEADER_BYTES + 3 * MULTI_RECIPIENT_SLOT_BYTES;
+    const bodyNonceOffset = MULTI_HEADER_BYTES + 3 * MULTI_RECIPIENT_SLOT_BYTES;
     const variants: EncryptedMailRecord[] = [
       {
         ...record,
@@ -405,7 +416,9 @@ describe("multi-recipient encrypted mail", () => {
 
     for (const variant of variants) {
       for (const recipient of recipients) {
-        await expect(decryptMail(recipient.privateKey, variant)).rejects.toThrow();
+        await expect(
+          decryptMail(recipient.privateKey, variant),
+        ).rejects.toThrow();
       }
     }
   });

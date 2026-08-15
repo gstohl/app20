@@ -127,9 +127,9 @@ describe("mail STRK20 actions", () => {
     if (invoke?.type !== "invoke") throw new Error("Expected invoke.");
     expect(invoke.calldata.at(-1)).toBe(actionId);
     expect(computeActionId("payment-attempt", attemptId)).toBe(actionId);
-    expect(
-      computeActionId("payment-attempt", `0x${"25".repeat(32)}`),
-    ).not.toBe(actionId);
+    expect(computeActionId("payment-attempt", `0x${"25".repeat(32)}`)).not.toBe(
+      actionId,
+    );
   });
 
   it("builds accept as transfer, recovery note, invoke and refuses non-STRK give", () => {
@@ -198,7 +198,7 @@ describe("mail STRK20 actions", () => {
     expect(parseOptionalStrkAmount("2.5")).toBe(25n * 10n ** 17n);
     expect(() => parseOptionalStrkAmount("0")).toThrow(/greater than zero/i);
     expect(() => parseOptionalStrkAmount("1.0000000000000000001")).toThrow(
-      /18 decimal/i
+      /18 decimal/i,
     );
   });
 
@@ -208,7 +208,7 @@ describe("mail STRK20 actions", () => {
     expect(isConfiguredMailHelper("not-an-address")).toBe(false);
     expect(isConfiguredMailHelper("0x123")).toBe(true);
     expect(() =>
-      buildMailActions({ ...baseInput, helperAddress: "0x0" })
+      buildMailActions({ ...baseInput, helperAddress: "0x0" }),
     ).toThrow(/helper/i);
   });
 
@@ -225,7 +225,9 @@ describe("mail STRK20 actions", () => {
     const account = {
       strk20InvokeTransaction: invoke,
     } as unknown as WalletAccountV6;
-    const provider = { waitForTransaction: wait } as unknown as ProviderInterface;
+    const provider = {
+      waitForTransaction: wait,
+    } as unknown as ProviderInterface;
 
     await submitMail({
       account,
@@ -288,7 +290,9 @@ describe("mail STRK20 actions", () => {
 
   it("fails closed when an accepted receipt says execution reverted", async () => {
     const account = {
-      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+      strk20InvokeTransaction: vi.fn(async () => ({
+        transaction_hash: "0x999",
+      })),
     } as unknown as WalletAccountV6;
     const provider = {
       waitForTransaction: vi.fn(async () => ({
@@ -310,7 +314,9 @@ describe("mail STRK20 actions", () => {
 
   it("keeps a submitted transaction unknown when confirmation times out", async () => {
     const account = {
-      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+      strk20InvokeTransaction: vi.fn(async () => ({
+        transaction_hash: "0x999",
+      })),
     } as unknown as WalletAccountV6;
     const provider = {
       waitForTransaction: vi.fn(() => new Promise(() => undefined)),
@@ -334,13 +340,17 @@ describe("mail STRK20 actions", () => {
 
   it("waits for execution but never treats a throwing submitted callback as verified", async () => {
     const account = {
-      strk20InvokeTransaction: vi.fn(async () => ({ transaction_hash: "0x999" })),
+      strk20InvokeTransaction: vi.fn(async () => ({
+        transaction_hash: "0x999",
+      })),
     } as unknown as WalletAccountV6;
     const wait = vi.fn(async () => ({
       finality_status: "ACCEPTED_ON_L2",
       execution_status: "SUCCEEDED",
     }));
-    const provider = { waitForTransaction: wait } as unknown as ProviderInterface;
+    const provider = {
+      waitForTransaction: wait,
+    } as unknown as ProviderInterface;
 
     await expect(
       submitMail(

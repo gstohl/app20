@@ -66,9 +66,7 @@ function isShortString(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length <= max;
 }
 
-function parseTrade(
-  value: Record<string, unknown>,
-): TradeDraftFields | null {
+function parseTrade(value: Record<string, unknown>): TradeDraftFields | null {
   if (
     !isShortString(value.giveStrk, 128) ||
     !isShortString(value.wantAmount, 128) ||

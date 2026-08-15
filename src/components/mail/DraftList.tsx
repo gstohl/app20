@@ -79,9 +79,7 @@ export default function DraftList({
                     : ""
                 }`}
                 type="button"
-                aria-current={
-                  selectedDraftId === draft.id ? "true" : undefined
-                }
+                aria-current={selectedDraftId === draft.id ? "true" : undefined}
                 onClick={() => onSelect(draft.id)}
               >
                 <span className={styles.conversationTopline}>
