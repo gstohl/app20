@@ -181,12 +181,31 @@ Artifacts (same names `scripts/e2e-mail.mjs` loads):
 
 This repo has **no** `snfoundry.toml`. Pass `--url` / `--account` on the CLI. Use Day-0 `https://rpc.starknet.lava.build` for sncast so you do not put the Alchemy key on the command line.
 
-### 2.1 Path A — `sncast` declare + deploy (funded account)
+### 2.1 Path A — one script (`npm run deploy:helper:mainnet`)
 
 Use a **separate funded Starknet account** you control. This is a public declare/deploy, not a STRK20 private action. Ready’s scoring wallet can be this account if it has extra public STRK; a dedicated deployer is cleaner.
 
-1. Confirm the account is on mainnet and funded for declare + deploy fees (public STRK, not shielded).
-2. From `cairo/`:
+Create the account once if you do not have one:
+
+```bash
+sncast account create --name quietline-deployer --network mainnet
+# fund the printed address with a few public STRK from Ready
+sncast account deploy --name quietline-deployer --network mainnet --url https://rpc.starknet.lava.build
+```
+
+Then from the repo root:
+
+```bash
+# fee estimate only — no transaction
+npm run deploy:helper:mainnet -- --account quietline-deployer
+
+# real mainnet declare + deploy
+I_UNDERSTAND_MAINNET=1 npm run deploy:helper:mainnet -- --account quietline-deployer --broadcast
+```
+
+The script rebuilds Cairo, locks constructor calldata to the mainnet pool, writes `VITE_MAIL_HELPER_MAINNET` into `.env.local`, and never deploys escrow. Restart `npm run dev` after it prints the helper address.
+
+Manual equivalent, if you prefer raw sncast from `cairo/`:
 
 ```bash
 sncast --account <DEPLOYER_ACCOUNT> \

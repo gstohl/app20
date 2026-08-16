@@ -17,7 +17,8 @@
     "test:e2e": "node scripts/e2e-mail.mjs",
     "pool:setup": "bash scripts/pool-harness-setup.sh",
     "test:e2e:pool": "bash scripts/pool-harness-setup.sh --check && PATH=\"$PWD/vendor/bin:$PATH\" npm --prefix pool-harness test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "deploy:helper:mainnet": "bash scripts/deploy-mail-mainnet.sh"
   },
   "dependencies": {
     "@fontsource-variable/newsreader": "^5.3.0",
