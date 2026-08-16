@@ -319,7 +319,9 @@ export default function Compose({
     draftRef.current = initialDraft;
     setDraft(initialDraft);
     setSendState({ kind: "idle" });
-    const frame = requestAnimationFrame(() => recipientInputRef.current?.focus());
+    const frame = requestAnimationFrame(() =>
+      recipientInputRef.current?.focus(),
+    );
     return () => cancelAnimationFrame(frame);
   }, [initialDraft.id]);
 
@@ -730,7 +732,8 @@ export default function Compose({
       if (document.payment && poolAddress) {
         setSendState({
           kind: "lookup",
-          message: "Reading the live pool fee and public STRK balance before the attached payment…",
+          message:
+            "Reading the live pool fee and public STRK balance before the attached payment…",
           step: 1,
           totalSteps: 1,
         });
@@ -819,7 +822,9 @@ export default function Compose({
           );
         } else {
           if (!poolAddress) {
-            throw new Error("The STRK20 pool is not configured for this network.");
+            throw new Error(
+              "The STRK20 pool is not configured for this network.",
+            );
           }
           await authorizeStrk20ValueAction({
             provider,

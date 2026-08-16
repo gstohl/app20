@@ -19,7 +19,9 @@ export const myFrontendProviders: ProviderInterface[] = [
       "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/" +
       alchemyKey,
   }),
-  new RpcProvider({ nodeUrl: "https://starknet-testnet.public.blastapi.io/rpc/v0_7" }),
+  new RpcProvider({
+    nodeUrl: "https://starknet-testnet.public.blastapi.io/rpc/v0_7",
+  }),
   new RpcProvider({
     nodeUrl:
       "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/" +
@@ -69,7 +71,7 @@ export const strk20PoolMainnet =
 export const strk20PoolSepolia =
   "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91";
 export const strk20PoolLocalnet = localnetWalletEnabled
-  ? import.meta.env.VITE_LOCALNET_POOL_ADDRESS ?? "0x0"
+  ? (import.meta.env.VITE_LOCALNET_POOL_ADDRESS ?? "0x0")
   : "0x0";
 
 export function strk20PoolForProviderIndex(
@@ -89,7 +91,7 @@ export const mailHelperSepolia =
 export const mailHelperMainnet =
   import.meta.env.VITE_MAIL_HELPER_MAINNET ?? "0x0";
 export const mailHelperLocalnet = localnetWalletEnabled
-  ? import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0"
+  ? (import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0")
   : "0x0";
 
 // QuietlineEscrow remains 0x0 unless a reviewed deployment is configured.
@@ -99,5 +101,5 @@ export const escrowHelperSepolia =
 export const escrowHelperMainnet =
   import.meta.env.VITE_ESCROW_HELPER_MAINNET ?? "0x0";
 export const escrowHelperLocalnet = localnetWalletEnabled
-  ? import.meta.env.VITE_ESCROW_HELPER_LOCALNET ?? "0x0"
+  ? (import.meta.env.VITE_ESCROW_HELPER_LOCALNET ?? "0x0")
   : "0x0";

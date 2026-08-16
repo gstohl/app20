@@ -49,7 +49,9 @@ export class InsufficientPublicStrkBalanceError extends Error {
 
 export class MainnetPreflightDeclinedError extends Error {
   constructor() {
-    super("Mainnet real-funds confirmation was cancelled. Nothing was submitted.");
+    super(
+      "Mainnet real-funds confirmation was cancelled. Nothing was submitted.",
+    );
     this.name = "MainnetPreflightDeclinedError";
   }
 }

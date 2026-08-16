@@ -2158,7 +2158,9 @@ export default function InboxPage() {
     window.requestAnimationFrame(() => {
       const setup = document.getElementById("mailbox-key-setup");
       setup?.scrollIntoView({ block: "start" });
-      setup?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+      setup
+        ?.querySelector<HTMLButtonElement>("button:not([disabled])")
+        ?.focus();
     });
   }
 

@@ -64,7 +64,9 @@ function unwrapWalletValue(raw: unknown): unknown {
 function readStrkBalance(raw: unknown): bigint {
   const value = unwrapWalletValue(raw);
   if (!Array.isArray(value)) {
-    throw new Error("The wallet returned an unfamiliar shielded-balance response.");
+    throw new Error(
+      "The wallet returned an unfamiliar shielded-balance response.",
+    );
   }
 
   for (const entry of value) {
@@ -94,9 +96,7 @@ export default function PrivacyWalletMenu() {
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const strk20Capability = useStoreWallet(
-    (state) => state.strk20Capability,
-  );
+  const strk20Capability = useStoreWallet((state) => state.strk20Capability);
   const connectionNotice = useStoreWallet((state) => state.connectionNotice);
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
@@ -424,14 +424,11 @@ export default function PrivacyWalletMenu() {
 
       {isConnected && !isStrk20Capable ? (
         strk20Capability ? (
-          <Strk20CapabilityDiagnostic
-            capability={strk20Capability}
-            compact
-          />
+          <Strk20CapabilityDiagnostic capability={strk20Capability} compact />
         ) : (
           <p className={styles.walletError} role="status">
-            Checking the wallet's dapp-facing STRK20 capability. Privacy
-            actions remain disabled.
+            Checking the wallet's dapp-facing STRK20 capability. Privacy actions
+            remain disabled.
           </p>
         )
       ) : null}

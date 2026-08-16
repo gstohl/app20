@@ -62,13 +62,15 @@ function prettyStatus(finality?: string, execution?: string): string {
       : execution === "REVERTED"
         ? "Reverted"
         : "";
-  return [finalityLabel, executionLabel].filter(Boolean).join(" · ") || "Confirmed";
+  return (
+    [finalityLabel, executionLabel].filter(Boolean).join(" · ") || "Confirmed"
+  );
 }
 
 function receiptToResult(
   receipt: unknown,
   transactionHash: string,
-  amountLabel: string
+  amountLabel: string,
 ): ActionResult {
   const container = receipt as { value?: unknown } | undefined;
   const value = (container?.value ?? receipt) as
@@ -180,24 +182,28 @@ const TABS: { key: TabKey; label: string }[] = [
 
 export default function WalletAccountV6Tag() {
   const providerIndex = useFrontendProvider(
-    (state) => state.currentFrontendProviderIndex
+    (state) => state.currentFrontendProviderIndex,
   );
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const strk20Capability = useStoreWallet(
-    (state) => state.strk20Capability,
-  );
+  const strk20Capability = useStoreWallet((state) => state.strk20Capability);
   const networkName = constants.Strk20Networks[providerIndex];
   const networkKey = networkName ?? `network-${providerIndex}`;
   const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
   const isStrk20Network = networkName !== undefined && poolAddress !== null;
 
-  const [resultBalances, setResultBalances] = useState<ActionResult | null>(null);
+  const [resultBalances, setResultBalances] = useState<ActionResult | null>(
+    null,
+  );
   const [resultShield, setResultShield] = useState<ActionResult | null>(null);
-  const [resultUnshield, setResultUnshield] = useState<ActionResult | null>(null);
-  const [resultTransfer, setResultTransfer] = useState<ActionResult | null>(null);
+  const [resultUnshield, setResultUnshield] = useState<ActionResult | null>(
+    null,
+  );
+  const [resultTransfer, setResultTransfer] = useState<ActionResult | null>(
+    null,
+  );
   const [tab, setTab] = useState<TabKey>("shield");
   const [amountInput, setAmountInput] = useState("0.1");
   let parsedAmount: bigint | null = null;
@@ -205,7 +211,8 @@ export default function WalletAccountV6Tag() {
   try {
     parsedAmount = parseStrkAmount(amountInput);
   } catch (error: unknown) {
-    amountError = error instanceof Error ? error.message : "Enter a valid STRK amount.";
+    amountError =
+      error instanceof Error ? error.message : "Enter a valid STRK amount.";
   }
 
   useEffect(() => {
@@ -228,7 +235,9 @@ export default function WalletAccountV6Tag() {
     }
 
     if (!networkName || !poolAddress || !isStrk20Network) {
-      setResult(errorResult("STRK20 actions require Starknet Mainnet or Sepolia."));
+      setResult(
+        errorResult("STRK20 actions require Starknet Mainnet or Sepolia."),
+      );
       return;
     }
 
@@ -273,14 +282,12 @@ export default function WalletAccountV6Tag() {
               ],
             });
           },
-        }
+        },
       );
       setResult(receiptToResult(receipt, transactionHash, amountLabel));
     } catch (error: unknown) {
       const timedOut = error instanceof Strk20WaitTimeoutError;
-      const transactionHash = timedOut
-        ? error.transactionHash
-        : submittedHash;
+      const transactionHash = timedOut ? error.transactionHash : submittedHash;
       setResult({
         status: "error",
         title: timedOut
@@ -422,7 +429,9 @@ export default function WalletAccountV6Tag() {
           ))}
         </div>
       ) : null}
-      {result.note ? <pre className={styles.receiptNote}>{result.note}</pre> : null}
+      {result.note ? (
+        <pre className={styles.receiptNote}>{result.note}</pre>
+      ) : null}
     </div>
   );
 
@@ -579,13 +588,15 @@ export default function WalletAccountV6Tag() {
         </div>
       ) : null}
 
-      {isStrk20Network ? providerIndex === 0 ? (
-        <div className={styles.warn}>
-          Mainnet moves real funds. Quietline reads the live pool fee and public
-          STRK balance, then requires an exact confirmation before submission.
-          Escrow remains disabled.
-        </div>
-      ) : null : (
+      {isStrk20Network ? (
+        providerIndex === 0 ? (
+          <div className={styles.warn}>
+            Mainnet moves real funds. Quietline reads the live pool fee and
+            public STRK balance, then requires an exact confirmation before
+            submission. Escrow remains disabled.
+          </div>
+        ) : null
+      ) : (
         <div className={styles.warn}>
           STRK20 actions require Starknet Sepolia or Mainnet.
         </div>

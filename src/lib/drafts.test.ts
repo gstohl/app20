@@ -56,9 +56,7 @@ describe("device-private drafts", () => {
     });
     expect(loadDrafts(storage, "SN_MAIN", "0xa11ce")).toEqual([]);
 
-    expect(
-      deleteDraft(storage, "SN_SEPOLIA", "0xa11ce", draft.id),
-    ).toEqual([]);
+    expect(deleteDraft(storage, "SN_SEPOLIA", "0xa11ce", draft.id)).toEqual([]);
     expect(loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")).toEqual([]);
   });
 

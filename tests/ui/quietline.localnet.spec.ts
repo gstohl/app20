@@ -192,10 +192,9 @@ test("all Quietline localnet journeys", async ({
     const amountInput = walletRegion.getByLabel("Wallet action amount in STRK");
     await expect(amountInput).toHaveValue("0.1");
     await expect(
-      walletRegion.getByText(
-        "0.1 STRK · 100000000000000000 base units",
-        { exact: true },
-      ),
+      walletRegion.getByText("0.1 STRK · 100000000000000000 base units", {
+        exact: true,
+      }),
     ).toBeVisible();
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
     await expect(
@@ -233,11 +232,11 @@ test("all Quietline localnet journeys", async ({
     ).toBeVisible({
       timeout: 180_000,
     });
-    await expect(
-      walletRegion.getByText("1 STRK", { exact: true }),
-    ).toBeVisible({
-      timeout: 60_000,
-    });
+    await expect(walletRegion.getByText("1 STRK", { exact: true })).toBeVisible(
+      {
+        timeout: 60_000,
+      },
+    );
     await screenshot(page, "05-shielded-balances", testInfo);
   });
 
@@ -327,7 +326,9 @@ test("all Quietline localnet journeys", async ({
     await messageRow(page, compositeBody).click();
     await expect(threadBody(page, compositeBody)).toBeVisible();
     await expect(messageRow(page, compositeBody)).toContainText("OPENED");
-    await expect(page.getByRole("heading", { name: "Correspondence" })).toBeFocused();
+    await expect(
+      page.getByRole("heading", { name: "Correspondence" }),
+    ).toBeFocused();
     await expect(
       page.getByText("PRIVATE PAYMENT MEMO", { exact: true }),
     ).toBeVisible();
@@ -457,7 +458,7 @@ test("all Quietline localnet journeys", async ({
       .getByRole("button", { name: "Continue to inbox to review & pay" })
       .click();
     await expect(
-      payPage.getByRole("heading", { name: "Register a mail key" }),
+      payPage.getByRole("heading", { name: "Set up a mailbox key" }),
     ).toBeVisible();
     await payPage.getByText("Restore from backup").click();
     await payPage.getByLabel("Backup value").fill(bobBackup);
@@ -699,18 +700,20 @@ test("all Quietline localnet journeys", async ({
       expect(metrics.bodyWidth).toBeLessThanOrEqual(metrics.bodyClientWidth);
       await screenshot(page, `28-responsive-${width}`, testInfo);
     }
-    const unnamedIconButtons = await page.locator("button").evaluateAll((buttons) =>
-      buttons
-        .filter((button) => {
-          const text = (button.textContent ?? "").trim();
-          return (
-            /^[×+＋☰←→…✉✎]+$/.test(text) &&
-            !button.getAttribute("aria-label") &&
-            !button.getAttribute("title")
-          );
-        })
-        .map((button) => (button.textContent ?? "").trim()),
-    );
+    const unnamedIconButtons = await page
+      .locator("button")
+      .evaluateAll((buttons) =>
+        buttons
+          .filter((button) => {
+            const text = (button.textContent ?? "").trim();
+            return (
+              /^[×+＋☰←→…✉✎]+$/.test(text) &&
+              !button.getAttribute("aria-label") &&
+              !button.getAttribute("title")
+            );
+          })
+          .map((button) => (button.textContent ?? "").trim()),
+      );
     expect(unnamedIconButtons).toEqual([]);
   });
 

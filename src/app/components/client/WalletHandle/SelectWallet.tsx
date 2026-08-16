@@ -319,7 +319,11 @@ export default function SelectWallet({
 
     return (
       <>
-        <button ref={triggerRef} className={styles.connectPill} onClick={openPicker}>
+        <button
+          ref={triggerRef}
+          className={styles.connectPill}
+          onClick={openPicker}
+        >
           Connect wallet
         </button>
         {picker}
