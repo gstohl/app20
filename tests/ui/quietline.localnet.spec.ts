@@ -316,7 +316,7 @@ test("all Quietline localnet journeys", async ({
     await screenshot(page, "08-composite-in-sent", testInfo);
   });
 
-  await test.step("4. Bob decrypts all cards; an unrelated key decrypts none", async () => {
+  await test.step("4. Bob decrypts all cards; a wrong backup is rejected", async () => {
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
     await scanRecent(page);
@@ -363,12 +363,15 @@ test("all Quietline localnet journeys", async ({
     await wrongKeyPage
       .getByRole("button", { name: "Restore mailbox key" })
       .click();
-    await scanRecent(wrongKeyPage);
     await expect(
-      wrongKeyPage
-        .getByRole("status")
-        .filter({ hasText: /Decrypted 0 of [1-9]/ }),
+      wrongKeyPage.getByText(
+        "This backup belongs to a different mailbox key. Nothing was replaced; use the backup registered to this wallet address.",
+        { exact: true },
+      ),
     ).toBeVisible({ timeout: 60_000 });
+    await expect(
+      wrongKeyPage.getByRole("button", { name: "Scan recent" }),
+    ).toBeDisabled();
     await expect(messageRow(wrongKeyPage, compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
     await unrelated.close();
