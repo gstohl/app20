@@ -3,7 +3,7 @@
 import { createStore, type Store } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { detectStrk20Capability } from "@/lib/strk20";
 import {
   isStrk20Chain,
@@ -52,6 +52,11 @@ export default function SelectWallet({
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [wallets, setWallets] = useState<WalletWithStarknetFeatures[]>([]);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const firstWalletRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const pickerWasOpen = useRef(false);
 
   // Create one v6 discovery store and disable EIP-1193 adapters so MetaMask is
   // not probed. The selected wallet is the only one that receives a request.
@@ -86,7 +91,7 @@ export default function SelectWallet({
       if (!chainId || !isStrk20Chain(chainId)) {
         disconnect();
         setConnectionNotice(
-          "The wallet switched to an unsupported network. Switch it to Starknet Sepolia, then connect again.",
+          "The wallet switched to an unsupported network. Switch it to Starknet Sepolia or Mainnet, then connect again.",
         );
         return;
       }
@@ -99,7 +104,7 @@ export default function SelectWallet({
       } catch {
         disconnect();
         setConnectionNotice(
-          "Quietline could not read the wallet's switched account. Reconnect on Starknet Sepolia.",
+          "Quietline could not read the wallet's switched account. Reconnect on Starknet Sepolia or Mainnet.",
         );
       }
     });
@@ -116,6 +121,49 @@ export default function SelectWallet({
   const pickable = wallets.filter(
     (wallet) => !normalizeId(wallet.name).includes("metamask"),
   );
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      if (pickerWasOpen.current) {
+        requestAnimationFrame(() => triggerRef.current?.focus());
+      }
+      pickerWasOpen.current = false;
+      return;
+    }
+
+    pickerWasOpen.current = true;
+    const frame = requestAnimationFrame(() => {
+      (firstWalletRef.current ?? closeRef.current)?.focus();
+    });
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !connectingWallet) {
+        event.preventDefault();
+        setPickerOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !modalRef.current) return;
+      const focusable = Array.from(
+        modalRef.current.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), a[href]",
+        ),
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [connectingWallet, pickerOpen, pickable.length]);
 
   async function handleSelectedWallet(
     selectedWallet: WalletWithStarknetFeatures,
@@ -191,6 +239,7 @@ export default function SelectWallet({
       onClick={() => !connectingWallet && setPickerOpen(false)}
     >
       <div
+        ref={modalRef}
         className={styles.modal}
         role="dialog"
         aria-modal="true"
@@ -202,6 +251,7 @@ export default function SelectWallet({
             Connect a wallet
           </span>
           <button
+            ref={closeRef}
             className={styles.modalClose}
             onClick={() => setPickerOpen(false)}
             aria-label="Close"
@@ -213,8 +263,9 @@ export default function SelectWallet({
 
         {pickable.length ? (
           <div className={styles.walletList}>
-            {pickable.map((wallet) => (
+            {pickable.map((wallet, index) => (
               <button
+                ref={index === 0 ? firstWalletRef : undefined}
                 key={wallet.name}
                 className={styles.walletRow}
                 onClick={() => selectWallet(wallet)}
@@ -268,7 +319,7 @@ export default function SelectWallet({
 
     return (
       <>
-        <button className={styles.connectPill} onClick={openPicker}>
+        <button ref={triggerRef} className={styles.connectPill} onClick={openPicker}>
           Connect wallet
         </button>
         {picker}
@@ -278,7 +329,7 @@ export default function SelectWallet({
 
   return (
     <>
-      <button className={styles.btnCta} onClick={openPicker}>
+      <button ref={triggerRef} className={styles.btnCta} onClick={openPicker}>
         Connect a wallet
       </button>
       {picker}
