@@ -92,12 +92,14 @@ export default function PrivacyWalletMenu() {
   const strk20Capability = useStoreWallet(
     (state) => state.strk20Capability,
   );
+  const connectionNotice = useStoreWallet((state) => state.connectionNotice);
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
   const balanceGeneration = useRef(0);
 
   const networkName = constants.Strk20Networks[providerIndex];
   const isStrk20Network = networkName !== undefined;
+  const mainnetBlocked = providerIndex === 0;
   const actionPending = action.kind === "proving";
 
   async function refreshBalance() {
@@ -160,6 +162,15 @@ export default function PrivacyWalletMenu() {
         title: "Privacy actions unavailable",
         message:
           "This wallet did not declare Wallet API/spec support at version 0.10 or newer.",
+      });
+      return;
+    }
+    if (mainnetBlocked) {
+      setAction({
+        kind: "error",
+        title: "Mainnet actions disabled",
+        message:
+          "Use Sepolia until the exact wallet and deployment pass Quietline's manual release gates.",
       });
       return;
     }
@@ -292,6 +303,12 @@ export default function PrivacyWalletMenu() {
         </p>
       )}
 
+      {connectionNotice ? (
+        <p className={styles.walletError} role="alert">
+          {connectionNotice}
+        </p>
+      ) : null}
+
       <div className={styles.sidebarBalance}>
         <span>Shielded balance</span>
         <strong>{balanceLabel}</strong>
@@ -312,6 +329,7 @@ export default function PrivacyWalletMenu() {
             !isConnected ||
             !isStrk20Capable ||
             !isStrk20Network ||
+            mainnetBlocked ||
             actionPending
           }
         >
@@ -325,6 +343,7 @@ export default function PrivacyWalletMenu() {
             !isConnected ||
             !isStrk20Capable ||
             !isStrk20Network ||
+            mainnetBlocked ||
             actionPending
           }
         >
@@ -353,8 +372,9 @@ export default function PrivacyWalletMenu() {
       ) : null}
       {providerIndex === 0 ? (
         <p className={styles.mainnetSafety} role="note">
-          Use Sepolia for Phase 1 checks; do not send Quietline mail on mainnet
-          yet.
+          Mainnet Shield, Unshield, mail, payment, deal, and escrow actions are
+          disabled until the exact wallet and deployment pass the manual
+          release gates. Switch the wallet to Sepolia.
         </p>
       ) : null}
 

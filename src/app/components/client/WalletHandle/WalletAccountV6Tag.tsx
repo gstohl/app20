@@ -186,6 +186,7 @@ export default function WalletAccountV6Tag() {
   );
   const networkName = constants.Strk20Networks[providerIndex];
   const isStrk20Network = networkName !== undefined;
+  const mainnetActionsBlocked = providerIndex === 0;
 
   const [resultBalances, setResultBalances] = useState<ActionResult | null>(null);
   const [resultShield, setResultShield] = useState<ActionResult | null>(null);
@@ -381,7 +382,7 @@ export default function WalletAccountV6Tag() {
       cta: "Shield (2 wallet prompts)",
       onRun: handleShield,
       result: resultShield,
-      disabled: !isStrk20Network,
+      disabled: !isStrk20Network || mainnetActionsBlocked,
     },
     send: {
       label: "You're sending to yourself",
@@ -391,7 +392,7 @@ export default function WalletAccountV6Tag() {
       cta: "Private self-transfer",
       onRun: handleSelfTransfer,
       result: resultTransfer,
-      disabled: !isStrk20Network,
+      disabled: !isStrk20Network || mainnetActionsBlocked,
     },
     unshield: {
       label: "You're unshielding",
@@ -401,7 +402,7 @@ export default function WalletAccountV6Tag() {
       cta: "Unshield",
       onRun: handleUnshield,
       result: resultUnshield,
-      disabled: !isStrk20Network,
+      disabled: !isStrk20Network || mainnetActionsBlocked,
     },
     balances: {
       label: "Shielded balances",
@@ -496,12 +497,13 @@ export default function WalletAccountV6Tag() {
         </div>
       ) : null}
 
-      {isStrk20Network ? null : (
+      {!isStrk20Network || mainnetActionsBlocked ? (
         <div className={styles.warn}>
-          STRK20 actions require Mainnet or Sepolia. Use Sepolia for Phase 1
-          checks; do not send Quietline mail on mainnet yet.
+          {mainnetActionsBlocked
+            ? "Mainnet value actions are disabled until the exact wallet and deployment pass Quietline's manual release gates. Switch to Sepolia."
+            : "STRK20 actions require Starknet Sepolia or Mainnet."}
         </div>
-      )}
+      ) : null}
 
       {isConnected ? (
         <button

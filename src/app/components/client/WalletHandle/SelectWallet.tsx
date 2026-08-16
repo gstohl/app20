@@ -39,6 +39,9 @@ export default function SelectWallet({
   const setStrk20Capability = useStoreWallet(
     (state) => state.setStrk20Capability,
   );
+  const setConnectionNotice = useStoreWallet(
+    (state) => state.setConnectionNotice,
+  );
   const setChain = useStoreWallet((state) => state.setChain);
   const setAddressAccount = useStoreWallet((state) => state.setAddressAccount);
   const setCurrentFrontendProviderIndex = useFrontendProvider(
@@ -70,6 +73,9 @@ export default function SelectWallet({
       const [account] = change.accounts;
       if (!account) {
         disconnect();
+        setConnectionNotice(
+          "The wallet removed account access. Connect again to reopen this mailbox.",
+        );
         return;
       }
 
@@ -79,6 +85,9 @@ export default function SelectWallet({
         : "";
       if (!chainId || !isStrk20Chain(chainId)) {
         disconnect();
+        setConnectionNotice(
+          "The wallet switched to an unsupported network. Switch it to Starknet Sepolia, then connect again.",
+        );
         return;
       }
 
@@ -89,6 +98,9 @@ export default function SelectWallet({
         setCurrentFrontendProviderIndex(providerIndex);
       } catch {
         disconnect();
+        setConnectionNotice(
+          "Quietline could not read the wallet's switched account. Reconnect on Starknet Sepolia.",
+        );
       }
     });
   }, [
@@ -97,6 +109,7 @@ export default function SelectWallet({
     selectedWallet,
     setAddressAccount,
     setChain,
+    setConnectionNotice,
     setCurrentFrontendProviderIndex,
   ]);
 
@@ -144,6 +157,7 @@ export default function SelectWallet({
     setWalletApi(capability.walletApiVersions);
     setStrk20Capability(capability);
     setStrk20Capable(capability.supported);
+    setConnectionNotice("");
     setConnected(true);
   }
 
@@ -239,7 +253,10 @@ export default function SelectWallet({
       return (
         <button
           className={styles.addrPill}
-          onClick={disconnect}
+          onClick={() => {
+            disconnect();
+            setConnectionNotice("");
+          }}
           title="Disconnect"
         >
           <span className={styles.addrDot} />

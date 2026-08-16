@@ -36,6 +36,8 @@ export interface WalletState {
   setStrk20Capable: (supported: boolean) => void;
   strk20Capability: Strk20Capability | null;
   setStrk20Capability: (capability: Strk20Capability | null) => void;
+  connectionNotice: string;
+  setConnectionNotice: (notice: string) => void;
   disconnect: () => void;
 }
 
@@ -65,6 +67,8 @@ export const useStoreWallet = create<WalletState>()((set) => ({
   setStrk20Capable: (isStrk20Capable) => set({ isStrk20Capable }),
   strk20Capability: null,
   setStrk20Capability: (strk20Capability) => set({ strk20Capability }),
+  connectionNotice: "",
+  setConnectionNotice: (connectionNotice) => set({ connectionNotice }),
   disconnect: () =>
     set({
       StarknetWalletObject: undefined,
