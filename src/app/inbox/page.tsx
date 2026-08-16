@@ -438,6 +438,7 @@ export default function InboxPage() {
     useState<PaymentRequestPayload | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileSidebarMode, setMobileSidebarMode] = useState(false);
   const [storageNotice, setStorageNotice] = useState<{
     kind: "ok" | "error";
     message: string;
@@ -462,8 +463,67 @@ export default function InboxPage() {
   const recentLoadedRef = useRef(false);
   const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
   const readingPaneRef = useRef<HTMLElement | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const sidebarCloseRef = useRef<HTMLButtonElement | null>(null);
+  const sidebarWasOpenRef = useRef(false);
   const activatedMessageIdRef = useRef<string | null>(null);
   scanIdentityRef.current = scanIdentity;
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 900px)");
+    const update = () => setMobileSidebarMode(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileSidebarMode) {
+      sidebarWasOpenRef.current = false;
+      return;
+    }
+    if (!sidebarOpen) {
+      if (sidebarWasOpenRef.current) {
+        window.requestAnimationFrame(() => menuButtonRef.current?.focus());
+      }
+      sidebarWasOpenRef.current = false;
+      return;
+    }
+
+    sidebarWasOpenRef.current = true;
+    const frame = window.requestAnimationFrame(() =>
+      sidebarCloseRef.current?.focus(),
+    );
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSidebarOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !sidebarRef.current) return;
+      const focusable = Array.from(
+        sidebarRef.current.querySelectorAll<HTMLElement>(
+          "button:not(:disabled), a[href]",
+        ),
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [mobileSidebarMode, sidebarOpen]);
 
   function cancelActiveScanWorker() {
     const active = scanWorkerRef.current;
@@ -2106,6 +2166,7 @@ export default function InboxPage() {
     <div className={styles.page}>
       <header className={styles.mobileTopbar}>
         <button
+          ref={menuButtonRef}
           className={styles.menuButton}
           type="button"
           aria-label="Open mailbox sidebar"
@@ -2143,7 +2204,9 @@ export default function InboxPage() {
         }`}
       >
         <aside
+          ref={sidebarRef}
           id="mail-sidebar"
+          inert={mobileSidebarMode && !sidebarOpen ? true : undefined}
           className={`${styles.mailSidebar} ${
             sidebarOpen ? styles.sidebarOpen : ""
           }`}
@@ -2155,6 +2218,7 @@ export default function InboxPage() {
               <span>Quietline</span>
             </a>
             <button
+              ref={sidebarCloseRef}
               className={styles.sidebarClose}
               type="button"
               aria-label="Close mailbox sidebar"
