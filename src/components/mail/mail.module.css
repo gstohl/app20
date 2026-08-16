@@ -1370,6 +1370,58 @@
   opacity: 0.45;
 }
 
+.walletAmount {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.walletAmountInput {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+
+.walletAmountInput input {
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 12px;
+}
+
+.walletAmountInput:focus-within {
+  box-shadow: 0 0 0 1px var(--teal);
+}
+
+.walletAmountInput strong {
+  padding: 0 8px;
+  color: var(--teal);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.walletAmount small {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.walletErrorText {
+  color: var(--ribbon);
+}
+
 .sidebarWalletActions {
   display: grid;
   grid-template-columns: 1fr 1fr;

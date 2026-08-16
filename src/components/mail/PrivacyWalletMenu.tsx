@@ -7,6 +7,13 @@ import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
+import {
+  formatStrkAmount,
+  loadStrkAmount,
+  parseStrkAmount,
+  saveStrkAmount,
+} from "@/lib/strk-amount";
 import {
   Strk20WaitTimeoutError,
   strk20ErrorMessage,
@@ -17,8 +24,6 @@ import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
 const TOKEN = constants.addrSTRK;
-const TEN_STRK = 10n * 10n ** 18n;
-const ONE_STRK = 10n ** 18n;
 
 type BalanceState = {
   kind: "idle" | "loading" | "ok" | "error" | "unavailable";
@@ -95,12 +100,22 @@ export default function PrivacyWalletMenu() {
   const connectionNotice = useStoreWallet((state) => state.connectionNotice);
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
+  const [amountInput, setAmountInput] = useState("0.1");
   const balanceGeneration = useRef(0);
 
   const networkName = constants.Strk20Networks[providerIndex];
-  const isStrk20Network = networkName !== undefined;
-  const mainnetBlocked = providerIndex === 0;
+  const networkKey = networkName ?? `network-${providerIndex}`;
+  const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
+  const isStrk20Network = networkName !== undefined && poolAddress !== null;
   const actionPending = action.kind === "proving";
+  let parsedAmount: bigint | null = null;
+  let amountError = "";
+  try {
+    parsedAmount = parseStrkAmount(amountInput);
+  } catch (error: unknown) {
+    amountError =
+      error instanceof Error ? error.message : "Enter a valid STRK amount.";
+  }
 
   async function refreshBalance() {
     const generation = ++balanceGeneration.current;
@@ -128,6 +143,14 @@ export default function PrivacyWalletMenu() {
   }
 
   useEffect(() => {
+    try {
+      setAmountInput(loadStrkAmount(window.localStorage, networkKey));
+    } catch {
+      setAmountInput("0.1");
+    }
+  }, [networkKey]);
+
+  useEffect(() => {
     if (!walletAccount || !isConnected) {
       balanceGeneration.current += 1;
       setBalance({ kind: "idle" });
@@ -146,7 +169,7 @@ export default function PrivacyWalletMenu() {
   async function runAction(
     actions: WALLET_API.STRK20_ACTION[],
     actionName: "Shield" | "Unshield",
-    amountLabel: string,
+    amount: bigint,
   ) {
     if (!walletAccount || !isConnected) {
       setAction({
@@ -165,16 +188,7 @@ export default function PrivacyWalletMenu() {
       });
       return;
     }
-    if (mainnetBlocked) {
-      setAction({
-        kind: "error",
-        title: "Mainnet actions disabled",
-        message:
-          "Use Sepolia until the exact wallet and deployment pass Quietline's manual release gates.",
-      });
-      return;
-    }
-    if (!isStrk20Network) {
+    if (!isStrk20Network || !networkName || !poolAddress) {
       setAction({
         kind: "error",
         title: "Unsupported network",
@@ -183,17 +197,37 @@ export default function PrivacyWalletMenu() {
       return;
     }
 
+    const amountLabel = `${formatStrkAmount(amount)} STRK`;
+    const provider = constants.myFrontendProviders[providerIndex];
     const startedAt = Date.now();
     setAction({
       kind: "proving",
-      title: `${actionName} ${amountLabel}`,
-      message: "Waiting for the wallet to prepare the private action…",
+      title: `${actionName} preflight`,
+      message: "Reading the live pool fee and public STRK balance…",
       startedAt,
     });
 
     let submittedHash: string | undefined;
     try {
-      const provider = constants.myFrontendProviders[providerIndex];
+      await authorizeStrk20ValueAction({
+        provider,
+        poolAddress,
+        accountAddress: connectedAddress ?? walletAccount.address,
+        network: networkName,
+        action: actionName,
+        amount,
+      });
+      try {
+        saveStrkAmount(window.localStorage, networkKey, amountInput);
+      } catch {
+        // Storage availability must not alter an already confirmed amount.
+      }
+      setAction({
+        kind: "proving",
+        title: `${actionName} ${amountLabel}`,
+        message: "Waiting for the wallet to prepare the private action…",
+        startedAt: Date.now(),
+      });
       const { transactionHash } = await submitActions(
         walletAccount,
         provider,
@@ -233,10 +267,18 @@ export default function PrivacyWalletMenu() {
   }
 
   function shield() {
+    if (parsedAmount === null) {
+      setAction({
+        kind: "error",
+        title: "Shield unavailable",
+        message: amountError,
+      });
+      return;
+    }
     void runAction(
-      [{ type: "deposit", token: TOKEN, amount: num.toHex(TEN_STRK) }],
+      [{ type: "deposit", token: TOKEN, amount: num.toHex(parsedAmount) }],
       "Shield",
-      "10 STRK",
+      parsedAmount,
     );
   }
 
@@ -249,17 +291,25 @@ export default function PrivacyWalletMenu() {
       });
       return;
     }
+    if (parsedAmount === null) {
+      setAction({
+        kind: "error",
+        title: "Unshield unavailable",
+        message: amountError,
+      });
+      return;
+    }
     void runAction(
       [
         {
           type: "withdraw",
           token: TOKEN,
-          amount: num.toHex(ONE_STRK),
+          amount: num.toHex(parsedAmount),
           recipient: connectedAddress,
         },
       ],
       "Unshield",
-      "1 STRK",
+      parsedAmount,
     );
   }
 
@@ -321,6 +371,26 @@ export default function PrivacyWalletMenu() {
         </button>
       </div>
 
+      <label className={styles.walletAmount}>
+        <span>Value amount</span>
+        <span className={styles.walletAmountInput}>
+          <input
+            aria-label="Wallet action amount in STRK"
+            value={amountInput}
+            onChange={(event) => setAmountInput(event.target.value)}
+            inputMode="decimal"
+            autoComplete="off"
+            disabled={actionPending}
+          />
+          <strong>STRK</strong>
+        </span>
+        <small className={amountError ? styles.walletErrorText : undefined}>
+          {parsedAmount === null
+            ? amountError
+            : `${formatStrkAmount(parsedAmount)} STRK · ${parsedAmount} base units`}
+        </small>
+      </label>
+
       <div className={styles.sidebarWalletActions}>
         <button
           type="button"
@@ -329,12 +399,12 @@ export default function PrivacyWalletMenu() {
             !isConnected ||
             !isStrk20Capable ||
             !isStrk20Network ||
-            mainnetBlocked ||
+            parsedAmount === null ||
             actionPending
           }
         >
           <span>Shield</span>
-          <small>10 STRK · public entry</small>
+          <small>{amountInput || "—"} STRK · public entry</small>
         </button>
         <button
           type="button"
@@ -343,12 +413,12 @@ export default function PrivacyWalletMenu() {
             !isConnected ||
             !isStrk20Capable ||
             !isStrk20Network ||
-            mainnetBlocked ||
+            parsedAmount === null ||
             actionPending
           }
         >
           <span>Unshield</span>
-          <small>1 STRK · public exit</small>
+          <small>{amountInput || "—"} STRK · public exit</small>
         </button>
       </div>
 
@@ -372,9 +442,9 @@ export default function PrivacyWalletMenu() {
       ) : null}
       {providerIndex === 0 ? (
         <p className={styles.mainnetSafety} role="note">
-          Mainnet Shield, Unshield, mail, payment, deal, and escrow actions are
-          disabled until the exact wallet and deployment pass the manual
-          release gates. Switch the wallet to Sepolia.
+          Mainnet Shield and Unshield move real funds. Each action reads the
+          live pool fee and public STRK balance, then requires an exact
+          real-funds confirmation. Escrow remains disabled on Mainnet.
         </p>
       ) : null}
 
