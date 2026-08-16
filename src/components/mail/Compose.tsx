@@ -40,6 +40,7 @@ import {
   type EscrowFundPayload,
 } from "@/lib/escrow";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
+import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
   encryptMailForRecipients,
   MAX_MULTI_RECIPIENTS,
@@ -64,7 +65,11 @@ import {
   transactionHashFromError,
   transactionStateFromError,
 } from "@/lib/strk20";
-import { addrSTRK, myFrontendProviders } from "@/utils/constants";
+import {
+  addrSTRK,
+  myFrontendProviders,
+  strk20PoolForProviderIndex,
+} from "@/utils/constants";
 import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
 
@@ -383,10 +388,7 @@ export default function Compose({
   }
 
   let disabledReason = "";
-  if (networkName === "MAINNET") {
-    disabledReason =
-      "Mainnet mail and value actions are disabled until the exact wallet and deployment pass the manual release gates. Switch the wallet to Sepolia.";
-  } else if (!helperAddress) {
+  if (!helperAddress) {
     disabledReason = `Mail is unavailable on ${networkName} in this deployment. Switch network or try again later.`;
   } else if (!isConnected || !walletAccount || !senderAddress) {
     disabledReason = "Connect a privacy-enabled wallet before sending mail.";
@@ -680,8 +682,7 @@ export default function Compose({
       !walletAccount ||
       !senderAddress ||
       !isStrk20Capable ||
-      !keyReady ||
-      networkName === "MAINNET"
+      !keyReady
     ) {
       setSendState({
         kind: "error",
@@ -719,6 +720,26 @@ export default function Compose({
       }
       const encodedDocument = encodeEnvelope(document.type, document.payload);
       const provider = myFrontendProviders[providerIndex];
+      const poolAddress = strk20PoolForProviderIndex(providerIndex);
+      if ((document.payment || document.escrow) && !poolAddress) {
+        throw new Error("The STRK20 pool is not configured for this network.");
+      }
+      if (document.payment && poolAddress) {
+        setSendState({
+          kind: "lookup",
+          message: "Reading the live pool fee and public STRK balance before the attached payment…",
+          step: 1,
+          totalSteps: 1,
+        });
+        await authorizeStrk20ValueAction({
+          provider,
+          poolAddress,
+          accountAddress: senderAddress,
+          network: networkName,
+          action: "Attached private payment",
+          amount: BigInt(document.payment.transfer.amount),
+        });
+      }
       const steps = document.composite
         ? planCompositeSubmission(document.composite)
         : [
@@ -794,6 +815,17 @@ export default function Compose({
               : "Escrow funding is already reserved. Quietline will not risk a second Fund; reopen after checking the prior wallet request.",
           );
         } else {
+          if (!poolAddress) {
+            throw new Error("The STRK20 pool is not configured for this network.");
+          }
+          await authorizeStrk20ValueAction({
+            provider,
+            poolAddress,
+            accountAddress: senderAddress,
+            network: networkName,
+            action: "Escrow fund",
+            amount: BigInt(document.escrow.legA.amount),
+          });
           claimEscrowOperation(
             window.localStorage,
             chainId,
