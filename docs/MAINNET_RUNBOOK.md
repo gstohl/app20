@@ -36,10 +36,21 @@ Do this before any mainnet declare, deploy, or shield.
 1. Install Ready from <https://www.ready.co/> if the extension is missing.
 2. Open the Ready popup → network switcher → **Starknet Mainnet** (`SN_MAIN`).
 3. Confirm the account you will score with is the one shown.
-4. Create a **second Ready account** (Bob) in a second browser profile. Do not reuse Alice’s profile. Mail seeds live in `localStorage` under `quietline/mailseed/v1/<chainId>/<address>` (`src/components/mail/Onboard.tsx`).
+4. Create a **second account** (Bob) in a second browser profile, using the same wallet. Do not reuse Alice’s profile. Mail seeds live in `localStorage` under `quietline/mailseed/v1/<chainId>/<address>` (`src/components/mail/Onboard.tsx`).
 5. Optional sanity check against the wallet test dapp: <https://starknet-wallet-account.vercel.app/>
 
-Quietline only enables privacy actions when Ready declares Wallet API / spec `>= 0.10` (`src/lib/strk20.ts`). A non-Ready wallet shows “Privacy actions unavailable”.
+### 1.1a Which wallet — check this before spending anything
+
+Quietline is wallet-neutral: it enables privacy actions for **any** wallet that declares Wallet API / spec `>= 0.10` and exposes the STRK20 methods (`src/lib/strk20.ts`). It does not require one specific brand.
+
+What matters is the **dapp-facing** STRK20 API, which is not the same as a wallet having in-wallet privacy features. A wallet can ship privacy in its own UI and still not expose it to dapps.
+
+Connect first and read the **capability diagnostic** before spending anything. When a wallet fails the check, the diagnostic reports the declared `walletApiVersions` and `specVersions`, the minimum required, and whether `strk20InvokeTransaction` / `strk20Balances` exist on the account. That tells you in seconds whether the wallet simply has not shipped the dapp-facing API yet.
+
+- **Ready** — known to work for the dapp-facing STRK20 API; use it for the scoring run.
+- **Xverse** — ships in-wallet privacy; dapp-facing STRK20 support was still in progress when this was written. Connect it and read the diagnostic to find out. If it fails the check, fall back to Ready rather than trying to work around the gate.
+
+Never weaken or bypass the capability gate to make a wallet appear to work. An incapable wallet must fail visibly.
 
 ### 1.2 How much real STRK to hold
 
