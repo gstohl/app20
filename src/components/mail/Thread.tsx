@@ -67,6 +67,7 @@ export type ThreadActionState = {
 
 type ThreadProps = {
   messages: LocalMailMessage[];
+  focusVersion?: number;
   selfAddress: string;
   aliases: AliasRecord[];
   otcState: OtcState;
@@ -271,6 +272,7 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
 
 export default function Thread({
   messages,
+  focusVersion = 0,
   selfAddress,
   aliases,
   otcState,
@@ -291,7 +293,7 @@ export default function Thread({
     if (!messages.length) return;
     const frame = requestAnimationFrame(() => headingRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [focusKey, messages.length]);
+  }, [focusKey, focusVersion, messages.length]);
 
   function renderEnvelope(message: LocalMailMessage) {
     const { envelope } = message;

@@ -2471,6 +2471,7 @@ export default function InboxPage() {
             ) : selectedMessage ? (
               <Thread
                 messages={[selectedMessage]}
+                focusVersion={messageActivation}
                 selfAddress={address}
                 aliases={aliases}
                 otcState={otcState}
