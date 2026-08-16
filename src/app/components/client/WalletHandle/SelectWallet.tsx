@@ -6,6 +6,10 @@ import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useRef, useState } from "react";
 import { detectStrk20Capability } from "@/lib/strk20";
 import {
+  chainIdFromStandardAccount,
+  describeWalletConnectError,
+} from "@/lib/wallet-connect";
+import {
   isStrk20Chain,
   myFrontendProviders,
   providerIndexForChain,
@@ -84,10 +88,7 @@ export default function SelectWallet({
         return;
       }
 
-      const standardChain = account.chains[0];
-      const chainId = standardChain?.startsWith("starknet:")
-        ? standardChain.slice("starknet:".length)
-        : "";
+      const chainId = chainIdFromStandardAccount(account) ?? "";
       if (!chainId || !isStrk20Chain(chainId)) {
         disconnect();
         setConnectionNotice(
@@ -168,10 +169,19 @@ export default function SelectWallet({
   async function handleSelectedWallet(
     selectedWallet: WalletWithStarknetFeatures,
   ) {
-    // Determine the wallet's write chain before constructing WalletAccountV6.
-    // Reads must use the matching provider: mainnet index 0, Sepolia index 2.
-    const chainId = String(await walletV6.requestChainId(selectedWallet));
-    if (!isStrk20Chain(chainId)) {
+    // Authorize first. Ready refuses wallet_requestChainId with
+    // "Not preauthorized" until this origin has been approved.
+    const { accounts: standardAccounts } = await walletV6.standardConnect(
+      selectedWallet,
+      false,
+    );
+    const [standardAccount] = standardAccounts;
+    if (!standardAccount) {
+      throw new Error("The wallet did not authorize an account.");
+    }
+
+    const chainId = chainIdFromStandardAccount(standardAccount);
+    if (!chainId || !isStrk20Chain(chainId)) {
       throw new Error(
         "Switch the selected wallet to Starknet Sepolia or Mainnet before connecting.",
       );
@@ -221,9 +231,7 @@ export default function SelectWallet({
       await handleSelectedWallet(wallet);
       setPickerOpen(false);
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Wallet connection failed.";
-      setError(message);
+      setError(describeWalletConnectError(error));
     } finally {
       setConnectingWallet(null);
     }
