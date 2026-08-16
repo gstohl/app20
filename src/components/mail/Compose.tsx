@@ -309,6 +309,7 @@ export default function Compose({
   );
   const [draft, setDraft] = useState(initialDraft);
   const draftRef = useRef(initialDraft);
+  const recipientInputRef = useRef<HTMLTextAreaElement>(null);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [aliasLabel, setAliasLabel] = useState("");
   const [aliasNotice, setAliasNotice] = useState("");
@@ -318,6 +319,8 @@ export default function Compose({
     draftRef.current = initialDraft;
     setDraft(initialDraft);
     setSendState({ kind: "idle" });
+    const frame = requestAnimationFrame(() => recipientInputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [initialDraft.id]);
 
   useEffect(() => {
@@ -1060,6 +1063,7 @@ export default function Compose({
               <em className={styles.fieldBadge}>COUNT PUBLIC</em>
             </span>
             <textarea
+              ref={recipientInputRef}
               value={draft.recipient}
               onChange={(event) =>
                 updateDraft({ recipient: event.target.value })
