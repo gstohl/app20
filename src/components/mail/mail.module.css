@@ -1229,7 +1229,6 @@
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  border-left: 3px solid transparent;
   color: var(--ink);
   background: transparent;
   font: inherit;
@@ -1244,9 +1243,9 @@
 }
 
 .mailboxNav button[aria-current="page"] {
-  border-left-color: var(--teal);
   background: var(--surface-raised);
   color: var(--teal);
+  font-weight: 800;
 }
 
 .mailboxNav button strong {
@@ -1287,9 +1286,9 @@
 
 .sidebarAccount {
   padding: 13px;
-  border: 1px solid var(--ink);
+  border: 0;
   background: var(--surface-raised);
-  box-shadow: 3px 3px 0 var(--shadow-soft);
+  box-shadow: none;
 }
 
 .accountHeading {
@@ -2079,15 +2078,23 @@
 .welcomeState {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
 }
 
 .welcomeSheet {
   position: relative;
   padding: clamp(26px, 5vw, 56px);
-  border: 1px solid var(--ink);
+  border: 0;
   background: var(--surface-raised);
-  box-shadow: 8px 8px 0 var(--paper-deep);
+  box-shadow: none;
+}
+
+.welcomeState > .card {
+  border: 0;
+  border-top: 1px solid var(--ink);
+  box-shadow: none;
 }
 
 .welcomeSheet::before {
@@ -2160,7 +2167,7 @@
 .honestyNote {
   margin-top: 16px;
   padding: 11px 12px;
-  border-left: 4px solid var(--proof-teal);
+  border: 0;
   background: var(--public-quiet);
 }
 
@@ -2383,7 +2390,16 @@
   .welcomeSheet,
   .card {
     padding: 20px;
+  }
+
+  .composerSheet,
+  .card {
     box-shadow: 4px 4px 0 var(--paper-deep);
+  }
+
+  .welcomeState > .card,
+  .welcomeSheet {
+    box-shadow: none;
   }
 
   .welcomeSheet::before {
