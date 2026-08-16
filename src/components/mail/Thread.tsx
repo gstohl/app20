@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   parseCompositePayload,
   type CompositeAttachment,
@@ -284,6 +284,15 @@ export default function Thread({
   onEscrowClaim,
   onEscrowTimeout,
 }: ThreadProps) {
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusKey = messages.map((message) => message.id).join("|");
+
+  useEffect(() => {
+    if (!messages.length) return;
+    const frame = requestAnimationFrame(() => headingRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [focusKey, messages.length]);
+
   function renderEnvelope(message: LocalMailMessage) {
     const { envelope } = message;
     const headingId = `message-${message.id.replace(/[^a-zA-Z0-9_-]/g, "-")}-${envelope.type}`;
@@ -571,7 +580,9 @@ export default function Thread({
       <div className={styles.threadHeading}>
         <div>
           <p className={styles.kicker}>LOCAL PLAINTEXT / CARBON COPY</p>
-          <h2 id="thread-title">Correspondence</h2>
+          <h2 ref={headingRef} id="thread-title" tabIndex={-1}>
+            Correspondence
+          </h2>
         </div>
         <span className={styles.sheetClip} aria-hidden="true">
           CLIP / 01
