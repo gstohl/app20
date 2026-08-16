@@ -80,6 +80,7 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
   clearLocalMailboxStorage,
   MAIL_SEED_STORAGE_PREFIX,
@@ -732,11 +733,6 @@ export default function InboxPage() {
   }
 
   function requireActionContext() {
-    if (providerIndex === 0) {
-      throw new Error(
-        "Mainnet mail and value actions are disabled until the exact wallet and deployment pass the manual release gates. Switch to Sepolia.",
-      );
-    }
     if (!helperAddress) throw new Error("Mail is unavailable on this network.");
     if (!walletAccount || !address || !chainId || !isStrk20Capable) {
       throw new Error(
@@ -750,6 +746,25 @@ export default function InboxPage() {
       address,
       chainId,
     };
+  }
+
+  async function authorizeValueAction(
+    context: ReturnType<typeof requireActionContext>,
+    action: string,
+    amount: string,
+  ) {
+    const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
+    if (!poolAddress) {
+      throw new Error("The STRK20 pool is not configured for this network.");
+    }
+    await authorizeStrk20ValueAction({
+      provider: context.provider,
+      poolAddress,
+      accountAddress: context.address,
+      network: networkName,
+      action,
+      amount: BigInt(amount),
+    });
   }
 
   async function lookupMailKey(helper: string, recipient: string) {
@@ -1249,6 +1264,16 @@ export default function InboxPage() {
       refreshOtcState();
       setActionState(actionKey, {
         pending: true,
+        message: "Reading the live pool fee and public STRK balance…",
+        startedAt: Date.now(),
+      });
+      await authorizeValueAction(
+        context,
+        "Accept OTC private transfer",
+        offer.give.amount,
+      );
+      setActionState(actionKey, {
+        pending: true,
         message: "Preparing one private STRK transfer and accept memo…",
         startedAt: Date.now(),
       });
@@ -1449,6 +1474,16 @@ export default function InboxPage() {
       }
       claimed = true;
       refreshOtcState();
+      setActionState(actionKey, {
+        pending: true,
+        message: "Reading the live pool fee and public STRK balance…",
+        startedAt: Date.now(),
+      });
+      await authorizeValueAction(
+        context,
+        "Invoice private payment",
+        payableRequest.amount,
+      );
       setActionState(actionKey, {
         pending: true,
         message: "Preparing one private STRK payment and payment memo…",
