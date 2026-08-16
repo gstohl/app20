@@ -64,6 +64,25 @@ if (localnetWalletEnabled) {
   Strk20Networks[LOCALNET_PROVIDER_INDEX] = "LOCALNET (DEV)";
 }
 
+export const strk20PoolMainnet =
+  "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a";
+export const strk20PoolSepolia =
+  "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91";
+export const strk20PoolLocalnet = localnetWalletEnabled
+  ? import.meta.env.VITE_LOCALNET_POOL_ADDRESS ?? "0x0"
+  : "0x0";
+
+export function strk20PoolForProviderIndex(
+  providerIndex: number,
+): string | null {
+  if (providerIndex === 0) return strk20PoolMainnet;
+  if (providerIndex === 2) return strk20PoolSepolia;
+  if (providerIndex === LOCALNET_PROVIDER_INDEX && localnetWalletEnabled) {
+    return strk20PoolLocalnet;
+  }
+  return null;
+}
+
 // QuietlineMail helper — 0x0 until Phase 2 deploy.
 export const mailHelperSepolia =
   import.meta.env.VITE_MAIL_HELPER_SEPOLIA ?? "0x0";
