@@ -80,6 +80,7 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
   clearLocalMailboxStorage,
@@ -298,6 +299,7 @@ function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
     deliveryState: message.deliveryState,
     direction: "outgoing",
     recipientCount: message.recipientCount,
+    recipients: message.recipients,
     localCreatedAt: message.createdAt,
   };
 }
@@ -1128,11 +1130,15 @@ export default function InboxPage() {
         continuationToken = nextToken;
       }
 
+      setScanMessage(
+        `Decrypting ${parsed.length} public record${parsed.length === 1 ? "" : "s"} locally…`,
+      );
       const decrypted = await decryptMailRecords(
         privateKey,
         parsed.map((event) => event.record),
       );
       if (!isCurrentScan()) return;
+      setScanMessage("Loading public timestamps…");
 
       // Fetch every processed public event block so timestamp requests do not
       // reveal which bounded records matched this device's private key.
@@ -1234,6 +1240,7 @@ export default function InboxPage() {
       deliveryState: message.deliveryState,
       direction: "outgoing",
       recipientCount: message.recipientCount,
+      recipients: message.recipients,
       localCreatedAt: createdAt,
     };
     setMessages((current) => mergeMailMessages(current, [localMessage]));
@@ -1249,6 +1256,7 @@ export default function InboxPage() {
           transactionHash: message.transactionHash,
           transactionHashes: message.transactionHashes,
           recipientCount: message.recipientCount,
+          recipients: message.recipients,
           deliveryState: message.deliveryState,
           createdAt,
         });
@@ -2128,6 +2136,26 @@ export default function InboxPage() {
     setSidebarOpen(false);
   }
 
+  function openComposerForRecipient(recipient: string) {
+    if (!address || !chainId) {
+      setStorageNotice({
+        kind: "error",
+        message:
+          "Connect a wallet before creating a draft so it is saved under the correct mailbox.",
+      });
+      setSidebarOpen(true);
+      return;
+    }
+    const draft = { ...createBlankDraft(), recipient };
+    persistDraft(draft);
+    setMailFolder("drafts");
+    setMailboxFilter("all");
+    setSelectedDraftId(draft.id);
+    setComposerOpen(true);
+    setMobileDetailOpen(true);
+    setSidebarOpen(false);
+  }
+
   function closeDetail() {
     setComposerOpen(false);
     setMobileDetailOpen(false);
@@ -2294,8 +2322,8 @@ export default function InboxPage() {
           <section className={styles.sidebarScan} aria-labelledby="scan-title">
             <div className={styles.scanHeading}>
               <div>
-                <span className={styles.sidebarLabel}>PUBLIC RAIL</span>
-                <strong id="scan-title">Sealed envelopes</strong>
+                <span className={styles.sidebarLabel}>INBOX CHECK</span>
+                <strong id="scan-title">Check for mail</strong>
               </div>
               <span className={styles.sealGlyph} aria-hidden="true">
                 ✉
@@ -2307,14 +2335,14 @@ export default function InboxPage() {
                 onClick={() => void scanInbox("newer")}
                 disabled={!keypair || scanning}
               >
-                {scanning ? "Scanning…" : "Scan recent"}
+                {scanning ? "Checking…" : "Check for new mail"}
               </button>
               <button
                 type="button"
                 onClick={() => void scanInbox("older")}
                 disabled={!keypair || scanning}
               >
-                Older
+                Load older mail
               </button>
             </div>
             <ScanProgress
@@ -2322,7 +2350,27 @@ export default function InboxPage() {
               pages={scanProgress.pages}
               maxPages={scanProgress.maxPages}
               events={scanProgress.events}
+              phase={scanMessage}
             />
+            {!keypair ? (
+              <p className={styles.scanMessage}>
+                Set up a mailbox key before checking for mail.
+              </p>
+            ) : !scanMessage && address && chainId && helperAddress && keyFingerprint ? (
+              <p className={styles.scanMessage}>
+                {describeMailScanCursor(
+                  loadMailScanCursor(
+                    window.localStorage,
+                    mailScanCursorKey(
+                      chainId,
+                      address,
+                      helperAddress,
+                      keyFingerprint,
+                    ),
+                  ),
+                )}
+              </p>
+            ) : null}
             {!scanning && scanMessage ? (
               <p
                 className={`${styles.scanMessage} ${
@@ -2494,6 +2542,7 @@ export default function InboxPage() {
                     ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
                     : undefined
                 }
+                onReply={openComposerForRecipient}
               />
             ) : (
               <section className={styles.welcomeState}>
@@ -2527,6 +2576,40 @@ export default function InboxPage() {
                     public. For multi-recipient mail, the recipient count is
                     public while identities are absent from MessagePosted.
                   </p>
+                  <ol className={styles.readinessList}>
+                    <li>
+                      <strong>1. Connect</strong>
+                      <span>
+                        {address
+                          ? `Wallet connected on ${networkName}.`
+                          : "Connect a privacy-enabled wallet on Mainnet or Sepolia."}
+                      </span>
+                    </li>
+                    <li>
+                      <strong>2. Mailbox key</strong>
+                      <span>
+                        {keypair
+                          ? "Device mailbox key is loaded."
+                          : helperAddress
+                            ? "Register or restore the mailbox key. This is one public transaction plus a one-time backup."
+                            : "Mailbox registration waits on the QuietlineMail helper. Shield still works."}
+                      </span>
+                    </li>
+                    <li>
+                      <strong>3. Private funds</strong>
+                      <span>
+                        Shield is public and pays the live pool fee. Unshield is
+                        also public.
+                      </span>
+                    </li>
+                    <li>
+                      <strong>4. Mail</strong>
+                      <span>
+                        Check for new mail, or write a message. Sent copies stay
+                        on this device.
+                      </span>
+                    </li>
+                  </ol>
                   <button
                     className={styles.welcomeCompose}
                     type="button"

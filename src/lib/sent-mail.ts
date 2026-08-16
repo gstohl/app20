@@ -1,5 +1,6 @@
 import { decodeEnvelope, encodeEnvelope, type EnvelopeType } from "./envelope";
 import type { EncryptedMailRecord } from "./mail";
+import { uniqueCanonicalAddresses } from "./mail-correspondents";
 
 export const SENT_MAIL_STORAGE_PREFIX = "quietline/sent/v1";
 
@@ -15,6 +16,8 @@ export type StoredSentMail = {
   transactionHash: string;
   transactionHashes: string[];
   recipientCount: number;
+  /** Device-local only. Never posted on-chain. */
+  recipients: string[];
   deliveryState: SentDeliveryState;
   createdAt: number;
 };
@@ -91,6 +94,11 @@ function parseStoredSentMail(value: unknown): StoredSentMail | null {
     transactionHash: value.transactionHash,
     transactionHashes: value.transactionHashes as string[],
     recipientCount: value.recipientCount as number,
+    recipients: Array.isArray(value.recipients)
+      ? uniqueCanonicalAddresses(
+          value.recipients.filter((item): item is string => typeof item === "string"),
+        )
+      : [],
     deliveryState: value.deliveryState,
     createdAt: value.createdAt as number,
   };
@@ -120,7 +128,10 @@ export function saveSentMail(
   address: string,
   message: StoredSentMail,
 ): StoredSentMail[] {
-  const parsed = parseStoredSentMail(message);
+  const parsed = parseStoredSentMail({
+    ...message,
+    recipients: uniqueCanonicalAddresses(message.recipients ?? []),
+  });
   if (!parsed)
     throw new Error("Confirmed sent mail could not be indexed locally.");
   const messages = loadSentMail(storage, chainId, address).filter(

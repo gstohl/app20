@@ -83,6 +83,7 @@ export type SentEnvelope = {
   transactionHash: string;
   transactionHashes: string[];
   recipientCount: number;
+  recipients: string[];
   deliveryState: "confirmed";
 };
 
@@ -980,6 +981,7 @@ export default function Compose({
         transactionHash: mailResult.transactionHash,
         transactionHashes,
         recipientCount: recipientAddresses.length,
+        recipients: recipientAddresses,
         deliveryState: "confirmed",
       });
     } catch (error: unknown) {

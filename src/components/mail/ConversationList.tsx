@@ -17,6 +17,9 @@ import {
   parseEscrowFundPayload,
   parseEscrowTimeoutPayload,
 } from "@/lib/escrow";
+import {
+  formatDeviceSentRecipients,
+} from "@/lib/mail-correspondents";
 import type { LocalMailMessage } from "./Thread";
 import styles from "./mail.module.css";
 
@@ -153,16 +156,26 @@ export function conversationCorrespondent(
       fullAddress: address,
     };
   }
+  if (message.direction === "outgoing" && (message.recipients?.length ?? 0) > 0) {
+    return formatDeviceSentRecipients(message.recipients ?? [], aliases);
+  }
   if (message.envelope.type === "text") {
     return {
       primary:
         message.direction === "outgoing"
           ? "Private recipient"
           : "Sealed sender",
+      detail:
+        message.direction === "outgoing"
+          ? "Device-local Sent copy · recipient was not stored"
+          : "Sealed letter · no public sender",
     };
   }
   if (message.direction === "outgoing") {
-    return { primary: "Private recipient" };
+    return {
+      primary: "Private recipient",
+      detail: "Device-local Sent copy · recipient was not stored",
+    };
   }
   return { primary: "Sealed counterparty" };
 }
@@ -370,8 +383,11 @@ export default function ConversationList({
               : `No ${filterLabel.toLowerCase()} yet`}
           </strong>
           <span>
-            Check sealed envelopes, choose another mailbox, or compose a new
-            document.
+            {folderLabel === "Sent"
+              ? "Sent copies live only on this device. Write a message to create one."
+              : folderLabel === "Inbox"
+                ? "Check for new mail, or write a message."
+                : "Choose another mailbox, or write a message."}
           </span>
         </div>
       )}

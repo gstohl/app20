@@ -62,11 +62,13 @@ export function ScanProgress({
   pages,
   maxPages,
   events,
+  phase,
 }: {
   scanning: boolean;
   pages: number;
   maxPages: number;
   events: number;
+  phase?: string;
 }) {
   const [startedAt, setStartedAt] = useState<number>();
 
@@ -83,7 +85,7 @@ export function ScanProgress({
     <div className={styles.scanProgress} aria-busy="true">
       <div className={styles.progressHeading}>
         <span role="status" aria-live="polite">
-          Checking sealed envelopes
+          {phase || "Checking public MessagePosted records"}
         </span>
         <span className={styles.progressTime} aria-hidden="true">
           {formatElapsed(elapsed)}

@@ -168,7 +168,7 @@ pristine recording, use a private browser window or clear site data first.
 4. Copy Bob's address from the development bar, switch to Alice, load Alice's
    existing device key, paste Bob as recipient, write a letter, and click
    **Encrypt & send letter**.
-5. Switch to Bob, load his existing device key, and click **Scan recent
+5. Switch to Bob, load his existing device key, and click **Check for new mail
    events**. The plaintext appears after browser-local decryption. Expand
    **What the chain sees** to inspect the public event index, timestamp,
    ephemeral key, view tag, nonce, and ciphertext; sender and recipient are

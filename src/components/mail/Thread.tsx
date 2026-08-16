@@ -36,6 +36,7 @@ import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
 import ReceiptCard from "./ReceiptCard";
+import { replyAddressForMessage } from "@/lib/mail-correspondents";
 import styles from "./mail.module.css";
 
 export type LocalMailMessage = {
@@ -55,6 +56,8 @@ export type LocalMailMessage = {
   /** Unsigned request imported from /pay; it has no MessagePosted evidence. */
   transport?: "payment_link";
   recipientCount?: number;
+  /** Device-local Sent recipients. Never inferred from sealed incoming mail. */
+  recipients?: string[];
   /** Set for locally sent mail so it sorts before the chain confirms a timestamp. */
   localCreatedAt?: number;
 };
@@ -80,6 +83,7 @@ type ThreadProps = {
   onEscrowFill: (fund: EscrowFundPayload) => void;
   onEscrowClaim?: (fund: EscrowFundPayload) => void;
   onEscrowTimeout?: (fund: EscrowFundPayload) => void;
+  onReply?: (address: string) => void;
 };
 
 function safeOfferIndex(index: string): number | undefined {
@@ -285,6 +289,7 @@ export default function Thread({
   onEscrowFill,
   onEscrowClaim,
   onEscrowTimeout,
+  onReply,
 }: ThreadProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusKey = messages.map((message) => message.id).join("|");
@@ -617,7 +622,7 @@ export default function Thread({
                         {recipientCount} recipient
                         {recipientCount === 1 ? "" : "s"}
                         {message.blockNumber === undefined
-                          ? " · confirmed"
+                          ? " · posted"
                           : ` · block ${message.blockNumber}`}
                       </span>
                     </>
@@ -630,6 +635,22 @@ export default function Thread({
                     authenticate the requester, and opening or importing it did
                     not submit a payment.
                   </p>
+                ) : null}
+                {onReply && replyAddressForMessage(message, selfAddress) ? (
+                  <div className={styles.replyRow}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onReply(replyAddressForMessage(message, selfAddress)!)
+                      }
+                    >
+                      Reply to claimed address
+                    </button>
+                    <span>
+                      Reply uses the unsigned claimed address. Sealed letters
+                      have no sender to reply to.
+                    </span>
+                  </div>
                 ) : null}
                 {renderEnvelope(message)}
                 {message.transactionHashes &&

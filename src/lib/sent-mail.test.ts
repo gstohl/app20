@@ -30,6 +30,7 @@ describe("device-private Sent index", () => {
       transactionHash: "0x222",
       transactionHashes: ["0x111", "0x222"],
       recipientCount: 1,
+      recipients: ["0xb0b", "0xb0b"],
       deliveryState: "confirmed",
       createdAt: 100,
     });
@@ -40,6 +41,7 @@ describe("device-private Sent index", () => {
         transactionHash: "0x222",
         transactionHashes: ["0x111", "0x222"],
         deliveryState: "confirmed",
+        recipients: ["0xb0b"],
       },
     ]);
     expect(loadSentMail(storage, "SN_MAIN", "0xa11ce")).toEqual([]);

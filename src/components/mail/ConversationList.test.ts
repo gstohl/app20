@@ -87,4 +87,17 @@ describe("foldered composite reachability", () => {
     });
     expect(correspondent.primary).not.toBe("Alice");
   });
+
+  it("shows device-local Sent recipients instead of Private recipient", () => {
+    const message = compositeMessage("outgoing");
+    message.recipients = ["0xb0b"];
+    const correspondent = conversationCorrespondent(
+      message,
+      [{ address: "0xb0b", label: "Bob", addedAt: 1 }],
+      "0xa11ce",
+    );
+    expect(correspondent.primary).toContain("0xb0b");
+    expect(correspondent.primary).toContain("Bob");
+    expect(correspondent.detail).toMatch(/not on-chain/i);
+  });
 });

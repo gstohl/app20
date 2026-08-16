@@ -109,11 +109,11 @@ async function loadExistingKey(page: Page) {
 }
 
 async function scanRecent(page: Page) {
-  const button = page.getByRole("button", { name: "Scan recent" });
+  const button = page.getByRole("button", { name: "Check for new mail" });
   await expect(button).toBeEnabled();
   await button.click();
   await page.waitForTimeout(100);
-  await expect(page.getByRole("button", { name: "Scan recent" })).toBeEnabled({
+  await expect(page.getByRole("button", { name: "Check for new mail" })).toBeEnabled({
     timeout: 60_000,
   });
 }
@@ -371,7 +371,7 @@ test("all Quietline localnet journeys", async ({
       ),
     ).toBeVisible({ timeout: 60_000 });
     await expect(
-      wrongKeyPage.getByRole("button", { name: "Scan recent" }),
+      wrongKeyPage.getByRole("button", { name: "Check for new mail" }),
     ).toBeDisabled();
     await expect(messageRow(wrongKeyPage, compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
