@@ -189,12 +189,17 @@ test("all Quietline localnet journeys", async ({
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
+    const amountInput = walletRegion.getByLabel("Wallet action amount in STRK");
+    await expect(amountInput).toHaveValue("0.1");
     await expect(
-      walletRegion.getByText("10 STRK", { exact: true }),
+      walletRegion.getByText(
+        "0.1 STRK · 100000000000000000 base units",
+        { exact: true },
+      ),
     ).toBeVisible();
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
     await expect(
-      page.getByText("Shield 10 STRK", { exact: true }),
+      page.getByText("Shield 0.1 STRK", { exact: true }),
     ).toBeVisible();
     await expect(
       page.getByText(
@@ -208,7 +213,7 @@ test("all Quietline localnet journeys", async ({
       timeout: 180_000,
     });
     await expect(
-      walletRegion.getByText("20 STRK", { exact: true }),
+      walletRegion.getByText("10.1 STRK", { exact: true }),
     ).toBeVisible({
       timeout: 60_000,
     });
@@ -216,6 +221,12 @@ test("all Quietline localnet journeys", async ({
     // Bob needs STRK for the later offer acceptance and invoice payment.
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
+    await amountInput.fill("1");
+    await expect(
+      walletRegion.getByText("1 STRK · 1000000000000000000 base units", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
     await expect(
       page.getByText("Shield confirmed", { exact: true }),
@@ -223,7 +234,7 @@ test("all Quietline localnet journeys", async ({
       timeout: 180_000,
     });
     await expect(
-      walletRegion.getByText("10 STRK", { exact: true }),
+      walletRegion.getByText("1 STRK", { exact: true }),
     ).toBeVisible({
       timeout: 60_000,
     });
