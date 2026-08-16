@@ -214,7 +214,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "error",
         message:
-          "Mailbox setup is unavailable on this network in this deployment.",
+          "Mailbox setup needs QuietlineMail deployed on this network. Shield and unshield still work without it.",
       });
       return;
     }
@@ -328,8 +328,10 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
-          Mailbox setup is unavailable on this network in this deployment.
-          Switch to a supported network or try again later.
+          Mailbox registration needs the QuietlineMail helper on this
+          network. It is not deployed here yet, so register and restore stay
+          disabled. Shield and unshield still work from the wallet rail — they
+          talk to the live STRK20 pool, not this helper.
         </p>
       )}
       <button
