@@ -212,7 +212,7 @@ export default function PrivacyWalletMenu() {
       await authorizeStrk20ValueAction({
         provider,
         poolAddress,
-        accountAddress: connectedAddress ?? walletAccount.address,
+        accountAddress: connectedAddress || walletAccount.address,
         network: networkName,
         action: actionName,
         amount,

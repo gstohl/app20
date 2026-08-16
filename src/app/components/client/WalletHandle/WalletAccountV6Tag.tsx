@@ -2,7 +2,14 @@
 
 import type { WALLET_API } from "@starknet-io/types-js";
 import { json, num, validateAndParseAddress } from "starknet";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
+import {
+  formatStrkAmount,
+  loadStrkAmount,
+  parseStrkAmount,
+  saveStrkAmount,
+} from "@/lib/strk-amount";
 import {
   Strk20WaitTimeoutError,
   strk20ErrorMessage,
@@ -17,8 +24,6 @@ import SelectWallet from "./SelectWallet";
 import Strk20CapabilityDiagnostic from "./Strk20CapabilityDiagnostic";
 
 const TOKEN = constants.addrSTRK;
-const TEN_STRK = 10n * 10n ** 18n;
-const ONE_STRK = 10n ** 18n;
 
 function fmtStrk(amount: bigint): string {
   const whole = amount / 10n ** 18n;
@@ -185,28 +190,73 @@ export default function WalletAccountV6Tag() {
     (state) => state.strk20Capability,
   );
   const networkName = constants.Strk20Networks[providerIndex];
-  const isStrk20Network = networkName !== undefined;
-  const mainnetActionsBlocked = providerIndex === 0;
+  const networkKey = networkName ?? `network-${providerIndex}`;
+  const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
+  const isStrk20Network = networkName !== undefined && poolAddress !== null;
 
   const [resultBalances, setResultBalances] = useState<ActionResult | null>(null);
   const [resultShield, setResultShield] = useState<ActionResult | null>(null);
   const [resultUnshield, setResultUnshield] = useState<ActionResult | null>(null);
   const [resultTransfer, setResultTransfer] = useState<ActionResult | null>(null);
   const [tab, setTab] = useState<TabKey>("shield");
+  const [amountInput, setAmountInput] = useState("0.1");
+  let parsedAmount: bigint | null = null;
+  let amountError = "";
+  try {
+    parsedAmount = parseStrkAmount(amountInput);
+  } catch (error: unknown) {
+    amountError = error instanceof Error ? error.message : "Enter a valid STRK amount.";
+  }
+
+  useEffect(() => {
+    try {
+      setAmountInput(loadStrkAmount(window.localStorage, networkKey));
+    } catch {
+      setAmountInput("0.1");
+    }
+  }, [networkKey]);
 
   async function submit(
     actions: WALLET_API.STRK20_ACTION[],
     setResult: (result: ActionResult) => void,
-    amountLabel: string
+    actionName: string,
+    amount: bigint,
   ) {
     if (!walletAccount) {
       setResult(errorResult("No WalletAccount is connected."));
       return;
     }
 
+    if (!networkName || !poolAddress || !isStrk20Network) {
+      setResult(errorResult("STRK20 actions require Starknet Mainnet or Sepolia."));
+      return;
+    }
+
+    const amountLabel = `${formatStrkAmount(amount)} STRK`;
     const provider = constants.myFrontendProviders[providerIndex];
     let submittedHash: string | undefined;
     try {
+      setResult({
+        status: "pending",
+        title: "Checking live fee and public balance…",
+        rows: [
+          { label: "Amount", value: amountLabel },
+          { label: "Base units", value: amount.toString() },
+        ],
+      });
+      await authorizeStrk20ValueAction({
+        provider,
+        poolAddress,
+        accountAddress: connectedAddress || walletAccount.address,
+        network: networkName,
+        action: actionName,
+        amount,
+      });
+      try {
+        saveStrkAmount(window.localStorage, networkKey, amountInput);
+      } catch {
+        // Storage availability does not alter the explicitly reviewed amount.
+      }
       const { transactionHash, receipt } = await submitActions(
         walletAccount,
         provider,
@@ -268,10 +318,15 @@ export default function WalletAccountV6Tag() {
 
   async function handleShield() {
     setResultShield(null);
+    if (parsedAmount === null) {
+      setResultShield(errorResult(amountError));
+      return;
+    }
     await submit(
-      [{ type: "deposit", token: TOKEN, amount: num.toHex(TEN_STRK) }],
+      [{ type: "deposit", token: TOKEN, amount: num.toHex(parsedAmount) }],
       setResultShield,
-      "10 STRK"
+      "Shield",
+      parsedAmount,
     );
   }
 
@@ -281,17 +336,22 @@ export default function WalletAccountV6Tag() {
       setResultUnshield(errorResult("Connect a wallet first."));
       return;
     }
+    if (parsedAmount === null) {
+      setResultUnshield(errorResult(amountError));
+      return;
+    }
     await submit(
       [
         {
           type: "withdraw",
           token: TOKEN,
-          amount: num.toHex(ONE_STRK),
+          amount: num.toHex(parsedAmount),
           recipient: connectedAddress,
         },
       ],
       setResultUnshield,
-      "1 STRK"
+      "Unshield",
+      parsedAmount,
     );
   }
 
@@ -301,17 +361,22 @@ export default function WalletAccountV6Tag() {
       setResultTransfer(errorResult("Connect a wallet first."));
       return;
     }
+    if (parsedAmount === null) {
+      setResultTransfer(errorResult(amountError));
+      return;
+    }
     await submit(
       [
         {
           type: "transfer",
           token: TOKEN,
-          amount: num.toHex(ONE_STRK),
+          amount: num.toHex(parsedAmount),
           recipient: connectedAddress,
         },
       ],
       setResultTransfer,
-      "1 STRK"
+      "Private self-transfer",
+      parsedAmount,
     );
   }
 
@@ -376,33 +441,33 @@ export default function WalletAccountV6Tag() {
   > = {
     shield: {
       label: "You're shielding",
-      value: "10",
+      value: amountInput,
       token: "STRK",
       hint: "Public deposit into the STRK20 privacy pool",
       cta: "Shield (2 wallet prompts)",
       onRun: handleShield,
       result: resultShield,
-      disabled: !isStrk20Network || mainnetActionsBlocked,
+      disabled: !isStrk20Network || parsedAmount === null,
     },
     send: {
       label: "You're sending to yourself",
-      value: "1",
+      value: amountInput,
       token: "STRK",
       hint: "Private in-pool transfer",
       cta: "Private self-transfer",
       onRun: handleSelfTransfer,
       result: resultTransfer,
-      disabled: !isStrk20Network || mainnetActionsBlocked,
+      disabled: !isStrk20Network || parsedAmount === null,
     },
     unshield: {
       label: "You're unshielding",
-      value: "1",
+      value: amountInput,
       token: "STRK",
       hint: "Public withdrawal to your connected account",
       cta: "Unshield",
       onRun: handleUnshield,
       result: resultUnshield,
-      disabled: !isStrk20Network || mainnetActionsBlocked,
+      disabled: !isStrk20Network || parsedAmount === null,
     },
     balances: {
       label: "Shielded balances",
@@ -460,7 +525,18 @@ export default function WalletAccountV6Tag() {
       <div className={styles.inputBlock}>
         <div className={styles.inputLabel}>{active.label}</div>
         <div className={styles.inputMain}>
-          <div className={styles.bigValue}>{active.value}</div>
+          {tab === "balances" ? (
+            <div className={styles.bigValue}>{active.value}</div>
+          ) : (
+            <input
+              className={styles.bigValueInput}
+              aria-label="Wallet action amount in STRK"
+              value={amountInput}
+              onChange={(event) => setAmountInput(event.target.value)}
+              inputMode="decimal"
+              autoComplete="off"
+            />
+          )}
           <span className={styles.tokenPill}>
             <span className={styles.tokenDot}>
               <StrkCoin size={22} />
@@ -469,7 +545,13 @@ export default function WalletAccountV6Tag() {
           </span>
         </div>
         <div className={styles.subLine}>
-          <span>{active.hint}</span>
+          <span>
+            {tab === "balances"
+              ? active.hint
+              : parsedAmount === null
+                ? amountError
+                : `${formatStrkAmount(parsedAmount)} STRK · ${parsedAmount} base units`}
+          </span>
           <span className={styles.subMono}>{shortWallet}</span>
         </div>
       </div>
@@ -497,13 +579,17 @@ export default function WalletAccountV6Tag() {
         </div>
       ) : null}
 
-      {!isStrk20Network || mainnetActionsBlocked ? (
+      {isStrk20Network ? providerIndex === 0 ? (
         <div className={styles.warn}>
-          {mainnetActionsBlocked
-            ? "Mainnet value actions are disabled until the exact wallet and deployment pass Quietline's manual release gates. Switch to Sepolia."
-            : "STRK20 actions require Starknet Sepolia or Mainnet."}
+          Mainnet moves real funds. Quietline reads the live pool fee and public
+          STRK balance, then requires an exact confirmation before submission.
+          Escrow remains disabled.
         </div>
-      ) : null}
+      ) : null : (
+        <div className={styles.warn}>
+          STRK20 actions require Starknet Sepolia or Mainnet.
+        </div>
+      )}
 
       {isConnected ? (
         <button
