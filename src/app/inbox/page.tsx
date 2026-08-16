@@ -82,10 +82,8 @@ import {
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
 import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
-import {
-  clearLocalMailboxStorage,
-  MAIL_SEED_STORAGE_PREFIX,
-} from "@/lib/local-mailbox-storage";
+import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
+import { inspectMailVault } from "@/lib/mail-vault";
 import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
 import {
   loadPendingPayment,
@@ -230,13 +228,8 @@ function loadPersistedMailSeed(
   chainId: string,
   address: string,
 ): Uint8Array | null {
-  const value = storage.getItem(
-    `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`,
-  );
-  if (!value || !/^[0-9a-f]{64}$/i.test(value)) return null;
-  return Uint8Array.from(
-    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
-  );
+  const vault = inspectMailVault(storage, chainId, address);
+  return vault.kind === "plaintext" ? vault.seed : null;
 }
 
 function mailKeyFingerprint(keypair: MailKeypair | null): string {
@@ -992,7 +985,7 @@ export default function InboxPage() {
     void refreshEscrowChainDeals();
   }
 
-  function handleKeyReady(nextKeypair: MailKeypair) {
+  function handleKeyReady(nextKeypair: MailKeypair, nextSeed?: Uint8Array) {
     scanGenerationRef.current += 1;
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
@@ -1019,9 +1012,10 @@ export default function InboxPage() {
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setKeypair(nextKeypair);
     setMailSeed(
-      address && chainId
-        ? loadPersistedMailSeed(window.localStorage, chainId, address)
-        : null,
+      nextSeed ??
+        (address && chainId
+          ? loadPersistedMailSeed(window.localStorage, chainId, address)
+          : null),
     );
     // A counterparty can advance an escrow while this mailbox is inactive.
     // Refresh contract state when its device key is loaded so maker actions
@@ -2084,6 +2078,18 @@ export default function InboxPage() {
     }
   }
 
+  function lockMailboxSession() {
+    mailSeed?.fill(0);
+    keypair?.privateKey.fill(0);
+    setMailSeed(null);
+    setKeypair(null);
+    setStorageNotice({
+      kind: "ok",
+      message:
+        "Mailbox locked in this tab. A passphrase-wrapped vault stays on this device; a plaintext seed is still in this profile until you forget the device.",
+    });
+  }
+
   function forgetThisDevice() {
     if (
       !window.confirm(
@@ -2500,12 +2506,20 @@ export default function InboxPage() {
             aria-labelledby="forget-device-title"
           >
             <span className={styles.sidebarLabel}>SHARED-MACHINE SAFETY</span>
-            <strong id="forget-device-title">Local data is unencrypted</strong>
+            <strong id="forget-device-title">You choose device risk</strong>
             <p>
-              Disconnecting is not logout. The raw mailbox seed, drafts, Sent
-              copies, aliases, payment/OTC state, and escrow state remain in
-              this browser profile until cleared.
+              Disconnecting is not logout. Drafts, Sent copies, and aliases stay
+              in this profile. The mailbox seed is clear by default, or
+              passphrase-wrapped if you chose that. Lock this tab to drop the
+              unlocked key from memory.
             </p>
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              onClick={lockMailboxSession}
+            >
+              Lock mailbox this session
+            </button>
             <button
               className={styles.warningButton}
               type="button"
@@ -2524,8 +2538,7 @@ export default function InboxPage() {
               GitHub ↗
             </a>
             <span>
-              Ciphertext is public on-chain. Local data is not encrypted at
-              rest.
+              Ciphertext is public on-chain. Device encryption is optional.
             </span>
           </footer>
         </aside>

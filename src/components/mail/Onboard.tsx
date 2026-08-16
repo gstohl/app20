@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
-import { MAIL_SEED_STORAGE_PREFIX } from "@/lib/local-mailbox-storage";
+import {
+  inspectMailVault,
+  persistPlaintextSeed,
+  persistWrappedSeed,
+  unwrapMailSeed,
+} from "@/lib/mail-vault";
 import { strk20ErrorMessage } from "@/lib/strk20";
 import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
@@ -13,7 +18,7 @@ import styles from "./mail.module.css";
 
 type OnboardProps = {
   helperAddress: string | null;
-  onKeyReady: (keypair: MailKeypair) => void;
+  onKeyReady: (keypair: MailKeypair, seed: Uint8Array) => void;
 };
 
 type SetupState = {
@@ -21,48 +26,6 @@ type SetupState = {
   message?: string;
   transactionHash?: string;
 };
-
-function seedStorageKey(chainId: string, address: string): string {
-  return `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`;
-}
-
-function seedToHex(seed: Uint8Array): string {
-  return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
-
-function seedFromHex(value: string): Uint8Array | null {
-  if (!/^[0-9a-f]{64}$/i.test(value)) return null;
-  return Uint8Array.from(
-    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
-  );
-}
-
-function loadOrCreateSeed(
-  chainId: string,
-  address: string,
-): { seed: Uint8Array; created: boolean } {
-  const key = seedStorageKey(chainId, address);
-  const existing = window.localStorage.getItem(key);
-  if (existing !== null) {
-    const seed = seedFromHex(existing);
-    if (!seed) {
-      throw new Error(
-        "The saved Quietline device key is invalid. Refusing to overwrite it.",
-      );
-    }
-    return { seed, created: false };
-  }
-
-  const seed = globalThis.crypto.getRandomValues(new Uint8Array(32));
-  const encoded = seedToHex(seed);
-  window.localStorage.setItem(key, encoded);
-  if (window.localStorage.getItem(key) !== encoded) {
-    throw new Error("Quietline could not persist the device mail key.");
-  }
-  return { seed, created: true };
-}
 
 function keysEqual(left: readonly string[], right: readonly string[]): boolean {
   return (
@@ -82,21 +45,74 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   );
   const [setup, setSetup] = useState<SetupState>({ kind: "idle" });
   const [backupPhrase, setBackupPhrase] = useState("");
-  const [pendingKeypair, setPendingKeypair] = useState<MailKeypair | null>(
-    null,
-  );
+  const [pending, setPending] = useState<{
+    keypair: MailKeypair;
+    seed: Uint8Array;
+  } | null>(null);
   const [copied, setCopied] = useState(false);
   const [restoreValue, setRestoreValue] = useState("");
   const [restoreNeedsConfirmation, setRestoreNeedsConfirmation] =
     useState(false);
+  const [wrapExisting, setWrapExisting] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [passphraseConfirm, setPassphraseConfirm] = useState("");
+  const [unlockPassphrase, setUnlockPassphrase] = useState("");
+
+  const vault =
+    address && chainId
+      ? inspectMailVault(window.localStorage, chainId, address)
+      : { kind: "missing" as const };
 
   const disabled =
     setup.kind === "pending" ||
-    pendingKeypair !== null ||
+    pending !== null ||
     !walletAccount ||
     !address ||
     !chainId ||
     !helperAddress;
+
+  const canWrap = useMemo(() => {
+    if (!wrapExisting) return true;
+    return passphrase.length >= 8 && passphrase === passphraseConfirm;
+  }, [passphrase, passphraseConfirm, wrapExisting]);
+
+  async function persistSeed(seed: Uint8Array) {
+    if (!address || !chainId) {
+      throw new Error("Connect a wallet first.");
+    }
+    if (wrapExisting) {
+      if (passphrase.length < 8) {
+        throw new Error("Passphrase must be at least 8 characters.");
+      }
+      if (passphrase !== passphraseConfirm) {
+        throw new Error("Passphrase confirmation does not match.");
+      }
+      await persistWrappedSeed(
+        window.localStorage,
+        chainId,
+        address,
+        seed,
+        passphrase,
+      );
+      return;
+    }
+    persistPlaintextSeed(window.localStorage, chainId, address, seed);
+  }
+
+  async function finishWithSeed(seed: Uint8Array, created: boolean) {
+    const keypair = deriveKeypair(seed);
+    if (created) {
+      setBackupPhrase(exportMailSeed(seed));
+      setPending({ keypair, seed });
+      setSetup({
+        kind: "ok",
+        message:
+          "Device mail key is ready. Save its one-time backup before opening the mailbox.",
+      });
+      return;
+    }
+    onKeyReady(keypair, seed);
+  }
 
   async function loadAndRegister() {
     if (!walletAccount || !address || !chainId) {
@@ -117,8 +133,24 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     });
 
     try {
-      const { seed, created } = loadOrCreateSeed(chainId, address);
-      if (created) setBackupPhrase(exportMailSeed(seed));
+      const existing = inspectMailVault(window.localStorage, chainId, address);
+      if (existing.kind === "passphrase") {
+        throw new Error(
+          "This mailbox is passphrase-wrapped. Unlock it below instead of creating another key.",
+        );
+      }
+
+      let seed: Uint8Array;
+      let created = false;
+      if (existing.kind === "plaintext") {
+        seed = existing.seed;
+        if (wrapExisting) await persistSeed(seed);
+      } else {
+        seed = globalThis.crypto.getRandomValues(new Uint8Array(32));
+        created = true;
+        await persistSeed(seed);
+      }
+
       const keypair = deriveKeypair(seed);
       const publicKey = publicKeyToFelts(keypair.publicKey);
       const provider = myFrontendProviders[providerIndex];
@@ -129,15 +161,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       });
 
       if (keysEqual(registered, publicKey)) {
-        if (backupPhrase) {
-          setPendingKeypair(keypair);
-          setSetup({
-            kind: "ok",
-            message:
-              "Device mail key matched the public directory. Save its one-time backup before opening the mailbox.",
-          });
-        } else {
-          onKeyReady(keypair);
+        await finishWithSeed(seed, created || Boolean(backupPhrase));
+        if (!created && !backupPhrase) {
           setSetup({
             kind: "ok",
             message: "Device mail key loaded and matched the public directory.",
@@ -184,8 +209,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         throw new Error("The helper did not return the registered public key.");
       }
 
+      await finishWithSeed(seed, created);
       if (created) {
-        setPendingKeypair(keypair);
         setSetup({
           kind: "ok",
           message:
@@ -193,13 +218,39 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           transactionHash,
         });
       } else {
-        onKeyReady(keypair);
         setSetup({
           kind: "ok",
           message: "Device mail key registered and ready for local scans.",
           transactionHash,
         });
       }
+    } catch (error: unknown) {
+      setSetup({ kind: "error", message: strk20ErrorMessage(error) });
+    }
+  }
+
+  async function unlockWrapped() {
+    if (!address || !chainId) {
+      setSetup({ kind: "error", message: "Connect a wallet first." });
+      return;
+    }
+    const existing = inspectMailVault(window.localStorage, chainId, address);
+    if (existing.kind !== "passphrase") {
+      setSetup({
+        kind: "error",
+        message: "This mailbox is not passphrase-wrapped on this device.",
+      });
+      return;
+    }
+    setSetup({ kind: "pending", message: "Unlocking the mailbox vault…" });
+    try {
+      const seed = await unwrapMailSeed(existing.record, unlockPassphrase);
+      onKeyReady(deriveKeypair(seed), seed);
+      setUnlockPassphrase("");
+      setSetup({
+        kind: "ok",
+        message: "Mailbox vault unlocked for this session.",
+      });
     } catch (error: unknown) {
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
@@ -248,32 +299,20 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         );
       }
 
-      const key = seedStorageKey(chainId, address);
-      const encoded = seedToHex(restored.seed);
-      const existing = window.localStorage.getItem(key);
-      const existingSeed = existing === null ? null : seedFromHex(existing);
-      const sameSeed =
-        existingSeed !== null && seedToHex(existingSeed) === encoded;
-      const replacesSeed = existing !== null && !sameSeed;
-
+      const existing = inspectMailVault(window.localStorage, chainId, address);
+      const replacesSeed = existing.kind !== "missing";
       if (replacesSeed && !overwriteConfirmed) {
         setRestoreNeedsConfirmation(true);
         setSetup({
           kind: "idle",
           message:
-            "Backup matches this wallet's public mailbox key. Confirm before replacing the different local key.",
+            "Backup matches this wallet's public mailbox key. Confirm before replacing the local vault.",
         });
         return;
       }
 
-      if (!sameSeed) window.localStorage.setItem(key, encoded);
-      const persisted = window.localStorage.getItem(key);
-      const persistedSeed = persisted === null ? null : seedFromHex(persisted);
-      if (persistedSeed === null || seedToHex(persistedSeed) !== encoded) {
-        throw new Error("Quietline could not persist the restored mailbox key.");
-      }
-
-      onKeyReady(restored.keypair);
+      await persistSeed(restored.seed);
+      onKeyReady(restored.keypair, restored.seed);
       setBackupPhrase("");
       setCopied(false);
       setRestoreValue("");
@@ -319,29 +358,97 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         wallet address to a public mailbox key in the on-chain directory.
       </p>
       <p className={styles.finePrint}>
-        <strong>Not encrypted at rest:</strong> Quietline stores the raw 32-byte
-        mailbox seed as hexadecimal in this browser profile. Anyone who can
-        access this profile—including another user of a shared machine—can read
-        retained mail and derive any escrow claim keys. Disconnecting the wallet
-        does not clear it. Use “Forget this device” when finished, and keep the
-        offline backup private.
+        <strong>You choose the device risk.</strong> Default stores the raw
+        32-byte mailbox seed in this browser profile. Anyone with this profile
+        can read retained mail. Optional passphrase wrap encrypts that seed at
+        rest; Quietline then cannot open the mailbox until you unlock this
+        session. A wallet signature cannot be the wrap key — Ready signatures
+        are not a stable secret. The eight-group backup is still the only
+        recovery if you forget the passphrase or clear this profile.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
-          Mailbox registration needs the QuietlineMail helper on this
-          network. It is not deployed here yet, so register and restore stay
-          disabled. Shield and unshield still work from the wallet rail — they
-          talk to the live STRK20 pool, not this helper.
+          Mailbox registration needs the QuietlineMail helper on this network.
+          It is not deployed here yet, so register and restore stay disabled.
+          Shield and unshield still work from the wallet rail — they talk to
+          the live STRK20 pool, not this helper.
         </p>
       )}
-      <button
-        className={styles.primaryButton}
-        type="button"
-        onClick={loadAndRegister}
-        disabled={disabled}
-      >
-        {setup.kind === "pending" ? "Waiting…" : "Load device key & register"}
-      </button>
+
+      {vault.kind === "passphrase" ? (
+        <div className={styles.restoreForm}>
+          <p className={styles.notice}>
+            This mailbox is passphrase-wrapped on this device. Unlock it for
+            this session, or restore from backup if you forgot the passphrase.
+          </p>
+          <label className={styles.field}>
+            Mailbox passphrase
+            <input
+              type="password"
+              value={unlockPassphrase}
+              onChange={(event) => setUnlockPassphrase(event.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            onClick={() => void unlockWrapped()}
+            disabled={setup.kind === "pending" || unlockPassphrase.length === 0}
+          >
+            {setup.kind === "pending" ? "Unlocking…" : "Unlock mailbox"}
+          </button>
+        </div>
+      ) : (
+        <>
+          <label className={styles.field}>
+            <span>
+              <input
+                type="checkbox"
+                checked={wrapExisting}
+                onChange={(event) => setWrapExisting(event.target.checked)}
+              />{" "}
+              Encrypt this mailbox on this browser (optional)
+            </span>
+            <small>
+              Off: faster demo, seed stored in the clear. On: scrypt + AES-GCM
+              wrap. Quietline never stores the passphrase.
+            </small>
+          </label>
+          {wrapExisting ? (
+            <>
+              <label className={styles.field}>
+                New mailbox passphrase
+                <input
+                  type="password"
+                  value={passphrase}
+                  onChange={(event) => setPassphrase(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                />
+              </label>
+              <label className={styles.field}>
+                Confirm passphrase
+                <input
+                  type="password"
+                  value={passphraseConfirm}
+                  onChange={(event) => setPassphraseConfirm(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={8}
+                />
+              </label>
+            </>
+          ) : null}
+          <button
+            className={styles.primaryButton}
+            type="button"
+            onClick={() => void loadAndRegister()}
+            disabled={disabled || !canWrap}
+          >
+            {setup.kind === "pending" ? "Waiting…" : "Load device key & register"}
+          </button>
+        </>
+      )}
 
       {backupPhrase ? (
         <div className={styles.backupBox}>
@@ -349,7 +456,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           <code>{backupPhrase}</code>
           <p>
             Anyone with this phrase can read mail encrypted to this key. Store
-            it offline; Quietline does not upload it.
+            it offline; Quietline does not upload it. If you chose a passphrase,
+            this backup is still required when you forget it.
           </p>
           <button
             className={styles.secondaryButton}
@@ -358,14 +466,14 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           >
             {copied ? "Copied" : "Copy backup phrase"}
           </button>
-          {pendingKeypair ? (
+          {pending ? (
             <button
               className={styles.primaryButton}
               type="button"
               onClick={() => {
-                const keypair = pendingKeypair;
-                setPendingKeypair(null);
-                onKeyReady(keypair);
+                const next = pending;
+                setPending(null);
+                onKeyReady(next.keypair, next.seed);
               }}
             >
               I saved the backup — open mailbox
@@ -393,13 +501,13 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               placeholder="00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000"
             />
             <small>
-              Paste exactly eight groups of eight hexadecimal characters. The
-              backup stays in this browser and is never sent with a request.
+              Paste exactly eight groups of eight hexadecimal characters. Choose
+              plaintext or passphrase wrap above before restoring.
             </small>
           </label>
           {restoreNeedsConfirmation ? (
             <div className={styles.restoreWarning} role="alert">
-              <strong>Replace the existing mailbox key?</strong>
+              <strong>Replace the existing mailbox vault?</strong>
               <p>
                 This replaces the mailbox key on this device; mail encrypted to
                 the old key becomes unreadable here.
@@ -422,7 +530,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
                 !address ||
                 !chainId ||
                 !helperAddress ||
-                restoreValue.length === 0
+                restoreValue.length === 0 ||
+                !canWrap
               }
             >
               Restore mailbox key

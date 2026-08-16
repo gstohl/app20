@@ -7,7 +7,7 @@ import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Str
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
-import { MAIL_SEED_STORAGE_PREFIX } from "@/lib/local-mailbox-storage";
+import { inspectMailVault } from "@/lib/mail-vault";
 import { decodePaymentLinkFragment } from "@/lib/payment-link";
 import { storePendingPayment } from "@/lib/pending-payment";
 import { paymentRequestIsExpired, type PaymentRequestPayload } from "@/lib/otc";
@@ -56,9 +56,8 @@ export default function PayPage() {
 
     try {
       setHasLocalMailSeed(
-        window.localStorage.getItem(
-          `${MAIL_SEED_STORAGE_PREFIX}/${chainId}/${address}`,
-        ) !== null,
+        inspectMailVault(window.localStorage, chainId, address).kind !==
+          "missing",
       );
     } catch {
       setHasLocalMailSeed(false);
@@ -74,7 +73,7 @@ export default function PayPage() {
       "The connected wallet does not expose the dapp-facing STRK20 API Quietline requires. No private payment can be submitted.";
   } else if (hasLocalMailSeed) {
     readinessMessage =
-      "A raw, unencrypted mailbox seed exists in this browser profile. The inbox will still require it to match the public registration before payment. Clear the local mailbox when using a shared machine.";
+      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
   } else {
     readinessMessage =
       "This account is not onboarded in this browser. Continue to the inbox to create or restore and register its device mail key before paying.";
