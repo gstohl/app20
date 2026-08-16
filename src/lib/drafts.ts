@@ -191,7 +191,7 @@ export function createDraftAttachment(
   type: DraftAttachment["type"],
 ): DraftAttachment {
   if (type === "payment") {
-    return { type, paymentId: createDealId(), amount: "" };
+    return { type, paymentId: createDealId(), amount: "0.1" };
   }
   if (type === "payment_request") {
     return {

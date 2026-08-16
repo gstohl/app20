@@ -28,6 +28,7 @@ describe("device-private drafts", () => {
     const storage = new MemoryStorage();
     const draft = createBlankDraft(100);
     const payment = createDraftAttachment("payment");
+    expect(payment.amount).toBe("0.1");
     payment.amount = "0.5";
     const invoice = createDraftAttachment("payment_request");
     invoice.memo = "Invoice 12";
