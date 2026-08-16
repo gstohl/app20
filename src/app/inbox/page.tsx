@@ -3,6 +3,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
+import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useLocalnetTools } from "@/app/localnetToolsContext";
@@ -731,7 +732,12 @@ export default function InboxPage() {
   }
 
   function requireActionContext() {
-    if (!helperAddress) throw new Error("No mail helper is configured.");
+    if (providerIndex === 0) {
+      throw new Error(
+        "Mainnet mail and value actions are disabled until the exact wallet and deployment pass the manual release gates. Switch to Sepolia.",
+      );
+    }
+    if (!helperAddress) throw new Error("Mail is unavailable on this network.");
     if (!walletAccount || !address || !chainId || !isStrk20Capable) {
       throw new Error(
         "Connect a wallet that exposes the dapp-facing STRK20 API first.",
@@ -2008,6 +2014,15 @@ export default function InboxPage() {
   }
 
   function openComposer() {
+    if (!address || !chainId) {
+      setStorageNotice({
+        kind: "error",
+        message:
+          "Connect a wallet before creating a draft so it is saved under the correct mailbox.",
+      });
+      setSidebarOpen(true);
+      return;
+    }
     const draft = createBlankDraft();
     persistDraft(draft);
     setMailFolder("drafts");
@@ -2040,6 +2055,16 @@ export default function InboxPage() {
     setMailboxFilter(nextFilter);
     setSidebarOpen(false);
     setMobileDetailOpen(false);
+  }
+
+  function focusMailboxKeySetup() {
+    setSidebarOpen(false);
+    setMobileDetailOpen(true);
+    window.requestAnimationFrame(() => {
+      const setup = document.getElementById("mailbox-key-setup");
+      setup?.scrollIntoView({ block: "start" });
+      setup?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
+    });
   }
 
   return (

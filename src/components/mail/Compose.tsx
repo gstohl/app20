@@ -383,8 +383,11 @@ export default function Compose({
   }
 
   let disabledReason = "";
-  if (!helperAddress) {
-    disabledReason = `No QuietlineMail helper is configured on ${networkName}. Sending is disabled.`;
+  if (networkName === "MAINNET") {
+    disabledReason =
+      "Mainnet mail and value actions are disabled until the exact wallet and deployment pass the manual release gates. Switch the wallet to Sepolia.";
+  } else if (!helperAddress) {
+    disabledReason = `Mail is unavailable on ${networkName} in this deployment. Switch network or try again later.`;
   } else if (!isConnected || !walletAccount || !senderAddress) {
     disabledReason = "Connect a privacy-enabled wallet before sending mail.";
   } else if (!isStrk20Capable) {
@@ -395,7 +398,7 @@ export default function Compose({
   } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
     disabledReason =
       networkName === "MAINNET"
-        ? "Escrow stays off the mainnet scoring path until reviewed."
+        ? "Escrow is disabled on Mainnet because it has not been independently reviewed; it stays off the mainnet scoring path until review."
         : `No reviewed QuietlineEscrow deployment is configured on ${networkName}.`;
   } else if (hasEscrow && (!mailSeed || !chainId)) {
     disabledReason = "Reload the mailbox seed before funding escrow.";
@@ -677,7 +680,8 @@ export default function Compose({
       !walletAccount ||
       !senderAddress ||
       !isStrk20Capable ||
-      !keyReady
+      !keyReady ||
+      networkName === "MAINNET"
     ) {
       setSendState({
         kind: "error",
@@ -1276,6 +1280,11 @@ export default function Compose({
                   <li>
                     Wallet/network fees are additional and must be reviewed in
                     the connected wallet.
+                  </li>
+                  <li>
+                    The configured RPC sees each recipient's public mailbox-key
+                    lookup and is trusted to return the correct key. Verify key
+                    fingerprints out-of-band before moving value.
                   </li>
                 </ul>
                 <p className={styles.ciphertextBudget}>

@@ -205,14 +205,49 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     }
   }
 
-  function restoreBackup(overwriteConfirmed: boolean) {
+  async function restoreBackup(overwriteConfirmed: boolean) {
     if (!address || !chainId) {
       setSetup({ kind: "error", message: "Connect a wallet first." });
       return;
     }
+    if (!helperAddress) {
+      setSetup({
+        kind: "error",
+        message:
+          "Mailbox setup is unavailable on this network in this deployment.",
+      });
+      return;
+    }
+
+    setSetup({
+      kind: "pending",
+      message: "Checking this backup against the public mailbox directory…",
+    });
 
     try {
       const restored = restoreMailSeed(restoreValue);
+      const restoredPublicKey = publicKeyToFelts(restored.keypair.publicKey);
+      const provider = myFrontendProviders[providerIndex];
+      const registered = await provider.callContract({
+        contractAddress: helperAddress,
+        entrypoint: "get_pubkey",
+        calldata: [address],
+      });
+      const hasRegisteredKey =
+        registered.length === 2 &&
+        (BigInt(registered[0]) !== 0n || BigInt(registered[1]) !== 0n);
+
+      if (!hasRegisteredKey) {
+        throw new Error(
+          "This wallet has no public mailbox key registered. Nothing was replaced; register a new mailbox key instead.",
+        );
+      }
+      if (!keysEqual(registered, restoredPublicKey)) {
+        throw new Error(
+          "This backup belongs to a different mailbox key. Nothing was replaced; use the backup registered to this wallet address.",
+        );
+      }
+
       const key = seedStorageKey(chainId, address);
       const encoded = seedToHex(restored.seed);
       const existing = window.localStorage.getItem(key);
@@ -223,16 +258,19 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
 
       if (replacesSeed && !overwriteConfirmed) {
         setRestoreNeedsConfirmation(true);
+        setSetup({
+          kind: "idle",
+          message:
+            "Backup matches this wallet's public mailbox key. Confirm before replacing the different local key.",
+        });
         return;
       }
 
-      if (!sameSeed) {
-        window.localStorage.setItem(key, encoded);
-      }
+      if (!sameSeed) window.localStorage.setItem(key, encoded);
       const persisted = window.localStorage.getItem(key);
       const persistedSeed = persisted === null ? null : seedFromHex(persisted);
       if (persistedSeed === null || seedToHex(persistedSeed) !== encoded) {
-        throw new Error("Quietline could not persist the restored mail key.");
+        throw new Error("Quietline could not persist the restored mailbox key.");
       }
 
       onKeyReady(restored.keypair);
@@ -243,7 +281,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "ok",
         message:
-          "Backup restored locally. The derived mailbox key is ready on this device.",
+          "Backup restored locally and matched this wallet's public mailbox key.",
       });
     } catch (error: unknown) {
       setRestoreNeedsConfirmation(false);
@@ -264,17 +302,21 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   }
 
   return (
-    <section className={styles.card} aria-labelledby="onboard-title">
+    <section
+      id="mailbox-key-setup"
+      className={styles.card}
+      aria-labelledby="onboard-title"
+    >
       <div className={styles.cardNumber}>01</div>
       <div>
         <p className={styles.kicker}>PUBLIC SETUP / DEVICE-BOUND KEY</p>
         <h2 id="onboard-title" className={styles.cardTitle}>
-          Register a mail key
+          Set up a mailbox key
         </h2>
       </div>
       <p className={styles.copy}>
         Registration is a normal public Starknet transaction. It links this
-        wallet address to a mail public key in the on-chain directory.
+        wallet address to a public mailbox key in the on-chain directory.
       </p>
       <p className={styles.finePrint}>
         <strong>Not encrypted at rest:</strong> Quietline stores the raw 32-byte
@@ -286,8 +328,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
-          No helper deployment is configured for this network. Registration is
-          disabled until VITE_MAIL_HELPER_* is set.
+          Mailbox setup is unavailable on this network in this deployment.
+          Switch to a supported network or try again later.
         </p>
       )}
       <button
@@ -363,7 +405,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               <button
                 className={styles.warningButton}
                 type="button"
-                onClick={() => restoreBackup(true)}
+                onClick={() => void restoreBackup(true)}
               >
                 Replace mailbox key
               </button>
@@ -372,11 +414,12 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             <button
               className={styles.secondaryButton}
               type="button"
-              onClick={() => restoreBackup(false)}
+              onClick={() => void restoreBackup(false)}
               disabled={
                 setup.kind === "pending" ||
                 !address ||
                 !chainId ||
+                !helperAddress ||
                 restoreValue.length === 0
               }
             >
