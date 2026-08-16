@@ -674,7 +674,9 @@ test("all Quietline localnet journeys", async ({
     for (const width of [375, 768, 1_440]) {
       await page.setViewportSize({ width, height: 900 });
       if (width === 375) {
-        const drawer = page.getByLabel("Mailbox sidebar");
+        const drawer = page.getByRole("complementary", {
+          name: "Mailbox sidebar",
+        });
         const menu = page.getByRole("button", {
           name: "Open mailbox sidebar",
         });
