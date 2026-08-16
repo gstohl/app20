@@ -43,14 +43,14 @@ Quietline only enables privacy actions when Ready declares Wallet API / spec `>=
 
 ### 1.2 How much real STRK to hold
 
-Day-0: start with an amount you would not mind losing. Three successful pool-touching txs of a few STRK satisfy eligibility. The shipped UI is **not** “a few STRK” on shield — it is hardcoded.
+Day-0: start with an amount you would not mind losing. Three successful pool-touching transactions satisfy eligibility, but every operation also pays the live pool fee. Quietline defaults value inputs to **0.1 STRK** and never converts through a JavaScript float.
 
 | Action | Amount the app actually submits | File |
 | --- | --- | --- |
-| Home → **Shield** | **10 STRK** deposit | `src/app/components/client/WalletHandle/WalletAccountV6Tag.tsx` `TEN_STRK` |
-| Home → **Send** (self-transfer) | **1 STRK** private transfer | same file, `ONE_STRK` |
-| Home → **Unshield** | **1 STRK** withdraw to the connected account | same file |
-| Inbox attach STRK | whatever you type; optional | `src/components/mail/Compose.tsx` |
+| Mailbox wallet rail → **Shield** | exact user-entered STRK amount; default **0.1 STRK** | `src/components/mail/PrivacyWalletMenu.tsx` |
+| Legacy wallet → **Send** (self-transfer) | exact user-entered STRK amount; default **0.1 STRK** | `src/app/components/client/WalletHandle/WalletAccountV6Tag.tsx` |
+| Mailbox wallet rail → **Unshield** | exact user-entered STRK amount to the connected account; default **0.1 STRK** | `src/components/mail/PrivacyWalletMenu.tsx` |
+| Inbox attach STRK | exact amount you type; a new attachment defaults to **0.1 STRK** | `src/components/mail/Compose.tsx` |
 | `register_pubkey` | 0 STRK value; public Starknet tx | `Onboard.tsx` |
 | Helper declare + deploy | whatever mainnet declare/deploy costs | `scripts/e2e-mail.mjs` shape |
 
@@ -67,19 +67,20 @@ sncast --url https://rpc.starknet.lava.build call \
 
 If your `sncast` build wants a different call syntax, use `sncast call --help`. Do not invent another RPC. Record the returned amount as `F` (human STRK, 18 decimals).
 
-**Alice funding floor (public STRK on the Ready account):**
+**Alice funding floor (public STRK on the connected account):**
 
 ```text
-10 STRK          # hardcoded shield
-+ F              # mail send / privacy_invoke (one private op)
-+ F              # unshield or second private action
-+ public gas     # register_pubkey; Ready may sponsor some gas — keep a couple of extra STRK
+A               # the exact shield amount entered in the UI (default 0.1 STRK)
++ F              # shield pool fee
++ F              # mail send / privacy_invoke pool fee
++ F              # unshield or second private action pool fee
++ public gas     # register_pubkey and helper deployment; the wallet may sponsor some gas
 + slack          # screening retry is not a reason to restock; see §6
 ```
 
-Example if `get_fee_amount` still returns 4 STRK: **about 20 STRK** on Alice (`10 + 4 + 4` plus a couple of STRK spare). If `F` is different, recompute. Bob needs only public gas for `register_pubkey` unless Bob will also shield.
+If `get_fee_amount` returns 4 STRK and `A` is 0.1 STRK, the three pool operations alone need **12.1 STRK**, plus unsponsored public gas and modest slack. Tiny transfer amounts do not make the flat fee tiny. Recompute from the live value; never use this example as a quote.
 
-Do **not** lower the shield by editing the UI during this pass. The runbook scores the shipped app.
+Enter the intended amount in the shipped UI. Before a Mainnet value action, verify the native preflight says `SN_MAIN`, the exact STRK and base-unit amount, the live `get_fee_amount`, the public balance and required `amount + fee`, the public shield/unshield warning, and “moves real funds.” Cancel if any value is unavailable or unexpected.
 
 ### 1.3 Rotate the Alchemy key into `.env.local`
 
@@ -275,13 +276,13 @@ Quietline waits up to **20 minutes** for confirmation (`STRK20_WAIT_TIMEOUT_MS` 
 ### 3.1 Recommended order (do not skip the wait)
 
 ```text
-Alice + Bob: connect Ready on SN_MAIN
+Alice + Bob: connect a STRK20-capable wallet on SN_MAIN
 Alice + Bob: register_pubkey  (§4)     ← public, not a scoring tx
-Alice: Shield 10 STRK         (§3.2)   ← scoring tx (a)
+Alice: Shield amount A        (§3.2)   ← scoring tx (a); start at 0.1 STRK
 WAIT ~10 blocks               (§3.3)
 Alice: Encrypt & send         (§3.4)   ← scoring tx (b), pool-touching privacy_invoke
-Alice: Unshield 1 STRK
-        or Home → Send 1 STRK (§3.5)   ← scoring tx (c)
+Alice: Unshield amount A
+        or self-transfer A    (§3.5)   ← scoring tx (c); start at 0.1 STRK
 Bob: Scan public events       (§4)     ← demo, not a scoring tx
 ```
 
@@ -292,21 +293,21 @@ Bob: Scan public events       (§4)     ← demo, not a scoring tx
 **Clicks:**
 
 1. Open the live demo URL (not `localhost` if you want the video to match `demo_url`).
-2. Ready popup: network = **Mainnet**.
-3. Click **Connect Ready** (nav pill or big CTA) → pick Ready → approve the account.
-4. Confirm the network chip says **MAINNET**. If it says SEPOLIA, disconnect, switch Ready, reconnect.
-5. Home wallet panel → tab **Shield**.
-6. Confirm the card reads **You’re shielding / 10 / STRK**.
-7. Click **Shield (2 wallet prompts)**.
-8. Ready prompt 1: **approve** STRK for the pool. Wait until that public approve is visible. A deposit is two transactions, never one (`wallet-api-route.md`).
-9. Ready prompt 2: **deposit** 10 STRK. Screening signature is protocol-enforced. If this reverts, it is usually screening — see §6. Do not treat it as an app bug.
-10. Wait for the in-app receipt **Transaction confirmed** (or Voyager `SUCCEEDED`).
+2. Wallet popup: network = **Mainnet**.
+3. Click **Connect wallet** → pick the installed STRK20-capable wallet → approve the account.
+4. Confirm the network chip says **MAINNET**. If it says SEPOLIA, disconnect, switch the wallet, and reconnect.
+5. In the mailbox wallet rail, enter **0.1** (or another deliberately tiny amount).
+6. Confirm the rail shows both `0.1 STRK` and `100000000000000000 base units`.
+7. Click **Shield**. Read the Mainnet preflight and verify its live fee and balance before choosing OK.
+8. Wallet prompt 1: **approve** STRK for the pool. Wait until that public approve is visible. A deposit is two transactions, never one (`wallet-api-route.md`).
+9. Wallet prompt 2: **deposit** the exact entered amount. Screening signature is protocol-enforced. If this reverts, it is usually screening — see §6. Do not treat it as an app bug.
+10. Wait for the in-app receipt **Shield confirmed** (or Voyager `SUCCEEDED`).
 
 **Record:**
 
 - Hash: `0x…`
 - Voyager: `https://voyager.online/tx/0x…`
-- Proves: Alice deposited **10 STRK** into pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. `Deposit.user_addr` is Alice. Amount and depositor are public on purpose.
+- Proves: Alice deposited the exact entered amount into pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`. `Deposit.user_addr` is Alice. Amount and depositor are public on purpose.
 
 Optional: Home → **Balances** → **Query balances** (this *does* prompt for shielded-balance consent; it is not a scoring tx).
 
@@ -316,7 +317,7 @@ Notes mature **~10 blocks** after creation (`wallet-api-route.md`, plan Phase 3)
 
 Starknet block times vary; wait until Voyager shows the shield **at least 10 blocks behind latest**, then add a couple of extra blocks.
 
-Do **not** compose shield + send in one wallet batch to skip the wait. That publishes “this address deposited 10 STRK” next to the mail it funded (concepts.md “Composition leaks”). The honest Quietline story is: shield first, later private send with no public ERC-20 leg.
+Do **not** compose shield + send in one wallet batch to skip the wait. That publishes “this address deposited amount A” next to the mail it funded (concepts.md “Composition leaks”). The honest Quietline story is: shield first, later private send with no public ERC-20 leg.
 
 ### 3.4 (b) Mail send / memo-carrying private transfer (`privacy_invoke`)
 
@@ -366,20 +367,20 @@ Pick one. Both touch the pool.
 
 **Option C1 — Unshield (public withdrawal):**
 
-1. Home → tab **Unshield**.
-2. Card reads **You’re unshielding / 1 / STRK**.
+1. In the mailbox wallet rail, enter the exact tiny STRK amount you intend to withdraw (start at **0.1 STRK**).
+2. Confirm the UI shows the same human amount and exact base units.
 3. Click **Unshield**.
-4. Approve Ready.
-5. Withdrawal destination (Alice) and **1 STRK** are public. Which note funded it stays private.
+4. Read and explicitly accept the Mainnet real-funds preflight, then approve the wallet request.
+5. Withdrawal destination (Alice) and the entered amount are public. Which note funded it stays private.
 
 **Option C2 — Second private action (self-transfer):**
 
-1. Home → tab **Send**.
-2. Card reads **You’re sending to yourself / 1 / STRK**.
-3. Click **Private self-transfer**.
-4. Amount and counterparties stay inside the pool. Timing is public.
+1. In the legacy wallet screen, open **Send** and enter the exact tiny STRK amount (start at **0.1 STRK**).
+2. Confirm the human amount and base units, then click **Private self-transfer**.
+3. Read and explicitly accept the Mainnet preflight, then approve the wallet request.
+4. Amount and counterparties stay inside the pool. Timing and public pool-fee payment remain observable.
 
-Need another matured note and another pool fee `F`. If the 10 STRK shield minus fees cannot cover 1 STRK + `F`, do **not** invent a smaller UI amount. Either fund more, or skip C1/C2 until `get_fee_amount` and balances allow it. A failed third hash does not count.
+You need another matured note and another live pool fee `F`. The preflight blocks submission if the public STRK balance cannot cover the entered amount plus `F`. A failed or reverted third hash does not count.
 
 **Record:**
 
@@ -410,7 +411,7 @@ On **each** profile, against the live helper:
 
 1. Ready = Mainnet, connect that profile’s account.
 2. Open `/inbox`.
-3. Card **01 Register a mail key** → **Load device key & register**.
+3. Card **01 Set up a mailbox key** → **Load device key & register**.
 4. First time only: a backup hex phrase appears (“shown once”). Copy it offline. Anyone with it can decrypt mail to that key. Quietline does not upload it.
 5. Approve the public `register_pubkey` tx in Ready.
 6. Wait for “Device mail key registered and ready for local scans.”
@@ -484,10 +485,11 @@ Commit on `main`. Scraper cadence is ~30 minutes.
 
 ### 6.1 Keep amounts small
 
-- Shield is fixed at **10 STRK**. Do not shield again “to be safe”.
-- Prefer **no** attached STRK on the mail send unless you specifically want the memo+payment story.
-- Unshield / self-transfer is **1 STRK** plus another pool fee.
-- Day-0: nothing in the sprint requires large sums.
+- Shield, Unshield, and private self-transfer are user-entered and default to **0.1 STRK**. Verify both the STRK and base-unit displays before every click.
+- The last valid wallet amount is remembered per network; do not assume switching accounts resets it.
+- Prefer **no** attached STRK on the mail send unless you specifically want the memo+payment story. New attachments default to **0.1 STRK**, so remove the attachment if no value should move.
+- The flat live pool fee applies in addition to the entered amount. A tiny amount can still incur a materially larger fee.
+- Day-0: nothing in the sprint requires large transfer amounts. Never repeat a transaction “to be safe” while its outcome is unknown.
 
 ### 6.2 What not to do
 
@@ -528,7 +530,7 @@ Quietline hides **who wrote whom and what they said**. It does **not** hide that
 | Time | Shot | On screen | Say this |
 | --- | --- | --- | --- |
 | 0:00–0:30 | Title + limits | README / inbox privacy strip: Hidden = body + recipient link; Visible = helper activity, ciphertext, timing | “Encrypted on-chain mail. Observer sees *that* a pool tx happened, and when. Not who, not what. Two-person demos are timing-correlatable.” |
-| 0:30–1:00 | Connect | Ready network = Mainnet. Quietline chip **MAINNET**. Home Shield card showing **10 STRK** | “Ready on SN_MAIN. Shield is a public deposit. We already waited ten blocks after shielding so this send is not glued to the deposit.” |
+| 0:30–1:00 | Connect | Wallet network = Mainnet. Quietline chip **MAINNET**. Wallet rail showing **0.1 STRK** and exact base units | “Wallet on SN_MAIN. Shield is a public deposit. We already waited ten blocks after shielding so this send is not glued to the deposit.” |
 | 1:00–1:30 | Public directory | Alice inbox card 01, then cut to Bob inbox card 01. Show `register_pubkey` as a **normal** account tx if you still have the receipt | “Mail keys are device x25519 keys in this browser profile. This public directory is not a viewing key. The dapp never touches `k`.” |
 | 1:30–2:00 | Encrypt & send | Alice compose: Bob’s address, short memo, no huge attachment. Ready privacy popup. Receipt hash | “One `privacy_invoke` through the pool. Wallet substitutes `${poolAddress}` and the open note. Pool is `msg.sender` on the helper.” |
 | 2:00–2:30 | Voyager honesty | `https://voyager.online/tx/<send_hash>`: relayer sender, huge nonce, Alice absent. Helper `MessagePosted` has no addresses. Pool event exists | “Eligibility is the pool event, not `tx.sender`. If you grep Alice as sender you get nothing — that’s the point.” |
