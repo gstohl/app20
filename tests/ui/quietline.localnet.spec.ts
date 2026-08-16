@@ -35,7 +35,7 @@ async function screenshot(page: Page, name: string, testInfo: TestInfo) {
 }
 
 async function connectLocalnet(page: Page, auditFocus = false) {
-  const trigger = page.getByRole("button", { name: "Connect Ready" });
+  const trigger = page.getByRole("button", { name: "Connect wallet" });
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
   await expect(dialog).toBeVisible();

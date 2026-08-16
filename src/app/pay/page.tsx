@@ -3,6 +3,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
+import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
@@ -15,6 +16,9 @@ export default function PayPage() {
   const navigate = useNavigate();
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
+  const strk20Capability = useStoreWallet(
+    (state) => state.strk20Capability,
+  );
   const address = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const [request, setRequest] = useState<PaymentRequestPayload | null>(null);
@@ -64,10 +68,10 @@ export default function PayPage() {
   let readinessMessage: string;
   if (!isConnected || !address || !chainId) {
     readinessMessage =
-      "Ready is not connected. Continue to the inbox, connect a STRK20-capable wallet, and load or register its device mail key before paying.";
+      "No wallet is connected. Continue to the inbox, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
   } else if (!isStrk20Capable) {
     readinessMessage =
-      "The connected wallet does not declare STRK20 Wallet API 0.10 support. Quietline cannot make this private payment with it.";
+      "The connected wallet does not expose the dapp-facing STRK20 API Quietline requires. No private payment can be submitted.";
   } else if (hasLocalMailSeed) {
     readinessMessage =
       "A raw, unencrypted mailbox seed exists in this browser profile. The inbox will still require it to match the public registration before payment. Clear the local mailbox when using a shared machine.";
@@ -125,6 +129,9 @@ export default function PayPage() {
             <p className={styles.notice} role="status">
               {readinessMessage}
             </p>
+            {isConnected && !isStrk20Capable && strk20Capability ? (
+              <Strk20CapabilityDiagnostic capability={strk20Capability} />
+            ) : null}
             <InvoiceCard request={request} showPaymentActions={false} />
             <p className={styles.actionWarning}>
               Continuing stores this decoded request in this tab. It does not

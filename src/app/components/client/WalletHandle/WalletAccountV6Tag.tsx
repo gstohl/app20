@@ -14,6 +14,7 @@ import { StrkCoin } from "../../TokenIcons";
 import { useStoreWallet } from "../../Wallet/walletContext";
 import { useFrontendProvider } from "../provider/providerContext";
 import SelectWallet from "./SelectWallet";
+import Strk20CapabilityDiagnostic from "./Strk20CapabilityDiagnostic";
 
 const TOKEN = constants.addrSTRK;
 const TEN_STRK = 10n * 10n ** 18n;
@@ -180,6 +181,9 @@ export default function WalletAccountV6Tag() {
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
+  const strk20Capability = useStoreWallet(
+    (state) => state.strk20Capability,
+  );
   const networkName = constants.Strk20Networks[providerIndex];
   const isStrk20Network = networkName !== undefined;
 
@@ -421,16 +425,17 @@ export default function WalletAccountV6Tag() {
   if (isConnected && !isStrk20Capable) {
     return (
       <div className={styles.panel}>
-        <div className={styles.degradeCard}>
-          <strong>Privacy actions unavailable</strong>
-          <p>
-            This wallet did not declare Wallet API/spec support at version 0.10
-            or newer. Install or connect Ready to use Quietline on Sepolia.
-          </p>
-          <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
-            Get Ready ↗
-          </a>
-        </div>
+        {strk20Capability ? (
+          <Strk20CapabilityDiagnostic capability={strk20Capability} />
+        ) : (
+          <div className={styles.degradeCard}>
+            <strong>Checking privacy-wallet capability</strong>
+            <p>
+              Quietline has not received the wallet's dapp-facing STRK20
+              declarations yet. Privacy actions remain disabled.
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -491,12 +496,12 @@ export default function WalletAccountV6Tag() {
         </div>
       ) : null}
 
-      {!isStrk20Network ? (
+      {isStrk20Network ? null : (
         <div className={styles.warn}>
           STRK20 actions require Mainnet or Sepolia. Use Sepolia for Phase 1
           checks; do not send Quietline mail on mainnet yet.
         </div>
-      ) : null}
+      )}
 
       {isConnected ? (
         <button

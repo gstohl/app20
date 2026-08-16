@@ -386,10 +386,10 @@ export default function Compose({
   if (!helperAddress) {
     disabledReason = `No QuietlineMail helper is configured on ${networkName}. Sending is disabled.`;
   } else if (!isConnected || !walletAccount || !senderAddress) {
-    disabledReason = "Connect Ready before sending mail.";
+    disabledReason = "Connect a privacy-enabled wallet before sending mail.";
   } else if (!isStrk20Capable) {
     disabledReason =
-      "This wallet does not declare STRK20 Wallet API 0.10 support.";
+      "This wallet does not expose the dapp-facing STRK20 Wallet API Quietline requires. See the wallet capability diagnostic.";
   } else if (!keyReady) {
     disabledReason = "Load this device's mail key before sending.";
   } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
@@ -1275,7 +1275,7 @@ export default function Compose({
                   ))}
                   <li>
                     Wallet/network fees are additional and must be reviewed in
-                    Ready.
+                    the connected wallet.
                   </li>
                 </ul>
                 <p className={styles.ciphertextBudget}>

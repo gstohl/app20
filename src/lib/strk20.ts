@@ -137,14 +137,41 @@ export function buildOtcAcceptActions({
   });
 }
 
+export const STRK20_REQUIRED_ACCOUNT_METHODS = [
+  "strk20InvokeTransaction",
+  "strk20Balances",
+] as const;
+
+export type Strk20AccountMethod =
+  (typeof STRK20_REQUIRED_ACCOUNT_METHODS)[number];
+
 export type Strk20Capability = {
   supported: boolean;
+  versionSupported: boolean;
+  walletName: string;
+  /** Wallet Standard version exposed by the discovered wallet. */
+  walletVersion?: string;
   walletApiVersions: string[];
   specVersions: string[];
+  accountMethods: Record<Strk20AccountMethod, boolean>;
+  missingMethods: Strk20AccountMethod[];
+  declarationErrors: {
+    walletApi?: string;
+    specs?: string;
+  };
+};
+
+export type Strk20CapabilityInput = {
+  walletName: string;
+  walletVersion?: string;
+  walletApiVersions: readonly unknown[];
+  specVersions: readonly unknown[];
+  account?: unknown;
+  declarationErrors?: Strk20Capability["declarationErrors"];
 };
 
 /** STRK20 wallet methods landed in Wallet API 0.10. */
-function supportsWalletApi010(version: string): boolean {
+export function supportsWalletApi010(version: string): boolean {
   const match = /^v?(\d+)\.(\d+)/i.exec(version.trim());
   if (!match) return false;
 
@@ -153,33 +180,115 @@ function supportsWalletApi010(version: string): boolean {
   return major > 0 || (major === 0 && minor >= 10);
 }
 
+/** Evaluate declarations and runtime methods without invoking a private API. */
+export function evaluateStrk20Capability({
+  walletName,
+  walletVersion,
+  walletApiVersions: rawWalletApiVersions,
+  specVersions: rawSpecVersions,
+  account,
+  declarationErrors = {},
+}: Strk20CapabilityInput): Strk20Capability {
+  const walletApiVersions = rawWalletApiVersions.map(String);
+  const specVersions = rawSpecVersions.map(String);
+  const accountRecord =
+    account && (typeof account === "object" || typeof account === "function")
+      ? (account as Record<string, unknown>)
+      : undefined;
+  const accountMethods = Object.fromEntries(
+    STRK20_REQUIRED_ACCOUNT_METHODS.map((method) => [
+      method,
+      typeof accountRecord?.[method] === "function",
+    ]),
+  ) as Record<Strk20AccountMethod, boolean>;
+  const missingMethods = STRK20_REQUIRED_ACCOUNT_METHODS.filter(
+    (method) => !accountMethods[method],
+  );
+  const versionSupported = [...walletApiVersions, ...specVersions].some(
+    supportsWalletApi010,
+  );
+
+  return {
+    supported: versionSupported && missingMethods.length === 0,
+    versionSupported,
+    walletName,
+    walletVersion,
+    walletApiVersions,
+    specVersions,
+    accountMethods,
+    missingMethods,
+    declarationErrors,
+  };
+}
+
+function capabilityError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return typeof error === "string" && error.trim()
+    ? error
+    : "The wallet did not answer this metadata request.";
+}
+
 /**
- * Detect STRK20 support from the wallet's declared API/spec versions. This must
- * stay metadata-only: querying private balances as a feature probe can prompt,
- * fail for unrelated reasons, and leaks an unnecessary request.
+ * Detect dapp-facing STRK20 support from declarations and connected-account
+ * methods. This stays metadata-only: querying private balances as a feature
+ * probe can prompt, fail for unrelated reasons, and leak an unnecessary
+ * request.
  */
 export async function detectStrk20Capability(
   wallet: WalletWithStarknetFeatures,
+  account: unknown,
 ): Promise<Strk20Capability> {
   const [walletApiResult, specsResult] = await Promise.allSettled([
     walletV6.supportedWalletApi(wallet),
     walletV6.supportedSpecs(wallet),
   ]);
 
-  const walletApiVersions =
-    walletApiResult.status === "fulfilled"
-      ? walletApiResult.value.map(String)
-      : [];
-  const specVersions =
-    specsResult.status === "fulfilled" ? specsResult.value.map(String) : [];
+  return evaluateStrk20Capability({
+    walletName: wallet.name,
+    walletVersion:
+      typeof wallet.version === "string" ? wallet.version : undefined,
+    walletApiVersions:
+      walletApiResult.status === "fulfilled" ? walletApiResult.value : [],
+    specVersions:
+      specsResult.status === "fulfilled" ? specsResult.value : [],
+    account,
+    declarationErrors: {
+      ...(walletApiResult.status === "rejected"
+        ? { walletApi: capabilityError(walletApiResult.reason) }
+        : {}),
+      ...(specsResult.status === "rejected"
+        ? { specs: capabilityError(specsResult.reason) }
+        : {}),
+    },
+  });
+}
 
-  return {
-    supported: [...walletApiVersions, ...specVersions].some(
-      supportsWalletApi010,
+/** Stable plain text for copying into a wallet-support report. */
+export function formatStrk20CapabilityDiagnostic(
+  capability: Strk20Capability,
+): string {
+  const list = (values: string[]) =>
+    values.length ? JSON.stringify(values) : "[]";
+  return [
+    "Quietline STRK20 capability diagnostic",
+    `Wallet: ${capability.walletName}`,
+    `Wallet Standard version: ${capability.walletVersion ?? "not exposed"}`,
+    `Required dapp-facing Wallet API: >= ${MIN_STRK20_WALLET_API}`,
+    `walletApiVersions: ${list(capability.walletApiVersions)}`,
+    `specVersions: ${list(capability.specVersions)}`,
+    ...STRK20_REQUIRED_ACCOUNT_METHODS.map(
+      (method) =>
+        `${method}: ${capability.accountMethods[method] ? "present" : "missing"}`,
     ),
-    walletApiVersions,
-    specVersions,
-  };
+    `Version requirement: ${capability.versionSupported ? "met" : "not met"}`,
+    `Overall support: ${capability.supported ? "supported" : "not supported"}`,
+    ...(capability.declarationErrors.walletApi
+      ? [`walletApiVersions query error: ${capability.declarationErrors.walletApi}`]
+      : []),
+    ...(capability.declarationErrors.specs
+      ? [`specVersions query error: ${capability.declarationErrors.specs}`]
+      : []),
+  ].join("\n");
 }
 
 export type TransactionLifecycleState =

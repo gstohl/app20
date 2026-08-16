@@ -49,8 +49,8 @@ export function ProvingProgress({
         <span />
       </div>
       <p>
-        Indeterminate: elapsed time is not completion percentage. Ready may
-        spend 30 seconds or longer proving; after a hash appears, Quietline
+        Indeterminate: elapsed time is not completion percentage. The wallet
+        may spend 30 seconds or longer proving; after a hash appears, Quietline
         waits separately for successful execution.
       </p>
     </div>

@@ -15,23 +15,26 @@ Quietline early on day one; the repo now lives at `gstohl/quietline`.
 
 ## What we are shipping
 
-One complete private-mail loop on Starknet mainnet:
+One complete private-mail loop targeted at Starknet mainnet (live wallet and
+deployment validation is still required):
 
-1. Two Ready wallets register in the pool (wallet does this on first use).
+1. Two dapp-facing STRK20-capable wallets register in the pool.
 2. Alice sends Bob an encrypted message through a `privacy_invoke` helper.
-3. Bob discovers and decrypts it locally. No server holds plaintext.
+3. Bob discovers and decrypts it locally. No Quietline server holds plaintext.
 4. Optionally, Alice attaches the memo to a private STRK transfer in the same tx.
-5. Observer sees that *a* pool transaction happened, and when. Not who, not what.
+5. A chain observer sees the pool/helper activity, timing, ciphertext, size, and
+   recipient count, but no sender or recipient address in `MessagePosted`. The
+   configured RPC can observe recipient-key lookups.
 
 ## Hidden vs visible
 
 | Element | Hidden | Visible |
 | --- | --- | --- |
-| Sender identity | Yes — pool is `msg.sender` | |
-| Recipient identity | Yes — only via the recipient's viewing key | |
-| Message content | Yes — encrypted to the channel key | |
-| That a message was sent | Partially | Block timestamp, that a pool tx occurred |
-| Payment amount (if attached) | Yes, inside the pool | Shield / unshield legs stay public |
+| Sender address in `MessagePosted` | Absent — pool is `msg.sender` | Pool/helper activity and timing remain public |
+| Recipient address in `MessagePosted` | Absent | Recipient count is public; the RPC sees directory lookups |
+| Message content | AES-GCM encrypted to the mailbox key | Ciphertext and size are public |
+| That a message was sent | | Helper event, block timestamp, and pool transaction |
+| Payment amount (if attached) | Hidden inside the pool | Shield / unshield legs stay public |
 
 ## Deals in chat
 
@@ -45,7 +48,9 @@ are never uploaded, and disappear when site data is cleared. Messages are not
 sender-authenticated in envelope v1, so offer and request addresses must be
 verified out-of-band before money moves.
 
-Quietline hides who mailed whom and the ciphertext. Timing of pool txs stays public.
+Quietline encrypts message content and omits sender/recipient addresses from the
+`MessagePosted` event. Ciphertext, size, recipient count, timing, pool/helper
+activity, and recipient-key lookups at the configured RPC remain observable.
 OTC MVP moves **only STRK**, one way, from accepter to offerer.
 The quoted non-STRK asset is a promise. No escrow, no clawback, no proof Alice paid.
 Two-person demos leak by timing correlation.
@@ -62,11 +67,37 @@ Pay actions locally.
 
 Vite + React 19 + TanStack Router, shipped as a client-only SPA (no SSR), with
 TypeScript, zustand, starknet.js 10.4.0, the Wallet API, and a
-`privacy_invoke` helper. The dapp never touches a viewing key. Ready wallet.
-Alchemy RPC configuration lives in an env var and is never committed.
+`privacy_invoke` helper. The dapp never touches a pool viewing key; the wallet
+owns private pool discovery and proving. Alchemy RPC configuration lives in an
+env var and is never committed.
 
 The SPA architecture is intentional: Quietline has no server routes, while its
 wallet connection and browser cryptography require browser APIs.
+
+## Wallet support
+
+Quietline discovers Starknet Wallet Standard extensions without a wallet
+allowlist (the generic MetaMask adapter is intentionally excluded). Appearing
+in the picker means only that a wallet was discovered; it does **not** prove
+that the installed version exposes STRK20 privacy actions to dapps.
+
+- **Fully exercised in automation:** the development-only `Localnet (dev)`
+  wallet, against Quietline's real-pool localnet harness.
+- **Production integration target:** Ready. The live extension, prover,
+  relayer, and network path still require the manual Sepolia/mainnet gates in
+  `docs/MAINNET_RUNBOOK.md`.
+- **Xverse and other discovered wallets:** they are listed and can connect for
+  account access, but in-wallet privacy does not necessarily include the
+  dapp-facing STRK20 Wallet API. Quietline does not claim support unless the
+  installed wallet declares Wallet API/spec `>= 0.10` and the connected account
+  exposes both `strk20InvokeTransaction` and `strk20Balances`.
+
+When that gate fails, Quietline keeps all privacy and mail actions disabled and
+shows a copyable capability diagnostic. It includes the wallet name and Wallet
+Standard version, exact `walletApiVersions` and `specVersions` arrays, the
+required minimum, both method-presence checks, and metadata-query errors. This
+makes an empty/old declaration distinguishable from an app failure and gives a
+concrete report to share with the wallet vendor.
 
 ## Sprint artifacts
 
@@ -83,8 +114,9 @@ find it. `strk20.json` is intentionally unchanged by the framework migration.
 
 ## Status
 
-Phase 1 wallet plumbing is in: connect Ready, detect Wallet API/spec ≥ 0.10,
-and request shield / private transfer / unshield / balance actions. Phase 2 is
+Phase 1 wallet plumbing is in: connect a discovered wallet, fail-closed on
+Wallet API/spec and account-method capability, and request shield / private
+transfer / unshield / balance actions only when supported. Phase 2 is
 code-complete locally: encrypted-mail primitives, the `QuietlineMail` helper,
 the inbox UI, the deterministic mock-pool test, and a browser-viewable real-pool
 localnet using a dev-only Wallet Standard wallet. No Sepolia or mainnet helper
@@ -124,7 +156,7 @@ pristine recording, use a private browser window or clear site data first.
 
 ### Two-identity walkthrough
 
-1. In the normal **Connect Ready** picker choose **Localnet (dev)**. This wallet
+1. In the normal **Connect a wallet** picker choose **Localnet (dev)**. This wallet
    is discovered through Wallet Standard; Quietline does not bypass
    `SelectWallet` or `WalletAccountV6`.
 2. As **Alice**, click **Shield** on the wallet-actions page, open **Inbox**, and

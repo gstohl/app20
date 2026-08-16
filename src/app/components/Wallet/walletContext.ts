@@ -7,6 +7,7 @@ import type {
   WalletAccountV6,
 } from "starknet";
 import { create } from "zustand";
+import type { Strk20Capability } from "@/lib/strk20";
 
 export interface WalletState {
   StarknetWalletObject: WalletWithStarknetFeatures | undefined;
@@ -33,6 +34,8 @@ export interface WalletState {
   setSelectedApiVersion: (version: string) => void;
   isStrk20Capable: boolean;
   setStrk20Capable: (supported: boolean) => void;
+  strk20Capability: Strk20Capability | null;
+  setStrk20Capability: (capability: Strk20Capability | null) => void;
   disconnect: () => void;
 }
 
@@ -60,6 +63,8 @@ export const useStoreWallet = create<WalletState>()((set) => ({
   setSelectedApiVersion: (selectedApiVersion) => set({ selectedApiVersion }),
   isStrk20Capable: false,
   setStrk20Capable: (isStrk20Capable) => set({ isStrk20Capable }),
+  strk20Capability: null,
+  setStrk20Capability: (strk20Capability) => set({ strk20Capability }),
   disconnect: () =>
     set({
       StarknetWalletObject: undefined,
@@ -72,5 +77,6 @@ export const useStoreWallet = create<WalletState>()((set) => ({
       walletApiList: [],
       selectedApiVersion: "default",
       isStrk20Capable: false,
+      strk20Capability: null,
     }),
 }));

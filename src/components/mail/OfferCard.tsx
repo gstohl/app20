@@ -162,7 +162,9 @@ export default function OfferCard({
               onClick={onAccept}
               disabled={busy || !settlesStrk || !metadataConsistent}
             >
-              {busy ? "Waiting for Ready…" : `Accept & send ${giveAmount} STRK`}
+              {busy
+                ? "Waiting for wallet…"
+                : `Accept & send ${giveAmount} STRK`}
             </button>
           ) : null}
           {onDecline ? (

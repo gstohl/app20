@@ -4,6 +4,7 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
 import { useEffect, useRef, useState } from "react";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
+import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
@@ -58,7 +59,7 @@ function unwrapWalletValue(raw: unknown): unknown {
 function readStrkBalance(raw: unknown): bigint {
   const value = unwrapWalletValue(raw);
   if (!Array.isArray(value)) {
-    throw new Error("Ready returned an unfamiliar shielded-balance response.");
+    throw new Error("The wallet returned an unfamiliar shielded-balance response.");
   }
 
   for (const entry of value) {
@@ -88,6 +89,9 @@ export default function PrivacyWalletMenu() {
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
+  const strk20Capability = useStoreWallet(
+    (state) => state.strk20Capability,
+  );
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
   const balanceGeneration = useRef(0);
@@ -110,7 +114,7 @@ export default function PrivacyWalletMenu() {
       return;
     }
 
-    setBalance({ kind: "loading", message: "Checking with Ready…" });
+    setBalance({ kind: "loading", message: "Checking with the wallet…" });
     try {
       const raw = await walletAccount.strk20Balances([TOKEN]);
       if (generation !== balanceGeneration.current) return;
@@ -172,7 +176,7 @@ export default function PrivacyWalletMenu() {
     setAction({
       kind: "proving",
       title: `${actionName} ${amountLabel}`,
-      message: "Waiting for Ready to prepare the private action…",
+      message: "Waiting for the wallet to prepare the private action…",
       startedAt,
     });
 
@@ -284,7 +288,7 @@ export default function PrivacyWalletMenu() {
         </code>
       ) : (
         <p className={styles.accountHint}>
-          Connect Ready to open this mailbox.
+          Connect a privacy-enabled wallet to open this mailbox.
         </p>
       )}
 
@@ -304,7 +308,12 @@ export default function PrivacyWalletMenu() {
         <button
           type="button"
           onClick={shield}
-          disabled={!isConnected || !isStrk20Network || actionPending}
+          disabled={
+            !isConnected ||
+            !isStrk20Capable ||
+            !isStrk20Network ||
+            actionPending
+          }
         >
           <span>Shield</span>
           <small>10 STRK · public entry</small>
@@ -312,18 +321,28 @@ export default function PrivacyWalletMenu() {
         <button
           type="button"
           onClick={unshield}
-          disabled={!isConnected || !isStrk20Network || actionPending}
+          disabled={
+            !isConnected ||
+            !isStrk20Capable ||
+            !isStrk20Network ||
+            actionPending
+          }
         >
           <span>Unshield</span>
           <small>1 STRK · public exit</small>
         </button>
       </div>
 
-      {isConnected ? (
-        isStrk20Capable ? null : (
-          <p className={styles.walletError} role="alert">
-            This wallet did not declare Wallet API/spec 0.10 support. Connect
-            Ready for privacy actions.
+      {isConnected && !isStrk20Capable ? (
+        strk20Capability ? (
+          <Strk20CapabilityDiagnostic
+            capability={strk20Capability}
+            compact
+          />
+        ) : (
+          <p className={styles.walletError} role="status">
+            Checking the wallet's dapp-facing STRK20 capability. Privacy
+            actions remain disabled.
           </p>
         )
       ) : null}

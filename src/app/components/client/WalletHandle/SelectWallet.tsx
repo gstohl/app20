@@ -36,6 +36,9 @@ export default function SelectWallet({
   const address = useStoreWallet((state) => state.address);
   const setWalletApi = useStoreWallet((state) => state.setWalletApiList);
   const setStrk20Capable = useStoreWallet((state) => state.setStrk20Capable);
+  const setStrk20Capability = useStoreWallet(
+    (state) => state.setStrk20Capability,
+  );
   const setChain = useStoreWallet((state) => state.setChain);
   const setAddressAccount = useStoreWallet((state) => state.setAddressAccount);
   const setCurrentFrontendProviderIndex = useFrontendProvider(
@@ -56,9 +59,9 @@ export default function SelectWallet({
     return unsubscribe;
   }, []);
 
-  // Keep the app store in sync with wallet-standard account changes. Ready can
-  // use this for normal account switching; the dev-only localnet wallet uses it
-  // to move between Alice and Bob without bypassing WalletAccountV6.
+  // Keep the app store in sync with wallet-standard account changes. Extension
+  // wallets can use this for normal account switching; the dev-only localnet
+  // wallet uses it to move between Alice and Bob without bypassing WalletAccountV6.
   useEffect(() => {
     if (!selectedWallet || !isConnected) return;
 
@@ -108,7 +111,9 @@ export default function SelectWallet({
     // Reads must use the matching provider: mainnet index 0, Sepolia index 2.
     const chainId = String(await walletV6.requestChainId(selectedWallet));
     if (!isStrk20Chain(chainId)) {
-      throw new Error("Switch Ready to Sepolia or Mainnet before connecting.");
+      throw new Error(
+        "Switch the selected wallet to Starknet Sepolia or Mainnet before connecting.",
+      );
     }
     const providerIndex = providerIndexForChain(chainId);
     const provider = myFrontendProviders[providerIndex];
@@ -125,7 +130,10 @@ export default function SelectWallet({
       throw new Error("The wallet did not authorize an account.");
     }
 
-    const capability = await detectStrk20Capability(selectedWallet);
+    const capability = await detectStrk20Capability(
+      selectedWallet,
+      walletAccount,
+    );
     const address = validateAndParseAddress(accounts[0]);
 
     setMyWallet(selectedWallet);
@@ -134,6 +142,7 @@ export default function SelectWallet({
     setChain(chainId);
     setCurrentFrontendProviderIndex(providerIndex);
     setWalletApi(capability.walletApiVersions);
+    setStrk20Capability(capability);
     setStrk20Capable(capability.supported);
     setConnected(true);
   }
@@ -169,10 +178,15 @@ export default function SelectWallet({
     >
       <div
         className={styles.modal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wallet-picker-title"
         onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.modalHead}>
-          <span className={styles.modalTitle}>Connect a wallet</span>
+          <span id="wallet-picker-title" className={styles.modalTitle}>
+            Connect a wallet
+          </span>
           <button
             className={styles.modalClose}
             onClick={() => setPickerOpen(false)}
@@ -202,11 +216,16 @@ export default function SelectWallet({
           </div>
         ) : (
           <div className={styles.walletHint}>
-            No Starknet wallet detected. Install{" "}
+            No Starknet Wallet Standard extension was detected. Examples include{" "}
             <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
               Ready
             </a>{" "}
-            to use Quietline privacy actions.
+            and{" "}
+            <a href="https://www.xverse.app/" target="_blank" rel="noreferrer">
+              Xverse
+            </a>
+            . Privacy actions require the installed wallet to expose the
+            dapp-facing STRK20 API.
           </div>
         )}
 
@@ -233,7 +252,7 @@ export default function SelectWallet({
     return (
       <>
         <button className={styles.connectPill} onClick={openPicker}>
-          Connect Ready
+          Connect wallet
         </button>
         {picker}
       </>
@@ -243,7 +262,7 @@ export default function SelectWallet({
   return (
     <>
       <button className={styles.btnCta} onClick={openPicker}>
-        Connect Ready
+        Connect a wallet
       </button>
       {picker}
     </>

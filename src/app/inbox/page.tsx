@@ -733,7 +733,9 @@ export default function InboxPage() {
   function requireActionContext() {
     if (!helperAddress) throw new Error("No mail helper is configured.");
     if (!walletAccount || !address || !chainId || !isStrk20Capable) {
-      throw new Error("Connect a STRK20-capable Ready wallet first.");
+      throw new Error(
+        "Connect a wallet that exposes the dapp-facing STRK20 API first.",
+      );
     }
     return {
       helperAddress,

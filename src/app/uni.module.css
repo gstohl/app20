@@ -346,6 +346,124 @@
  font-weight: 650;
 }
 
+.capabilityDiagnostic {
+ display: flex;
+ flex-direction: column;
+ gap: 12px;
+ padding: 18px;
+ border: 1px solid var(--danger-border);
+ border-left: 4px solid var(--danger);
+ border-radius: 14px;
+ background: var(--danger-quiet);
+ color: var(--ink);
+ font-size: 13px;
+ line-height: 1.5;
+}
+.capabilityDiagnosticHeading {
+ display: flex;
+ align-items: flex-start;
+ justify-content: space-between;
+ gap: 14px;
+}
+.capabilityDiagnosticHeading strong {
+ display: block;
+ font-size: 16px;
+}
+.capabilityDiagnosticHeading p {
+ max-width: 620px;
+ margin-top: 5px;
+ color: var(--muted);
+}
+.capabilityDiagnosticHeading button {
+ flex: none;
+ padding: 7px 9px;
+ border: 1px solid var(--ink);
+ border-radius: 8px;
+ color: var(--ink);
+ background: var(--surface-raised);
+ font: inherit;
+ font-size: 12px;
+ font-weight: 700;
+ cursor: pointer;
+}
+.capabilityFacts {
+ display: grid;
+ grid-template-columns: repeat(2, minmax(0, 1fr));
+ border: 1px solid var(--line);
+ background: var(--surface-raised);
+}
+.capabilityFacts > div {
+ min-width: 0;
+ padding: 8px 10px;
+ border-bottom: 1px solid var(--line);
+}
+.capabilityFacts > div:nth-child(odd):not(.capabilityFactWide) {
+ border-right: 1px solid var(--line);
+}
+.capabilityFacts dt {
+ color: var(--muted);
+ font-size: 12px;
+ font-weight: 700;
+}
+.capabilityFacts dd {
+ margin-top: 2px;
+ overflow-wrap: anywhere;
+ font-weight: 600;
+}
+.capabilityFacts code,
+.capabilityReason code {
+ font-family: var(--font-mono-ui), monospace;
+ font-size: 12px;
+}
+.capabilityFactWide {
+ grid-column: 1 / -1;
+}
+.capabilityReason,
+.capabilityQueryError {
+ padding: 9px 10px;
+ border-left: 3px solid var(--danger);
+ background: var(--surface-raised);
+}
+.capabilityQueryError {
+ overflow-wrap: anywhere;
+ color: var(--danger);
+}
+.capabilityHelp {
+ color: var(--muted);
+}
+.capabilityHelp a {
+ color: var(--pink-text);
+ font-weight: 700;
+}
+.capabilityCopyStatus {
+ min-height: 1.5em;
+ color: var(--muted);
+ font-size: 12px;
+}
+.capabilityDiagnosticCompact {
+ gap: 9px;
+ padding: 11px;
+ border-radius: 0;
+ font-size: 12px;
+}
+.capabilityDiagnosticCompact .capabilityDiagnosticHeading {
+ flex-direction: column;
+ gap: 8px;
+}
+.capabilityDiagnosticCompact .capabilityDiagnosticHeading strong {
+ font-size: 14px;
+}
+.capabilityDiagnosticCompact .capabilityFacts {
+ grid-template-columns: minmax(0, 1fr);
+}
+.capabilityDiagnosticCompact .capabilityFacts > div {
+ grid-column: 1;
+ border-right: 0;
+}
+.capabilityDiagnosticCompact .capabilityDiagnosticHeading button {
+ width: 100%;
+}
+
 /* Connect controls */
 .connectPill {
  font-family: var(--font-body), sans-serif;

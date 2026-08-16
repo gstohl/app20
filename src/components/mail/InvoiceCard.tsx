@@ -255,7 +255,7 @@ export default function InvoiceCard({
               onClick={onPay}
               disabled={busy}
             >
-              {busy ? "Waiting for Ready…" : `Pay ${amount} STRK privately`}
+              {busy ? "Waiting for wallet…" : `Pay ${amount} STRK privately`}
             </button>
           ) : null}
           <button
