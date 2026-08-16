@@ -37,6 +37,15 @@ import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
 import ReceiptCard from "./ReceiptCard";
 import { replyAddressForMessage } from "@/lib/mail-correspondents";
+import type { MailAssignment } from "@/lib/mail-assignments";
+import {
+  conversationFieldsFromPayload,
+  conversationKeyForMessage,
+} from "@/lib/mail-thread";
+import {
+  senderProofLabel,
+  type SenderProof,
+} from "@/lib/sender-proof";
 import styles from "./mail.module.css";
 
 export type LocalMailMessage = {
@@ -60,6 +69,8 @@ export type LocalMailMessage = {
   recipients?: string[];
   /** Set for locally sent mail so it sorts before the chain confirms a timestamp. */
   localCreatedAt?: number;
+  localConversationId?: string;
+  assignedAddress?: string;
 };
 
 export type ThreadActionState = {
@@ -83,7 +94,15 @@ type ThreadProps = {
   onEscrowFill: (fund: EscrowFundPayload) => void;
   onEscrowClaim?: (fund: EscrowFundPayload) => void;
   onEscrowTimeout?: (fund: EscrowFundPayload) => void;
-  onReply?: (address: string) => void;
+  onReply?: (input: {
+    address?: string;
+    conversationId: string;
+    inReplyTo: string;
+  }) => void;
+  onAssign?: (messageId: string, address: string) => void;
+  onProve?: (messageId: string, address: string) => void;
+  assignments?: Record<string, MailAssignment>;
+  proofs?: Record<string, SenderProof>;
 };
 
 function safeOfferIndex(index: string): number | undefined {
@@ -274,6 +293,79 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   );
 }
 
+function ConversationControls({
+  message,
+  selfAddress,
+  proof,
+  onReply,
+  onAssign,
+  onProve,
+}: {
+  message: LocalMailMessage;
+  selfAddress: string;
+  proof?: SenderProof;
+  onReply?: ThreadProps["onReply"];
+  onAssign?: ThreadProps["onAssign"];
+  onProve?: ThreadProps["onProve"];
+}) {
+  const fields = conversationFieldsFromPayload(
+    message.envelope.type,
+    message.envelope.type === "unsupported" ? null : message.envelope.payload,
+  );
+  const conversationId = conversationKeyForMessage(message);
+  const claimed = replyAddressForMessage(message, selfAddress);
+  const assigned = message.assignedAddress;
+  const canContinue = Boolean(onReply);
+  return (
+    <div className={styles.replyRow}>
+      {proof ? <p>{senderProofLabel(proof)}</p> : null}
+      {fields.conversationId ? (
+        <span>Conversation tag {fields.conversationId.slice(0, 18)}…</span>
+      ) : (
+        <span>
+          This letter has no conversation tag. A reply can start one locally
+          and in the next ciphertext.
+        </span>
+      )}
+      {canContinue ? (
+        <button
+          type="button"
+          onClick={() =>
+            onReply?.({
+              address: claimed ?? assigned,
+              conversationId,
+              inReplyTo: fields.documentId ?? message.documentId ?? "",
+            })
+          }
+        >
+          Continue conversation
+        </button>
+      ) : null}
+      {message.direction !== "outgoing" && onAssign ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const value = String(data.get("address") ?? "");
+            if (value.trim()) onAssign(message.id, value);
+          }}
+        >
+          <label>
+            Assign on this device
+            <input name="address" placeholder="0x…" defaultValue={assigned ?? ""} />
+          </label>
+          <button type="submit">Save local assignment</button>
+        </form>
+      ) : null}
+      {assigned && onProve ? (
+        <button type="button" onClick={() => onProve(message.id, assigned)}>
+          Check directory for this address
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Thread({
   messages,
   focusVersion = 0,
@@ -290,6 +382,9 @@ export default function Thread({
   onEscrowClaim,
   onEscrowTimeout,
   onReply,
+  onAssign,
+  onProve,
+  proofs = {},
 }: ThreadProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusKey = messages.map((message) => message.id).join("|");
@@ -636,22 +731,14 @@ export default function Thread({
                     not submit a payment.
                   </p>
                 ) : null}
-                {onReply && replyAddressForMessage(message, selfAddress) ? (
-                  <div className={styles.replyRow}>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onReply(replyAddressForMessage(message, selfAddress)!)
-                      }
-                    >
-                      Reply to claimed address
-                    </button>
-                    <span>
-                      Reply uses the unsigned claimed address. Sealed letters
-                      have no sender to reply to.
-                    </span>
-                  </div>
-                ) : null}
+                <ConversationControls
+                  message={message}
+                  selfAddress={selfAddress}
+                  proof={proofs[message.id]}
+                  onReply={onReply}
+                  onAssign={onAssign}
+                  onProve={onProve}
+                />
                 {renderEnvelope(message)}
                 {message.transactionHashes &&
                 message.transactionHashes.length > 1 ? (

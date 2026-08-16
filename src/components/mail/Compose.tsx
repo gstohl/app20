@@ -42,6 +42,7 @@ import {
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
+  deriveKeypair,
   encryptMailForRecipients,
   MAX_MULTI_RECIPIENTS,
   projectEncryptedMailSize,
@@ -49,6 +50,8 @@ import {
   type EncryptedMailRecord,
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
+import { createMailSenderAuth } from "@/lib/mail-auth";
+import { randomConversationId } from "@/lib/mail-thread";
 import {
   formatBaseUnits,
   parseDecimalToBaseUnits,
@@ -582,10 +585,29 @@ export default function Compose({
     if (!draft.body.trim() && attachments.length === 0) {
       throw new Error("Write a message or add at least one attachment.");
     }
+    const conversationId =
+      draft.conversationId || randomConversationId();
+    const inReplyTo = draft.inReplyTo || "";
+    let senderAuth = undefined;
+    if (mailSeed) {
+      const mailbox = deriveKeypair(mailSeed);
+      senderAuth = createMailSenderAuth(mailSeed, mailbox.publicKey, {
+        documentId: draft.documentId,
+        conversationId,
+        inReplyTo,
+        body: draft.body,
+      });
+    }
+    const conversationFields = {
+      documentId: draft.documentId,
+      conversationId,
+      ...(inReplyTo ? { inReplyTo } : {}),
+      ...(senderAuth ? { senderAuth } : {}),
+    };
     if (attachments.length === 0) {
       return {
         type: "text",
-        payload: { body: draft.body },
+        payload: { body: draft.body, ...conversationFields },
         composite: null,
         payment: null,
         escrow: null,
@@ -595,6 +617,9 @@ export default function Compose({
       documentId: draft.documentId,
       body: draft.body,
       attachments,
+      conversationId,
+      ...(inReplyTo ? { inReplyTo } : {}),
+      ...(senderAuth ? { senderAuth } : {}),
     };
     return {
       type: "composite",

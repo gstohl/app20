@@ -23,6 +23,9 @@ type CompositeWirePayload = {
     type: "payment" | "offer" | "payment_request" | "escrow_fund";
     payload: Record<string, unknown>;
   }>;
+  conversationId?: string;
+  inReplyTo?: string;
+  senderAuth?: Record<string, unknown>;
 };
 
 type MailEnvelopeV1 =
@@ -174,10 +177,22 @@ function parseCompositeWirePayload(
     attachments.push({ type, payload: attachment.payload });
   }
   if (!value.body.trim() && attachments.length === 0) return null;
+  const extra: Pick<
+    CompositeWirePayload,
+    "conversationId" | "inReplyTo" | "senderAuth"
+  > = {};
+  if (typeof value.conversationId === "string") {
+    extra.conversationId = value.conversationId;
+  }
+  if (typeof value.inReplyTo === "string") extra.inReplyTo = value.inReplyTo;
+  if (isJsonObject(value.senderAuth)) {
+    extra.senderAuth = value.senderAuth;
+  }
   return {
     documentId: value.documentId,
     body: value.body,
     attachments,
+    ...extra,
   };
 }
 

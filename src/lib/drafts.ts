@@ -33,6 +33,8 @@ export type CompositeDraft = {
   recipient: string;
   body: string;
   attachments: DraftAttachment[];
+  conversationId?: string;
+  inReplyTo?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -157,6 +159,9 @@ function parseDraft(value: unknown): CompositeDraft | null {
     recipient: value.recipient,
     body: value.body,
     attachments,
+    conversationId:
+      typeof value.conversationId === "string" ? value.conversationId : undefined,
+    inReplyTo: typeof value.inReplyTo === "string" ? value.inReplyTo : undefined,
     createdAt: value.createdAt as number,
     updatedAt: value.updatedAt as number,
   };

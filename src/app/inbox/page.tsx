@@ -136,6 +136,13 @@ import {
   saveSentMail,
   type StoredSentMail,
 } from "@/lib/sent-mail";
+import {
+  loadMailAssignments,
+  saveMailAssignment,
+  type MailAssignment,
+} from "@/lib/mail-assignments";
+import { conversationKeyForMessage } from "@/lib/mail-thread";
+import { evaluateSenderProof, type SenderProof } from "@/lib/sender-proof";
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
@@ -445,6 +452,10 @@ export default function InboxPage() {
     kind: "ok" | "error";
     message: string;
   } | null>(null);
+  const [assignments, setAssignments] = useState<
+    Record<string, MailAssignment>
+  >({});
+  const [proofs, setProofs] = useState<Record<string, SenderProof>>({});
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -609,6 +620,8 @@ export default function InboxPage() {
         ),
       );
       setDrafts(loadDrafts(window.localStorage, chainId, address));
+      setAssignments(loadMailAssignments(window.localStorage, chainId, address));
+      setProofs({});
       setOtcState(storedOtc);
       setEscrowState(loadEscrowState(window.localStorage, chainId, address));
     } else {
@@ -622,6 +635,8 @@ export default function InboxPage() {
       );
       setOtcState(emptyOtcState());
       setEscrowState(emptyEscrowState());
+      setAssignments({});
+      setProofs({});
     }
     return () => {
       scanGenerationRef.current += 1;
@@ -1978,9 +1993,26 @@ export default function InboxPage() {
   const filteredDrafts = drafts.filter((draft) =>
     draftMatchesFilter(draft, mailboxFilter),
   );
-  const selectedMessage = filteredMessages.find(
+  const annotatedMessages = filteredMessages.map((message) => ({
+    ...message,
+    assignedAddress: assignments[message.id]?.address,
+    localConversationId: assignments[message.id]?.conversationId,
+  }));
+  const selectedMessage = annotatedMessages.find(
     (message) => message.id === selectedMessageId,
   );
+  const selectedConversationId = selectedMessage
+    ? conversationKeyForMessage(selectedMessage)
+    : null;
+  const conversationMessages = selectedConversationId
+    ? annotatedMessages
+        .filter(
+          (message) =>
+            conversationKeyForMessage(message) === selectedConversationId,
+        )
+        .slice()
+        .reverse()
+    : [];
   const activeDraft = drafts.find((draft) => draft.id === selectedDraftId);
   const folderLabel =
     MAIL_FOLDERS.find((folder) => folder.id === mailFolder)?.label ?? "Inbox";
@@ -2078,6 +2110,8 @@ export default function InboxPage() {
       setAliases([]);
       setOtcState(emptyOtcState());
       setEscrowState(emptyEscrowState());
+      setAssignments({});
+      setProofs({});
       setActionStates({});
       setReadMessageIds(new Set());
       setSelectedMessageId(null);
@@ -2136,7 +2170,11 @@ export default function InboxPage() {
     setSidebarOpen(false);
   }
 
-  function openComposerForRecipient(recipient: string) {
+  function openComposerForRecipient(input: {
+    address?: string;
+    conversationId: string;
+    inReplyTo: string;
+  }) {
     if (!address || !chainId) {
       setStorageNotice({
         kind: "error",
@@ -2146,7 +2184,12 @@ export default function InboxPage() {
       setSidebarOpen(true);
       return;
     }
-    const draft = { ...createBlankDraft(), recipient };
+    const draft = {
+      ...createBlankDraft(),
+      recipient: input.address ?? "",
+      conversationId: input.conversationId,
+      inReplyTo: input.inReplyTo,
+    };
     persistDraft(draft);
     setMailFolder("drafts");
     setMailboxFilter("all");
@@ -2154,6 +2197,75 @@ export default function InboxPage() {
     setComposerOpen(true);
     setMobileDetailOpen(true);
     setSidebarOpen(false);
+  }
+
+  function assignMessageAddress(messageId: string, assignedAddress: string) {
+    if (!address || !chainId) return;
+    try {
+      setAssignments(
+        saveMailAssignment(
+          window.localStorage,
+          chainId,
+          address,
+          messageId,
+          { address: assignedAddress },
+        ),
+      );
+      setStorageNotice({
+        kind: "ok",
+        message:
+          "Assigned on this device only. That is a local label, not a proof.",
+      });
+    } catch (error: unknown) {
+      setStorageNotice({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Assignment failed.",
+      });
+    }
+  }
+
+  async function proveAssignedAddress(messageId: string, assignedAddress: string) {
+    if (!helperAddress) {
+      setStorageNotice({
+        kind: "error",
+        message: "Directory proof needs QuietlineMail on this network.",
+      });
+      return;
+    }
+    const message = messages.find((item) => item.id === messageId);
+    if (!message) return;
+    try {
+      const directoryKey = await lookupMailKey(helperAddress, assignedAddress);
+      const proof = evaluateSenderProof({
+        type: message.envelope.type,
+        payload:
+          message.envelope.type === "unsupported"
+            ? null
+            : message.envelope.payload,
+        assignedAddress,
+        directoryAddress: assignedAddress,
+        directoryMailboxKey: directoryKey,
+      });
+      setProofs((current) => ({ ...current, [messageId]: proof }));
+      setStorageNotice({
+        kind: proof.kind === "directory_bound" ? "ok" : "error",
+        message:
+          proof.kind === "directory_bound"
+            ? `Directory match: this letter's mailbox key is registered to ${assignedAddress}.`
+            : proof.kind === "mailbox_signed"
+              ? "The letter is signed by a mailbox key, but that key is not the one registered to this address."
+              : proof.kind === "invalid_signature"
+                ? "The claimed mailbox signature is invalid."
+                : "This letter has no mailbox signature, so the assignment stays a local label.",
+      });
+    } catch (error: unknown) {
+      setStorageNotice({
+        kind: "error",
+        message:
+          error instanceof Error ? error.message : "Directory lookup failed.",
+      });
+    }
   }
 
   function closeDetail() {
@@ -2428,7 +2540,7 @@ export default function InboxPage() {
           />
         ) : (
           <ConversationList
-            messages={filteredMessages}
+            messages={annotatedMessages}
             selectedMessageId={selectedMessageId}
             readMessageIds={readMessageIds}
             aliases={aliases}
@@ -2520,7 +2632,7 @@ export default function InboxPage() {
               />
             ) : selectedMessage ? (
               <Thread
-                messages={[selectedMessage]}
+                messages={conversationMessages}
                 focusVersion={messageActivation}
                 selfAddress={address}
                 aliases={aliases}
@@ -2543,6 +2655,11 @@ export default function InboxPage() {
                     : undefined
                 }
                 onReply={openComposerForRecipient}
+                onAssign={assignMessageAddress}
+                onProve={(messageId, assigned) =>
+                  void proveAssignedAddress(messageId, assigned)
+                }
+                proofs={proofs}
               />
             ) : (
               <section className={styles.welcomeState}>

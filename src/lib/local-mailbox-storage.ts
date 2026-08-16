@@ -3,6 +3,7 @@ import { DRAFT_STORAGE_PREFIX } from "./drafts";
 import { ESCROW_STORAGE_PREFIX } from "./escrow";
 import { MAIL_SCAN_CURSOR_PREFIX } from "./mail-scan";
 import { OTC_STORAGE_PREFIX } from "./otc";
+import { MAIL_ASSIGNMENT_STORAGE_PREFIX } from "./mail-assignments";
 import { SENT_MAIL_STORAGE_PREFIX } from "./sent-mail";
 
 export const MAIL_SEED_STORAGE_PREFIX = "quietline/mailseed/v1";
@@ -15,6 +16,7 @@ export const LOCAL_MAILBOX_STORAGE_PREFIXES = [
   OTC_STORAGE_PREFIX,
   ESCROW_STORAGE_PREFIX,
   MAIL_SCAN_CURSOR_PREFIX,
+  MAIL_ASSIGNMENT_STORAGE_PREFIX,
 ] as const;
 
 type MutableStorage = Pick<Storage, "key" | "length" | "removeItem">;

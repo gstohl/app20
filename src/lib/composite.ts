@@ -11,6 +11,8 @@ import {
   type PaymentRequestPayload,
 } from "./otc";
 import { sanitizeUntrustedText } from "./text";
+import { parseMailSenderAuth, type MailSenderAuth } from "./mail-auth";
+import { parseConversationId } from "./mail-thread";
 
 export const MAX_COMPOSITE_BODY_CHARS = 4_096;
 export const MAX_COMPOSITE_ATTACHMENTS = 4;
@@ -26,6 +28,9 @@ export type CompositePayload = {
   documentId: string;
   body: string;
   attachments: CompositeAttachment[];
+  conversationId?: string;
+  inReplyTo?: string;
+  senderAuth?: MailSenderAuth;
 };
 
 const DOCUMENT_ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -86,5 +91,15 @@ export function parseCompositePayload(value: unknown): CompositePayload | null {
     attachments.push(attachment);
   }
   if (!body.trim() && attachments.length === 0) return null;
-  return { documentId: value.documentId, body, attachments };
+  const conversationId = parseConversationId(value.conversationId);
+  const inReplyTo = parseConversationId(value.inReplyTo);
+  const senderAuth = parseMailSenderAuth(value.senderAuth);
+  return {
+    documentId: value.documentId,
+    body,
+    attachments,
+    ...(conversationId ? { conversationId } : {}),
+    ...(inReplyTo ? { inReplyTo } : {}),
+    ...(senderAuth ? { senderAuth } : {}),
+  };
 }
