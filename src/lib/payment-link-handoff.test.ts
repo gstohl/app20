@@ -35,6 +35,7 @@ const request: PaymentRequestPayload = {
   memo: "Invoice-link integration",
   expiresAt: 2_000_000_000,
   requester: "0x4567",
+  chainId: "SN_SEPOLIA",
 };
 
 describe("payment-link mailbox handoff", () => {
@@ -122,6 +123,29 @@ describe("payment-link mailbox handoff", () => {
     expect(() =>
       claimPayment(local, chainId, payer, request, 1_900_000_005),
     ).toThrow(/already paid; no second transfer/i);
+  });
+
+  it("keeps the tab handoff until the wallet is on the bound network", () => {
+    const session = new MemoryStorage();
+    const local = new MemoryStorage();
+    const payer = "0xb0b";
+    storePendingPayment(session, request);
+
+    expect(() =>
+      importPendingPaymentIntoMailbox(session, local, "SN_MAIN", payer),
+    ).toThrow(/another Starknet network.*remains pending/i);
+    expect(loadPendingPayment(session)).toEqual(request);
+    expect(loadOtcState(local, "SN_MAIN", payer).payments).toEqual({});
+
+    expect(
+      importPendingPaymentIntoMailbox(
+        session,
+        local,
+        "SN_SEPOLIA",
+        payer,
+      ),
+    ).toMatchObject({ request, origin: "payment_link" });
+    expect(loadPendingPayment(session)).toBeNull();
   });
 
   it("keeps the tab handoff when mailbox persistence fails", () => {

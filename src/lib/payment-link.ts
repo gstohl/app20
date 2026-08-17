@@ -1,21 +1,44 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import { canonicalizeStarknetAddress } from "./addresses";
+import { constants } from "starknet";
 import {
+  LOCALNET_CHAIN_ID,
+  addrSTRK,
+  localnetWalletEnabled,
+} from "../utils/constants";
+import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
+import {
+  createRequestId,
   isCanonicalStrkToken,
   isRandom32ByteId,
+  parseDecimalToBaseUnits,
   parsePaymentRequestPayload,
   type PaymentRequestPayload,
 } from "./otc";
 
 export const PAYMENT_LINK_PATH = "/pay";
-export const PAYMENT_LINK_VERSION = "qlp1" as const;
+export const PAYMENT_LINK_VERSION = "qlp2" as const;
 export const MAX_PAYMENT_LINK_FRAGMENT_LENGTH = 2_048;
+export const DEFAULT_PAYMENT_LINK_EXPIRY_HOURS = "72";
+export const MAX_PAYMENT_LINK_EXPIRY_HOURS = 24 * 365;
+
+export type PaymentLinkRequestInput = {
+  amount: string;
+  memo?: string;
+  expiryHours: string;
+  requester: string;
+  chainId: string;
+};
+
+export type PaymentLinkRequestOptions = {
+  atSeconds?: number;
+  requestId?: string;
+};
 
 const MAX_PAYMENT_LINK_PAYLOAD_BYTES = 1_450;
 const MAX_UINT256 = 2n ** 256n - 1n;
 const MAX_DATE_SECONDS = 8_640_000_000_000;
 const CHECKSUM_DOMAIN = new TextEncoder().encode(
-  "quietline/payment-link/v1\0",
+  "quietline/payment-link/v2\0",
 );
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const textEncoder = new TextEncoder();
@@ -30,6 +53,7 @@ type EncodedPaymentRequest = [
   memo: string | null,
   expiresAt: number,
   requester: string,
+  chainId: string,
   invoiceId: string | null,
 ];
 
@@ -92,6 +116,42 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
   return difference === 0;
 }
 
+export function normalizePaymentLinkChainId(chainId: string): string {
+  if (
+    chainId === "SN_MAIN" ||
+    feltEquals(chainId, constants.StarknetChainId.SN_MAIN)
+  ) {
+    return "SN_MAIN";
+  }
+  if (
+    chainId === "SN_SEPOLIA" ||
+    feltEquals(chainId, constants.StarknetChainId.SN_SEPOLIA)
+  ) {
+    return "SN_SEPOLIA";
+  }
+  if (localnetWalletEnabled && feltEquals(chainId, LOCALNET_CHAIN_ID)) {
+    return LOCALNET_CHAIN_ID;
+  }
+  throw new Error("Payment links require Mainnet or Sepolia.");
+}
+
+export function paymentLinkChainIdsEqual(left: string, right: string): boolean {
+  try {
+    return (
+      normalizePaymentLinkChainId(left) === normalizePaymentLinkChainId(right)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function paymentLinkNetworkLabel(chainId: string): string {
+  const normalized = normalizePaymentLinkChainId(chainId);
+  if (normalized === "SN_MAIN") return "Mainnet";
+  if (normalized === "SN_SEPOLIA") return "Sepolia";
+  return "Localnet (dev)";
+}
+
 function normalizePaymentRequest(
   value: PaymentRequestPayload,
 ): PaymentRequestPayload {
@@ -112,6 +172,10 @@ function normalizePaymentRequest(
   ) {
     throw new Error("Payment link invoiceId must be a 32-byte hexadecimal id.");
   }
+  if (typeof value.chainId !== "string") {
+    throw new Error("Payment links must name their Starknet network.");
+  }
+  const chainId = normalizePaymentLinkChainId(value.chainId);
 
   const parsed = parsePaymentRequestPayload(value);
   if (!parsed) throw new Error("Payment link request is malformed.");
@@ -131,6 +195,7 @@ function normalizePaymentRequest(
     amount: parsed.amount,
     expiresAt: parsed.expiresAt,
     requester: canonicalizeStarknetAddress(parsed.requester),
+    chainId,
     ...(parsed.memo === undefined ? {} : { memo: parsed.memo }),
     ...(parsed.invoiceId === undefined
       ? {}
@@ -149,6 +214,7 @@ function requestTuple(request: PaymentRequestPayload): EncodedPaymentRequest {
     normalized.memo ?? null,
     normalized.expiresAt,
     normalized.requester.slice(2),
+    normalized.chainId ?? "",
     normalized.invoiceId?.slice(2) ?? null,
   ];
 }
@@ -157,8 +223,49 @@ function serializeRequest(request: PaymentRequestPayload): Uint8Array {
   return textEncoder.encode(JSON.stringify(requestTuple(request)));
 }
 
+/** Build one canonical, unsigned STRK request from user-entered link fields. */
+export function createPaymentLinkRequest(
+  input: PaymentLinkRequestInput,
+  options: PaymentLinkRequestOptions = {},
+): PaymentRequestPayload {
+  const expiryText = input.expiryHours.trim();
+  if (!/^\d+$/.test(expiryText)) {
+    throw new Error("Expiry must be a whole number of hours.");
+  }
+  const expiryHours = Number(expiryText);
+  if (
+    !Number.isSafeInteger(expiryHours) ||
+    expiryHours < 0 ||
+    expiryHours > MAX_PAYMENT_LINK_EXPIRY_HOURS
+  ) {
+    throw new Error(
+      `Expiry must be between 0 and ${MAX_PAYMENT_LINK_EXPIRY_HOURS} hours.`,
+    );
+  }
+
+  const atSeconds = options.atSeconds ?? Math.floor(Date.now() / 1_000);
+  if (!Number.isSafeInteger(atSeconds) || atSeconds < 0) {
+    throw new Error("The current time is outside the supported date range.");
+  }
+
+  const memo = input.memo?.trim() ?? "";
+  if (memo.length > 512) {
+    throw new Error("Payment link memo must be at most 512 characters.");
+  }
+
+  return normalizePaymentRequest({
+    requestId: options.requestId ?? createRequestId(),
+    token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+    amount: parseDecimalToBaseUnits(input.amount, 18),
+    expiresAt: expiryHours === 0 ? 0 : atSeconds + expiryHours * 60 * 60,
+    requester: input.requester,
+    chainId: input.chainId,
+    ...(memo ? { memo } : {}),
+  });
+}
+
 function requestFromTuple(value: unknown): PaymentRequestPayload {
-  if (!Array.isArray(value) || value.length !== 9) {
+  if (!Array.isArray(value) || value.length !== 10) {
     throw new Error("Payment link payload is malformed.");
   }
 
@@ -171,6 +278,7 @@ function requestFromTuple(value: unknown): PaymentRequestPayload {
     memo,
     expiresAt,
     requester,
+    chainId,
     invoiceId,
   ] = value;
 
@@ -183,6 +291,7 @@ function requestFromTuple(value: unknown): PaymentRequestPayload {
     (memo !== null && typeof memo !== "string") ||
     typeof expiresAt !== "number" ||
     typeof requester !== "string" ||
+    typeof chainId !== "string" ||
     (invoiceId !== null && typeof invoiceId !== "string")
   ) {
     throw new Error("Payment link payload is malformed.");
@@ -198,6 +307,7 @@ function requestFromTuple(value: unknown): PaymentRequestPayload {
     amount,
     expiresAt,
     requester: `0x${requester}`,
+    chainId,
     ...(memo === null ? {} : { memo }),
     ...(invoiceId === null ? {} : { invoiceId: `0x${invoiceId}` }),
   });

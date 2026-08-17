@@ -2,7 +2,8 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-const BASE_URL = "http://127.0.0.1:5173";
+const BASE_URL =
+  process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173";
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
@@ -133,6 +134,67 @@ function messageRow(page: Page, body: string) {
 function threadBody(page: Page, body: string) {
   return page.getByLabel("Correspondence").getByText(body, { exact: true });
 }
+
+test("creates a standalone payment link without an on-chain action", async ({
+  page,
+  browser,
+  request,
+}, testInfo) => {
+  test.setTimeout(3 * 60_000);
+  const configResponse = await request.get(
+    `${BASE_URL}/__quietline_localnet_wallet/config`,
+  );
+  expect(configResponse.ok()).toBeTruthy();
+  const config = (await configResponse.json()).result as LocalnetConfig;
+  const alice = identity(config, "alice");
+  const requestedUrls: string[] = [];
+  page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
+
+  await page.goto("/");
+  await connectLocalnet(page);
+  await page.getByRole("link", { name: "Request", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
+  ).toBeVisible();
+  await page.getByLabel("STRK requested").fill("0.125");
+  await page.getByLabel("Expiry in hours").fill("24");
+  await page.getByLabel("Memo (optional)").fill("Standalone link test");
+  await page.getByRole("button", { name: "Generate payment link" }).click();
+
+  await expect(page.getByText("No transaction submitted", { exact: true })).toBeVisible();
+  const linkCode = page
+    .locator("code")
+    .filter({ hasText: `${BASE_URL}/pay#qlp2.` });
+  const paymentLink = (await linkCode.innerText()).trim();
+  expect(paymentLink.startsWith(`${BASE_URL}/pay#qlp2.`)).toBeTruthy();
+  await expect(
+    page.locator('[aria-label="QR code for this Quietline payment link"]'),
+  ).toBeVisible();
+  expect(
+    requestedUrls.some((url) =>
+      url.includes("/__quietline_localnet_wallet/privacy"),
+    ),
+  ).toBeFalsy();
+  expect(requestedUrls.some((url) => url.includes("#qlp2."))).toBeFalsy();
+  await screenshot(page, "standalone-payment-link-create", testInfo);
+
+  const fresh = await browser.newContext({
+    baseURL: BASE_URL,
+    viewport: { width: 1_440, height: 900 },
+  });
+  const review = await fresh.newPage();
+  const reviewRequests: string[] = [];
+  review.on("request", (outgoing) => reviewRequests.push(outgoing.url()));
+  await review.goto(paymentLink);
+  await expect(
+    review.getByRole("heading", { name: "Review before anything moves." }),
+  ).toBeVisible();
+  await expect(review.getByText(alice.address, { exact: true })).toBeVisible();
+  await expect(review.getByText(/Standalone link test/)).toBeVisible();
+  expect(reviewRequests.some((url) => url.includes("#qlp2."))).toBeFalsy();
+  await screenshot(review, "standalone-payment-link-review", testInfo);
+  await fresh.close();
+});
 
 test("all Quietline localnet journeys", async ({
   page,
@@ -307,7 +369,7 @@ test("all Quietline localnet journeys", async ({
       page.getByText("Transaction hash", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("1 recipient · confirmed", { exact: false }),
+      page.getByText("1 recipient · posted", { exact: false }),
     ).toBeVisible();
     await expect(messageRow(page, compositeBody)).toContainText(
       "POSTED ON-CHAIN",
@@ -412,9 +474,9 @@ test("all Quietline localnet journeys", async ({
     await page.getByRole("button", { name: "Share payment link" }).click();
     const linkCode = page
       .locator("code")
-      .filter({ hasText: `${BASE_URL}/pay#qlp1.` });
+      .filter({ hasText: `${BASE_URL}/pay#qlp2.` });
     const paymentLink = (await linkCode.innerText()).trim();
-    expect(paymentLink).toMatch(/^http:\/\/127\.0\.0\.1:5173\/pay#qlp1\./);
+    expect(paymentLink.startsWith(`${BASE_URL}/pay#qlp2.`)).toBeTruthy();
     await screenshot(page, "13-invoice-share-link", testInfo);
 
     const fresh = await browser.newContext({
@@ -624,7 +686,7 @@ test("all Quietline localnet journeys", async ({
     ).toHaveCount(0, {
       timeout: 180_000,
     });
-    await expect(page.getByText(/2 recipients · confirmed/i)).toBeVisible();
+    await expect(page.getByText(/2 recipients · posted/i)).toBeVisible();
     await expect(
       page.getByText("Recipient count is public in the ciphertext format.", {
         exact: false,

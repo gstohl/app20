@@ -477,8 +477,10 @@ export default function Compose({
 
   function tradePayload(
     attachment: Extract<DraftAttachment, { type: "offer" | "escrow_fund" }>,
-    recipientAddress: string,
   ): OfferPayload | EscrowFundPayload {
+    if (!senderAddress) {
+      throw new Error("Connect the wallet that owns this request or offer.");
+    }
     const decimals = Number(attachment.wantDecimals);
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
       throw new Error(
@@ -530,7 +532,7 @@ export default function Compose({
       dealId: attachment.dealId,
       give: legA,
       want: legB,
-      offerer: validateAndParseAddress(senderAddress ?? recipientAddress),
+      offerer: validateAndParseAddress(senderAddress),
       expiresAt: expiryFromHours(attachment.expiryHours),
       ...(attachment.note.trim() ? { note: attachment.note.trim() } : {}),
     };
@@ -543,6 +545,9 @@ export default function Compose({
     payment: AcceptPayload | null;
     escrow: EscrowFundPayload | null;
   } {
+    if (!senderAddress) {
+      throw new Error("Connect the wallet that owns this document.");
+    }
     const attachments: CompositeAttachment[] = [];
     let payment: AcceptPayload | null = null;
     let escrow: EscrowFundPayload | null = null;
@@ -566,13 +571,13 @@ export default function Compose({
           requestId: attachment.requestId,
           token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
           amount: parseDecimalToBaseUnits(attachment.amount, 18),
-          requester: validateAndParseAddress(senderAddress ?? recipientAddress),
+          requester: validateAndParseAddress(senderAddress),
           expiresAt: expiryFromHours(attachment.expiryHours),
           ...(attachment.memo.trim() ? { memo: attachment.memo.trim() } : {}),
         };
         attachments.push({ type: "payment_request", payload });
       } else {
-        const payload = tradePayload(attachment, recipientAddress);
+        const payload = tradePayload(attachment);
         if (attachment.type === "escrow_fund") {
           escrow = payload as EscrowFundPayload;
           attachments.push({ type: "escrow_fund", payload: escrow });
@@ -588,7 +593,7 @@ export default function Compose({
     const conversationId =
       draft.conversationId || randomConversationId();
     const inReplyTo = draft.inReplyTo || "";
-    let senderAuth = undefined;
+    let senderAuth: ReturnType<typeof createMailSenderAuth> | undefined;
     if (mailSeed) {
       const mailbox = deriveKeypair(mailSeed);
       senderAuth = createMailSenderAuth(mailSeed, mailbox.publicKey, {

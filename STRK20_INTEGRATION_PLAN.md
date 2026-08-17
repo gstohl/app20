@@ -312,6 +312,23 @@ claimed `requester` address and uses a random `requestId`, because the anonymous
 `MessagePosted` event has no sender address from which a payer could build the
 private transfer. The card always discloses that raw, unauthenticated address.
 
+## 8.2 Standalone payment links · code complete locally 2026-08-17
+
+`/pay` without a fragment now creates an unsigned request without a mail send,
+helper call, or pool fee. The mailbox exposes it through **Request**. The `qlp2`
+fragment binds canonical STRK fields, a random request ID, expiry, requester,
+and Mainnet/Sepolia; malformed, legacy unscoped, and wrong-network links fail
+closed. QR/copy creation sends no fragment in HTTP and invokes no wallet action.
+
+Opening a link remains review-only. The payer explicitly hands it into the
+mailbox, where the existing payer-owned attempt nonce, live fee/balance guard,
+wallet approval, submitted/confirmed transaction lifecycle, and local duplicate
+protection apply. Paid status is not global: another browser/profile can approve
+the same unsigned link again, so the UI requires honest replay warnings and
+defaults creation to a 72-hour expiry. The real-pool localnet browser suite now
+covers standalone create → QR → fresh-context review with zero privacy action at
+creation. Live Ready payment validation remains required.
+
 ## 9. Testing
 
 **Headless app:** `npm ci` · `npm test` · `npm run typecheck` · `npm run build`.

@@ -46,6 +46,8 @@ export type PaymentRequestPayload = {
   memo?: string;
   expiresAt: number;
   requester: string;
+  /** Required for shareable links; encrypted mailbox requests inherit their chain. */
+  chainId?: string;
   /** Accepted on decode for early invoice drafts; new sends use requestId. */
   invoiceId?: string;
 };
@@ -345,6 +347,9 @@ export function parsePaymentRequestPayload(
     expiresAt: value.expiresAt,
     requester,
     ...(memo === undefined ? {} : { memo }),
+    ...(typeof value.chainId === "string" && value.chainId.length <= 80
+      ? { chainId: value.chainId }
+      : {}),
     ...(typeof value.invoiceId === "string"
       ? { invoiceId: value.invoiceId }
       : {}),
@@ -510,7 +515,8 @@ function paymentRequestsEqual(
     left.amount === right.amount &&
     (left.memo ?? "") === (right.memo ?? "") &&
     left.expiresAt === right.expiresAt &&
-    feltEquals(left.requester, right.requester)
+    feltEquals(left.requester, right.requester) &&
+    (left.chainId ?? "") === (right.chainId ?? "")
   );
 }
 

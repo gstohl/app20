@@ -5,7 +5,8 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const APP_URL = "http://127.0.0.1:5173";
+const VITE_PORT = Number(process.env.QUIETLINE_LOCALNET_VITE_PORT ?? 5173);
+const APP_URL = `http://127.0.0.1:${VITE_PORT}`;
 const CONFIG_URL = `${APP_URL}/__quietline_localnet_wallet/config`;
 const LOCALNET_SCRIPT = resolve(ROOT, "scripts/localnet-app.mjs");
 const PLAYWRIGHT_CLI = resolve(ROOT, "node_modules/playwright/cli.js");

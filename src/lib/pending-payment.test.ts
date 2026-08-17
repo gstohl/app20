@@ -33,6 +33,7 @@ function request(byte: string): PaymentRequestPayload {
     memo: "Invoice 7",
     expiresAt: 2_000_000_000,
     requester: "0x4567",
+    chainId: "SN_SEPOLIA",
   };
 }
 

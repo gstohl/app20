@@ -1,6 +1,7 @@
 "use client";
 
 import type { WALLET_API } from "@starknet-io/types-js";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
@@ -84,6 +85,7 @@ import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
 import { inspectMailVault } from "@/lib/mail-vault";
+import { paymentLinkChainIdsEqual } from "@/lib/payment-link";
 import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
 import {
   loadPendingPayment,
@@ -1536,6 +1538,14 @@ export default function InboxPage() {
     let submittedHash = "";
     try {
       const context = requireActionContext();
+      if (
+        request.chainId &&
+        !paymentLinkChainIdsEqual(request.chainId, context.chainId)
+      ) {
+        throw new Error(
+          "This payment link is bound to another Starknet network. Switch the wallet before paying.",
+        );
+      }
       const reservedPayment = claimPayment(
         window.localStorage,
         context.chainId,
@@ -2379,14 +2389,24 @@ export default function InboxPage() {
             PRIVATE MAIL / PUBLIC CIPHERTEXT
           </p>
 
-          <button
-            className={styles.composeButton}
-            type="button"
-            onClick={openComposer}
-          >
-            <span aria-hidden="true">＋</span>
-            New
-          </button>
+          <div className={styles.sidebarCreateActions}>
+            <button
+              className={styles.composeButton}
+              type="button"
+              onClick={openComposer}
+            >
+              <span aria-hidden="true">＋</span>
+              New
+            </button>
+            <Link
+              className={styles.paymentLinkButton}
+              to="/pay"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <span aria-hidden="true">↗</span>
+              Request
+            </Link>
+          </div>
 
           <nav className={styles.mailboxNav} aria-label="Mail folders">
             <span className={styles.sidebarLabel}>FOLDERS</span>
@@ -2470,11 +2490,17 @@ export default function InboxPage() {
               events={scanProgress.events}
               phase={scanMessage}
             />
-            {!keypair ? (
+            {keypair ? null : (
               <p className={styles.scanMessage}>
                 Set up a mailbox key before checking for mail.
               </p>
-            ) : !scanMessage && address && chainId && helperAddress && keyFingerprint ? (
+            )}
+            {keypair &&
+            !scanMessage &&
+            address &&
+            chainId &&
+            helperAddress &&
+            keyFingerprint ? (
               <p className={styles.scanMessage}>
                 {describeMailScanCursor(
                   loadMailScanCursor(

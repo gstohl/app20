@@ -63,6 +63,31 @@ neither payment of the quoted non-STRK leg nor the identity behind a claimed
 address. Payment requests use the same one-way STRK rail and refuse duplicate
 Pay actions locally.
 
+## Payment links
+
+Click **Request** in the mailbox sidebar, or open `/pay` without a fragment, to
+create a standalone STRK payment link. Creation needs a connected
+STRK20-capable wallet so the receiving address and network are explicit, but it
+does not need a mail key or `QuietlineMail`, submits no transaction, and pays no
+pool fee. The page produces a QR code and copyable `qlp2` URL containing a
+random request ID, canonical STRK amount, optional memo, expiry, requester
+address, and Mainnet/Sepolia binding.
+
+Opening the URL only decodes and displays those unsigned fields from the URL
+fragment. Nothing is paid until the payer explicitly continues to the inbox,
+reviews again, and approves the normal private-transfer wallet flow. The
+fragment is not included in the HTTP request, but it is visible to whoever has
+the link, browser extensions, screenshots, and clipboard history; never put
+secrets in its memo.
+
+Links are unauthenticated and reusable. Quietline's paid status prevents a
+repeat only for the same account in the same browser profile; another device or
+cleared profile can explicitly approve the same link again. Verify the full
+requester address out-of-band, use an expiry, and stop sharing fulfilled links.
+A network-bound link fails closed if the payer's wallet is on a different
+network. Shield separately before paying: a public shield bundled beside the
+private transfer would make correlation trivial.
+
 ## Stack
 
 Vite + React 19 + TanStack Router, shipped as a client-only SPA (no SSR), with
@@ -176,9 +201,13 @@ pristine recording, use a private browser window or clear site data first.
 6. For OTC, Alice selects **Deal → Make offer** and sends terms to Bob. Bob
    scans and clicks **Accept & send … STRK**; one private transfer plus encrypted
    accept memo is submitted, followed by the explicitly one-sided receipt.
-7. For an invoice, Alice selects **Deal → Request payment**. Bob scans and
-   clicks **Pay … STRK privately**. The warnings remain intentional: quoted
-   non-STRK consideration is not atomic or proven.
+7. For an encrypted invoice, Alice selects **Deal → Request payment**. Bob
+   scans and clicks **Pay … STRK privately**. The warnings remain intentional:
+   quoted non-STRK consideration is not atomic or proven.
+8. For a standalone link, click **Request** in the sidebar, enter the STRK
+   amount/memo/expiry, and copy or scan the generated QR. This step makes no
+   chain or privacy-wallet request; opening the link goes through `/pay` review
+   before the same explicit inbox payment flow.
 
 The local wallet sends the production action arrays to the vendored client,
 which resolves `${poolAddress}` and `${openNoteIds[0]}`, uses direct contract
@@ -232,8 +261,16 @@ into the browser and must be treated as public. Cairo commands run from the
 | `snforge test` | `cairo/` | Runs helper authorization, ciphertext-cap, caller-isolated directory, event, zero-balance, and dust tests |
 
 The UI suite requires Playwright Chromium once per machine (`npx playwright install chromium`).
-It always uses `http://127.0.0.1:5173` so a stale service bound to `localhost` cannot
-be mistaken for the localnet app.
+It defaults to `http://127.0.0.1:5173` so a stale service bound only to
+`localhost` cannot be mistaken for the localnet app. To avoid an occupied port,
+set matching overrides, for example:
+
+```bash
+QUIETLINE_LOCALNET_VITE_PORT=5174 \
+QUIETLINE_LOCALNET_API_PORT=5052 \
+QUIETLINE_TEST_BASE_URL=http://127.0.0.1:5174 \
+npm run test:ui
+```
 
 Use `npm run devnet:stop` when finished. The default Devnet 0.9.2 image is
 pinned as `docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf`,
@@ -290,7 +327,8 @@ SPA fallback. Both deployment paths therefore serve the app HTML for a direct
    `VITE_MAIL_HELPER_MAINNET` under **Settings → Environment variables**. These
    are public build-time values; enter only the Alchemy key for
    `VITE_PROVIDER_URL`, as shown in `.env.example`.
-4. Deploy, then verify both the deployment root and `/inbox` load directly.
+4. Deploy, then verify the deployment root, `/inbox`, and `/pay` all load
+   directly.
 
 ### Wrangler (Workers static assets)
 

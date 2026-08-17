@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import {
   formatBaseUnits,
@@ -10,7 +11,12 @@ import {
   type PaymentRequestPayload,
   type PaymentStatus,
 } from "@/lib/otc";
-import { createPaymentLink } from "@/lib/payment-link";
+import {
+  createPaymentLink,
+  normalizePaymentLinkChainId,
+  paymentLinkChainIdsEqual,
+  paymentLinkNetworkLabel,
+} from "@/lib/payment-link";
 import { sanitizeUntrustedText } from "@/lib/text";
 import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
@@ -25,6 +31,7 @@ type InvoiceCardProps = {
   actionMessage?: string;
   actionStartedAt?: number;
   showPaymentActions?: boolean;
+  shareInitiallyOpen?: boolean;
   onPay?: () => void;
 };
 
@@ -38,8 +45,10 @@ export default function InvoiceCard({
   actionMessage,
   actionStartedAt,
   showPaymentActions = true,
+  shareInitiallyOpen = false,
   onPay,
 }: InvoiceCardProps) {
+  const connectedChainId = useStoreWallet((state) => state.chain);
   const [ignored, setIgnored] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareLink, setShareLink] = useState("");
@@ -65,14 +74,72 @@ export default function InvoiceCard({
   } catch {
     // An invalid requester is shown as invalid and can never reach an action.
   }
+  let shareChainId: string | null = null;
+  try {
+    const candidate = request.chainId ?? connectedChainId;
+    shareChainId = candidate ? normalizePaymentLinkChainId(candidate) : null;
+  } catch {
+    // A link is never created for an unsupported or unknown network.
+  }
+  let requestNetwork: string | null = null;
+  try {
+    const candidate = request.chainId ?? shareChainId;
+    requestNetwork = candidate ? paymentLinkNetworkLabel(candidate) : null;
+  } catch {
+    // Hostile mailbox metadata stays display-only and cannot be shared or paid.
+  }
+  const networkMismatch = Boolean(
+    request.chainId &&
+      connectedChainId &&
+      !paymentLinkChainIdsEqual(request.chainId, connectedChainId),
+  );
   const canPay =
     status === "requested" &&
     !expired &&
+    !networkMismatch &&
     isStrk &&
     claimedPaymentAddress !== null &&
     !ignored &&
     Boolean(onPay);
-  const canShare = isStrk && claimedPaymentAddress !== null;
+  const canShare =
+    isStrk && claimedPaymentAddress !== null && shareChainId !== null;
+
+  function requestForLink(): PaymentRequestPayload {
+    if (!shareChainId) {
+      throw new Error("Connect a supported Starknet network before sharing.");
+    }
+    return { ...request, chainId: shareChainId };
+  }
+
+  useEffect(() => {
+    setShareLink("");
+    setShareOpen(false);
+    setShareMessage("");
+  }, [
+    request.amount,
+    request.expiresAt,
+    request.memo,
+    request.requestId,
+    request.requester,
+    shareChainId,
+  ]);
+
+  useEffect(() => {
+    if (!shareInitiallyOpen || !canShare) return;
+    try {
+      setShareLink(
+        createPaymentLink(requestForLink(), window.location.origin),
+      );
+      setShareMessage("");
+      setShareOpen(true);
+    } catch (error: unknown) {
+      setShareMessage(
+        error instanceof Error
+          ? error.message
+          : "Quietline could not create this payment link.",
+      );
+    }
+  }, [canShare, request, shareChainId, shareInitiallyOpen]);
 
   function toggleShareLink() {
     if (shareOpen) {
@@ -82,7 +149,8 @@ export default function InvoiceCard({
 
     try {
       const link =
-        shareLink || createPaymentLink(request, window.location.origin);
+        shareLink ||
+        createPaymentLink(requestForLink(), window.location.origin);
       setShareLink(link);
       setShareMessage("");
       setShareOpen(true);
@@ -165,8 +233,23 @@ export default function InvoiceCard({
         {request.expiresAt === 0
           ? "No expiry"
           : `Expires ${new Date(request.expiresAt * 1_000).toLocaleString()}`}
+        {requestNetwork ? ` · ${requestNetwork}` : " · Network unavailable"}
         {" · "}Request {request.requestId.slice(0, 12)}…
       </p>
+      {networkMismatch ? (
+        <p className={styles.actionWarning}>
+          This request is for {requestNetwork}. Switch the connected wallet to
+          that network before paying. Quietline will not submit it on the wrong
+          chain.
+        </p>
+      ) : null}
+      {canShare ? (
+        <p className={styles.actionWarning}>
+          Quietline does not globally mark an unsigned link paid. Local status
+          blocks a repeat only for this account in this browser profile; another
+          device can explicitly approve the same link again.
+        </p>
+      ) : null}
 
       <div className={styles.sheetActions}>
         <button
@@ -201,8 +284,9 @@ export default function InvoiceCard({
             Copy payment link
           </button>
           <span>
-            This link contains only the invoice fields shown here. It is not
-            authenticated; verify the full requester address out-of-band.
+            This link contains only the invoice fields shown here and is bound
+            to {requestNetwork}. It is not authenticated; verify the full
+            requester address out-of-band.
           </span>
         </div>
       ) : null}
