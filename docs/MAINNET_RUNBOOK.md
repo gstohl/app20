@@ -2,7 +2,7 @@
 
 Human checklist for the Phase 4 scoring pass. A person with the Ready extension executes every financial action. Agents do not hold keys, do not submit mainnet txs, and do not invent RPC / discovery / proving URLs.
 
-Scoring deadline: **31 Aug 2026, 23:59 UTC**. The sprint scraper rereads <https://github.com/gstohl/quietline> about every 30 minutes. Fill `strk20.json` only with real mainnet artifacts.
+Scoring deadline: **31 Aug 2026, 23:59 UTC**. The sprint scraper rereads <https://github.com/gstohl/app20> about every 30 minutes. Fill `strk20.json` only with real mainnet artifacts.
 
 Grounding used here: `STRK20_INTEGRATION_PLAN.md` Phases 3–4 and §8, `README.md`, `cairo/src/lib.cairo`, `src/utils/constants.ts`, `scripts/e2e-mail.mjs`, and [MAINNET-DAY-0.md](https://github.com/starkience/strk20-hackathon/blob/main/docs/MAINNET-DAY-0.md).
 

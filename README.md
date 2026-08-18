@@ -8,8 +8,12 @@ and is not the current deploy target. Quietline remains the mail protocol name
 only. Existing `quietline/*` storage keys, cryptographic domains, payment-link
 formats, and contract identifiers stay unchanged for recovery.
 
-This checkout is a local private app. It is not yet pushed, not yet deployed,
-and not a live Mainnet release.
+Source lives at `https://github.com/gstohl/app20`. The first public origin is
+not live yet. This is not a Mainnet value-moving release.
+
+No testnet/mainnet prover, discovery, or RPC origins are in this repository.
+Those stay in Worker secrets after deploy. Browser assets only get public
+metadata (`VITE_*`) and non-routable `.invalid` OHTTP names.
 
 ## What works now
 
@@ -141,7 +145,6 @@ Do not deploy, push, or send Mainnet value until those secrets are set through
 - Live NEAR Intents quotes, deposits, or settlement
 - Any attested TEE that can authorize value
 - Filled `strk20.json` sprint artifacts
-- GitHub remote rename (`gstohl/quietline` is still the origin)
 - Cloudflare production deploy
 
 ## License
