@@ -1,5 +1,5 @@
 {
-  "name": "quietline",
+  "name": "vlt20",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
@@ -10,12 +10,15 @@
     "dev": "vite",
     "dev:localnet": "node scripts/localnet-app.mjs",
     "localnet:stop": "node scripts/localnet-app.mjs --stop",
-    "build": "npm run typecheck && vite build",
+    "build": "npm run typecheck && vite build && npm run check:browser-leaks",
     "preview": "vite preview",
     "deploy:cf": "npm run build && wrangler deploy",
     "devnet": "bash scripts/devnet.sh",
     "devnet:stop": "bash scripts/devnet.sh stop",
     "test": "vitest run src",
+    "test:packages": "npm test --workspace @vlt20/privacy-adapters && npm test --workspace strk20-privy",
+    "test:all": "npm test && npm run test:packages",
+    "check:browser-leaks": "node scripts/check-browser-leaks.mjs dist",
     "test:ui": "node scripts/ui-test.mjs",
     "test:e2e": "node scripts/e2e-mail.mjs",
     "pool:setup": "bash scripts/pool-harness-setup.sh",
