@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "replace-with-relay-worker-name",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "RELAY_GATE", "class_name": "RelayGateDurableObject" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RelayGateDurableObject"] }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "PRIVY_FRAME_ORIGINS": "https://replace-with-reviewed-privy-frame-origin.invalid",
+    "PRIVY_CONNECT_ORIGINS": "https://replace-with-reviewed-privy-connect-origin.invalid"
+  }
+  // Configure all URLs, authorization values, and OHTTP_SESSION_SECRET with
+  // `wrangler secret put`; never place them in this file.
+}
