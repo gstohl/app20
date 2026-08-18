@@ -442,7 +442,7 @@
   color: var(--teal);
   background: var(--teal-soft);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -647,7 +647,7 @@
 .sheetMeta,
 .receiptWarning {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -801,7 +801,7 @@
 
 .chainToggleHint {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.08em;
 }
 
@@ -842,7 +842,7 @@
 
 .chainEyebrow {
   color: var(--proof-teal);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .chainRecordHeading h3 {
@@ -856,7 +856,7 @@
   padding: 5px 7px;
   border: 1px solid var(--proof-teal);
   color: var(--proof-teal);
-  font-size: 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -884,7 +884,7 @@
 
 .chainFields dt {
   color: var(--proof-teal);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .chainFields dd {
@@ -907,7 +907,7 @@
 .chainFields dd small {
   color: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .feltPair {
@@ -922,7 +922,7 @@
   color: var(--paper);
   background: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
 }
@@ -950,7 +950,7 @@
 .ciphertextPreview li > span {
   color: var(--proof-teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .ciphertextPreview .truncatedFelts {
@@ -958,7 +958,7 @@
   color: var(--muted);
   background: var(--paper-deep);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -971,7 +971,7 @@
   gap: 12px;
   margin-top: 9px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .chainCopyButton {
@@ -980,7 +980,7 @@
   color: var(--proof-teal);
   background: transparent;
   font: inherit;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -993,7 +993,7 @@
 .copyStatus {
   min-height: 1em;
   color: var(--muted);
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .absentFields {
@@ -1013,7 +1013,7 @@
   color: var(--muted);
   background: var(--paper-deep);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -1023,7 +1023,7 @@
   color: var(--paper);
   background: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -1043,7 +1043,7 @@
   margin-top: 16px;
   color: var(--teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -1266,7 +1266,7 @@
 .sidebarTagline {
   margin-top: -11px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.09em;
 }
@@ -1321,7 +1321,7 @@
 .sidebarLabel {
   display: block;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   line-height: 1.4;
@@ -1372,7 +1372,7 @@
   border: 0;
   background: var(--paper);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .networkRow {
@@ -1380,7 +1380,7 @@
   padding: 8px 10px;
   border: 0;
   background: var(--surface-raised);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
 }
@@ -1388,13 +1388,17 @@
 .networkRow small {
   margin-left: auto;
   color: var(--muted);
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .networkDot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background: var(--muted);
+}
+
+.networkDotLive {
   background: var(--teal);
   box-shadow: 0 0 0 3px var(--teal-soft);
 }
@@ -1441,7 +1445,7 @@
   min-height: 28px;
   padding: 5px 8px;
   overflow: hidden;
-  font-size: 8px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -1453,14 +1457,14 @@
   border: 0;
   color: var(--muted);
   background: var(--paper-deep);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.55;
 }
 
 .accountHint {
   margin-top: 9px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -1477,7 +1481,7 @@
 .sidebarBalance span {
   grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .sidebarBalance strong {
@@ -1492,7 +1496,7 @@
   color: var(--teal);
   background: transparent;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
   text-decoration: underline;
   cursor: pointer;
@@ -1509,7 +1513,7 @@
   gap: 5px;
   margin-top: 12px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -1540,13 +1544,13 @@
   padding: 0 8px;
   color: var(--teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .walletAmount small {
   overflow-wrap: anywhere;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 400;
   line-height: 1.45;
 }
@@ -1580,6 +1584,10 @@
   background: var(--teal);
 }
 
+.sidebarWalletActions button:last-child {
+  grid-column: 1 / -1;
+}
+
 .sidebarWalletActions button:disabled {
   cursor: not-allowed;
   opacity: 0.4;
@@ -1592,7 +1600,7 @@
 
 .sidebarWalletActions small {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 6px;
+  font-size: 10px;
   line-height: 1.35;
 }
 
@@ -1603,7 +1611,7 @@
   padding: 8px;
   border: 0;
   background: var(--deal-quiet);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -1629,7 +1637,7 @@
 
 .localnetSlot {
   width: 100%;
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .sidebarScan {
@@ -1702,7 +1710,7 @@
   color: var(--proof-teal);
   background: var(--paper);
   font: inherit;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -1723,7 +1731,7 @@
   border: 0;
   background: var(--paper);
   color: var(--muted);
-  font-size: 7px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -1739,13 +1747,13 @@
   padding-top: 14px;
   border-top: 0;
   color: var(--muted);
-  font-size: 7px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
 .sidebarFooter a {
   color: var(--teal);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
 }
 
@@ -1793,14 +1801,14 @@
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   background: var(--paper-deep);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.45;
 }
 
 .railPrivacyNote strong {
   color: var(--proof-teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1874,7 +1882,7 @@
   flex: none;
   color: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .conversationPreview {
@@ -1898,7 +1906,7 @@
   border: 1px solid var(--line);
   color: var(--muted);
   background: var(--paper);
-  font-size: 6px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1908,7 +1916,7 @@
 .unreadIndicator,
 .readIndicator {
   margin-left: auto;
-  font-size: 6px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.07em;
 }
@@ -1943,7 +1951,7 @@
 
 .railEmptyState span:last-child {
   max-width: 230px;
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -1996,7 +2004,7 @@
   color: var(--ink);
   background: var(--paper);
   font: inherit;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -2065,14 +2073,14 @@
   border-left: 3px solid var(--proof-teal);
   color: var(--muted);
   background: var(--public-quiet);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .sheetClip {
   color: var(--teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -2125,7 +2133,7 @@
 .modePicker small {
   grid-column: 2;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 400;
   line-height: 1.5;
 }
@@ -2137,7 +2145,7 @@
   color: var(--paper);
   background: var(--proof-teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 6px;
+  font-size: 10px;
   font-style: normal;
   letter-spacing: 0.07em;
 }
@@ -2148,7 +2156,7 @@
   gap: 5px;
   color: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .aliasChips button {
@@ -2193,7 +2201,7 @@
 
 .attachmentToggle small {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .paymentAttachment > .field {
@@ -2238,7 +2246,7 @@
   color: var(--proof-teal);
   content: "LOCAL ONLY";
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.08em;
   transform: rotate(1deg);
@@ -2285,14 +2293,14 @@
 .privacySummary strong {
   color: var(--teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   letter-spacing: 0.08em;
 }
 
 .privacySummary span,
 .honestyNote {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1.55;
 }
 
@@ -2322,7 +2330,7 @@
   padding: 9px;
   border: 1px solid var(--proof-teal);
   background: var(--public-quiet);
-  font-size: 8px;
+  font-size: 10px;
   line-height: 1.45;
 }
 
@@ -2332,7 +2340,7 @@
   gap: 8px;
   color: var(--proof-teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -2380,7 +2388,7 @@
 .envelopeProgress span {
   overflow: hidden;
   color: var(--paper);
-  font-size: 7px;
+  font-size: 10px;
   line-height: 10px;
   white-space: nowrap;
 }
@@ -2415,7 +2423,7 @@
     color: var(--ink);
     background: var(--paper);
     font: inherit;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 800;
     cursor: pointer;
   }
@@ -2617,7 +2625,7 @@
   color: var(--muted);
   background: var(--surface-raised);
   font: inherit;
-  font-size: 8px;
+  font-size: 10px;
   cursor: pointer;
 }
 
@@ -2628,7 +2636,7 @@
 
 .typeFilterNav button strong {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
+  font-size: 10px;
 }
 
 .attachmentTray {
@@ -2657,7 +2665,7 @@
 .attachmentHeading .fieldBadge {
   color: var(--muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .attachmentTray > p {
@@ -2679,7 +2687,7 @@
   color: var(--ink);
   background: var(--paper);
   font: inherit;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -2780,7 +2788,7 @@
   display: block;
   color: var(--proof-teal);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.08em;
 }
 
@@ -2836,7 +2844,7 @@
 .submissionTransactions code {
   overflow-wrap: anywhere;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .submissionTransactions span {
@@ -2855,7 +2863,7 @@
   color: var(--ribbon);
   background: transparent;
   font: inherit;
-  font-size: 7px;
+  font-size: 10px;
   cursor: pointer;
 }
 
@@ -2890,7 +2898,7 @@
   color: var(--muted);
   background: transparent;
   font: inherit;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   cursor: pointer;
 }
@@ -2903,6 +2911,36 @@
 .themeSwitcher button[aria-pressed="true"] {
   color: var(--on-accent);
   background: var(--accent);
+}
+
+.typeFilterNav button,
+.themeSwitcher button,
+.sidebarBalance button,
+.scanActions button,
+.backToList,
+.closeCompose,
+.sidebarWalletActions button {
+  min-height: 36px;
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .typeFilterNav button,
+  .themeSwitcher button,
+  .sidebarBalance button,
+  .scanActions button,
+  .backToList,
+  .closeCompose,
+  .sidebarWalletActions button {
+    min-height: 44px;
+    font-size: 12px;
+  }
+
+  .mailApp input,
+  .mailApp textarea,
+  .mailApp select {
+    font-size: 16px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

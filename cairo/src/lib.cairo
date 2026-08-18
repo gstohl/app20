@@ -1,6 +1,7 @@
 use starknet::ContractAddress;
 
 pub const MAX_CT_FELTS: usize = 140;
+pub const MAIL_RECOVERY_AMOUNT: u128 = 7;
 
 // Must match privacy::objects::OpenNoteDeposit (positional Serde).
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
@@ -40,13 +41,15 @@ pub mod QuietlineMail {
         Map, StoragePathEntry, StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address};
-    use super::{IErc20Dispatcher, IErc20DispatcherTrait, MAX_CT_FELTS, OpenNoteDeposit};
+    use super::{
+        IErc20Dispatcher, IErc20DispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS,
+        OpenNoteDeposit,
+    };
 
     mod errors {
         pub const BAD_POOL: felt252 = 'BAD_POOL';
         pub const CT_TOO_LARGE: felt252 = 'CT_TOO_LARGE';
         pub const ACTION_ID_USED: felt252 = 'ACTION_ID_USED';
-        pub const AMOUNT_OVERFLOW: felt252 = 'AMOUNT_OVERFLOW';
         pub const APPROVE_FAILED: felt252 = 'APPROVE_FAILED';
     }
 
@@ -113,14 +116,14 @@ pub mod QuietlineMail {
 
             let erc20 = IErc20Dispatcher { contract_address: token };
             let balance = erc20.balance_of(get_contract_address());
-            if balance == 0 {
+            let recovery_amount: u256 = MAIL_RECOVERY_AMOUNT.into();
+            if balance < recovery_amount {
                 let deposits: Array<OpenNoteDeposit> = array![];
                 return deposits.span();
             }
 
-            let amount: u128 = balance.try_into().expect(errors::AMOUNT_OVERFLOW);
-            assert(erc20.approve(pool, balance), errors::APPROVE_FAILED);
-            array![OpenNoteDeposit { note_id, token, amount }].span()
+            assert(erc20.approve(pool, recovery_amount), errors::APPROVE_FAILED);
+            array![OpenNoteDeposit { note_id, token, amount: MAIL_RECOVERY_AMOUNT }].span()
         }
 
         fn register_pubkey(ref self: ContractState, pk: (felt252, felt252)) {

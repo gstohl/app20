@@ -51,6 +51,7 @@ import {
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import { createMailSenderAuth } from "@/lib/mail-auth";
+import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { randomConversationId } from "@/lib/mail-thread";
 import {
   formatBaseUnits,
@@ -61,6 +62,7 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
+  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
   strk20ErrorMessage,
   submitActions,
   submitMail,
@@ -304,6 +306,7 @@ export default function Compose({
   onAliasesChange,
 }: ComposeProps) {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const senderAddress = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const isConnected = useStoreWallet((state) => state.isConnected);
@@ -708,7 +711,7 @@ export default function Compose({
       ? preflight.transactions === 2
         ? `Approve ${preflight.valueMoves.length} value move${preflight.valueMoves.length === 1 ? "" : "s"} in 2 transactions`
         : `Send ${preflight.valueMoves[0].split(" (")[0]} privately + message`
-      : "Send message (no asset transfer)";
+      : "Send encrypted message";
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -755,6 +758,15 @@ export default function Compose({
       }
       const encodedDocument = encodeEnvelope(document.type, document.payload);
       const provider = myFrontendProviders[providerIndex];
+      const policy = () => {
+        if (!selectedWallet) throw new Error("Wallet policy context is missing.");
+        assertWalletOperationPolicy(
+          selectedWallet,
+          providerIndex as 0 | 2 | 3,
+          "mail",
+        );
+      };
+      policy();
       const poolAddress = strk20PoolForProviderIndex(providerIndex);
       if ((document.payment || document.escrow) && !poolAddress) {
         throw new Error("The STRK20 pool is not configured for this network.");
@@ -896,6 +908,7 @@ export default function Compose({
               claimPubkey: document.escrow.claimPubkey,
             }),
             {
+              policy,
               onSubmitted: (transactionHash) => {
                 escrowReservation!.transactionHash = transactionHash;
                 markEscrowOperationSubmitted(
@@ -972,6 +985,8 @@ export default function Compose({
               amount: document.payment.transfer.amount,
               record,
               actionId: mailActionId,
+              helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+              policy,
             },
             options,
           )
@@ -984,6 +999,8 @@ export default function Compose({
               tokenAddress: addrSTRK,
               record,
               actionId: mailActionId,
+              helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+              policy,
             },
             options,
           );
@@ -1341,11 +1358,14 @@ export default function Compose({
                       <li key={movement}>{movement}</li>
                     ))
                   ) : (
-                    <li>
-                      No requested asset transfer; only the message transaction
-                      and its fee.
-                    </li>
+                    <li>No user-requested payment or attachment transfer.</li>
                   )}
+                  <li>
+                    The atomic mail batch temporarily withdraws 7 STRK base
+                    units to the public helper address and returns those units
+                    to your OPEN recovery note. The helper, amount, ciphertext
+                    size, and timing remain public.
+                  </li>
                   {preflight.noValueAttachments.map((attachment) => (
                     <li key={attachment}>{attachment}</li>
                   ))}

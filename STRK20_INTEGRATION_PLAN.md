@@ -1,5 +1,7 @@
 # STRK20 Privacy Integration Plan — Quietline
 
+> Historical implementation record. APP20 routing, Cloudflare relay, Privy Sepolia support, and Mainnet Ready-only policy are now defined in `docs/APP20_ARCHITECTURE.md`. Never restore browser RPC credentials or the former `VITE_PROVIDER_URL` design from this document.
+
 Generated 2026-08-14 by the strk20-privacy-integration skill. Pivoted from Feltproof / RFP-03 the same day. Statuses current at generation; re-verify pins with `python3 .agents/skills/strk20-privacy-integration/scripts/check_freshness.py` before building.
 
 Public repo: <https://github.com/gstohl/quietline>
@@ -83,7 +85,7 @@ Same pins as the landed scaffold. Do not unpin.
 Env:
 
 ```
-VITE_PROVIDER_URL=your_alchemy_key_here
+# RPC is now same-origin; real provider origins and credentials are Worker secrets.
 VITE_MAIL_HELPER_SEPOLIA=0x0
 VITE_MAIL_HELPER_MAINNET=0x0
 ```
@@ -178,10 +180,10 @@ would use. It proves all of the following through the genuine pool contract:
 - helper dust is approved, pulled by the pool, emitted as
   `OpenNoteDeposited`, and discovered in Alice's credited recovery open note.
 
-The harness pre-funds 7 STRK base units of helper dust before each successful
-mail. That is intentional: the real pool rejects an OPEN note that its invoke
-does not fund with `UNDEPOSITED_OPEN_NOTES`, so the test exercises the actual
-dust/echo recovery path rather than weakening or mocking that invariant.
+APP20 later replaced the harness-only pre-funding step with a production action
+sequence that atomically withdraws 7 STRK base units to the helper before the
+OPEN note and invoke. The real pool still enforces `UNDEPOSITED_OPEN_NOTES`, but
+there is no shared helper balance or separate race-prone funding transaction.
 
 This hardening tier still uses upstream's simulated proof provider and the
 canonical public **test-only** screening key `0xCAFEBABE`. Devnet does not
@@ -221,7 +223,8 @@ The backend uses `CorePrivateTransfersProver`, direct contract discovery,
 still performs `${poolAddress}` / `${openNoteIds[0]}` resolution. The local
 adapter supplies the SDK builder's self-surplus recipient for numeric transfer
 change (the same upstream `surplusTo(user)` pattern used by simple private
-transfers), and supplies 7 base units of helper dust for every recovery open
+transfers). The production action array now supplies the 7-base-unit helper
+funding as an explicit in-transaction withdrawal before every recovery OPEN
 note. It rejects unresolved placeholders and any mock proof-fact vector that is
 not nine felts before broadcasting.
 
@@ -381,7 +384,7 @@ Escrow remains off the mainnet scoring path until reviewed.
 - Sepolia event-scan start block or a user-held discovery index for a durable inbox.
 - Whether Ready already relayer-submits every `strk20InvokeTransaction`.
 - Pool fee via `get_fee_amount`.
-- Rotate the current `VITE_PROVIDER_URL` Alchemy key if it has been exposed in a client bundle.
+- Rotate any historical browser-bundled RPC key and keep replacements in Cloudflare Worker Secrets only.
 
 ## 12. Links
 

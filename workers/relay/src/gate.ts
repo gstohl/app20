@@ -20,6 +20,7 @@ const GLOBAL_CONCURRENT = 200;
 
 function policy(budget: GateBudget): GatePolicy {
   switch (budget) {
+    case "privy-bootstrap": return { sessionRate: 20, sessionConcurrent: 2, serviceRate: 300, serviceConcurrent: 30, leaseMs: 30_000 };
     case "ohttp-prover": return { sessionRate: 10, sessionConcurrent: 1, serviceRate: 500, serviceConcurrent: 40, leaseMs: 240_000 };
     case "ohttp-discovery": return { sessionRate: 120, sessionConcurrent: 4, serviceRate: 1_200, serviceConcurrent: 100, leaseMs: 60_000 };
     case "rpc-submit": return { sessionRate: 20, sessionConcurrent: 2, serviceRate: 300, serviceConcurrent: 40, leaseMs: 120_000 };
@@ -32,8 +33,8 @@ function validAcquire(value: unknown): value is GateAcquireRequest {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return typeof item.subject === "string" && item.subject.length > 0 && item.subject.length <= 200 &&
-    typeof item.service === "string" && ["prover", "discovery", "starknet-sepolia", "starknet-mainnet"].includes(item.service) &&
-    typeof item.budget === "string" && ["ohttp-prover", "ohttp-discovery", "rpc-read", "rpc-costly", "rpc-submit"].includes(item.budget);
+    typeof item.service === "string" && ["privy-bootstrap", "prover", "discovery", "starknet-sepolia", "starknet-mainnet"].includes(item.service) &&
+    typeof item.budget === "string" && ["privy-bootstrap", "ohttp-prover", "ohttp-discovery", "rpc-read", "rpc-costly", "rpc-submit"].includes(item.budget);
 }
 
 export class RelayGateDurableObject {

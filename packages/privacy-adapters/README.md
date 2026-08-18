@@ -1,14 +1,14 @@
-# `@vlt20/privacy-adapters`
+# `@app20/privacy-adapters`
 
-Fail-closed wallet and network policy plus normalized privacy intents for VLT20.
+Fail-closed wallet and network policy plus normalized privacy intents for APP20.
 
 ## Deployment policy
 
-| Network | Ready Wallet Standard adapter | Privy browser adapter | Localnet adapter |
-| --- | --- | --- | --- |
-| Mainnet | Allowed | Blocked | Blocked |
-| Sepolia | Allowed | Allowed | Blocked |
-| Localnet | Blocked | Blocked | Build-gated only |
+| Network | Ready adapter | Other Wallet Standard | Privy browser adapter | Localnet adapter |
+| --- | --- | --- | --- | --- |
+| Mainnet | Allowed | Blocked | Blocked | Blocked |
+| Sepolia | Allowed | Blocked | Allowed | Blocked |
+| Localnet | Blocked | Blocked | Blocked | Build-gated only |
 
 The policy is enforced before an adapter may sign, discover, prove, or submit. A hidden button is not a security boundary. `PolicyBoundPrivacyAdapter` separates `build()` from `submit()`, so build-only sessions cannot accidentally call the delegate submission method.
 

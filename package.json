@@ -1,22 +1,24 @@
 {
-  "name": "vlt20",
+  "name": "app20",
   "version": "0.1.0",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "workers/*"
   ],
   "type": "module",
   "scripts": {
     "dev": "vite",
     "dev:localnet": "node scripts/localnet-app.mjs",
     "localnet:stop": "node scripts/localnet-app.mjs --stop",
-    "build": "npm run typecheck && vite build && npm run check:browser-leaks",
+    "build": "npm run build:packages && npm run typecheck && npm run typecheck:packages && vite build && npm run check:browser-leaks",
+    "build:packages": "npm run build --workspace @app20/privy",
     "preview": "vite preview",
     "deploy:cf": "npm run build && wrangler deploy",
     "devnet": "bash scripts/devnet.sh",
     "devnet:stop": "bash scripts/devnet.sh stop",
     "test": "vitest run src",
-    "test:packages": "npm test --workspace @vlt20/privacy-adapters && npm test --workspace strk20-privy",
+    "test:packages": "npm test --workspace @app20/domain && npm test --workspace @app20/near-intents && npm test --workspace @app20/policy-client && npm test --workspace @app20/privacy-adapters && npm test --workspace @app20/privy && npm test --workspace @app20/relay",
     "test:all": "npm test && npm run test:packages",
     "check:browser-leaks": "node scripts/check-browser-leaks.mjs dist",
     "test:ui": "node scripts/ui-test.mjs",
@@ -24,29 +26,38 @@
     "pool:setup": "bash scripts/pool-harness-setup.sh",
     "test:e2e:pool": "bash scripts/pool-harness-setup.sh --check && PATH=\"$PWD/vendor/bin:$PATH\" npm --prefix pool-harness test",
     "typecheck": "tsc --noEmit",
+    "typecheck:packages": "npm run typecheck --workspace @app20/domain && npm run typecheck --workspace @app20/near-intents && npm run typecheck --workspace @app20/policy-client && npm run typecheck --workspace @app20/privacy-adapters && npm run typecheck --workspace @app20/privy && npm run typecheck --workspace @app20/relay",
     "deploy:helper:mainnet": "bash scripts/deploy-mail-mainnet.sh"
   },
   "dependencies": {
+    "@app20/domain": "0.1.0",
+    "@app20/near-intents": "0.1.0",
+    "@app20/policy-client": "0.1.0",
     "@fontsource-variable/newsreader": "^5.3.0",
     "@fontsource-variable/source-sans-3": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@noble/curves": "^2.3.0",
     "@noble/hashes": "^2.3.0",
+    "@privy-io/react-auth": "3.37.2",
+    "@starkware-libs/starknet-privacy-sdk": "file:packages/privy/vendor/starkware-libs-starknet-privacy-sdk-0.14.3-rc.5.tgz",
+    "@app20/privacy-adapters": "0.1.0",
     "@starknet-io/get-starknet-discovery": "6.0.3",
     "@starknet-io/get-starknet-wallet-standard": "6.0.3",
+    "@tanstack/react-query": "5.101.4",
     "@tanstack/react-router": "^1.170.28",
     "qrcode.react": "^4.2.0",
-    "react": "19.2.1",
-    "react-dom": "19.2.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "@app20/privy": "0.1.0",
     "starknet": "10.5.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@starknet-io/types-js": "0.10.3",
-    "@types/node": "24.10.2",
-    "@types/react": "19.2.7",
-    "@types/react-dom": "^19.2.4",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "^6.0.5",
     "typescript": "^5.9.3",
     "vite": "^8.2.1",
@@ -54,6 +65,9 @@
     "wrangler": "^4.123.0"
   },
   "overrides": {
+    "axios": "1.18.0",
+    "uuid": "11.1.1",
+    "ws": "8.21.3",
     "@starknet-io/types-js": "0.10.3",
     "@starknet-io/get-starknet-wallet-standard": {
       "@starknet-io/types-js": "0.10.3"

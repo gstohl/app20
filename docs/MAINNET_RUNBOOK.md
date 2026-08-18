@@ -1,4 +1,4 @@
-# Quietline Mainnet Scoring Runbook
+# APP20 Mainnet Scoring Runbook
 
 Human checklist for the Phase 4 scoring pass. A person with the Ready extension executes every financial action. Agents do not hold keys, do not submit mainnet txs, and do not invent RPC / discovery / proving URLs.
 
@@ -17,7 +17,7 @@ Copy these. Do not substitute Sepolia values from `.env.example` or the starter 
 | Pool Voyager | <https://voyager.online/contract/0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a> | Day-0, skill links |
 | STRK token | `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d` | plan §4, `src/utils/constants.ts` |
 | Day-0 CLI RPC | `https://rpc.starknet.lava.build` | Day-0 (sncast / fee read only) |
-| App RPC | Alchemy key in `VITE_PROVIDER_URL`; prefix is already in `src/utils/constants.ts` | `.env.example`, `constants.ts` |
+| App RPC | Same-origin `/api/starknet/mainnet`; real origin and credential are Cloudflare Worker secrets | `workers/relay`, `wrangler.jsonc` |
 | Helper constructor arg | the pool address above, as a single felt | `cairo/src/lib.cairo` `constructor(pool)` |
 | Scoring JSON | `strk20.json` | README, Day-0 |
 | Wallet | Ready on **Mainnet** | plan §0, README |
@@ -41,16 +41,11 @@ Do this before any mainnet declare, deploy, or shield.
 
 ### 1.1a Which wallet — check this before spending anything
 
-Quietline is wallet-neutral: it enables privacy actions for **any** wallet that declares Wallet API / spec `>= 0.10` and exposes the STRK20 methods (`src/lib/strk20.ts`). It does not require one specific brand.
+APP20 is intentionally **Ready-only on Mainnet**. It checks the Wallet Standard feature identifier against the reviewed Ready/Argent lineage before constructing the Mainnet privacy account, then still requires Wallet API/spec `>= 0.10` and both STRK20 methods. Display names alone are ignored because an extension can spoof one.
 
-What matters is the **dapp-facing** STRK20 API, which is not the same as a wallet having in-wallet privacy features. A wallet can ship privacy in its own UI and still not expose it to dapps.
+Privy bootstrap is hard-coded to Sepolia and cannot return Mainnet configuration. Unreviewed Wallet Standard feature IDs are blocked on both live networks. This is a fail-closed product-routing policy, not cryptographic brand attestation.
 
-Connect first and read the **capability diagnostic** before spending anything. When a wallet fails the check, the diagnostic reports the declared `walletApiVersions` and `specVersions`, the minimum required, and whether `strk20InvokeTransaction` / `strk20Balances` exist on the account. That tells you in seconds whether the wallet simply has not shipped the dapp-facing API yet.
-
-- **Ready** — known to work for the dapp-facing STRK20 API; use it for the scoring run.
-- **Xverse** — ships in-wallet privacy; dapp-facing STRK20 support was still in progress when this was written. Connect it and read the diagnostic to find out. If it fails the check, fall back to Ready rather than trying to work around the gate.
-
-Never weaken or bypass the capability gate to make a wallet appear to work. An incapable wallet must fail visibly.
+Connect Ready and read the capability diagnostic before spending. Never weaken or bypass either the Ready identity policy or capability gate.
 
 ### 1.2 How much real STRK to hold
 
@@ -93,64 +88,43 @@ If `get_fee_amount` returns 4 STRK and `A` is 0.1 STRK, the three pool operation
 
 Enter the intended amount in the shipped UI. Before a Mainnet value action, verify the native preflight says `SN_MAIN`, the exact STRK and base-unit amount, the live `get_fee_amount`, the public balance and required `amount + fee`, the public shield/unshield warning, and “moves real funds.” Cancel if any value is unavailable or unexpected.
 
-### 1.3 Rotate the Alchemy key into `.env.local`
+### 1.3 Configure the restricted Cloudflare RPC relay
 
-`VITE_PROVIDER_URL` is the **key only**, not a full URL. `src/utils/constants.ts` prefixes:
+The browser uses only same-origin `/api/starknet/mainnet` and `/api/starknet/sepolia`. Never put an RPC key or full credentialed RPC URL in `VITE_*`.
 
-- Mainnet: `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/` + key
-- Sepolia: `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/` + key
-
-Plan §11: rotate the key if it has ever shipped in a client bundle.
-
-1. Create a new Alchemy Starknet key at <https://alchemy.com>.
-2. Revoke the old key.
-3. From the repo root:
+Configure the real origins and optional authorization with Worker Secrets:
 
 ```bash
-cp .env.example .env.local
+npx wrangler secret put STARKNET_MAINNET_RPC_URL
+npx wrangler secret put STARKNET_MAINNET_AUTHORIZATION
+npx wrangler secret put STARKNET_SEPOLIA_RPC_URL
+npx wrangler secret put STARKNET_SEPOLIA_AUTHORIZATION
 ```
 
-1. Edit `.env.local` (never commit it; `.gitignore` already excludes `.env.*`):
+Omit an authorization secret when the provider URL itself carries its credential. The Worker applies a JSON-RPC method allowlist, body limits, generic errors, and Durable Object quotas; it never reflects the upstream URL or response headers.
 
-```text
-VITE_PROVIDER_URL=<rotated_alchemy_key_only>
-VITE_MAIL_HELPER_SEPOLIA=0x0
-VITE_MAIL_HELPER_MAINNET=0x0
-```
+Leave `VITE_MAIL_HELPER_MAINNET=0x0` until §2 finishes. Every `VITE_*` value remains public and must contain only public metadata.
 
-Leave `VITE_MAIL_HELPER_MAINNET=0x0` until §2 finishes. The inbox disables send/register when the helper is `0x0` (`isConfiguredMailHelper` in `src/lib/mail-actions.ts`).
+### 1.4 Cloudflare Worker demo
 
-Every `VITE_*` value is baked into the browser bundle. Treat the Alchemy key as public once the site is deployed.
+APP20 requires the Worker deployment; a Pages-only static deployment has no bootstrap, OHTTP, RPC, or distributed quota boundary.
 
-### 1.4 Cloudflare demo already deployed
-
-The SPA must be live before you point the GitHub **Website** field at it. A first deploy with helper `0x0` is fine; you will redeploy after §2.
-
-**Path A — Cloudflare Pages (README):**
-
-1. Cloudflare → **Workers & Pages → Create application → Pages → Connect to Git**.
-2. Select `gstohl/quietline`.
-3. Production branch `main`.
-4. Build command `npm run build`.
-5. Build output directory `dist` (repository root `/`).
-6. **Settings → Environment variables** (production):
-   - `VITE_PROVIDER_URL` = rotated Alchemy key only
-   - `VITE_MAIL_HELPER_SEPOLIA` = `0x0`
-   - `VITE_MAIL_HELPER_MAINNET` = `0x0` for this first deploy
-7. Deploy.
-8. Open the printed URL and `/inbox` directly. Both must serve the SPA (`public/_redirects` + `wrangler.jsonc` `not_found_handling`).
-
-**Path B — Wrangler Workers static assets (README):**
+1. Set the reviewed public Vite metadata and OHTTP public-key pins from `.env.example` in the build environment.
+2. Configure every Worker secret listed in `workers/relay/README.md` without pasting values into a transcript.
+3. Validate without deploying:
 
 ```bash
-npm ci
-npx wrangler login
-npm run deploy:cf
+npm ci --ignore-scripts
+npm run test:all
+npm run build
+npx wrangler deploy --dry-run --outdir /tmp/app20-worker-dryrun
 ```
 
-`npm run deploy:cf` is `npm run build && wrangler deploy`. It reads `.env.local` at build time. Do not commit `.env.local` or `dist/`.
+4. Only after explicit approval: `npm run deploy:cf`.
+5. Verify `https://app20.gstohl.com/vault`, `/mail/inbox`, and `/pay` directly.
+6. Confirm a Mainnet Privy attempt fails before any signer request and that the browser bundle contains no RPC/prover/discovery origin or credential canary.
 
-Record the public HTTPS origin Cloudflare prints. You will paste it into the GitHub **Website** field first, then into `strk20.json` `demo_url` (§5).
+Record the reviewed HTTPS origin for the GitHub Website field and `strk20.json`.
 
 ---
 
@@ -347,15 +321,16 @@ Notes mature **~10 blocks** after creation (`wallet-api-route.md`, plan Phase 3)
 
 Starknet block times vary; wait until Voyager shows the shield **at least 10 blocks behind latest**, then add a couple of extra blocks.
 
-Do **not** compose shield + send in one wallet batch to skip the wait. That publishes “this address deposited amount A” next to the mail it funded (concepts.md “Composition leaks”). The honest Quietline story is: shield first, later private send with no public ERC-20 leg.
+Do **not** compose shield + send in one wallet batch to skip the wait. That publishes “this address deposited amount A” next to the mail it funded (concepts.md “Composition leaks”). The honest APP20 story is: shield first, then send later. The mail batch includes one fixed 7-base-unit helper funding withdrawal that is public but does not identify the mailbox sender or recipient.
 
 ### 3.4 (b) Mail send / memo-carrying private transfer (`privacy_invoke`)
 
 This is the **pool-touching** Quietline action. Ready builds `strk20InvokeTransaction` from `buildMailActions` (`src/lib/mail-actions.ts`):
 
 1. optional private `transfer` of attached STRK to Bob,
-2. `transfer` `amount: "OPEN"` back to Alice (recovery slot for helper dust),
-3. `invoke` to the helper with calldata:
+2. fixed `withdraw` of **7 STRK base units** to `QuietlineMail`, funding it inside this same atomic batch,
+3. `transfer` `amount: "OPEN"` back to Alice (recovery slot filled by the helper),
+4. `invoke` to the helper with calldata:
 
 ```text
 token,
@@ -367,7 +342,7 @@ nonce_0, nonce_1,
 ct_len, ...ct            ← max 140 felts (cairo/src/lib.cairo MAX_CT_FELTS)
 ```
 
-The pool calls `QuietlineMail.privacy_invoke`. The helper emits `MessagePosted` with **no wallet address**. Voyager sender is the relayer.
+The pool calls `QuietlineMail.privacy_invoke`. The helper returns the 7 base units into the OPEN recovery note and emits `MessagePosted` with **no wallet address**. Voyager sender is the relayer. The fixed helper address, 7-base-unit withdrawal, ciphertext size, and timing remain public.
 
 **Clicks (Alice’s browser profile):**
 
@@ -555,15 +530,15 @@ Atomicity: one `strk20InvokeTransaction` is one pool transaction. If the helper 
 
 Film the **live** `demo_url` + two Ready profiles. Speak the honest table; do not claim mixer-level privacy.
 
-Quietline hides **who wrote whom and what they said**. It does **not** hide that someone used the pool at that time.
+Quietline encrypts **what was said** and omits direct sender/recipient addresses from the helper event. Relationship anonymity still depends on STRK20, relayer behavior, anonymity-set size, RPC lookups, and timing; it is not guaranteed.
 
 | Time | Shot | On screen | Say this |
 | --- | --- | --- | --- |
-| 0:00–0:30 | Title + limits | README / inbox privacy strip: Hidden = body + recipient link; Visible = helper activity, ciphertext, timing | “Encrypted on-chain mail. Observer sees *that* a pool tx happened, and when. Not who, not what. Two-person demos are timing-correlatable.” |
+| 0:00–0:30 | Title + limits | README / inbox privacy strip: Hidden = body + recipient link; Visible = helper activity, ciphertext, timing | “Encrypted on-chain mail. The helper event omits direct wallet addresses, but observers still see pool/helper use and timing. Two-person demos are timing-correlatable.” |
 | 0:30–1:00 | Connect | Wallet network = Mainnet. Quietline chip **MAINNET**. Wallet rail showing **0.1 STRK** and exact base units | “Wallet on SN_MAIN. Shield is a public deposit. We already waited ten blocks after shielding so this send is not glued to the deposit.” |
 | 1:00–1:30 | Public directory | Alice inbox card 01, then cut to Bob inbox card 01. Show `register_pubkey` as a **normal** account tx if you still have the receipt | “Mail keys are device x25519 keys in this browser profile. This public directory is not a viewing key. The dapp never touches `k`.” |
 | 1:30–2:00 | Encrypt & send | Alice compose: Bob’s address, short memo, no huge attachment. Ready privacy popup. Receipt hash | “One `privacy_invoke` through the pool. Wallet substitutes `${poolAddress}` and the open note. Pool is `msg.sender` on the helper.” |
-| 2:00–2:30 | Voyager honesty | `https://voyager.online/tx/<send_hash>`: relayer sender, huge nonce, Alice absent. Helper `MessagePosted` has no addresses. Pool event exists | “Eligibility is the pool event, not `tx.sender`. If you grep Alice as sender you get nothing — that’s the point.” |
+| 2:00–2:30 | Voyager honesty | `https://voyager.online/tx/<send_hash>`: relayer sender, huge nonce, Alice absent. Helper `MessagePosted` has no addresses. Pool event exists | “Eligibility is the pool event, not `tx.sender`. Alice is absent from the helper event, but timing and surrounding public actions can still suggest relationships.” |
 | 2:30–3:00 | Discover + decrypt | Bob profile: **Scan public events** → plaintext. Alice scan does not show Bob’s body. Optional: flash the hidden-vs-visible table again | “Bob trial-decrypts locally. No server holds plaintext. Optional private STRK memo rides the same tx; shield/unshield amounts stay public.” |
 
 Do not show backup phrases, Alchemy keys, or Ready seed phrases. Do not demo a hosted inbox. End on the limit, not a bigger claim.
@@ -598,7 +573,7 @@ Fill while you work. Do not commit this table if it contains seeds.
 
 ## Done when
 
-- [ ] Ready on `SN_MAIN`, rotated Alchemy key only in `VITE_PROVIDER_URL`, Cloudflare origin loads `/` and `/inbox`
+- [ ] Ready on `SN_MAIN`; credentialed RPC exists only as a Worker secret; `app20.gstohl.com` loads `/vault` and `/mail/inbox`
 - [ ] `QuietlineMail` on `SN_MAIN` with constructor pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`
 - [ ] `VITE_MAIL_HELPER_MAINNET` set and site redeployed
 - [ ] Both identities `register_pubkey`’d in separate browser profiles

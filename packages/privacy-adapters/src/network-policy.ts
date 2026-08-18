@@ -1,5 +1,9 @@
 export type PrivacyNetwork = "mainnet" | "sepolia" | "localnet";
-export type PrivacyAdapterKind = "ready" | "privy" | "localnet";
+export type PrivacyAdapterKind =
+  | "ready"
+  | "wallet-standard"
+  | "privy"
+  | "localnet";
 export type PrivacySubmissionMode = "live" | "build-only";
 export type PrivacyOperation =
   | "connect"
@@ -25,6 +29,7 @@ export interface NetworkPolicyDecision {
   code:
     | "allowed"
     | "mainnet-ready-only"
+    | "unreviewed-wallet-standard"
     | "localnet-adapter-only"
     | "localnet-not-live"
     | "build-only";
@@ -54,6 +59,16 @@ export function evaluateNetworkPolicy(
       submittable: false,
       code: "mainnet-ready-only",
       reason: "Mainnet privacy operations are available through Ready only.",
+    };
+  }
+
+  if (input.adapter === "wallet-standard") {
+    return {
+      allowed: false,
+      submittable: false,
+      code: "unreviewed-wallet-standard",
+      reason:
+        "Use Ready Wallet Standard on live networks or the Privy rail on Sepolia.",
     };
   }
 
@@ -127,4 +142,10 @@ const READY_WALLET_FEATURE_IDS = new Set(["ready", "argentx"]);
 
 export function isReadyWalletFeatureId(id: string): boolean {
   return READY_WALLET_FEATURE_IDS.has(normalizeWalletId(id));
+}
+
+export function adapterKindForWalletFeatureId(
+  id: string,
+): "ready" | "wallet-standard" {
+  return isReadyWalletFeatureId(id) ? "ready" : "wallet-standard";
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adapterKindForWalletFeatureId,
   assertSubmittableNetworkPolicy,
   evaluateNetworkPolicy,
   isReadyWalletFeatureId,
@@ -16,13 +17,16 @@ describe("evaluateNetworkPolicy", () => {
   }> = [
     { network: "mainnet", adapter: "ready", allowed: true },
     { network: "mainnet", adapter: "privy", allowed: false },
+    { network: "mainnet", adapter: "wallet-standard", allowed: false },
     { network: "mainnet", adapter: "localnet", allowed: false },
     { network: "sepolia", adapter: "ready", allowed: true },
     { network: "sepolia", adapter: "privy", allowed: true },
+    { network: "sepolia", adapter: "wallet-standard", allowed: false },
     { network: "sepolia", adapter: "localnet", allowed: false },
     { network: "localnet", adapter: "localnet", allowed: true },
     { network: "localnet", adapter: "ready", allowed: false },
     { network: "localnet", adapter: "privy", allowed: false },
+    { network: "localnet", adapter: "wallet-standard", allowed: false },
   ];
 
   for (const testCase of liveCases) {
@@ -81,4 +85,9 @@ describe("isReadyWalletFeatureId", () => {
     "rejects an unreviewed or display-name-only id %s",
     (id) => expect(isReadyWalletFeatureId(id)).toBe(false),
   );
+
+  it("classifies unreviewed feature ids as generic Wallet Standard", () => {
+    expect(adapterKindForWalletFeatureId("argentX")).toBe("ready");
+    expect(adapterKindForWalletFeatureId("xverse")).toBe("wallet-standard");
+  });
 });

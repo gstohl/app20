@@ -1,6 +1,7 @@
 use quietline_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use quietline_mail::{
-    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, MAX_CT_FELTS, OpenNoteDeposit,
+    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS,
+    OpenNoteDeposit,
     QuietlineMail,
 };
 use snforge_std::{
@@ -176,7 +177,7 @@ fn zero_balance_returns_empty_span() {
 }
 
 #[test]
-fn dust_balance_is_approved_and_echoed() {
+fn only_fixed_recovery_amount_is_approved_and_echoed() {
     let pool = contract_address(0x103);
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, token) = deploy_token(pool, 1_000);
@@ -193,8 +194,12 @@ fn dust_balance_is_approved_and_echoed() {
     let deposit = *deposits.at(0);
     assert(deposit.note_id == 0x717, 'wrong note id');
     assert(deposit.token == token_address, 'wrong token');
-    assert(deposit.amount == 100, 'wrong amount');
-    assert(token.allowance(helper_address, pool) == dust, 'dust was not approved');
+    assert(deposit.amount == MAIL_RECOVERY_AMOUNT, 'wrong amount');
+    assert(
+        token.allowance(helper_address, pool) == MAIL_RECOVERY_AMOUNT.into(),
+        'wrong recovery approval',
+    );
+    assert(token.balance_of(helper_address) == dust, 'balance moved early');
 }
 
 #[test]

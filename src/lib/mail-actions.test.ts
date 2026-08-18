@@ -7,6 +7,7 @@ import {
   buildMemoTransferActions,
   buildOtcAcceptActions,
   computeActionId,
+  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
   Strk20RevertedError,
   Strk20SubmissionCallbackError,
   Strk20WaitTimeoutError,
@@ -37,10 +38,16 @@ const baseInput = {
 };
 
 describe("mail STRK20 actions", () => {
-  it("creates a recovery note before using its literal invoke placeholder", () => {
+  it("atomically funds the helper before creating and consuming a recovery note", () => {
     const actions = buildMailActions(baseInput);
 
     expect(actions).toEqual([
+      {
+        type: "withdraw",
+        token: "0x456",
+        amount: "0x7",
+        recipient: "0x123",
+      },
       {
         type: "transfer",
         token: "0x456",
@@ -69,7 +76,7 @@ describe("mail STRK20 actions", () => {
     ]);
   });
 
-  it("places an optional private STRK transfer before recovery and invoke", () => {
+  it("places an optional private transfer before helper funding, recovery, and invoke", () => {
     const actions = buildMailActions({
       ...baseInput,
       attachmentAmount: 25n * 10n ** 17n,
@@ -81,6 +88,12 @@ describe("mail STRK20 actions", () => {
         token: "0x456",
         amount: "0x22b1c8c1227a0000",
         recipient: "0xabc",
+      },
+      {
+        type: "withdraw",
+        token: "0x456",
+        amount: "0x7",
+        recipient: "0x123",
       },
       {
         type: "transfer",
@@ -121,6 +134,7 @@ describe("mail STRK20 actions", () => {
       amount: "1000",
       record,
       actionId,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
     });
 
     const invoke = actions.at(-1);
@@ -132,7 +146,7 @@ describe("mail STRK20 actions", () => {
     );
   });
 
-  it("builds accept as transfer, recovery note, invoke and refuses non-STRK give", () => {
+  it("builds accept as transfer, helper funding, recovery, and invoke", () => {
     const offer = {
       dealId: `0x${"11".repeat(32)}`,
       give: {
@@ -151,11 +165,13 @@ describe("mail STRK20 actions", () => {
       recoveryAddress: "0xb0b",
       record,
       offer,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
       actionId: computeActionId("otc-accept-attempt", `0x${"aa".repeat(32)}`),
     });
 
     expect(actions.map((action) => action.type)).toEqual([
       "transfer",
+      "withdraw",
       "transfer",
       "invoke",
     ]);
@@ -166,20 +182,27 @@ describe("mail STRK20 actions", () => {
       recipient: "0xa11ce",
     });
     expect(actions[1]).toEqual({
+      type: "withdraw",
+      token: addrSTRK,
+      amount: "0x7",
+      recipient: "0x123",
+    });
+    expect(actions[2]).toEqual({
       type: "transfer",
       token: addrSTRK,
       amount: "OPEN",
       recipient: "0xb0b",
     });
-    if (actions[2].type !== "invoke") throw new Error("Expected invoke.");
-    expect(actions[2].calldata[1]).toBe("${poolAddress}");
-    expect(actions[2].calldata[2]).toBe("${openNoteIds[0]}");
+    if (actions[3].type !== "invoke") throw new Error("Expected invoke.");
+    expect(actions[3].calldata[1]).toBe("${poolAddress}");
+    expect(actions[3].calldata[2]).toBe("${openNoteIds[0]}");
 
     expect(() =>
       buildOtcAcceptActions({
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
         record,
+        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
         actionId: computeActionId("otc-accept-attempt", `0x${"bb".repeat(32)}`),
         offer: {
           ...offer,
@@ -212,6 +235,27 @@ describe("mail STRK20 actions", () => {
     ).toThrow(/helper/i);
   });
 
+  it("reasserts policy before the wallet receives any private action", async () => {
+    const invoke = vi.fn();
+    const policy = vi.fn(() => {
+      throw new Error("blocked by network policy");
+    });
+
+    await expect(
+      submitMail({
+        account: { strk20InvokeTransaction: invoke } as unknown as WalletAccountV6,
+        provider: {} as ProviderInterface,
+        policy,
+        helperAddress: "0x123",
+        recoveryAddress: "0xb0b",
+        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        record,
+      }),
+    ).rejects.toThrow("blocked by network policy");
+    expect(policy).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it("submits each mail or accept batch through one wallet call", async () => {
     const batches: WALLET_API.STRK20_ACTION[][] = [];
     const invoke = vi.fn(async (actions: WALLET_API.STRK20_ACTION[]) => {
@@ -232,17 +276,20 @@ describe("mail STRK20 actions", () => {
     await submitMail({
       account,
       provider,
+      policy: () => undefined,
       helperAddress: "0x123",
       recoveryAddress: "0xb0b",
       tokenAddress: addrSTRK,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
       record,
     });
     expect(invoke).toHaveBeenCalledTimes(1);
     expect(batches[0].map((action) => action.type)).toEqual([
+      "withdraw",
       "transfer",
       "invoke",
     ]);
-    expect(batches[0][0]).toMatchObject({
+    expect(batches[0][1]).toMatchObject({
       amount: "OPEN",
       recipient: "0xb0b",
     });
@@ -263,19 +310,22 @@ describe("mail STRK20 actions", () => {
     await submitOtcAccept({
       account,
       provider,
+      policy: () => undefined,
       helperAddress: "0x123",
       recoveryAddress: "0xb0b",
       offer,
       record,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
       actionId: computeActionId("otc-accept-attempt", `0x${"cc".repeat(32)}`),
     });
     expect(invoke).toHaveBeenCalledTimes(2);
     expect(batches[1].map((action) => action.type)).toEqual([
       "transfer",
+      "withdraw",
       "transfer",
       "invoke",
     ]);
-    expect(batches[1][1]).toMatchObject({
+    expect(batches[1][2]).toMatchObject({
       amount: "OPEN",
       recipient: "0xb0b",
     });
@@ -305,8 +355,10 @@ describe("mail STRK20 actions", () => {
       submitMail({
         account,
         provider,
+        policy: () => undefined,
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
+        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
         record,
       }),
     ).rejects.toBeInstanceOf(Strk20RevertedError);
@@ -328,8 +380,10 @@ describe("mail STRK20 actions", () => {
         {
           account,
           provider,
+          policy: () => undefined,
           helperAddress: "0x123",
           recoveryAddress: "0xb0b",
+          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
           record,
         },
         { timeoutMs: 5, onSubmitted: submitted },
@@ -357,8 +411,10 @@ describe("mail STRK20 actions", () => {
         {
           account,
           provider,
+          policy: () => undefined,
           helperAddress: "0x123",
           recoveryAddress: "0xb0b",
+          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
           record,
         },
         {

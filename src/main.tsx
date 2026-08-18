@@ -8,19 +8,43 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import AppShell from "@/app/components/AppShell";
+import ReadyRailGate from "@/app/components/ReadyRailGate";
+import AppProviders from "@/app/providers";
 import InboxPage from "@/app/inbox/page";
+import IntentsPage from "@/app/intents/page";
 import PayPage from "@/app/pay/page";
 import VaultPage from "@/app/vault/page";
+import WorkflowsPage from "@/app/workflows/page";
 import { CANONICAL_ROUTES } from "@/app/routes";
 import "@/app/globals.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
 
 function RootLayout() {
-  return <AppShell renderLocalnetTools={renderLocalnetTools} />;
+  return (
+    <AppProviders>
+      <AppShell renderLocalnetTools={renderLocalnetTools} />
+    </AppProviders>
+  );
 }
 
 const rootRoute = createRootRoute({ component: RootLayout });
+
+function ReadyMailPage() {
+  return (
+    <ReadyRailGate moduleName="Mail">
+      <InboxPage />
+    </ReadyRailGate>
+  );
+}
+
+function ReadyPaymentPage() {
+  return (
+    <ReadyRailGate moduleName="Payment Request">
+      <PayPage />
+    </ReadyRailGate>
+  );
+}
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -55,13 +79,25 @@ const legacyInboxRoute = createRoute({
 const mailboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/mail/inbox",
-  component: InboxPage,
+  component: ReadyMailPage,
+});
+
+const intentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/intents",
+  component: IntentsPage,
+});
+
+const workflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workflows",
+  component: WorkflowsPage,
 });
 
 const payRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/pay",
-  component: PayPage,
+  component: ReadyPaymentPage,
 });
 
 const router = createRouter({
@@ -71,6 +107,8 @@ const router = createRouter({
     mailRoute,
     legacyInboxRoute,
     mailboxRoute,
+    intentsRoute,
+    workflowsRoute,
     payRoute,
   ]),
 });

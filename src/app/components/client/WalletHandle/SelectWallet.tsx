@@ -6,6 +6,10 @@ import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useRef, useState } from "react";
 import { detectStrk20Capability } from "@/lib/strk20";
 import {
+  assertWalletOperationPolicy,
+  isSelectablePrivacyWallet,
+} from "@/lib/wallet-policy";
+import {
   chainIdFromStandardAccount,
   describeWalletConnectError,
 } from "@/lib/wallet-connect";
@@ -17,10 +21,6 @@ import {
 import styles from "../../../uni.module.css";
 import { useStoreWallet } from "../../Wallet/walletContext";
 import { useFrontendProvider } from "../provider/providerContext";
-
-function normalizeId(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
 
 export default function SelectWallet({
   variant = "ctaBig",
@@ -99,13 +99,16 @@ export default function SelectWallet({
 
       try {
         const providerIndex = providerIndexForChain(chainId);
+        assertWalletOperationPolicy(selectedWallet, providerIndex, "connect");
         setAddressAccount(validateAndParseAddress(account.address));
         setChain(chainId);
         setCurrentFrontendProviderIndex(providerIndex);
-      } catch {
+      } catch (error) {
         disconnect();
         setConnectionNotice(
-          "Quietline could not read the wallet's switched account. Reconnect on Starknet Sepolia or Mainnet.",
+          error instanceof Error
+            ? error.message
+            : "APP20 could not read the switched account. Reconnect on an allowed network.",
         );
       }
     });
@@ -119,9 +122,7 @@ export default function SelectWallet({
     setCurrentFrontendProviderIndex,
   ]);
 
-  const pickable = wallets.filter(
-    (wallet) => !normalizeId(wallet.name).includes("metamask"),
-  );
+  const pickable = wallets.filter(isSelectablePrivacyWallet);
 
   useEffect(() => {
     if (!pickerOpen) {
@@ -169,6 +170,11 @@ export default function SelectWallet({
   async function handleSelectedWallet(
     selectedWallet: WalletWithStarknetFeatures,
   ) {
+    if (!isSelectablePrivacyWallet(selectedWallet)) {
+      throw new Error(
+        "APP20 accepts Ready Wallet Standard on live networks. Use the separate Privy rail on Sepolia.",
+      );
+    }
     // Authorize first. Ready refuses wallet_requestChainId with
     // "Not preauthorized" until this origin has been approved.
     const { accounts: standardAccounts } = await walletV6.standardConnect(
@@ -187,6 +193,14 @@ export default function SelectWallet({
       );
     }
     const providerIndex = providerIndexForChain(chainId);
+    try {
+      assertWalletOperationPolicy(selectedWallet, providerIndex, "connect");
+    } catch (error) {
+      await selectedWallet.features["standard:disconnect"].disconnect().catch(
+        () => undefined,
+      );
+      throw error;
+    }
     const provider = myFrontendProviders[providerIndex];
 
     const walletAccount = await WalletAccountV6.connect(
@@ -289,16 +303,12 @@ export default function SelectWallet({
           </div>
         ) : (
           <div className={styles.walletHint}>
-            No Starknet Wallet Standard extension was detected. Examples include{" "}
+            Ready Wallet Standard was not detected. Install{" "}
             <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
               Ready
-            </a>{" "}
-            and{" "}
-            <a href="https://www.xverse.app/" target="_blank" rel="noreferrer">
-              Xverse
             </a>
-            . Privacy actions require the installed wallet to expose the
-            dapp-facing STRK20 API.
+            {" "}for the Mainnet rail, or use the separate Privy rail on
+            Sepolia. Privacy actions still require the dapp-facing STRK20 API.
           </div>
         )}
 

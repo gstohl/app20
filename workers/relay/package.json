@@ -1,9 +1,12 @@
 {
-  "name": "@strk20/cloudflare-relay",
+  "name": "@app20/relay",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": "./src/index.ts",
+  "dependencies": {
+    "@privy-io/node": "0.8.0"
+  },
   "scripts": {
     "test": "node --test --experimental-test-coverage test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json",
@@ -11,8 +14,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250301.0",
-    "@types/node": "^22.13.4",
-    "typescript": "^5.7.3",
-    "wrangler": "^4.11.0"
+    "@types/node": "24.10.2",
+    "typescript": "5.9.3",
+    "wrangler": "4.123.0"
   }
 }

@@ -13,8 +13,21 @@ const forbiddenMarkers = [
   "DISCOVERY_UPSTREAM_URL",
   "DISCOVERY_UPSTREAM_AUTHORIZATION",
   "STRK20_DISCOVERY_URL",
+  "STARKNET_MAINNET_RPC_URL",
+  "STARKNET_SEPOLIA_RPC_URL",
+  "STARKNET_MAINNET_AUTHORIZATION",
+  "STARKNET_SEPOLIA_AUTHORIZATION",
   "OHTTP_SESSION_SECRET",
   "PROXY_IDENTITY_HMAC_SECRET",
+  "NEAR_INTENTS_API_KEY",
+  "ONE_CLICK_API_KEY",
+  "ONE_CLICK_PARTNER_JWT",
+  "INTENTS_UPSTREAM_AUTHORIZATION",
+  "POLICY_ENCLAVE_URL",
+  "POLICY_ENCLAVE_AUTHORIZATION",
+  "POLICY_ENCLAVE_PRIVATE_KEY",
+  "TEE_POLICY_SIGNING_KEY",
+  "PHALA_API_KEY",
   "@privy-io/node",
   "src/proxy/server",
 ];
@@ -26,9 +39,22 @@ const privateEnvironmentNames = [
   "DISCOVERY_UPSTREAM_URL",
   "DISCOVERY_UPSTREAM_AUTHORIZATION",
   "STRK20_DISCOVERY_URL",
+  "STARKNET_MAINNET_RPC_URL",
+  "STARKNET_SEPOLIA_RPC_URL",
+  "STARKNET_MAINNET_AUTHORIZATION",
+  "STARKNET_SEPOLIA_AUTHORIZATION",
   "RPC_URL",
   "OHTTP_SESSION_SECRET",
   "PROXY_IDENTITY_HMAC_SECRET",
+  "NEAR_INTENTS_API_KEY",
+  "ONE_CLICK_API_KEY",
+  "ONE_CLICK_PARTNER_JWT",
+  "INTENTS_UPSTREAM_AUTHORIZATION",
+  "POLICY_ENCLAVE_URL",
+  "POLICY_ENCLAVE_AUTHORIZATION",
+  "POLICY_ENCLAVE_PRIVATE_KEY",
+  "TEE_POLICY_SIGNING_KEY",
+  "PHALA_API_KEY",
 ];
 
 async function filesUnder(directory) {
@@ -57,10 +83,10 @@ async function main() {
     const value = process.env[name];
     return value && value.length >= 8 ? [{ name, value }] : [];
   });
-  const additionalCanaries = (process.env.VLT20_PRIVATE_CANARIES ?? "")
+  const additionalCanaries = (process.env.APP20_PRIVATE_CANARIES ?? "")
     .split("\n")
     .filter((value) => value.length >= 8)
-    .map((value, index) => ({ name: `VLT20_PRIVATE_CANARIES[${index}]`, value }));
+    .map((value, index) => ({ name: `APP20_PRIVATE_CANARIES[${index}]`, value }));
 
   for (const file of files) {
     const content = await readFile(file);
@@ -71,6 +97,24 @@ async function main() {
     for (const secret of [...secretValues, ...additionalCanaries]) {
       if (text.includes(secret.value)) {
         findings.push({ file, marker: `value of ${secret.name}` });
+      }
+    }
+    for (const match of text.matchAll(/https:\/\/[^\s"'`)<>{}]+/g)) {
+      try {
+        const url = new URL(match[0]);
+        const sensitiveServiceHost = /prover|discovery|indexer/i.test(
+          url.hostname,
+        );
+        const credentialedRpcHost =
+          /^starknet-.*\.g\.alchemy\.com$/i.test(url.hostname);
+        if (
+          (sensitiveServiceHost && !url.hostname.endsWith(".invalid")) ||
+          credentialedRpcHost
+        ) {
+          findings.push({ file, marker: "a private-service or credentialed RPC origin" });
+        }
+      } catch {
+        // Ignore a non-URL string fragment; fixed marker and canary checks remain.
       }
     }
   }

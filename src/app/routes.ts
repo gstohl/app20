@@ -2,6 +2,8 @@ export const CANONICAL_ROUTES = {
   home: "/vault",
   vault: "/vault",
   mail: "/mail/inbox",
+  intents: "/intents",
+  workflows: "/workflows",
   pay: "/pay",
 } as const;
 

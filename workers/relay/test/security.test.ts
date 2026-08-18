@@ -13,7 +13,7 @@ test("session cookie is opaque, pseudonymous, short-lived, and strictly scoped",
   const identifier = "did:privy:wallet-plaintext-identifier-canary";
   const cookie = await issueOhttpSession(identifier, baseEnv, 1_700_000_000_000);
   assert.equal(cookie.includes(identifier), false);
-  assert.match(cookie, /^strk20_ohttp_session=[A-Za-z0-9_.%-]+;/);
+  assert.match(cookie, /^app20_ohttp_session=[A-Za-z0-9_.%-]+;/);
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /Secure/);
   assert.match(cookie, /SameSite=Strict/);

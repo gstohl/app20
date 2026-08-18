@@ -14,11 +14,20 @@ const READ_METHODS = new Set([
   "starknet_chainId",
   "starknet_getBlockWithReceipts",
   "starknet_getBlockWithTxHashes",
+  "starknet_getBlockWithTxs",
+  "starknet_getBlockTransactionCount",
+  "starknet_getClass",
+  "starknet_getClassAt",
   "starknet_getClassHashAt",
+  "starknet_getEvents",
   "starknet_getNonce",
+  "starknet_getStorageAt",
+  "starknet_getTransactionByBlockIdAndIndex",
+  "starknet_getTransactionByHash",
   "starknet_getTransactionReceipt",
   "starknet_getTransactionStatus",
   "starknet_specVersion",
+  "starknet_syncing",
 ]);
 const COSTLY_METHODS = new Set(["starknet_estimateFee", "starknet_simulateTransactions"]);
 const SUBMISSION_METHODS = new Set(["starknet_addDeployAccountTransaction", "starknet_addInvokeTransaction"]);

@@ -1,4 +1,4 @@
-# strk20-privy
+# @app20/privy
 
 Reusable TypeScript integration for browser-owned and server-side Privy Starknet wallets with the STRK20 privacy pool.
 
@@ -44,7 +44,7 @@ For normal register → shield → private transfer → unshield flows, no new p
 ## Install
 
 ```bash
-npm install strk20-privy
+npm install @app20/privy
 ```
 
 The Privacy SDK is an optional peer because it is distributed through GitHub Packages:
@@ -62,10 +62,10 @@ Public wallet/deployment helpers work without the Privacy SDK. Private and mock 
 
 | Import | Purpose |
 | --- | --- |
-| `strk20-privy` | low-level Privy account, public transactions, proving/discovery abstractions |
-| `strk20-privy/client` | app-backend client combining Privy wallet signing with the authenticated proxy |
-| `strk20-privy/browser` | browser-safe signer, account/session client, OHTTP proving and discovery |
-| `strk20-privy/proxy` | multi-tenant access-token verification, quotas, validation, and prover forwarding |
+| `@app20/privy` | low-level Privy account, public transactions, proving/discovery abstractions |
+| `@app20/privy/client` | app-backend client combining Privy wallet signing with the authenticated proxy |
+| `@app20/privy/browser` | browser-safe signer, account/session client, OHTTP proving and discovery |
+| `@app20/privy/proxy` | multi-tenant access-token verification, quotas, validation, and prover forwarding |
 
 The proxy enrollment records a Privy Client ID as metadata, but authorization never trusts it alone. A valid Privy access token must verify against the enrolled **App ID and public verification key**. See [`docs/PROXY.md`](docs/PROXY.md) and the runnable [`demo/`](demo/).
 
@@ -79,7 +79,7 @@ import {
   BrowserStrk20Client,
   serviceDiscovery,
   serviceProver,
-} from "strk20-privy/browser";
+} from "@app20/privy/browser";
 
 const { signRawHash } = useSignRawHash();
 const client = new BrowserStrk20Client({
@@ -121,12 +121,12 @@ await session.invokeExternal({
 });
 ```
 
-This is the browser-owned seam used by VLT20's Privacy Mail Vault. Message plaintext must already be end-to-end encrypted before it enters the invocation payload.
+This is the browser-owned seam used by APP20's Privacy Mail Vault. Message plaintext must already be end-to-end encrypted before it enters the invocation payload.
 
 ## Legacy server-side shared prover
 
 ```ts
-import { PrivyStrk20Client } from "strk20-privy/client";
+import { PrivyStrk20Client } from "@app20/privy/client";
 
 const client = new PrivyStrk20Client({
   network: "sepolia",
@@ -154,7 +154,7 @@ This server-owned signing pattern is retained for integrations that explicitly a
 ## Start safely with the mock prover
 
 ```ts
-import { Strk20Privy, mockProver, contractDiscovery } from "strk20-privy";
+import { Strk20Privy, mockProver, contractDiscovery } from "@app20/privy";
 
 const client = new Strk20Privy({
   network: "sepolia",
@@ -206,7 +206,7 @@ import {
   Strk20Privy,
   serviceProver,
   serviceDiscovery,
-} from "strk20-privy";
+} from "@app20/privy";
 
 const client = new Strk20Privy({
   network: "sepolia",
@@ -299,7 +299,7 @@ contractDiscovery({
 Private operations are serialized per `network:address`. The built-in coordinator is shared by all `Strk20Privy` instances in one Node process. If the app has multiple replicas or serverless workers, provide a distributed coordinator backed by Redis or a database advisory lock:
 
 ```ts
-import type { PrivacyCoordinator } from "strk20-privy";
+import type { PrivacyCoordinator } from "@app20/privy";
 
 const privacyCoordinator: PrivacyCoordinator = {
   async acquire(key) {

@@ -103,7 +103,7 @@ export default function PayPage() {
       "No wallet is connected. Continue to the inbox, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
   } else if (!isStrk20Capable) {
     readinessMessage =
-      "The connected wallet does not expose the dapp-facing STRK20 API VLT20 requires. No private payment can be submitted.";
+      "The connected wallet does not expose the dapp-facing STRK20 API APP20 requires. No private payment can be submitted.";
   } else if (hasLocalMailSeed) {
     readinessMessage =
       "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
@@ -121,7 +121,7 @@ export default function PayPage() {
       "Ready to create an unsigned request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
   } else {
     creatorReadiness =
-      "This wallet does not expose VLT20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
+      "This wallet does not expose APP20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
   }
 
   function continueToInbox(replaceExisting = false) {
@@ -146,7 +146,7 @@ export default function PayPage() {
       setHandoffError(
         error instanceof Error
           ? error.message
-          : "VLT20 could not save this request in the current tab.",
+          : "APP20 could not save this request in the current tab.",
       );
     }
   }
@@ -165,7 +165,7 @@ export default function PayPage() {
     if (!isStrk20Capable) {
       setGeneratedRequest(null);
       setCreateError(
-        "The connected wallet is not exposing the STRK20 API VLT20 requires.",
+        "The connected wallet is not exposing the STRK20 API APP20 requires.",
       );
       return;
     }
@@ -185,7 +185,7 @@ export default function PayPage() {
       setCreateError(
         error instanceof Error
           ? error.message
-          : "VLT20 could not create this payment request.",
+          : "APP20 could not create this payment request.",
       );
     }
   }
@@ -212,8 +212,8 @@ export default function PayPage() {
         <header className={styles.intro}>
           <p className={styles.eyebrow}>
             {hasFragment
-              ? "VLT20 / PAYMENT REVIEW"
-              : "VLT20 / REQUEST PRIVATE STRK"}
+              ? "APP20 / PAYMENT REVIEW"
+              : "APP20 / REQUEST PRIVATE STRK"}
           </p>
           <h1>
             {hasFragment
@@ -222,7 +222,7 @@ export default function PayPage() {
           </h1>
           <p>
             {hasFragment
-              ? "Payment links are unauthenticated instructions. VLT20 decodes this invoice only from the URL fragment in your browser; the fragment is not sent in an HTTP request."
+              ? "Payment links are unauthenticated instructions. APP20 decodes this invoice only from the URL fragment in your browser; the fragment is not sent in an HTTP request."
               : "Create an unsigned STRK request without sending mail or touching the pool. The requester address, amount, memo, and expiry live in the URL fragment and are visible to anyone who receives the link."}
           </p>
         </header>
@@ -242,7 +242,11 @@ export default function PayPage() {
               {isConnected && !isStrk20Capable && strk20Capability ? (
                 <Strk20CapabilityDiagnostic capability={strk20Capability} />
               ) : null}
-              <InvoiceCard request={request} showPaymentActions={false} />
+              <InvoiceCard
+                request={request}
+                showPaymentActions={false}
+                showShareAction={false}
+              />
               <p className={styles.actionWarning}>
                 Continuing stores this decoded request in this tab. It does not
                 submit a payment. In the inbox, review it again and explicitly
@@ -299,7 +303,7 @@ export default function PayPage() {
                 {decodeError || "Checking the payment-link fragment…"}
               </p>
               <p className={styles.copy}>
-                Ask the requester for a fresh VLT20 payment link and verify
+                Ask the requester for a fresh APP20 payment link and verify
                 their full Starknet address through another channel.
               </p>
             </section>
@@ -381,7 +385,7 @@ export default function PayPage() {
               <p
                 className={`${styles.actionWarning} ${styles.paymentLinkWide}`}
               >
-                Shared links are reusable. VLT20 cannot globally mark an
+                Shared links are reusable. APP20 cannot globally mark an
                 unsigned link paid, so another browser or device can explicitly
                 approve it again. Prefer an expiry and stop sharing fulfilled
                 links.
@@ -431,7 +435,7 @@ export default function PayPage() {
       </main>
 
       <footer className={styles.footer}>
-        <Link to="/mail/inbox">Open Privacy Mail Vault</Link>
+        <Link to="/mail/inbox">Open APP20 Mail</Link>
         <span>
           {hasFragment
             ? "No link can authorize or auto-submit a payment."

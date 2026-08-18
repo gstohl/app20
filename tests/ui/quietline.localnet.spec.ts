@@ -36,6 +36,10 @@ async function screenshot(page: Page, name: string, testInfo: TestInfo) {
 
 async function connectLocalnet(page: Page, auditFocus = false) {
   const trigger = page.getByRole("button", { name: "Connect wallet" });
+  if ((await trigger.count()) === 0) {
+    await expect(page.getByTitle("Disconnect")).toBeVisible();
+    return;
+  }
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
   await expect(dialog).toBeVisible();
@@ -204,7 +208,7 @@ test("all Quietline localnet journeys", async ({
   browser,
   request,
 }, testInfo) => {
-  test.setTimeout(20 * 60_000);
+  test.setTimeout(30 * 60_000);
   const configResponse = await request.get(
     `${BASE_URL}/__quietline_localnet_wallet/config`,
   );
@@ -368,6 +372,7 @@ test("all Quietline localnet journeys", async ({
     });
     await expect(page.getByText(/Sent · record local/i)).toBeVisible();
     await expect(threadBody(page, compositeBody)).toBeVisible();
+    await page.getByText("What the chain sees", { exact: true }).click();
     await expect(
       page.getByText("Transaction hash", { exact: true }),
     ).toBeVisible();
@@ -406,6 +411,7 @@ test("all Quietline localnet journeys", async ({
     await expect(
       page.getByText("What the chain sees", { exact: true }),
     ).toBeVisible();
+    await page.getByText("What the chain sees", { exact: true }).click();
     await expect(
       page.getByText("Sender address", { exact: true }),
     ).toBeVisible();

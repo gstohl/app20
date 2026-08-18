@@ -3,6 +3,7 @@ import type { EncryptedMailRecord } from "./mail";
 import {
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
+  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
   buildMailInvokeActions,
   buildMemoTransferActions,
 } from "./strk20";
@@ -56,8 +57,9 @@ type BuildMailActionsInput = {
 };
 
 /**
- * Backward-compatible facade for the compose screen. Every helper invoke has a
- * recovery open note; an attachment adds one numeric transfer before it.
+ * Backward-compatible facade for the compose screen. Every helper invoke has
+ * explicit atomic helper funding plus a recovery OPEN note; an attachment adds
+ * one numeric transfer before those actions.
  */
 export function buildMailActions({
   helperAddress,
@@ -75,6 +77,7 @@ export function buildMailActions({
       helperAddress,
       tokenAddress,
       recoveryAddress: senderAddress,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
       record,
     });
   }
@@ -84,6 +87,7 @@ export function buildMailActions({
     recoveryAddress: senderAddress,
     recipient: recipientAddress,
     amount: attachmentAmount,
+    helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
     record,
   });
 }

@@ -1,15 +1,80 @@
-# Cloudflare relay Worker
+# `@app20/relay`
 
-A standalone Web-Standards relay for two fixed OHTTP services and fixed Starknet Sepolia/Mainnet RPC destinations. It is deliberately not a general proxy.
+Cloudflare Worker control plane for APP20. It serves the reviewed SPA, verifies Privy access tokens for the **Sepolia-only** browser vault, forwards opaque OHTTP messages to fixed destinations, and exposes restricted Starknet RPC relays. It is deliberately not a general proxy.
 
-## Bindings
+## Routes
 
-Set `PROVER_UPSTREAM_URL`, `DISCOVERY_UPSTREAM_URL`, `STARKNET_SEPOLIA_RPC_URL`, `STARKNET_MAINNET_RPC_URL`, and `OHTTP_SESSION_SECRET` as Worker secrets. Optional `*_AUTHORIZATION` secrets are the only authorization headers sent upstream. Bind `RELAY_GATE` to `RelayGateDurableObject` as shown in `wrangler.example.jsonc`. The production session secret must contain at least 32 UTF-8 bytes.
+| Route | Purpose |
+| --- | --- |
+| `POST /api/privacy/bootstrap` | Verify a Privy token, enumerate that user's Starknet wallet/quorum metadata, issue a pseudonymous OHTTP cookie, and return Sepolia public configuration |
+| `POST /api/ohttp/prover` | Forward bounded `message/ohttp-req` bytes to the fixed prover gateway |
+| `POST /api/ohttp/discovery` | Forward bounded `message/ohttp-req` bytes to the fixed discovery gateway |
+| `POST /api/starknet/sepolia` | Restricted, quota-controlled Sepolia JSON-RPC |
+| `POST /api/starknet/mainnet` | Restricted, quota-controlled Mainnet JSON-RPC for the Ready rail |
+| everything else | Serve the SPA through the `ASSETS` binding with strict security headers |
 
-Production requires HTTPS upstreams and an exact `Origin` header. Local HTTP/no-Origin behavior requires all of `ENVIRONMENT=development`, `ALLOW_LOCAL_DEVELOPMENT=true`, a loopback request/upstream hostname, and (for HTTP upstreams) `ALLOW_LOOPBACK_HTTP=true`.
+The Privy bootstrap is hard-coded to return `network: "sepolia"`; it cannot issue Mainnet Privy configuration. The browser receives non-routable `.invalid` OHTTP target names and same-origin relay paths, never the real gateway origins.
 
-Forwarded headers are ignored by default. `TRUST_FORWARDED_ORIGIN=true` explicitly makes `x-forwarded-proto` and `x-forwarded-host` authoritative; only enable it behind infrastructure that removes client-supplied values. `TRUST_CLIENT_IP_HEADERS=true` similarly uses Cloudflare's `cf-connecting-ip` for RPC session quotas. Do not enable either mode behind an untrusted proxy.
+## Worker secrets
 
-`issueOhttpSession` is intentionally only a primitive for a future authenticated bootstrap route. This package does not verify Privy credentials.
+Configure these with `wrangler secret put NAME`; never place values in `wrangler.jsonc`, `VITE_*`, build arguments, CI cache keys, or static manifests:
 
-Use `spaSecurityHeaders` when the parent app serves SPA assets. Its Privy frame/connect origin arrays reject wildcard and non-HTTPS entries and must be populated from reviewed public origin configuration.
+```text
+PRIVY_APP_ID
+PRIVY_APP_SECRET
+OHTTP_SESSION_SECRET
+PROVER_UPSTREAM_URL
+PROVER_UPSTREAM_AUTHORIZATION          # optional
+DISCOVERY_UPSTREAM_URL
+DISCOVERY_UPSTREAM_AUTHORIZATION       # optional
+STARKNET_SEPOLIA_RPC_URL
+STARKNET_SEPOLIA_AUTHORIZATION         # optional
+STARKNET_MAINNET_RPC_URL
+STARKNET_MAINNET_AUTHORIZATION         # optional
+```
+
+`OHTTP_SESSION_SECRET` must contain at least 32 UTF-8 bytes in production. Production upstreams must use HTTPS. Optional authorization headers are the only credentials sent upstream; all browser headers are discarded.
+
+Public chain constants, reviewed Privy frame/connect origins, and the build-only/live Sepolia flag are ordinary Wrangler vars. Privy App ID and Client ID are also public metadata in the Vite build, but the App Secret is Worker-only.
+
+## Distributed gate
+
+Bind `RELAY_GATE` to `RelayGateDurableObject`. One named object serializes global/session/service rate windows and concurrency leases across isolates. Every success, error, timeout, and client disconnect releases its lease; alarms expire abandoned leases.
+
+`TRUST_CLIENT_IP_HEADERS=true` is safe only at the direct Cloudflare edge, where `cf-connecting-ip` is overwritten by Cloudflare. Forwarded-origin headers remain disabled. The gate retains only HMAC user pseudonyms or hashed source identifiers in rate/lease dimensions, normally until two rate windows or lease expiry; do not export those dimensions to analytics.
+
+## Local development
+
+Local HTTP/no-Origin behavior requires all of:
+
+```text
+ENVIRONMENT=development
+ALLOW_LOCAL_DEVELOPMENT=true
+ALLOW_LOOPBACK_HTTP=true
+```
+
+and loopback request/upstream hostnames. Do not carry those flags into a deployed environment.
+
+## Security properties
+
+- fixed egress destinations only; no client-selectable URL
+- strict same-origin POST checks
+- bounded declared and streamed request/response bodies
+- `redirect: "error"`, abort timeouts, generic no-store errors
+- no request-body, token, cookie, DID, wallet ID, witness, or origin logging
+- WebCrypto HMAC cookie containing only a service pseudonym and expiry
+- reviewed CSP origins without wildcards
+- production source-map upload disabled
+
+OHTTP prevents this relay from reading the witness. The final gateway decrypts it and therefore remains trusted for confidentiality. Cloudflare and the relay can still observe source metadata, timing, service class, and ciphertext size.
+
+## Validation
+
+```bash
+npm run typecheck --workspace @app20/relay
+npm test --workspace @app20/relay
+npm run build
+npx wrangler deploy --dry-run --outdir /tmp/app20-worker-dryrun
+```
+
+Deployment is intentionally separate from validation. Nothing should be pushed or deployed until the user approves the reviewed branch and secret configuration.

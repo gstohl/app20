@@ -4,7 +4,12 @@ import { addrSTRK } from "@/lib/tokens";
 
 export { addrSTRK };
 
-const alchemyKey = import.meta.env.VITE_PROVIDER_URL ?? "";
+export function rpcRelayUrl(
+  network: "mainnet" | "sepolia",
+  origin = globalThis.location?.origin ?? "http://localhost",
+): string {
+  return new URL(`/api/starknet/${network}`, origin).toString();
+}
 
 /** A dapp-only chain id so a production build can never mistake devnet for Sepolia. */
 export const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
@@ -14,19 +19,11 @@ export const localnetWalletEnabled = import.meta.env.VITE_E2E_WALLET === true;
 // Indices follow the starter's convention: Mainnet = 0, Sepolia = 2. The
 // localnet provider is appended only in an explicitly flagged dev build.
 export const myFrontendProviders: ProviderInterface[] = [
-  new RpcProvider({
-    nodeUrl:
-      "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/" +
-      alchemyKey,
-  }),
+  new RpcProvider({ nodeUrl: rpcRelayUrl("mainnet") }),
   new RpcProvider({
     nodeUrl: "https://starknet-testnet.public.blastapi.io/rpc/v0_7",
   }),
-  new RpcProvider({
-    nodeUrl:
-      "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/" +
-      alchemyKey,
-  }),
+  new RpcProvider({ nodeUrl: rpcRelayUrl("sepolia") }),
 ];
 
 if (localnetWalletEnabled) {

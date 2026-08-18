@@ -28,7 +28,6 @@ const BACKEND_TARGET = `http://${API_HOST}:${API_PORT}`;
 const WALLET_PROXY_PATH = "/__quietline_localnet_wallet";
 const RPC_PROXY_PATH = "/__quietline_localnet_rpc";
 const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
-const RECOVERY_DUST = 7n;
 const MAX_REQUEST_BYTES = 1_000_000;
 
 function fail(message) {
@@ -712,38 +711,6 @@ async function seedEscrowPrivateBalances(identities, env, starknet) {
   await createDevnetBlocks(devnet.url);
 }
 
-async function fundHelperRecovery(
-  identity,
-  actions,
-  helperAddress,
-  env,
-  starknet,
-) {
-  const helperInvokes = actions.filter(
-    (action) =>
-      action.type === "invoke" &&
-      starknet.num.toBigInt(action.contract) ===
-        starknet.num.toBigInt(helperAddress),
-  ).length;
-  const openNotes = actions.filter(
-    (action) => action.type === "transfer" && action.amount === "OPEN",
-  ).length;
-  const dust = RECOVERY_DUST * BigInt(Math.min(helperInvokes, openNotes));
-  if (dust === 0n) return;
-
-  const value = starknet.cairo.uint256(dust);
-  const response = await identity.account.execute({
-    contractAddress: env.strk,
-    entrypoint: "transfer",
-    calldata: [helperAddress, value.low, value.high],
-  });
-  await waitForSuccess(
-    env.node,
-    response.transaction_hash,
-    `${identity.label} helper recovery-dust transfer`,
-  );
-}
-
 async function privateBalances(identity, tokens, env, starknet) {
   if (!Array.isArray(tokens)) fail("balance tokens must be an array.");
   const requested = tokens.map((token) => starknet.num.toBigInt(String(token)));
@@ -851,13 +818,6 @@ function startApi({
           identity.id,
           async () => {
             await approveDeposits(identity, actions, env, starknet);
-            await fundHelperRecovery(
-              identity,
-              actions,
-              helperAddress,
-              env,
-              starknet,
-            );
             const prepared = await proveLocalEscrowActions(
               identity,
               actions,

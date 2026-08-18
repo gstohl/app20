@@ -1,4 +1,5 @@
 export {
+  adapterKindForWalletFeatureId,
   assertNetworkPolicy,
   assertSubmittableNetworkPolicy,
   evaluateNetworkPolicy,

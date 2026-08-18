@@ -10,12 +10,16 @@ export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
 export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
 export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
+/** Reviewed amount atomically withdrawn to QuietlineMail and returned to the OPEN note. */
+export const QUIETLINE_HELPER_FUNDING_BASE_UNITS = 7n;
 
 export type MailInvokeBatchInput = {
   helperAddress: string;
   recoveryAddress: string;
   record: EncryptedMailRecord;
   tokenAddress?: string;
+  /** Explicit private withdrawal that funds the helper's recovery OPEN note. */
+  helperFundingAmount: string | bigint;
   /** Non-zero makes the helper reject a replay of this exact action on-chain. */
   actionId?: string;
 };
@@ -85,6 +89,19 @@ function buildMailInvokeAction({
   };
 }
 
+function buildHelperFundingAction(
+  token: string,
+  helperAddress: string,
+  amount: string | bigint,
+): WALLET_API.STRK20_WITHDRAW_ACTION {
+  return {
+    type: "withdraw",
+    token,
+    amount: baseUnitAmountHex(amount),
+    recipient: helperAddress,
+  };
+}
+
 function buildRecoveryOpenNoteAction(
   token: string,
   recipient: string,
@@ -92,18 +109,23 @@ function buildRecoveryOpenNoteAction(
   return { type: "transfer", token, amount: "OPEN", recipient };
 }
 
-/** Message-only envelopes create the recovery note consumed by the invoke. */
+/** Message-only envelopes fund the helper, then create the recovery OPEN note. */
 export function buildMailInvokeActions(
   input: MailInvokeBatchInput,
 ): WALLET_API.STRK20_ACTION[] {
   const token = input.tokenAddress ?? addrSTRK;
   return [
+    buildHelperFundingAction(
+      token,
+      input.helperAddress,
+      input.helperFundingAmount,
+    ),
     buildRecoveryOpenNoteAction(token, input.recoveryAddress),
     buildMailInvokeAction({ ...input, tokenAddress: token }),
   ];
 }
 
-/** Builds a private transfer, recovery open note, then encrypted memo invoke. */
+/** Builds private transfer, helper funding, recovery OPEN note, then invoke. */
 export function buildMemoTransferActions({
   recipient,
   amount,
@@ -117,6 +139,11 @@ export function buildMemoTransferActions({
       amount: baseUnitAmountHex(amount),
       recipient,
     },
+    buildHelperFundingAction(
+      token,
+      mail.helperAddress,
+      mail.helperFundingAmount,
+    ),
     buildRecoveryOpenNoteAction(token, mail.recoveryAddress),
     buildMailInvokeAction({ ...mail, tokenAddress: token }),
   ];
@@ -441,9 +468,14 @@ async function waitForStrk20Transaction(
   }
 }
 
-export type SubmitActionsOptions = {
+export type SubmitLifecycleOptions = {
   timeoutMs?: number;
   onSubmitted?: (transactionHash: string) => void;
+};
+
+export type SubmitActionsOptions = SubmitLifecycleOptions & {
+  /** Must reassert network and wallet policy immediately before submission. */
+  policy: () => void;
 };
 
 export function transactionStateFromError(
@@ -474,8 +506,9 @@ export async function submitActions(
   account: WalletAccountV6,
   provider: ProviderInterface,
   actions: WALLET_API.STRK20_ACTION[],
-  options: SubmitActionsOptions = {},
+  options: SubmitActionsOptions,
 ): Promise<{ transactionHash: string; receipt: unknown }> {
+  options.policy();
   const { transaction_hash: transactionHash } =
     await account.strk20InvokeTransaction(actions);
 
@@ -504,54 +537,57 @@ export async function submitActions(
 export type SubmitMailInput = MailInvokeBatchInput & {
   account: WalletAccountV6;
   provider: ProviderInterface;
+  policy: () => void;
 };
 
 export type SubmitMemoTransferInput = MemoTransferBatchInput & {
   account: WalletAccountV6;
   provider: ProviderInterface;
+  policy: () => void;
 };
 
 export type SubmitOtcAcceptInput = OtcAcceptBatchInput & {
   account: WalletAccountV6;
   provider: ProviderInterface;
+  policy: () => void;
 };
 
 /** Submits one recovery-open-note + invoke batch for non-payment envelopes. */
 export function submitMail(
-  { account, provider, ...batch }: SubmitMailInput,
-  options: SubmitActionsOptions = {},
+  { account, provider, policy, ...batch }: SubmitMailInput,
+  options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
   return submitActions(
     account,
     provider,
     buildMailInvokeActions(batch),
-    options,
+    { ...options, policy },
   );
 }
 
 /** Submits one wallet batch containing a transfer, recovery note, and memo. */
 export function submitMemoTransfer(
-  { account, provider, ...batch }: SubmitMemoTransferInput,
-  options: SubmitActionsOptions = {},
+  { account, provider, policy, ...batch }: SubmitMemoTransferInput,
+  options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
   return submitActions(
     account,
     provider,
     buildMemoTransferActions(batch),
-    options,
+    { ...options, policy },
   );
 }
 
 /** A single wallet call settles the STRK give leg and posts the accept memo. */
 export function submitOtcAccept(
-  { account, provider, ...batch }: SubmitOtcAcceptInput,
-  options: SubmitActionsOptions = {},
+  { account, provider, policy, ...batch }: SubmitOtcAcceptInput,
+  options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
   return submitActions(
     account,
     provider,
     buildOtcAcceptActions(batch),
-    options,
+    { ...options, policy },
   );
 }
 

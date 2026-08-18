@@ -1,6 +1,6 @@
 # STRK20 prover API contract
 
-`strk20-privy` connects to the same JSON-RPC surface expected by the official Starknet Privacy SDK. A future self-hosted Sepolia prover can replace the mock without changing application calls.
+`@app20/privy` connects to the same JSON-RPC surface expected by the official Starknet Privacy SDK. A future self-hosted Sepolia prover can replace the mock without changing application calls.
 
 ## Transport
 

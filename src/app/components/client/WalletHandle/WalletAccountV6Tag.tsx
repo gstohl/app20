@@ -4,6 +4,7 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import { json, num, validateAndParseAddress } from "starknet";
 import { useEffect, useState } from "react";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
+import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import {
   formatStrkAmount,
   loadStrkAmount,
@@ -185,6 +186,7 @@ export default function WalletAccountV6Tag() {
     (state) => state.currentFrontendProviderIndex,
   );
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
@@ -271,6 +273,20 @@ export default function WalletAccountV6Tag() {
         provider,
         actions,
         {
+          policy: () => {
+            if (!selectedWallet) {
+              throw new Error("Wallet policy context is missing.");
+            }
+            assertWalletOperationPolicy(
+              selectedWallet,
+              providerIndex as 0 | 2 | 3,
+              actionName === "Shield"
+                ? "shield"
+                : actionName === "Unshield"
+                  ? "unshield"
+                  : "private-transfer",
+            );
+          },
           onSubmitted: (hash) => {
             submittedHash = hash;
             setResult({

@@ -10,6 +10,7 @@ import {
   unwrapMailSeed,
 } from "@/lib/mail-vault";
 import { strk20ErrorMessage } from "@/lib/strk20";
+import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
@@ -38,6 +39,7 @@ function keysEqual(left: readonly string[], right: readonly string[]): boolean {
 
 export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const address = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const providerIndex = useFrontendProvider(
@@ -179,6 +181,12 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         );
       }
 
+      if (!selectedWallet) throw new Error("Wallet policy context is missing.");
+      assertWalletOperationPolicy(
+        selectedWallet,
+        providerIndex as 0 | 2 | 3,
+        "mail",
+      );
       setSetup({
         kind: "pending",
         message: "Waiting for approval of the public key registration…",

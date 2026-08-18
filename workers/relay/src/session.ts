@@ -1,7 +1,7 @@
 import { RelayHttpError } from "./errors.ts";
 import type { RelayEnv } from "./types.ts";
 
-const COOKIE_NAME = "strk20_ohttp_session";
+const COOKIE_NAME = "app20_ohttp_session";
 const TTL_SECONDS = 30 * 60;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -53,7 +53,11 @@ async function encodeSession(subjectIdentifier: string, env: RelayEnv, nowSecond
   return `${payload}.${signature}`;
 }
 
-/** Called only after a future bootstrap handler has independently authenticated its user. */
+export function expireOhttpSessionCookie(): string {
+  return `${COOKIE_NAME}=; HttpOnly; Secure; SameSite=Strict; Path=/api/ohttp; Max-Age=0`;
+}
+
+/** Called only after a bootstrap handler has independently authenticated its user. */
 export async function issueOhttpSession(
   authenticatedSubjectIdentifier: string,
   env: RelayEnv,

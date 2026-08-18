@@ -31,6 +31,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BUILD_DIR = join(ROOT, ".e2e-build", "real-pool-mail");
 const SHIELD_AMOUNT = 100n;
 const RECOVERY_DUST = 7n;
+const UNRELATED_HELPER_BALANCE = 11n;
 const PLAINTEXT = "hello through Quietline's real pool";
 const PASSPHRASE = "quietline-real-pool-mail-e2e";
 const TX_TIMEOUT = 600_000;
@@ -245,6 +246,14 @@ function makeAlicePrivacy(env) {
 			saveRegistry: async () => {},
 		},
 	});
+	// Wallet API actions describe outputs, while the wallet/compiler must return
+	// selected-note surplus to the account. The pinned client adapter omits this
+	// policy, so mirror the production wallet seam used by the browser localnet.
+	const coreTransfers = prover.transfers;
+	assert.ok(coreTransfers && typeof coreTransfers.build === "function");
+	const coreBuild = coreTransfers.build.bind(coreTransfers);
+	coreTransfers.build = (...args) =>
+		coreBuild(...args).surplusTo(env.alice.address, false);
 	return { prover, transfers };
 }
 
@@ -429,33 +438,33 @@ test(
 				recoveryAddress: env.alice.address,
 				record,
 				tokenAddress: env.strk,
+				helperFundingAmount: RECOVERY_DUST,
 				actionId,
 			});
-			assert.equal(protectedActions[0].amount, "OPEN");
+			assert.equal(protectedActions[0].type, "withdraw");
+			assert.equal(protectedActions[0].amount, "0x7");
+			assert.equal(protectedActions[0].recipient, helperAddress);
+			assert.equal(protectedActions[1].amount, "OPEN");
 			assert.equal(
-				protectedActions[1].calldata[1],
+				protectedActions[2].calldata[1],
 				strk20.POOL_ADDRESS_PLACEHOLDER,
 			);
 			assert.equal(
-				protectedActions[1].calldata[2],
+				protectedActions[2].calldata[2],
 				strk20.OPEN_NOTE_ID_PLACEHOLDER,
 			);
 
-			const dust = await env.alice.execute({
+			// Unrelated or accidental helper funds must never be captured by the
+			// next sender's recovery OPEN note.
+			const unrelated = await env.alice.execute({
 				contractAddress: env.strk,
 				entrypoint: "transfer",
-				calldata: [helperAddress, RECOVERY_DUST, 0n],
+				calldata: [helperAddress, UNRELATED_HELPER_BALANCE, 0n],
 			});
-			txHashes.recoveryDust = dust.transaction_hash;
 			await waitForSuccess(
 				env.node,
-				dust.transaction_hash,
-				"helper recovery dust transfer",
-			);
-			assert.equal(
-				await tokenBalance(env.node, env.strk, helperAddress),
-				RECOVERY_DUST,
-				"helper must hold the recovery dust before the pool invoke",
+				unrelated.transaction_hash,
+				"unrelated helper balance transfer",
 			);
 
 			const firstPrepared = await prepare(prover, protectedActions);
@@ -464,13 +473,13 @@ test(
 			assert.equal(firstMail.receipt.isSuccess(), true, "real-pool mail must succeed");
 			assert.equal(
 				await tokenBalance(env.node, env.strk, helperAddress),
-				0n,
-				"real pool must pull all echoed recovery dust from the helper",
+				UNRELATED_HELPER_BALANCE,
+				"recovery must not capture the helper's unrelated pre-existing balance",
 			);
 			assert.equal(
 				await tokenBalance(env.node, env.strk, env.privacy.address),
-				SHIELD_AMOUNT + RECOVERY_DUST,
-				"real pool custody must increase by the helper's echoed recovery dust",
+				SHIELD_AMOUNT,
+				"atomic helper funding must return to pool custody through the recovery note",
 			);
 
 			const firstEvents = await messageEvents(env.node, helperAddress);
@@ -529,6 +538,7 @@ test(
 			assert.equal(feltEqual(recoveryEvent.keys[2], env.strk), true);
 			assert.equal(BigInt(recoveryEvent.data[0]), RECOVERY_DUST);
 
+			await createBlocks(devnet.url);
 			const replayPrepared = await prepare(prover, protectedActions);
 			const replay = await broadcastPrepared(devnet, env, replayPrepared);
 			txHashes.replayedAction = replay.transactionHash;
@@ -558,24 +568,10 @@ test(
 				recoveryAddress: env.alice.address,
 				record,
 				tokenAddress: env.strk,
+				helperFundingAmount: RECOVERY_DUST,
 				actionId: "0x0",
 			});
 
-			// A real pool requires every OPEN note in a successful batch to be
-			// deposited. Replenish the helper's echo dust before each zero-id send
-			// so this assertion isolates nullifier behavior rather than failing the
-			// pool's unrelated UNDEPOSITED_OPEN_NOTES invariant.
-			const zeroDustFirst = await env.alice.execute({
-				contractAddress: env.strk,
-				entrypoint: "transfer",
-				calldata: [helperAddress, RECOVERY_DUST, 0n],
-			});
-			txHashes.zeroActionDustFirst = zeroDustFirst.transaction_hash;
-			await waitForSuccess(
-				env.node,
-				zeroDustFirst.transaction_hash,
-				"first zero-id recovery dust transfer",
-			);
 			const zeroFirst = await broadcastPrepared(
 				devnet,
 				env,
@@ -588,17 +584,7 @@ test(
 				`first zero-id action must succeed: ${revertReason(zeroFirst.receipt)}`,
 			);
 
-			const zeroDustSecond = await env.alice.execute({
-				contractAddress: env.strk,
-				entrypoint: "transfer",
-				calldata: [helperAddress, RECOVERY_DUST, 0n],
-			});
-			txHashes.zeroActionDustSecond = zeroDustSecond.transaction_hash;
-			await waitForSuccess(
-				env.node,
-				zeroDustSecond.transaction_hash,
-				"second zero-id recovery dust transfer",
-			);
+			await createBlocks(devnet.url);
 			const zeroSecond = await broadcastPrepared(
 				devnet,
 				env,

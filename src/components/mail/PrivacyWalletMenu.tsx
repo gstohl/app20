@@ -8,6 +8,7 @@ import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Str
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
+import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import {
   formatStrkAmount,
   loadStrkAmount,
@@ -88,11 +89,16 @@ function readStrkBalance(raw: unknown): bigint {
   return 0n;
 }
 
-export default function PrivacyWalletMenu() {
+export default function PrivacyWalletMenu({
+  showIdentity = true,
+}: {
+  showIdentity?: boolean;
+}) {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const connectedAddress = useStoreWallet((state) => state.address);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
@@ -101,6 +107,7 @@ export default function PrivacyWalletMenu() {
   const [balance, setBalance] = useState<BalanceState>({ kind: "idle" });
   const [action, setAction] = useState<ActionResult>({ kind: "idle" });
   const [amountInput, setAmountInput] = useState("0.1");
+  const [recipientInput, setRecipientInput] = useState("");
   const balanceGeneration = useRef(0);
 
   const networkName = constants.Strk20Networks[providerIndex];
@@ -133,6 +140,12 @@ export default function PrivacyWalletMenu() {
 
     setBalance({ kind: "loading", message: "Checking with the wallet…" });
     try {
+      if (!selectedWallet) throw new Error("Wallet policy context is missing.");
+      assertWalletOperationPolicy(
+        selectedWallet,
+        providerIndex as 0 | 2 | 3,
+        "private-read",
+      );
       const raw = await walletAccount.strk20Balances([TOKEN]);
       if (generation !== balanceGeneration.current) return;
       setBalance({ kind: "ok", amount: readStrkBalance(raw) });
@@ -151,6 +164,10 @@ export default function PrivacyWalletMenu() {
   }, [networkKey]);
 
   useEffect(() => {
+    setRecipientInput(connectedAddress);
+  }, [connectedAddress]);
+
+  useEffect(() => {
     if (!walletAccount || !isConnected) {
       balanceGeneration.current += 1;
       setBalance({ kind: "idle" });
@@ -163,12 +180,13 @@ export default function PrivacyWalletMenu() {
     isConnected,
     isStrk20Capable,
     providerIndex,
+    selectedWallet,
     walletAccount,
   ]);
 
   async function runAction(
     actions: WALLET_API.STRK20_ACTION[],
-    actionName: "Shield" | "Unshield",
+    actionName: "Shield" | "Unshield" | "Private transfer",
     amount: bigint,
   ) {
     if (!walletAccount || !isConnected) {
@@ -209,6 +227,16 @@ export default function PrivacyWalletMenu() {
 
     let submittedHash: string | undefined;
     try {
+      if (!selectedWallet) throw new Error("Wallet policy context is missing.");
+      assertWalletOperationPolicy(
+        selectedWallet,
+        providerIndex as 0 | 2 | 3,
+        actionName === "Shield"
+          ? "shield"
+          : actionName === "Unshield"
+            ? "unshield"
+            : "private-transfer",
+      );
       await authorizeStrk20ValueAction({
         provider,
         poolAddress,
@@ -233,6 +261,20 @@ export default function PrivacyWalletMenu() {
         provider,
         actions,
         {
+          policy: () => {
+            if (!selectedWallet) {
+              throw new Error("Wallet policy context is missing.");
+            }
+            assertWalletOperationPolicy(
+              selectedWallet,
+              providerIndex as 0 | 2 | 3,
+              actionName === "Shield"
+                ? "shield"
+                : actionName === "Unshield"
+                  ? "unshield"
+                  : "private-transfer",
+            );
+          },
           onSubmitted: (hash) => {
             submittedHash = hash;
             setAction({
@@ -251,7 +293,9 @@ export default function PrivacyWalletMenu() {
         message:
           actionName === "Shield"
             ? "The public deposit completed. Shielded balance discovery is refreshing."
-            : "The public withdrawal completed. Shielded balance discovery is refreshing.",
+            : actionName === "Unshield"
+              ? "The public withdrawal completed. Shielded balance discovery is refreshing."
+              : "The private transfer completed. Shielded balance discovery is refreshing.",
         transactionHash,
       });
       void refreshBalance();
@@ -313,6 +357,37 @@ export default function PrivacyWalletMenu() {
     );
   }
 
+  function privateTransfer() {
+    if (!recipientInput.trim()) {
+      setAction({
+        kind: "error",
+        title: "Private transfer unavailable",
+        message: "Enter a Starknet recipient address.",
+      });
+      return;
+    }
+    if (parsedAmount === null) {
+      setAction({
+        kind: "error",
+        title: "Private transfer unavailable",
+        message: amountError,
+      });
+      return;
+    }
+    void runAction(
+      [
+        {
+          type: "transfer",
+          token: TOKEN,
+          amount: num.toHex(parsedAmount),
+          recipient: recipientInput.trim(),
+        },
+      ],
+      "Private transfer",
+      parsedAmount,
+    );
+  }
+
   const balanceLabel =
     balance.kind === "ok"
       ? `${formatStrk(balance.amount ?? 0n)} STRK`
@@ -333,25 +408,29 @@ export default function PrivacyWalletMenu() {
       className={styles.sidebarAccount}
       aria-label="Wallet and shielded balance"
     >
-      <div className={styles.accountHeading}>
-        <div>
-          <span className={styles.sidebarLabel}>IDENTITY</span>
-          <strong>
-            {isConnected ? "Mailbox account" : "Wallet disconnected"}
-          </strong>
-        </div>
-        <SelectWallet variant="nav" />
-      </div>
+      {showIdentity ? (
+        <>
+          <div className={styles.accountHeading}>
+            <div>
+              <span className={styles.sidebarLabel}>IDENTITY</span>
+              <strong>
+                {isConnected ? "Mailbox account" : "Wallet disconnected"}
+              </strong>
+            </div>
+            <SelectWallet variant="nav" />
+          </div>
 
-      {connectedAddress ? (
-        <code className={styles.accountAddress} title={connectedAddress}>
-          {connectedAddress}
-        </code>
-      ) : (
-        <p className={styles.accountHint}>
-          Connect a privacy-enabled wallet to open this mailbox.
-        </p>
-      )}
+          {connectedAddress ? (
+            <code className={styles.accountAddress} title={connectedAddress}>
+              {connectedAddress}
+            </code>
+          ) : (
+            <p className={styles.accountHint}>
+              Connect a privacy-enabled wallet to open this mailbox.
+            </p>
+          )}
+        </>
+      ) : null}
 
       {connectionNotice ? (
         <p className={styles.walletError} role="alert">
@@ -391,6 +470,21 @@ export default function PrivacyWalletMenu() {
         </small>
       </label>
 
+      <label className={styles.walletAmount}>
+        <span>Private-transfer recipient</span>
+        <span className={styles.walletAmountInput}>
+          <input
+            aria-label="Private transfer recipient"
+            value={recipientInput}
+            onChange={(event) => setRecipientInput(event.target.value)}
+            placeholder="0x…"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={actionPending}
+          />
+        </span>
+      </label>
+
       <div className={styles.sidebarWalletActions}>
         <button
           type="button"
@@ -419,6 +513,21 @@ export default function PrivacyWalletMenu() {
         >
           <span>Unshield</span>
           <small>{amountInput || "—"} STRK · public exit</small>
+        </button>
+        <button
+          type="button"
+          onClick={privateTransfer}
+          disabled={
+            !isConnected ||
+            !isStrk20Capable ||
+            !isStrk20Network ||
+            parsedAmount === null ||
+            !recipientInput.trim() ||
+            actionPending
+          }
+        >
+          <span>Private transfer</span>
+          <small>{amountInput || "—"} STRK · inside the pool</small>
         </button>
       </div>
 

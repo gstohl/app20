@@ -32,6 +32,11 @@ function env(overrides: Partial<RelayEnv> = {}): RelayEnv {
     STARKNET_MAINNET_RPC_URL: "https://mainnet-rpc-canary.invalid/rpc",
     PROVER_UPSTREAM_AUTHORIZATION: "Bearer AUTHORIZATION_CANARY_NOT_CLIENT_VISIBLE",
     OHTTP_SESSION_SECRET: SECRET_CANARY,
+    PRIVY_APP_ID: "test-app-id",
+    PRIVY_APP_SECRET: "TEST_ONLY_PRIVY_SECRET_DO_NOT_DEPLOY_0123456789",
+    SEPOLIA_POOL_ADDRESS: "0x123",
+    SEPOLIA_STRK_TOKEN_ADDRESS: "0x456",
+    READY_ACCOUNT_CLASS_HASH: "0x789",
     RELAY_GATE: {} as RelayEnv["RELAY_GATE"],
     ...overrides,
   };
@@ -165,6 +170,147 @@ test("two logical relay instances share one concurrency gate and always release"
   unblock();
   assert.equal((await first).status, 200);
   assert.equal(gate.active, 0);
+});
+
+test("issues a Sepolia-only Privy bootstrap without exposing identity or upstream origins", async () => {
+  const accessToken = "PRIVY_ACCESS_TOKEN_CANARY_NOT_FOR_OUTPUT";
+  let receivedToken = "";
+  const handler = createRelayHandler({
+    gate: new SharedGate(),
+    privyDirectory: {
+      authenticateAndList: async (token) => {
+        receivedToken = token;
+        return {
+          subject: "did:privy:identity-canary",
+          wallets: [
+            {
+              walletId: "wallet-metadata-id",
+              publicKey: "0x123",
+              privyAddress: "0x456",
+              createdAt: 1,
+              authorization: {
+                kind: "user-only",
+                threshold: 1,
+                userSignerCount: 1,
+                appSignerCount: 0,
+                browserSignable: true,
+                appCanSignAlone: false,
+              },
+            },
+          ],
+        };
+      },
+    },
+  });
+  const response = await handler(
+    new Request("https://app.invalid/api/privacy/bootstrap", {
+      method: "POST",
+      headers: {
+        origin: "https://app.invalid",
+        authorization: `Bearer ${accessToken}`,
+      },
+    }),
+    env({ PRIVY_SUBMISSION_MODE: "live" }),
+  );
+  const text = await response.text();
+  const output = JSON.parse(text) as Record<string, unknown>;
+
+  assert.equal(response.status, 200);
+  assert.equal(receivedToken, accessToken);
+  assert.equal(output.network, "sepolia");
+  assert.equal(output.submissionMode, "live");
+  assert.equal(text.includes(accessToken), false);
+  assert.equal(text.includes("did:privy:identity-canary"), false);
+  assert.equal(text.includes(UPSTREAM_CANARY), false);
+  assert.match(text, /https:\/\/prover\.ohttp\.invalid/);
+  assert.match(response.headers.get("set-cookie") ?? "", /HttpOnly/);
+  assert.equal(
+    (response.headers.get("set-cookie") ?? "").includes("identity-canary"),
+    false,
+  );
+});
+
+test("bootstrap authentication errors are generic and never issue a relay session", async () => {
+  const handler = createRelayHandler({
+    gate: new SharedGate(),
+    privyDirectory: {
+      authenticateAndList: async () => {
+        throw new Error(`${SECRET_CANARY} ${UPSTREAM_CANARY}`);
+      },
+    },
+  });
+  const response = await handler(
+    new Request("https://app.invalid/api/privacy/bootstrap", {
+      method: "POST",
+      headers: {
+        origin: "https://app.invalid",
+        authorization: "Bearer invalid-token-canary",
+      },
+    }),
+    env(),
+  );
+  const output = await response.text();
+
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.has("set-cookie"), false);
+  assert.equal(output.includes(SECRET_CANARY), false);
+  assert.equal(output.includes(UPSTREAM_CANARY), false);
+});
+
+test("privacy logout expires only the scoped OHTTP session cookie", async () => {
+  const handler = createRelayHandler({ gate: new SharedGate() });
+  const response = await handler(
+    new Request("https://app.invalid/api/privacy/logout", {
+      method: "POST",
+      headers: { origin: "https://app.invalid" },
+    }),
+    env(),
+  );
+  assert.equal(response.status, 204);
+  assert.match(
+    response.headers.get("set-cookie") ?? "",
+    /^app20_ohttp_session=;.*Path=\/api\/ohttp; Max-Age=0$/,
+  );
+
+  const crossOrigin = await handler(
+    new Request("https://app.invalid/api/privacy/logout", {
+      method: "POST",
+      headers: { origin: "https://evil.invalid" },
+    }),
+    env(),
+  );
+  assert.equal(crossOrigin.status, 403);
+});
+
+test("serves SPA assets with strict security headers and keeps unknown APIs closed", async () => {
+  let assetRequests = 0;
+  const environment = env({
+    PRIVY_FRAME_ORIGINS: "https://auth.privy.io",
+    PRIVY_CONNECT_ORIGINS: "https://auth.privy.io,https://api.privy.io",
+    ASSETS: {
+      fetch: async () => {
+        assetRequests += 1;
+        return new Response("<html>APP20</html>", {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      },
+    },
+  });
+  const handler = createRelayHandler({ gate: new SharedGate() });
+
+  const asset = await handler(new Request("https://app.invalid/vault"), environment);
+  assert.equal(asset.status, 200);
+  assert.equal(await asset.text(), "<html>APP20</html>");
+  assert.match(asset.headers.get("content-security-policy") ?? "", /script-src 'self'/);
+  assert.match(asset.headers.get("content-security-policy") ?? "", /frame-src 'self' https:\/\/auth\.privy\.io/);
+  assert.equal(asset.headers.get("x-frame-options"), "DENY");
+
+  const unknownApi = await handler(
+    new Request("https://app.invalid/api/not-a-route"),
+    environment,
+  );
+  assert.equal(unknownApi.status, 404);
+  assert.equal(assetRequests, 1);
 });
 
 test("RPC rejects unsupported methods and forwards allowed JSON bytes unchanged", async () => {

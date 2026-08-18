@@ -37,7 +37,7 @@ The bearer token and tenant header are never forwarded upstream.
 import {
   InMemoryProverTenantRegistry,
   createPrivyProverProxyServer,
-} from "strk20-privy/proxy";
+} from "@app20/privy/proxy";
 
 const registry = new InMemoryProverTenantRegistry([
   {
@@ -72,7 +72,7 @@ Allowed RPC methods are `starknet_specVersion` and `starknet_proveTransaction`. 
 ## Privy client module
 
 ```ts
-import { PrivyStrk20Client } from "strk20-privy/client";
+import { PrivyStrk20Client } from "@app20/privy/client";
 
 const client = new PrivyStrk20Client({
   network: "sepolia",

@@ -122,6 +122,7 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
+  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
   strk20ErrorMessage,
   submitActions,
   transactionHashFromError,
@@ -142,6 +143,7 @@ import {
 } from "@/lib/mail-assignments";
 import { conversationKeyForMessage } from "@/lib/mail-thread";
 import { evaluateSenderProof, type SenderProof } from "@/lib/sender-proof";
+import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
@@ -404,6 +406,7 @@ export default function InboxPage() {
   const address = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
+  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
   const renderLocalnetTools = useLocalnetTools();
   const [keypair, setKeypair] = useState<MailKeypair | null>(null);
@@ -470,6 +473,7 @@ export default function InboxPage() {
   const recentLoadedRef = useRef(false);
   const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
   const readingPaneRef = useRef<HTMLElement | null>(null);
+  const readingScrollRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const sidebarRef = useRef<HTMLElement | null>(null);
   const sidebarCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -531,6 +535,19 @@ export default function InboxPage() {
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [mobileSidebarMode, sidebarOpen]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      readingScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    composerOpen,
+    keyFingerprint,
+    mailFolder,
+    selectedDraftId,
+    selectedMessageId,
+  ]);
 
   function cancelActiveScanWorker() {
     const active = scanWorkerRef.current;
@@ -807,17 +824,31 @@ export default function InboxPage() {
 
   function requireActionContext() {
     if (!helperAddress) throw new Error("Mail is unavailable on this network.");
-    if (!walletAccount || !address || !chainId || !isStrk20Capable) {
+    if (
+      !walletAccount ||
+      !selectedWallet ||
+      !address ||
+      !chainId ||
+      !isStrk20Capable
+    ) {
       throw new Error(
         "Connect a wallet that exposes the dapp-facing STRK20 API first.",
       );
     }
+    const policy = () =>
+      assertWalletOperationPolicy(
+        selectedWallet,
+        providerIndex as 0 | 2 | 3,
+        "mail",
+      );
+    policy();
     return {
       helperAddress,
       walletAccount,
       provider: constants.myFrontendProviders[providerIndex],
       address,
       chainId,
+      policy,
     };
   }
 
@@ -1314,6 +1345,8 @@ export default function InboxPage() {
       helperAddress: context.helperAddress,
       recoveryAddress: context.address,
       tokenAddress: constants.addrSTRK,
+      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      policy: context.policy,
       record,
     });
     recordDealEvent(window.localStorage, context.chainId, context.address, {
@@ -1375,6 +1408,8 @@ export default function InboxPage() {
           tokenAddress: constants.addrSTRK,
           offer,
           record,
+          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          policy: context.policy,
           actionId: computeActionId("otc-accept-attempt", attemptId),
         },
         {
@@ -1477,6 +1512,8 @@ export default function InboxPage() {
         helperAddress: context.helperAddress,
         recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
+        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        policy: context.policy,
         record,
       });
       recordDealEvent(window.localStorage, context.chainId, context.address, {
@@ -1604,6 +1641,8 @@ export default function InboxPage() {
           recipient: payableRequest.requester,
           amount: payableRequest.amount,
           record,
+          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          policy: context.policy,
           actionId: computeActionId("payment-attempt", attemptId),
         },
         {
@@ -1722,6 +1761,7 @@ export default function InboxPage() {
           payoutToken: fund.legA.token.address,
         }),
         {
+          policy: context.policy,
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
             markEscrowOperationSubmitted(
@@ -1886,6 +1926,7 @@ export default function InboxPage() {
         context.provider,
         actions,
         {
+          policy: context.policy,
           onSubmitted: (transactionHash) => {
             submittedHash = transactionHash;
             markEscrowOperationSubmitted(
@@ -2333,7 +2374,7 @@ export default function InboxPage() {
         >
           ☰
         </button>
-        <span className={styles.mobileModuleTitle}>Mail Vault</span>
+        <span className={styles.mobileModuleTitle}>APP20 Mail</span>
         <button
           className={styles.mobileCompose}
           type="button"
@@ -2352,7 +2393,8 @@ export default function InboxPage() {
         />
       ) : null}
 
-      <div
+      <main
+        aria-label="APP20 Mail"
         className={`${styles.mailWorkspace} ${
           mobileDetailOpen ? styles.detailOpen : ""
         }`}
@@ -2364,10 +2406,12 @@ export default function InboxPage() {
           className={`${styles.mailSidebar} ${
             sidebarOpen ? styles.sidebarOpen : ""
           }`}
+          role={mobileSidebarMode && sidebarOpen ? "dialog" : undefined}
+          aria-modal={mobileSidebarMode && sidebarOpen ? true : undefined}
           aria-label="Mailbox sidebar"
         >
           <div className={styles.sidebarBrandRow}>
-            <strong className={styles.moduleTitle}>Privacy Mail Vault</strong>
+            <strong className={styles.moduleTitle}>APP20 Mail</strong>
             <button
               ref={sidebarCloseRef}
               className={styles.sidebarClose}
@@ -2429,7 +2473,14 @@ export default function InboxPage() {
           <ThemeSwitcher />
 
           <div className={styles.networkRow}>
-            <span className={styles.networkDot} aria-hidden="true" />
+            <span
+              className={`${styles.networkDot} ${
+                helperAddress && walletAccount && isStrk20Capable
+                  ? styles.networkDotLive
+                  : ""
+              }`}
+              aria-hidden="true"
+            />
             <span>{networkName}</span>
             <small>
               {helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}
@@ -2575,7 +2626,7 @@ export default function InboxPage() {
           />
         )}
 
-        <main
+        <section
           ref={readingPaneRef}
           className={styles.readingPane}
           aria-label="Reading pane"
@@ -2599,7 +2650,7 @@ export default function InboxPage() {
                   ? "New document"
                   : selectedMessage
                     ? folderLabel
-                    : "Privacy Mail Vault"}
+                    : "APP20 Mail"}
               </strong>
             </div>
             {composerOpen ? (
@@ -2613,7 +2664,7 @@ export default function InboxPage() {
             ) : null}
           </header>
 
-          <div className={styles.readingScroll}>
+          <div ref={readingScrollRef} className={styles.readingScroll}>
             {storageNotice ? (
               <p
                 className={`${styles.storageNotice} ${
@@ -2688,10 +2739,10 @@ export default function InboxPage() {
             ) : (
               <section className={styles.welcomeState}>
                 <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>VLT20 / PRIVACY MAIL VAULT</p>
+                  <p className={styles.eyebrow}>APP20 / PRIVATE MAIL</p>
                   <h1>Private words, public ciphertext.</h1>
                   <p className={styles.welcomeCopy}>
-                    Quietline is encrypted on-chain mail for letters, private
+                    APP20 Mail uses the Quietline mail rail for letters, private
                     STRK payment memos, invoices, one-sided deals, and
                     experimental escrow. Your mailbox key decrypts locally;
                     Quietline never posts plaintext.
@@ -2769,8 +2820,8 @@ export default function InboxPage() {
               </section>
             )}
           </div>
-        </main>
-      </div>
+        </section>
+      </main>
     </div>
   );
 }

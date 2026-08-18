@@ -3,7 +3,7 @@ node_modules/
 .pnp
 .pnp.js
 vendor/
-!packages/strk20-privy/vendor/
+!packages/privy/vendor/
 
 # app build artifacts
 .next/
@@ -16,6 +16,9 @@ playwright-report/
 test-results/
 ui-artifacts/
 .turbo/
+.wrangler/
+.dev.vars
+.dev.vars.*
 
 # env — never commit keys
 .env
@@ -46,6 +49,7 @@ target/
 .pi-lens/
 .claude/
 /rules/
+LAST.md
 
 # typescript
 *.tsbuildinfo

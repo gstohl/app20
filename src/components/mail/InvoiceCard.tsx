@@ -31,6 +31,7 @@ type InvoiceCardProps = {
   actionMessage?: string;
   actionStartedAt?: number;
   showPaymentActions?: boolean;
+  showShareAction?: boolean;
   shareInitiallyOpen?: boolean;
   onPay?: () => void;
 };
@@ -45,6 +46,7 @@ export default function InvoiceCard({
   actionMessage,
   actionStartedAt,
   showPaymentActions = true,
+  showShareAction = true,
   shareInitiallyOpen = false,
   onPay,
 }: InvoiceCardProps) {
@@ -249,18 +251,20 @@ export default function InvoiceCard({
         </p>
       ) : null}
 
-      <div className={styles.sheetActions}>
-        <button
-          className={styles.secondaryButton}
-          type="button"
-          onClick={toggleShareLink}
-          disabled={!canShare}
-          aria-expanded={shareOpen}
-        >
-          {shareOpen ? "Hide payment link" : "Share payment link"}
-        </button>
-      </div>
-      {shareOpen && shareLink ? (
+      {showShareAction ? (
+        <div className={styles.sheetActions}>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={toggleShareLink}
+            disabled={!canShare}
+            aria-expanded={shareOpen}
+          >
+            {shareOpen ? "Hide payment link" : "Share payment link"}
+          </button>
+        </div>
+      ) : null}
+      {showShareAction && shareOpen && shareLink ? (
         <div className={styles.addressProof}>
           <strong>Unsigned payment link</strong>
           <QRCodeSVG

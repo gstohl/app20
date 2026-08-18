@@ -5,6 +5,7 @@ import {
   isStrk20Chain,
   localnetWalletEnabled,
   providerIndexForChain,
+  rpcRelayUrl,
   strk20PoolForProviderIndex,
   strk20PoolMainnet,
   strk20PoolSepolia,
@@ -18,6 +19,15 @@ describe("STRK20 network gating", () => {
     expect(providerIndexForChain(constants.StarknetChainId.SN_SEPOLIA)).toBe(2);
     expect(strk20PoolForProviderIndex(0)).toBe(strk20PoolMainnet);
     expect(strk20PoolForProviderIndex(2)).toBe(strk20PoolSepolia);
+  });
+
+  it("uses only same-origin restricted RPC relay paths", () => {
+    expect(rpcRelayUrl("mainnet", "https://app20.example")).toBe(
+      "https://app20.example/api/starknet/mainnet",
+    );
+    expect(rpcRelayUrl("sepolia", "https://app20.example")).toBe(
+      "https://app20.example/api/starknet/sepolia",
+    );
   });
 
   it("rejects the localnet-only chain when the dev wallet flag is off", () => {

@@ -1,5 +1,5 @@
 {
-  "name": "strk20-privy",
+  "name": "@app20/privy",
   "version": "0.1.0",
   "description": "Reusable Privy-backed Starknet accounts with pluggable STRK20 proving and discovery.",
   "type": "module",

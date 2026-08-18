@@ -5,32 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="VLT20 Privacy Vault and encrypted Privacy Mail Vault on Starknet."
+      content="APP20 private superapp: shielded wallet, encrypted mail, cross-chain intents, and verifiable workflows."
     />
     <link rel="icon" type="image/png" href="/src/app/icon.png" />
-    <script>
-      (() => {
-        const root = document.documentElement;
-        let preference = "system";
-        try {
-          const stored = localStorage.getItem("quietline/theme");
-          if (stored === "light" || stored === "dark" || stored === "system") {
-            preference = stored;
-          }
-        } catch {
-          // Storage can be unavailable; system preference remains a safe default.
-        }
-        const dark =
-          preference === "dark" ||
-          (preference === "system" &&
-            window.matchMedia("(prefers-color-scheme: dark)").matches);
-        const theme = dark ? "dark" : "light";
-        root.dataset.theme = theme;
-        root.dataset.themePreference = preference;
-        root.style.colorScheme = theme;
-      })();
-    </script>
-    <title>VLT20 · Privacy Vault on Starknet</title>
+    <script type="module" src="/src/theme-init.ts"></script>
+    <title>APP20 · Private Superapp</title>
   </head>
   <body>
     <div id="root"></div>
