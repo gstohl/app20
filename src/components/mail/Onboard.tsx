@@ -370,8 +370,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         <p className={styles.notice}>
           Mailbox registration needs the QuietlineMail helper on this network.
           It is not deployed here yet, so register and restore stay disabled.
-          Shield and unshield still work from the wallet rail — they talk to
-          the live STRK20 pool, not this helper.
+          Shield and unshield still work from the wallet rail — they talk to the
+          live STRK20 pool, not this helper.
         </p>
       )}
 
@@ -445,7 +445,9 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             onClick={() => void loadAndRegister()}
             disabled={disabled || !canWrap}
           >
-            {setup.kind === "pending" ? "Waiting…" : "Load device key & register"}
+            {setup.kind === "pending"
+              ? "Waiting…"
+              : "Load device key & register"}
           </button>
         </>
       )}

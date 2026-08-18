@@ -37,9 +37,7 @@ function base64UrlToBytes(value: string): Uint8Array {
   const padded = `${value.replace(/-/g, "+").replace(/_/g, "/")}${"=".repeat(
     (4 - (value.length % 4)) % 4,
   )}`;
-  return Uint8Array.from(atob(padded), (character) =>
-    character.charCodeAt(0),
-  );
+  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
 }
 
 function fragmentForTuple(tuple: unknown): string {
@@ -118,9 +116,9 @@ describe("payment links", () => {
       chainId: "SN_SEPOLIA",
     };
 
-    expect(() =>
-      createPaymentLinkRequest({ ...input, amount: "0" }),
-    ).toThrow(/greater than zero/i);
+    expect(() => createPaymentLinkRequest({ ...input, amount: "0" })).toThrow(
+      /greater than zero/i,
+    );
     expect(() =>
       createPaymentLinkRequest({ ...input, expiryHours: "1.5" }),
     ).toThrow(/whole number/i);

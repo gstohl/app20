@@ -23,9 +23,9 @@ describe("mailbox-key sender authentication", () => {
     };
     const auth = createMailSenderAuth(seed(7), mailbox.publicKey, subject);
     expect(verifyMailSenderAuth(auth, subject)).toBe(true);
-    expect(
-      verifyMailSenderAuth(auth, { ...subject, body: "tampered" }),
-    ).toBe(false);
+    expect(verifyMailSenderAuth(auth, { ...subject, body: "tampered" })).toBe(
+      false,
+    );
   });
 
   it("uses a sibling Ed25519 key, not the x25519 mailbox key", () => {

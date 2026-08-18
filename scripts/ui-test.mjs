@@ -12,10 +12,12 @@ const LOCALNET_SCRIPT = resolve(ROOT, "scripts/localnet-app.mjs");
 const PLAYWRIGHT_CLI = resolve(ROOT, "node_modules/playwright/cli.js");
 
 function stopLocalnet() {
-  return spawnSync(process.execPath, [LOCALNET_SCRIPT, "--stop"], {
-    cwd: ROOT,
-    stdio: "inherit",
-  }).status ?? 1;
+  return (
+    spawnSync(process.execPath, [LOCALNET_SCRIPT, "--stop"], {
+      cwd: ROOT,
+      stdio: "inherit",
+    }).status ?? 1
+  );
 }
 
 async function waitForLocalnet(processHandle) {
@@ -41,7 +43,9 @@ async function waitForLocalnet(processHandle) {
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
   }
 
-  throw new Error(`Quietline localnet was not ready in six minutes: ${lastError}`);
+  throw new Error(
+    `Quietline localnet was not ready in six minutes: ${lastError}`,
+  );
 }
 
 stopLocalnet();
@@ -53,7 +57,9 @@ const localnet = spawn(process.execPath, [LOCALNET_SCRIPT], {
 
 async function stopSpawnedLocalnet() {
   if (localnet.exitCode !== null) return;
-  const exited = new Promise((resolveExit) => localnet.once("exit", resolveExit));
+  const exited = new Promise((resolveExit) =>
+    localnet.once("exit", resolveExit),
+  );
   localnet.kill("SIGTERM");
   let timeout;
   try {

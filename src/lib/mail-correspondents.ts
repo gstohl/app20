@@ -66,8 +66,11 @@ export function claimedFinancialAddress(
       break;
     case "composite": {
       const attachments =
-        (payload as { attachments?: Array<{ type: string; payload?: unknown }> })
-          ?.attachments ?? [];
+        (
+          payload as {
+            attachments?: Array<{ type: string; payload?: unknown }>;
+          }
+        )?.attachments ?? [];
       for (const attachment of attachments) {
         if (attachment.type === "offer") {
           claimed = (attachment.payload as { offerer?: string } | undefined)

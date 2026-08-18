@@ -10,7 +10,12 @@ import {
 describe("device-local correspondents", () => {
   it("dedupes canonical recipient addresses", () => {
     expect(
-      uniqueCanonicalAddresses(["0xA11CE", "0xa11ce", "0xb0b", "not-an-address"]),
+      uniqueCanonicalAddresses([
+        "0xA11CE",
+        "0xa11ce",
+        "0xb0b",
+        "not-an-address",
+      ]),
     ).toEqual(["0xa11ce", "0xb0b"]);
   });
 

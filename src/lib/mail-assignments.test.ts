@@ -26,11 +26,13 @@ describe("local message assignments", () => {
       { address: "0xb0b" },
       10,
     );
-    expect(loadMailAssignments(storage, "SN_MAIN", "0xa11ce")["msg-1"]).toEqual({
-      messageId: "msg-1",
-      address: "0xb0b",
-      assignedAt: 10,
-    });
+    expect(loadMailAssignments(storage, "SN_MAIN", "0xa11ce")["msg-1"]).toEqual(
+      {
+        messageId: "msg-1",
+        address: "0xb0b",
+        assignedAt: 10,
+      },
+    );
     expect(loadMailAssignments(storage, "SN_MAIN", "0xdead")).toEqual({});
     clearMailAssignment(storage, "SN_MAIN", "0xa11ce", "msg-1");
     expect(loadMailAssignments(storage, "SN_MAIN", "0xa11ce")).toEqual({});

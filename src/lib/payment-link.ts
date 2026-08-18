@@ -37,9 +37,7 @@ export type PaymentLinkRequestOptions = {
 const MAX_PAYMENT_LINK_PAYLOAD_BYTES = 1_450;
 const MAX_UINT256 = 2n ** 256n - 1n;
 const MAX_DATE_SECONDS = 8_640_000_000_000;
-const CHECKSUM_DOMAIN = new TextEncoder().encode(
-  "quietline/payment-link/v2\0",
-);
+const CHECKSUM_DOMAIN = new TextEncoder().encode("quietline/payment-link/v2\0");
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const textEncoder = new TextEncoder();
 const fatalTextDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -71,11 +69,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
 }
 
 function base64UrlToBytes(value: string): Uint8Array {
-  if (
-    !value ||
-    !BASE64URL_PATTERN.test(value) ||
-    value.length % 4 === 1
-  ) {
+  if (!value || !BASE64URL_PATTERN.test(value) || value.length % 4 === 1) {
     throw new Error("Payment link fragment is malformed.");
   }
 
@@ -166,10 +160,7 @@ function normalizePaymentRequest(
   if (!isRandom32ByteId(value.requestId)) {
     throw new Error("Payment link requestId must be a 32-byte hexadecimal id.");
   }
-  if (
-    value.invoiceId !== undefined &&
-    !isRandom32ByteId(value.invoiceId)
-  ) {
+  if (value.invoiceId !== undefined && !isRandom32ByteId(value.invoiceId)) {
     throw new Error("Payment link invoiceId must be a 32-byte hexadecimal id.");
   }
   if (typeof value.chainId !== "string") {
@@ -183,10 +174,14 @@ function normalizePaymentRequest(
     throw new Error("Payment link amount exceeds the uint256 STRK limit.");
   }
   if (BigInt(parsed.requester) === 0n) {
-    throw new Error("Payment link requester must be a non-zero Starknet address.");
+    throw new Error(
+      "Payment link requester must be a non-zero Starknet address.",
+    );
   }
   if (parsed.expiresAt > MAX_DATE_SECONDS) {
-    throw new Error("Payment link expiry is outside the displayable date range.");
+    throw new Error(
+      "Payment link expiry is outside the displayable date range.",
+    );
   }
 
   return {

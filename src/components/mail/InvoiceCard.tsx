@@ -127,9 +127,7 @@ export default function InvoiceCard({
   useEffect(() => {
     if (!shareInitiallyOpen || !canShare) return;
     try {
-      setShareLink(
-        createPaymentLink(requestForLink(), window.location.origin),
-      );
+      setShareLink(createPaymentLink(requestForLink(), window.location.origin));
       setShareMessage("");
       setShareOpen(true);
     } catch (error: unknown) {

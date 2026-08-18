@@ -17,19 +17,14 @@ import {
   paymentLinkChainIdsEqual,
   paymentLinkNetworkLabel,
 } from "@/lib/payment-link";
-import {
-  loadPendingPayment,
-  storePendingPayment,
-} from "@/lib/pending-payment";
+import { loadPendingPayment, storePendingPayment } from "@/lib/pending-payment";
 import { paymentRequestIsExpired, type PaymentRequestPayload } from "@/lib/otc";
 
 export default function PayPage() {
   const navigate = useNavigate();
   const isConnected = useStoreWallet((state) => state.isConnected);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const strk20Capability = useStoreWallet(
-    (state) => state.strk20Capability,
-  );
+  const strk20Capability = useStoreWallet((state) => state.strk20Capability);
   const address = useStoreWallet((state) => state.address);
   const chainId = useStoreWallet((state) => state.chain);
   const [hasFragment, setHasFragment] = useState(
@@ -246,75 +241,83 @@ export default function PayPage() {
           </p>
         </header>
 
-        {hasFragment ? request ? (
-          <section className={styles.card} aria-labelledby="payment-link-title">
-            <h2 id="payment-link-title" className={styles.cardTitle}>
-              Unsigned invoice
-            </h2>
-            <p className={styles.notice} role="status">
-              {readinessMessage}
-            </p>
-            {isConnected && !isStrk20Capable && strk20Capability ? (
-              <Strk20CapabilityDiagnostic capability={strk20Capability} />
-            ) : null}
-            <InvoiceCard request={request} showPaymentActions={false} />
-            <p className={styles.actionWarning}>
-              Continuing stores this decoded request in this tab. It does not
-              submit a payment. In the inbox, review it again and explicitly
-              confirm through the normal wallet flow. Shield separately before
-              paying; bundling a public shield with the transfer would correlate
-              them.
-            </p>
-            {pendingConflict ? (
-              <div className={styles.restoreWarning} role="alert">
-                <strong>Replace another pending payment link?</strong>
-                <p>
-                  This tab already holds a different reviewed request. Replacing
-                  it does not pay either request, but the earlier handoff will no
-                  longer open automatically.
-                </p>
-                <button
-                  className={styles.warningButton}
-                  type="button"
-                  onClick={() => continueToInbox(true)}
-                >
-                  Replace pending request and continue
-                </button>
-              </div>
-            ) : (
-              <button
-                className={styles.primaryButton}
-                type="button"
-                onClick={() => continueToInbox(false)}
-                disabled={expired || wrongNetwork}
-              >
-                {expired
-                  ? "Expired request — payment disabled"
-                  : wrongNetwork
-                    ? `Switch wallet to ${requestedNetwork}`
-                    : "Continue to inbox to review & pay"}
-              </button>
-            )}
-            {handoffError ? (
-              <p className={styles.actionWarning} role="alert">
-                {handoffError} No payment was sent.
+        {hasFragment ? (
+          request ? (
+            <section
+              className={styles.card}
+              aria-labelledby="payment-link-title"
+            >
+              <h2 id="payment-link-title" className={styles.cardTitle}>
+                Unsigned invoice
+              </h2>
+              <p className={styles.notice} role="status">
+                {readinessMessage}
               </p>
-            ) : null}
-          </section>
-        ) : (
-          <section className={styles.card} aria-labelledby="invalid-link-title">
-            <p className={styles.kicker}>LINK REJECTED</p>
-            <h2 id="invalid-link-title" className={styles.cardTitle}>
-              This invoice cannot be opened
-            </h2>
-            <p className={styles.actionWarning} role="alert">
-              {decodeError || "Checking the payment-link fragment…"}
-            </p>
-            <p className={styles.copy}>
-              Ask the requester for a fresh Quietline payment link and verify
-              their full Starknet address through another channel.
-            </p>
-          </section>
+              {isConnected && !isStrk20Capable && strk20Capability ? (
+                <Strk20CapabilityDiagnostic capability={strk20Capability} />
+              ) : null}
+              <InvoiceCard request={request} showPaymentActions={false} />
+              <p className={styles.actionWarning}>
+                Continuing stores this decoded request in this tab. It does not
+                submit a payment. In the inbox, review it again and explicitly
+                confirm through the normal wallet flow. Shield separately before
+                paying; bundling a public shield with the transfer would
+                correlate them.
+              </p>
+              {pendingConflict ? (
+                <div className={styles.restoreWarning} role="alert">
+                  <strong>Replace another pending payment link?</strong>
+                  <p>
+                    This tab already holds a different reviewed request.
+                    Replacing it does not pay either request, but the earlier
+                    handoff will no longer open automatically.
+                  </p>
+                  <button
+                    className={styles.warningButton}
+                    type="button"
+                    onClick={() => continueToInbox(true)}
+                  >
+                    Replace pending request and continue
+                  </button>
+                </div>
+              ) : (
+                <button
+                  className={styles.primaryButton}
+                  type="button"
+                  onClick={() => continueToInbox(false)}
+                  disabled={expired || wrongNetwork}
+                >
+                  {expired
+                    ? "Expired request — payment disabled"
+                    : wrongNetwork
+                      ? `Switch wallet to ${requestedNetwork}`
+                      : "Continue to inbox to review & pay"}
+                </button>
+              )}
+              {handoffError ? (
+                <p className={styles.actionWarning} role="alert">
+                  {handoffError} No payment was sent.
+                </p>
+              ) : null}
+            </section>
+          ) : (
+            <section
+              className={styles.card}
+              aria-labelledby="invalid-link-title"
+            >
+              <p className={styles.kicker}>LINK REJECTED</p>
+              <h2 id="invalid-link-title" className={styles.cardTitle}>
+                This invoice cannot be opened
+              </h2>
+              <p className={styles.actionWarning} role="alert">
+                {decodeError || "Checking the payment-link fragment…"}
+              </p>
+              <p className={styles.copy}>
+                Ask the requester for a fresh Quietline payment link and verify
+                their full Starknet address through another channel.
+              </p>
+            </section>
+          )
         ) : (
           <section
             className={styles.card}
@@ -331,13 +334,16 @@ export default function PayPage() {
               <Strk20CapabilityDiagnostic capability={strk20Capability} />
             ) : null}
 
-            <form className={styles.paymentLinkForm} onSubmit={generatePaymentLink}>
+            <form
+              className={styles.paymentLinkForm}
+              onSubmit={generatePaymentLink}
+            >
               <div className={styles.paymentLinkAddress}>
                 <strong>Requester address embedded in the link</strong>
                 <code>{address || "Connect a wallet"}</code>
                 <span>
-                  The link is not signed. The payer must verify this full address
-                  through another channel.
+                  The link is not signed. The payer must verify this full
+                  address through another channel.
                 </span>
               </div>
               <label className={styles.field}>
@@ -366,7 +372,8 @@ export default function PayPage() {
                   required
                 />
                 <small>
-                  0 means no expiry; maximum {MAX_PAYMENT_LINK_EXPIRY_HOURS} hours.
+                  0 means no expiry; maximum {MAX_PAYMENT_LINK_EXPIRY_HOURS}{" "}
+                  hours.
                 </small>
               </label>
               <label className={`${styles.field} ${styles.paymentLinkWide}`}>
@@ -381,10 +388,13 @@ export default function PayPage() {
                   placeholder="What is this payment for?"
                 />
                 <small>
-                  This memo is in the link, not encrypted. Do not put secrets here.
+                  This memo is in the link, not encrypted. Do not put secrets
+                  here.
                 </small>
               </label>
-              <p className={`${styles.actionWarning} ${styles.paymentLinkWide}`}>
+              <p
+                className={`${styles.actionWarning} ${styles.paymentLinkWide}`}
+              >
                 Shared links are reusable. Quietline cannot globally mark an
                 unsigned link paid, so another browser or device can explicitly
                 approve it again. Prefer an expiry and stop sharing fulfilled
@@ -415,7 +425,9 @@ export default function PayPage() {
               >
                 <div className={styles.paymentLinkPreviewHeading}>
                   <div>
-                    <p className={styles.kicker}>READY TO SHARE / STILL UNSIGNED</p>
+                    <p className={styles.kicker}>
+                      READY TO SHARE / STILL UNSIGNED
+                    </p>
                     <h2 id="payment-link-preview-title">Review your link</h2>
                   </div>
                   <span>No transaction submitted</span>

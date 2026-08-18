@@ -138,12 +138,7 @@ describe("payment-link mailbox handoff", () => {
     expect(loadOtcState(local, "SN_MAIN", payer).payments).toEqual({});
 
     expect(
-      importPendingPaymentIntoMailbox(
-        session,
-        local,
-        "SN_SEPOLIA",
-        payer,
-      ),
+      importPendingPaymentIntoMailbox(session, local, "SN_SEPOLIA", payer),
     ).toMatchObject({ request, origin: "payment_link" });
     expect(loadPendingPayment(session)).toBeNull();
   });

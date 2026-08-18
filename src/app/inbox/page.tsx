@@ -615,7 +615,9 @@ export default function InboxPage() {
         ),
       );
       setDrafts(loadDrafts(window.localStorage, chainId, address));
-      setAssignments(loadMailAssignments(window.localStorage, chainId, address));
+      setAssignments(
+        loadMailAssignments(window.localStorage, chainId, address),
+      );
       setProofs({});
       setOtcState(storedOtc);
       setEscrowState(loadEscrowState(window.localStorage, chainId, address));
@@ -2219,13 +2221,9 @@ export default function InboxPage() {
     if (!address || !chainId) return;
     try {
       setAssignments(
-        saveMailAssignment(
-          window.localStorage,
-          chainId,
-          address,
-          messageId,
-          { address: assignedAddress },
-        ),
+        saveMailAssignment(window.localStorage, chainId, address, messageId, {
+          address: assignedAddress,
+        }),
       );
       setStorageNotice({
         kind: "ok",
@@ -2235,13 +2233,15 @@ export default function InboxPage() {
     } catch (error: unknown) {
       setStorageNotice({
         kind: "error",
-        message:
-          error instanceof Error ? error.message : "Assignment failed.",
+        message: error instanceof Error ? error.message : "Assignment failed.",
       });
     }
   }
 
-  async function proveAssignedAddress(messageId: string, assignedAddress: string) {
+  async function proveAssignedAddress(
+    messageId: string,
+    assignedAddress: string,
+  ) {
     if (!helperAddress) {
       setStorageNotice({
         kind: "error",

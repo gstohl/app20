@@ -35,7 +35,9 @@ describe("optional mailbox vault", () => {
     const record = await wrapMailSeed(seed, "correct-horse", testParams);
     expect(record.kind).toBe("passphrase");
     expect(record.ciphertext).not.toContain("00010203");
-    await expect(unwrapMailSeed(record, "correct-horse")).resolves.toEqual(seed);
+    await expect(unwrapMailSeed(record, "correct-horse")).resolves.toEqual(
+      seed,
+    );
     await expect(unwrapMailSeed(record, "wrong-horse1")).rejects.toThrow(
       /does not open/i,
     );

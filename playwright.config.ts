@@ -11,8 +11,7 @@ export default defineConfig({
   reporter: [["list"]],
   outputDir: "test-results/playwright",
   use: {
-    baseURL:
-      process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173",
+    baseURL: process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173",
     browserName: "chromium",
     headless: true,
     viewport: { width: 1_440, height: 900 },

@@ -43,8 +43,8 @@ describe("conversation tags", () => {
       fields.conversationId,
     );
     expect(fields.inReplyTo).toBe("");
-    expect(
-      conversationFieldsFromPayload("text", { body: "untagged" }),
-    ).toEqual({});
+    expect(conversationFieldsFromPayload("text", { body: "untagged" })).toEqual(
+      {},
+    );
   });
 });

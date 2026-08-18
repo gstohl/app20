@@ -2,8 +2,7 @@ import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
-const BASE_URL =
-  process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173";
+const BASE_URL = process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173";
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
@@ -114,7 +113,9 @@ async function scanRecent(page: Page) {
   await expect(button).toBeEnabled();
   await button.click();
   await page.waitForTimeout(100);
-  await expect(page.getByRole("button", { name: "Check for new mail" })).toBeEnabled({
+  await expect(
+    page.getByRole("button", { name: "Check for new mail" }),
+  ).toBeEnabled({
     timeout: 60_000,
   });
 }
@@ -161,7 +162,9 @@ test("creates a standalone payment link without an on-chain action", async ({
   await page.getByLabel("Memo (optional)").fill("Standalone link test");
   await page.getByRole("button", { name: "Generate payment link" }).click();
 
-  await expect(page.getByText("No transaction submitted", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("No transaction submitted", { exact: true }),
+  ).toBeVisible();
   const linkCode = page
     .locator("code")
     .filter({ hasText: `${BASE_URL}/pay#qlp2.` });

@@ -590,8 +590,7 @@ export default function Compose({
     if (!draft.body.trim() && attachments.length === 0) {
       throw new Error("Write a message or add at least one attachment.");
     }
-    const conversationId =
-      draft.conversationId || randomConversationId();
+    const conversationId = draft.conversationId || randomConversationId();
     const inReplyTo = draft.inReplyTo || "";
     let senderAuth: ReturnType<typeof createMailSenderAuth> | undefined;
     if (mailSeed) {

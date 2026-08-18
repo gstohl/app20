@@ -34,7 +34,10 @@ export type MailVaultRecord =
 export type InspectedMailVault =
   | { kind: "missing" }
   | { kind: "plaintext"; seed: Uint8Array; record: MailVaultRecord }
-  | { kind: "passphrase"; record: Extract<MailVaultRecord, { kind: "passphrase" }> };
+  | {
+      kind: "passphrase";
+      record: Extract<MailVaultRecord, { kind: "passphrase" }>;
+    };
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
@@ -46,7 +49,9 @@ export function seedToHex(seed: Uint8Array): string {
   if (seed.length !== SEED_BYTES) {
     throw new Error("Mail seed must be exactly 32 bytes.");
   }
-  return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export function seedFromHex(value: string): Uint8Array | null {
@@ -57,10 +62,16 @@ export function seedFromHex(value: string): Uint8Array | null {
 }
 
 function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
-function hexToBytes(value: string, expected: number, label: string): Uint8Array {
+function hexToBytes(
+  value: string,
+  expected: number,
+  label: string,
+): Uint8Array {
   if (!/^[0-9a-f]+$/i.test(value) || value.length !== expected * 2) {
     throw new Error(`${label} is not valid hex.`);
   }
@@ -80,7 +91,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function parseMailVaultRecord(raw: string | null): MailVaultRecord | null {
+export function parseMailVaultRecord(
+  raw: string | null,
+): MailVaultRecord | null {
   if (!raw) return null;
   if (HEX_SEED.test(raw)) {
     return { version: 1, kind: "plaintext", seed: raw.toLowerCase() };
@@ -90,7 +103,9 @@ export function parseMailVaultRecord(raw: string | null): MailVaultRecord | null
     if (!isObject(value) || value.version !== 1) return null;
     if (value.kind === "plaintext" && typeof value.seed === "string") {
       const seed = seedFromHex(value.seed);
-      return seed ? { version: 1, kind: "plaintext", seed: seedToHex(seed) } : null;
+      return seed
+        ? { version: 1, kind: "plaintext", seed: seedToHex(seed) }
+        : null;
     }
     if (
       value.kind === "passphrase" &&
@@ -125,7 +140,9 @@ export function inspectMailVault(
   chainId: string,
   address: string,
 ): InspectedMailVault {
-  const record = parseMailVaultRecord(storage.getItem(mailVaultKey(chainId, address)));
+  const record = parseMailVaultRecord(
+    storage.getItem(mailVaultKey(chainId, address)),
+  );
   if (!record) return { kind: "missing" };
   if (record.kind === "plaintext") {
     const seed = seedFromHex(record.seed);
@@ -212,8 +229,9 @@ export async function unwrapMailSeed(
   const salt = hexToBytes(record.salt, SALT_BYTES, "vault salt");
   const nonce = hexToBytes(record.nonce, NONCE_BYTES, "vault nonce");
   const ciphertext = Uint8Array.from(
-    record.ciphertext.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ??
-      [],
+    record.ciphertext
+      .match(/.{2}/g)
+      ?.map((byte) => Number.parseInt(byte, 16)) ?? [],
   );
   if (ciphertext.length < SEED_BYTES + 16) {
     throw new Error("Wrapped mailbox vault is truncated.");
