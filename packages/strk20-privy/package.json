@@ -1,0 +1,76 @@
+{
+  "name": "strk20-privy",
+  "version": "0.1.0",
+  "description": "Reusable Privy-backed Starknet accounts with pluggable STRK20 proving and discovery.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client-module.d.ts",
+      "import": "./dist/client-module.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js"
+    },
+    "./proxy": {
+      "types": "./dist/proxy/index.d.ts",
+      "import": "./dist/proxy/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "dev": "tsx watch examples/quickstart.ts",
+    "example": "tsx examples/quickstart.ts",
+    "example:mock": "tsx examples/mock-flow.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "demo:typecheck": "npm run typecheck --prefix demo",
+    "demo:build": "npm run build --prefix demo",
+    "testnet:check": "tsx --env-file=.env scripts/check-testnet.ts",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "starknet",
+    "strk20",
+    "privy",
+    "privacy",
+    "shielded",
+    "wallet",
+    "prover-proxy"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@privy-io/node": "^0.8.0",
+    "starknet": "10.5.0"
+  },
+  "peerDependencies": {
+    "@starkware-libs/starknet-privacy-sdk": "0.14.3-rc.5"
+  },
+  "peerDependenciesMeta": {
+    "@starkware-libs/starknet-privacy-sdk": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@starkware-libs/starknet-privacy-sdk": "file:vendor/starkware-libs-starknet-privacy-sdk-0.14.3-rc.5.tgz",
+    "@types/node": "^24.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}
