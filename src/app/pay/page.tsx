@@ -2,7 +2,6 @@
 
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
@@ -104,7 +103,7 @@ export default function PayPage() {
       "No wallet is connected. Continue to the inbox, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
   } else if (!isStrk20Capable) {
     readinessMessage =
-      "The connected wallet does not expose the dapp-facing STRK20 API Quietline requires. No private payment can be submitted.";
+      "The connected wallet does not expose the dapp-facing STRK20 API VLT20 requires. No private payment can be submitted.";
   } else if (hasLocalMailSeed) {
     readinessMessage =
       "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
@@ -122,7 +121,7 @@ export default function PayPage() {
       "Ready to create an unsigned request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
   } else {
     creatorReadiness =
-      "This wallet does not expose Quietline's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
+      "This wallet does not expose VLT20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
   }
 
   function continueToInbox(replaceExisting = false) {
@@ -142,12 +141,12 @@ export default function PayPage() {
 
       storePendingPayment(window.sessionStorage, request);
       setPendingConflict(false);
-      void navigate({ to: "/inbox" });
+      void navigate({ to: "/mail/inbox" });
     } catch (error: unknown) {
       setHandoffError(
         error instanceof Error
           ? error.message
-          : "Quietline could not save this request in the current tab.",
+          : "VLT20 could not save this request in the current tab.",
       );
     }
   }
@@ -166,7 +165,7 @@ export default function PayPage() {
     if (!isStrk20Capable) {
       setGeneratedRequest(null);
       setCreateError(
-        "The connected wallet is not exposing the STRK20 API Quietline requires.",
+        "The connected wallet is not exposing the STRK20 API VLT20 requires.",
       );
       return;
     }
@@ -186,7 +185,7 @@ export default function PayPage() {
       setCreateError(
         error instanceof Error
           ? error.message
-          : "Quietline could not create this payment request.",
+          : "VLT20 could not create this payment request.",
       );
     }
   }
@@ -209,25 +208,12 @@ export default function PayPage() {
 
   return (
     <div className={styles.page}>
-      <nav className={styles.nav}>
-        <Link className={styles.brand} to="/" aria-label="Quietline home">
-          <span className={styles.brandMark}>Q</span>
-          <span>Quietline</span>
-        </Link>
-        <div className={styles.navRight}>
-          <span className={styles.network}>
-            {hasFragment ? "PAYMENT LINK / UNSIGNED" : "CREATE PAYMENT LINK"}
-          </span>
-          <SelectWallet variant="nav" />
-        </div>
-      </nav>
-
       <main className={styles.shell}>
         <header className={styles.intro}>
           <p className={styles.eyebrow}>
             {hasFragment
-              ? "QUIETLINE / PAYMENT REVIEW"
-              : "QUIETLINE / REQUEST PRIVATE STRK"}
+              ? "VLT20 / PAYMENT REVIEW"
+              : "VLT20 / REQUEST PRIVATE STRK"}
           </p>
           <h1>
             {hasFragment
@@ -236,7 +222,7 @@ export default function PayPage() {
           </h1>
           <p>
             {hasFragment
-              ? "Payment links are unauthenticated instructions. Quietline decodes this invoice only from the URL fragment in your browser; the fragment is not sent in an HTTP request."
+              ? "Payment links are unauthenticated instructions. VLT20 decodes this invoice only from the URL fragment in your browser; the fragment is not sent in an HTTP request."
               : "Create an unsigned STRK request without sending mail or touching the pool. The requester address, amount, memo, and expiry live in the URL fragment and are visible to anyone who receives the link."}
           </p>
         </header>
@@ -313,7 +299,7 @@ export default function PayPage() {
                 {decodeError || "Checking the payment-link fragment…"}
               </p>
               <p className={styles.copy}>
-                Ask the requester for a fresh Quietline payment link and verify
+                Ask the requester for a fresh VLT20 payment link and verify
                 their full Starknet address through another channel.
               </p>
             </section>
@@ -395,7 +381,7 @@ export default function PayPage() {
               <p
                 className={`${styles.actionWarning} ${styles.paymentLinkWide}`}
               >
-                Shared links are reusable. Quietline cannot globally mark an
+                Shared links are reusable. VLT20 cannot globally mark an
                 unsigned link paid, so another browser or device can explicitly
                 approve it again. Prefer an expiry and stop sharing fulfilled
                 links.
@@ -445,7 +431,7 @@ export default function PayPage() {
       </main>
 
       <footer className={styles.footer}>
-        <Link to="/">Open mailbox</Link>
+        <Link to="/mail/inbox">Open Privacy Mail Vault</Link>
         <span>
           {hasFragment
             ? "No link can authorize or auto-submit a payment."

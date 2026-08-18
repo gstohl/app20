@@ -4,41 +4,58 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  Outlet,
   redirect,
   RouterProvider,
 } from "@tanstack/react-router";
+import AppShell from "@/app/components/AppShell";
 import InboxPage from "@/app/inbox/page";
 import PayPage from "@/app/pay/page";
-import { LocalnetToolsContext } from "@/app/localnetToolsContext";
+import VaultPage from "@/app/vault/page";
+import { CANONICAL_ROUTES } from "@/app/routes";
 import "@/app/globals.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
 
 function RootLayout() {
-  return (
-    <LocalnetToolsContext.Provider value={renderLocalnetTools}>
-      <Outlet />
-    </LocalnetToolsContext.Provider>
-  );
+  return <AppShell renderLocalnetTools={renderLocalnetTools} />;
 }
 
-const rootRoute = createRootRoute({
-  component: RootLayout,
+const rootRoute = createRootRoute({ component: RootLayout });
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.vault, replace: true });
+  },
+});
+
+const vaultRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/vault",
+  component: VaultPage,
+});
+
+const mailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/mail",
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.mail, replace: true });
+  },
+});
+
+const legacyInboxRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inbox",
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.mail, replace: true });
+  },
 });
 
 const mailboxRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: "/mail/inbox",
   component: InboxPage,
-});
-
-const inboxRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/inbox",
-  beforeLoad: () => {
-    throw redirect({ to: "/", replace: true });
-  },
 });
 
 const payRoute = createRoute({
@@ -48,7 +65,14 @@ const payRoute = createRoute({
 });
 
 const router = createRouter({
-  routeTree: rootRoute.addChildren([mailboxRoute, inboxRoute, payRoute]),
+  routeTree: rootRoute.addChildren([
+    homeRoute,
+    vaultRoute,
+    mailRoute,
+    legacyInboxRoute,
+    mailboxRoute,
+    payRoute,
+  ]),
 });
 
 declare module "@tanstack/react-router" {

@@ -229,3 +229,202 @@ a {
   color: var(--surface-raised);
   background: var(--danger);
 }
+
+/* VLT20 unified product shell. The module content keeps its own semantic
+   palette while the compact control rails remain consistently dark. */
+.app-shell {
+  --app-shell-offset: 92px;
+  --shell-bg: #0b0c0c;
+  --shell-panel: #111313;
+  --shell-line: #303232;
+  --shell-text: #f1eee7;
+  --shell-muted: #999994;
+  --shell-orange: #d04b19;
+  min-height: 100dvh;
+  background: var(--shell-bg);
+}
+
+.signal-bar {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-bottom: 1px solid #e15b25;
+  padding: 5px 12px;
+  color: #fff;
+  background: linear-gradient(90deg, #852b0c, var(--shell-orange), #852b0c);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.signal-bar > span:last-child { color: rgba(255, 255, 255, 0.65); }
+.signal-dot,
+.network-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #777;
+}
+.signal-dot,
+.network-status i.status-live {
+  background: #39e77d;
+  box-shadow: 0 0 10px rgba(57, 231, 125, 0.7);
+}
+
+.app-header {
+  display: grid;
+  min-height: 64px;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 0 18px;
+  color: var(--shell-text);
+  background: rgba(10, 11, 11, 0.98);
+}
+
+.app-brand {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font-family: Arial Black, Arial, sans-serif;
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: -0.08em;
+}
+.app-brand b { color: var(--shell-orange); font-size: 17px; }
+
+.app-tabs,
+.app-utilities { display: flex; align-items: center; gap: 6px; }
+.app-tabs a,
+.request-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  border: 1px solid transparent;
+  padding: 0 13px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.app-tabs a[aria-current="page"] {
+  border-color: var(--shell-line);
+  color: #fff;
+  box-shadow: inset 0 -2px var(--shell-orange);
+}
+.app-tabs a:hover,
+.request-link:hover { color: #fff; border-color: var(--shell-orange); }
+.app-utilities { justify-content: flex-end; }
+.request-link { border-color: #743018; color: #fff; }
+.network-status,
+.wallet-status {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 7px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.wallet-status { max-width: 110px; overflow: hidden; text-overflow: ellipsis; }
+
+.vault-page {
+  --paper: #0b0c0c;
+  --paper-deep: #171919;
+  --surface-raised: #111313;
+  --surface-muted: #202222;
+  --ink: #f1eee7;
+  --muted: #999994;
+  --line: #303232;
+  --teal: #d04b19;
+  --teal-soft: #321a11;
+  --positive: #39e77d;
+  --positive-quiet: #173323;
+  --positive-border: #285d3d;
+  --danger: #ff715e;
+  --danger-quiet: #3a1f1b;
+  --danger-border: #73372f;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  padding: clamp(28px, 5vw, 64px) max(18px, calc((100vw - 1180px) / 2));
+  color: var(--shell-text);
+  background:
+    radial-gradient(circle at 55% 20%, rgba(196, 71, 26, 0.08), transparent 28rem),
+    var(--shell-bg);
+}
+.vault-intro { max-width: 760px; }
+.vault-intro > p,
+.panel-heading span {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.vault-intro h1 {
+  margin-top: 10px;
+  font-size: clamp(40px, 6vw, 72px);
+  line-height: 1;
+  letter-spacing: -0.055em;
+}
+.vault-intro > span {
+  display: block;
+  max-width: 64ch;
+  margin-top: 18px;
+  color: var(--shell-muted);
+  line-height: 1.6;
+}
+.vault-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 8px;
+  margin-top: 38px;
+}
+.panel-frame { border: 1px solid var(--shell-line); background: #101212; }
+.panel-heading {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--shell-line);
+}
+.panel-heading strong { font-size: 14px; letter-spacing: 0.06em; }
+.vault-state { display: flex; gap: 14px; padding: 22px 18px; }
+.rail-indicator { width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; background: #666; }
+.rail-indicator.is-live { background: #39e77d; box-shadow: 0 0 12px rgba(57,231,125,.6); }
+.vault-state div { min-width: 0; }
+.vault-state small { color: var(--shell-muted); font-family: var(--font-mono-ui), monospace; }
+.vault-state strong { display: block; margin-top: 12px; overflow-wrap: anywhere; font-family: var(--font-mono-ui), monospace; font-size: 13px; }
+.vault-state p { margin-top: 14px; color: var(--shell-muted); font-size: 13px; line-height: 1.55; }
+.vault-public > button { margin: 0 18px 22px; min-height: 44px; }
+.rail-facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--shell-line); }
+.rail-facts span { min-height: 74px; padding: 14px; color: var(--shell-muted); font-size: 11px; }
+.rail-facts span + span { border-left: 1px solid var(--shell-line); }
+.rail-facts b { display: block; margin-bottom: 8px; color: var(--shell-text); font-family: var(--font-mono-ui), monospace; font-size: 9px; text-transform: uppercase; }
+.vault-private section { border: 0; background: transparent; }
+.vault-private button { min-height: 44px; }
+
+@media (max-width: 900px) {
+  .app-shell { --app-shell-offset: 136px; }
+  .app-header { grid-template-columns: auto 1fr; gap: 8px; padding: 6px 12px; }
+  .app-tabs { order: 3; grid-column: 1 / -1; overflow-x: auto; }
+  .app-tabs a { flex: 1; justify-content: center; white-space: nowrap; }
+  .network-status, .wallet-status { display: none; }
+  .vault-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .signal-bar > span:last-child { display: none; }
+  .app-utilities .request-link { padding: 0 9px; }
+  .app-utilities { gap: 2px; }
+  .app-brand { font-size: 18px; }
+  .vault-page { padding-top: 32px; }
+  .rail-facts { grid-template-columns: 1fr; }
+  .rail-facts span + span { border-top: 1px solid var(--shell-line); border-left: 0; }
+}

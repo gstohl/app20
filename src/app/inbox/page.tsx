@@ -1,7 +1,6 @@
 "use client";
 
 import type { WALLET_API } from "@starknet-io/types-js";
-import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
@@ -2334,10 +2333,7 @@ export default function InboxPage() {
         >
           ☰
         </button>
-        <a className={styles.brand} href="/" aria-label="Quietline mailbox">
-          <span className={styles.brandMark}>Q</span>
-          <span>Quietline</span>
-        </a>
+        <span className={styles.mobileModuleTitle}>Mail Vault</span>
         <button
           className={styles.mobileCompose}
           type="button"
@@ -2371,10 +2367,7 @@ export default function InboxPage() {
           aria-label="Mailbox sidebar"
         >
           <div className={styles.sidebarBrandRow}>
-            <a className={styles.brand} href="/" aria-label="Quietline mailbox">
-              <span className={styles.brandMark}>Q</span>
-              <span>Quietline</span>
-            </a>
+            <strong className={styles.moduleTitle}>Privacy Mail Vault</strong>
             <button
               ref={sidebarCloseRef}
               className={styles.sidebarClose}
@@ -2398,14 +2391,6 @@ export default function InboxPage() {
               <span aria-hidden="true">＋</span>
               New
             </button>
-            <Link
-              className={styles.paymentLinkButton}
-              to="/pay"
-              onClick={() => setSidebarOpen(false)}
-            >
-              <span aria-hidden="true">↗</span>
-              Request
-            </Link>
           </div>
 
           <nav className={styles.mailboxNav} aria-label="Mail folders">
@@ -2614,7 +2599,7 @@ export default function InboxPage() {
                   ? "New document"
                   : selectedMessage
                     ? folderLabel
-                    : "Quietline"}
+                    : "Privacy Mail Vault"}
               </strong>
             </div>
             {composerOpen ? (
@@ -2703,7 +2688,7 @@ export default function InboxPage() {
             ) : (
               <section className={styles.welcomeState}>
                 <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>QUIETLINE / PRIVATE MAIL</p>
+                  <p className={styles.eyebrow}>VLT20 / PRIVACY MAIL VAULT</p>
                   <h1>Private words, public ciphertext.</h1>
                   <p className={styles.welcomeCopy}>
                     Quietline is encrypted on-chain mail for letters, private

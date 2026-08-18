@@ -151,7 +151,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   const requestedUrls: string[] = [];
   page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
 
-  await page.goto("/");
+  await page.goto("/mail/inbox");
   await connectLocalnet(page);
   await page.getByRole("link", { name: "Request", exact: true }).click();
   await expect(
@@ -220,7 +220,7 @@ test("all Quietline localnet journeys", async ({
   const multiBody = "Two recipients decrypt this private circular";
 
   await test.step("1. connect and onboard Alice and Bob", async () => {
-    await page.goto("/");
+    await page.goto("/mail/inbox");
     await connectLocalnet(page, true);
     await switchIdentity(page, config, "alice");
     const aliceBackup = await registerNewKey(
@@ -422,7 +422,7 @@ test("all Quietline localnet journeys", async ({
       localStorage.setItem("quietline/localnet-wallet/identity/v1", "bob");
     });
     const wrongKeyPage = await unrelated.newPage();
-    await wrongKeyPage.goto("/");
+    await wrongKeyPage.goto("/mail/inbox");
     await connectLocalnet(wrongKeyPage);
     await wrongKeyPage.getByText("Restore from backup").click();
     await wrongKeyPage.getByLabel("Backup value").fill(WRONG_KEY_BACKUP);

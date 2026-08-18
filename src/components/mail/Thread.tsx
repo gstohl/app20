@@ -133,7 +133,7 @@ function isoBlockTimestamp(timestamp: number | undefined): string | null {
   }
 }
 
-function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
+export function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const { record } = message;
   const timestamp = isoBlockTimestamp(message.blockTimestamp);
@@ -154,7 +154,7 @@ function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   }
 
   return (
-    <details className={styles.chainDisclosure} open>
+    <details className={styles.chainDisclosure}>
       <summary>
         <span>What the chain sees</span>
         <span className={styles.chainToggleHint}>PUBLIC EVIDENCE</span>
