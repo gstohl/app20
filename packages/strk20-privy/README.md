@@ -100,6 +100,29 @@ const session = await client.session(wallet, (hash) =>
 
 The browser holds viewing keys, notes, private inputs, and witness construction. A blind relay sees authenticated/pseudonymous quota context plus ciphertext; the final remote prover still sees the decrypted witness. See [`docs/BROWSER_PRIVACY.md`](docs/BROWSER_PRIVACY.md).
 
+### Application-specific private invocation
+
+`invokeExternal()` groups private transfers, explicit helper funding, one OPEN recovery note, and one external invocation into the same proof. Helper funding is mandatory and application-reviewed; the SDK never invents a dust amount.
+
+```ts
+await session.invokeExternal({
+  funding: { token: STRK, recipient: helperAddress, amount: helperFunding },
+  recovery: { token: STRK, recipient: session.address },
+  transfers: [{ token: STRK, recipient, amount }], // optional
+  calldata: ({ poolAddress, openNotes }) => ({
+    contractAddress: helperAddress,
+    calldata: [
+      STRK,
+      poolAddress,
+      (openNotes as Array<{ noteId: bigint }>)[0]!.noteId,
+      ...encryptedApplicationPayload,
+    ],
+  }),
+});
+```
+
+This is the browser-owned seam used by VLT20's Privacy Mail Vault. Message plaintext must already be end-to-end encrypted before it enters the invocation payload.
+
 ## Legacy server-side shared prover
 
 ```ts

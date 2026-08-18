@@ -11,7 +11,7 @@ import {
 } from "./coordination.js";
 import type { Strk20Discovery } from "./discovery.js";
 import { AccountNotDeployedError, ConfigError } from "./errors.js";
-import { PrivacyClient } from "./privacy.js";
+import { PrivacyClient, type PrivacyInvokeInput } from "./privacy.js";
 import type { Strk20Prover } from "./prover.js";
 import {
   buildReadyConstructor,
@@ -41,6 +41,10 @@ export { serviceDiscovery } from "./discovery.js";
 export type { ServiceDiscoveryOptions } from "./discovery.js";
 export { serviceProver } from "./prover.js";
 export type { ServiceProverOptions } from "./prover.js";
+export type {
+  PrivacyInvokeInput,
+  PrivacyInvokeTransfer,
+} from "./privacy.js";
 export type {
   OhttpTransportOption,
   OhttpTransportOptions,
@@ -339,6 +343,10 @@ export class BrowserStrk20Session {
     recipient?: string;
   }): Promise<PrivacyExecuteResult> {
     return this.privacy().unshield(input);
+  }
+
+  invokeExternal(input: PrivacyInvokeInput): Promise<PrivacyExecuteResult> {
+    return this.privacy().invokeExternal(input);
   }
 
   balances(tokens?: string[]): Promise<ShieldedBalance[]> {

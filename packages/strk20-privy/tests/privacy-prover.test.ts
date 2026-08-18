@@ -19,23 +19,39 @@ function fakeSdk(
   options: {
     onExecute?: () => Promise<void>;
     invalidateProofNonceCache?: () => void;
+    onWithToken?: (token: unknown) => void;
+    onTokenOperation?: (method: string, input: unknown) => void;
+    onInvoke?: (
+      callBuilder: (args: Record<string, unknown>) => unknown,
+    ) => void;
   } = {},
 ): PrivacySdkModule {
   return {
+    Open: Symbol("test-open-note"),
     createPrivateTransfers: () => {
       const tokenBuilder: Record<string, unknown> = {};
       for (const method of ["deposit", "transfer", "withdraw", "surplusTo"]) {
-        tokenBuilder[method] = () => tokenBuilder;
+        tokenBuilder[method] = (input: unknown) => {
+          options.onTokenOperation?.(method, input);
+          return tokenBuilder;
+        };
       }
 
       const builder: Record<string, unknown> = {};
-      for (const method of ["register", "setup", "surplusTo", "invoke"]) {
+      for (const method of ["register", "setup", "surplusTo"]) {
         builder[method] = () => builder;
       }
+      builder.invoke = (
+        callBuilder: (args: Record<string, unknown>) => unknown,
+      ) => {
+        options.onInvoke?.(callBuilder);
+        return builder;
+      };
       builder.with = (
-        _token: unknown,
+        token: unknown,
         operations: (token: Record<string, unknown>) => void,
       ) => {
+        options.onWithToken?.(token);
         operations(tokenBuilder);
         return builder;
       };
@@ -171,6 +187,73 @@ describe("PrivacyClient prover safety", () => {
     await expect(client.shield({ amount: 10n })).resolves.toMatchObject({
       submitted: false,
     });
+    expect(account.execute).not.toHaveBeenCalled();
+  });
+
+  it("builds one grouped external invoke for private mail and attachment", async () => {
+    const account = fakeAccount();
+    const withTokens: unknown[] = [];
+    const operations: Array<{ method: string; input: unknown }> = [];
+    let invokeBuilder:
+      | ((args: Record<string, unknown>) => unknown)
+      | undefined;
+    const token = "0x04718";
+    const client = new PrivacyClient({
+      account: account as never,
+      provider: fakeProvider() as never,
+      network: "sepolia",
+      poolAddress: "0x123",
+      prover: customProver(provingProvider(), { submittable: false }),
+      discovery,
+      privacySdk: fakeSdk(callAndProof(), {
+        onWithToken: (value) => withTokens.push(value),
+        onTokenOperation: (method, input) =>
+          operations.push({ method, input }),
+        onInvoke: (builder) => {
+          invokeBuilder = builder;
+        },
+      }),
+      viewingKeyProvider: { getViewingKey: async () => 1n },
+    });
+
+    await expect(
+      client.invokeExternal({
+        funding: { token, recipient: "0xhelper", amount: 7n },
+        recovery: { token, recipient: "0xabc" },
+        transfers: [{ token, recipient: "0xbob", amount: 5n }],
+        calldata: (args) => ({
+          contractAddress: "0xhelper",
+          calldata: [
+            args.poolAddress,
+            (args.openNotes as Array<{ noteId: bigint }>)[0]?.noteId,
+          ],
+        }),
+      }),
+    ).resolves.toMatchObject({ submitted: false });
+
+    expect(withTokens).toEqual([token]);
+    expect(operations.map(({ method }) => method)).toEqual([
+      "transfer",
+      "withdraw",
+      "transfer",
+      "surplusTo",
+    ]);
+    expect(operations[0]?.input).toEqual({ recipient: "0xbob", amount: 5n });
+    expect(operations[1]?.input).toEqual({
+      recipient: "0xhelper",
+      amount: 7n,
+    });
+    expect(
+      typeof (operations[2]?.input as { amount?: unknown }).amount,
+    ).toBe("symbol");
+    expect(invokeBuilder).toBeTypeOf("function");
+    expect(
+      invokeBuilder?.({
+        poolAddress: 0x123n,
+        openNotes: [{ noteId: 99n }],
+        withdrawals: [],
+      }),
+    ).toEqual({ contractAddress: "0xhelper", calldata: [0x123n, 99n] });
     expect(account.execute).not.toHaveBeenCalled();
   });
 

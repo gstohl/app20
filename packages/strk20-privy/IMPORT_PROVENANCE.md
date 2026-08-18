@@ -10,3 +10,5 @@
 The Next.js `demo/` tree was not imported. The import also excluded `.env`, `demo/.env.local`, `demo/tenants.json`, `demo/.next`, `node_modules`, `dist`, logs, TypeScript build-info files, caches, and all other ignored runtime artifacts or local configuration.
 
 The safe placeholder-only `.env.example` was imported for development documentation. The vendored SDK tarball was imported only after `shasum -a 256 -c vendor/SHA256SUMS` succeeded.
+
+`IMPORT_MANIFEST.sha256` records the exact imported snapshot at VLT20 import commit `21d9b3b`. Later reviewed development intentionally changes package files, so verify the manifest against that commit rather than expecting it to match the current working tree.
