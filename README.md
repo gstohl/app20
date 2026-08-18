@@ -46,7 +46,7 @@ unlinkability.
 
 ## Local
 
-Needs Node.js 24+. From `/Users/dominik/orca/projects/app20`:
+Needs Node.js 24+. From the repository root:
 
 ```bash
 npm install --ignore-scripts

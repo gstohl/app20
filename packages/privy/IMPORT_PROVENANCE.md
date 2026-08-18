@@ -1,6 +1,6 @@
 # Import provenance
 
-- Source path: `/Users/dominik/orca/projects/strk20-privvy`
+- Source: sibling checkout `strk20-privvy` (not this repository)
 - Source Git HEAD: `f520aa7b845cd4d8a481d0204f9bb3e7f3b42ac6` (`f520aa7`)
 - Import date (UTC): 2026-08-18
 - Source state: the imported implementation files were untracked in the source repository.
