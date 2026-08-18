@@ -235,7 +235,7 @@ Never rename or silently migrate:
 
 New workflow records use `app20/.../v1` and reference legacy records rather than rewriting them.
 
-Changing from an old origin to `app20.gstohl.com` or later `app20.io` does not move origin-scoped browser storage or wallet permissions. A deployed migration needs user-mediated export/restore or a separately reviewed strict-origin transfer. Do not retire an old origin until users can recover mailbox and shielded state on the new one.
+Changing from an old origin to `app20.gstohl.com` (or any later domain you actually register) does not move origin-scoped browser storage or wallet permissions. A deployed migration needs user-mediated export/restore or a separately reviewed strict-origin transfer. Do not retire an old origin until users can recover mailbox and shielded state on the new one.
 
 ## Delivery phases
 

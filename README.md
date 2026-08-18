@@ -3,9 +3,9 @@
 A private superapp on Starknet: one shielded wallet, encrypted mail, and
 review-only surfaces for cross-chain intents and verifiable workflows.
 
-The first public origin is `https://app20.gstohl.com`. `app20.io` is reserved
-and is not the current deploy target. Quietline remains the mail protocol name
-only. Existing `quietline/*` storage keys, cryptographic domains, payment-link
+The first intended public origin is `https://app20.gstohl.com` on the
+already-owned `gstohl.com` zone. Nobody has bought `app20.io`. Quietline remains
+the mail protocol name only. Existing `quietline/*` storage keys, cryptographic domains, payment-link
 formats, and contract identifiers stay unchanged for recovery.
 
 Source lives at `https://github.com/gstohl/app20`. The first public origin is
