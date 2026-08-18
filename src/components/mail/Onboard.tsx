@@ -124,7 +124,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     if (!helperAddress) {
       setSetup({
         kind: "error",
-        message: "No QuietlineMail helper is configured for this network.",
+        message: "No mail helper is configured for this network.",
       });
       return;
     }
@@ -177,7 +177,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         (BigInt(registered[0]) !== 0n || BigInt(registered[1]) !== 0n)
       ) {
         throw new Error(
-          "A different device mail key is registered. Quietline will not overwrite it; use the original device or its backup.",
+          "A different device mail key is registered. Mail will not overwrite it; use the original device or its backup.",
         );
       }
 
@@ -273,7 +273,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "error",
         message:
-          "Mailbox setup needs QuietlineMail deployed on this network. Shield and unshield still work without it.",
+          "Mailbox setup needs the mail helper deployed on this network. Shield and unshield still work without it.",
       });
       return;
     }
@@ -369,14 +369,14 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         <strong>You choose the device risk.</strong> Default stores the raw
         32-byte mailbox seed in this browser profile. Anyone with this profile
         can read retained mail. Optional passphrase wrap encrypts that seed at
-        rest; Quietline then cannot open the mailbox until you unlock this
+        rest; Mail then cannot open the mailbox until you unlock this
         session. A wallet signature cannot be the wrap key — Ready signatures
         are not a stable secret. The eight-group backup is still the only
         recovery if you forget the passphrase or clear this profile.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
-          Mailbox registration needs the QuietlineMail helper on this network.
+          Mailbox registration needs the mail helper on this network.
           It is not deployed here yet, so register and restore stay disabled.
           Shield and unshield still work from the wallet rail — they talk to the
           live STRK20 pool, not this helper.
@@ -420,7 +420,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             </span>
             <small>
               Off: faster demo, seed stored in the clear. On: scrypt + AES-GCM
-              wrap. Quietline never stores the passphrase.
+              wrap. Mail never stores the passphrase.
             </small>
           </label>
           {wrapExisting ? (
@@ -466,7 +466,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           <code>{backupPhrase}</code>
           <p>
             Anyone with this phrase can read mail encrypted to this key. Store
-            it offline; Quietline does not upload it. If you chose a passphrase,
+            it offline; Mail does not upload it. If you chose a passphrase,
             this backup is still required when you forget it.
           </p>
           <button

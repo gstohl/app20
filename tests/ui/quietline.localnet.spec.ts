@@ -175,7 +175,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   const paymentLink = (await linkCode.innerText()).trim();
   expect(paymentLink.startsWith(`${BASE_URL}/pay#qlp2.`)).toBeTruthy();
   await expect(
-    page.locator('[aria-label="QR code for this Quietline payment link"]'),
+    page.locator('[aria-label="QR code for this payment link"]'),
   ).toBeVisible();
   expect(
     requestedUrls.some((url) =>

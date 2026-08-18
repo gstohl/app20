@@ -1,92 +1,96 @@
 # APP20
 
-A private superapp on Starknet: one shielded wallet, encrypted mail, and
-review-only surfaces for cross-chain intents and verifiable workflows.
+Private superapp on Starknet.
 
-The first intended public origin is `https://app20.gstohl.com` on the
-already-owned `gstohl.com` zone. Nobody has bought `app20.io`. Quietline remains
-the mail protocol name only. Existing `quietline/*` storage keys, cryptographic domains, payment-link
-formats, and contract identifiers stay unchanged for recovery.
+APP20 is a browser-owned workspace for shielded STRK, encrypted mail, and
+review-only cross-chain and policy surfaces. Users connect a wallet, keep
+viewing keys and mailbox keys on the device, and talk to the STRK20 pool
+through the official Starknet privacy path.
 
-Source lives at `https://github.com/gstohl/app20`. The first public origin is
-not live yet. This is not a Mainnet value-moving release.
+Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
 
-No testnet/mainnet prover, discovery, or RPC origins are in this repository.
-Those stay in Worker secrets after deploy. Browser assets only get public
-metadata (`VITE_*`) and non-routable `.invalid` OHTTP names.
+The first intended public host is `app20.gstohl.com`. That origin is not live
+yet. This is not a Mainnet value-moving release.
 
-## What works now
+## Product
 
-| Surface | Route | State |
+| Surface | Route | Status |
 | --- | --- | --- |
-| Vault | `/vault` | Ready Wallet Standard on Mainnet. Privy is Sepolia-only and disabled until public App ID + Client ID are set |
-| Mail | `/mail/inbox` | Encrypted Quietline mail over STRK20. Ready only; no silent Privy fallback |
-| Payment request | `/pay` | Unsigned `qlp2` links. No transaction until the payer confirms in Mail |
-| Intents | `/intents` | Review-only. Dry 1Click schema only. No deposit, quote transport, or submit |
-| Workflows | `/workflows` | Review-only. Advisory policy contract only. No TEE, no run |
+| Vault | `/vault` | Shielded wallet. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
+| Mail | `/mail/inbox` | APP20 Mail. Encrypted letters, private STRK memos, invoices, and one-sided deals. Ready only |
+| Pay | `/pay` | Unsigned payment request links. Nothing is sent until the payer confirms in Mail |
+| Intents | `/intents` | Review-only. Dry 1Click quotes. No deposit address, no submit |
+| Workflows | `/workflows` | Review-only. Advisory policy receipts. No TEE, no execution |
 
-Authorization policy, enforced below React:
+Wallet policy is enforced below the UI:
 
-- **Mainnet:** reviewed Ready/Argent Wallet Standard feature IDs only
-- **Sepolia:** Ready, plus a separate Privy browser signer
-- **Localnet:** build-gated development wallet only
+- **Mainnet** — reviewed Ready / Argent Wallet Standard feature IDs only
+- **Sepolia** — Ready, plus an optional Privy browser signer
+- **Localnet** — build-gated development wallet
 
-## Honest privacy
+In the product, the mail module is **Mail**. Compatibility identifiers
+(`QuietlineMail`, `quietline/*` storage, payment-link domains) stay unchanged
+so existing backups and on-chain registrations keep working.
 
-APP20 can hide in-pool transfers and encrypt mail content. It cannot promise
+## Privacy
+
+APP20 can hide in-pool transfers and encrypt mail. It cannot promise
 unlinkability.
 
-- Shield and unshield are public
-- Mail ciphertext, size, timing, helper use, and recipient count are public
-- The helper event omits sender/recipient addresses; RPC directory lookups do not
-- The remote prover sees the decrypted witness after OHTTP decapsulation
-- A NEAR Intents provider/solver would see route, amount, destination, and timing
-- A TEE would see only inputs marked for that enclave, and only after attestation
-- A replaced frontend can still request signatures and read browser-owned keys
+| Hidden | Public |
+| --- | --- |
+| In-pool sender, recipient, and amount | Shield and unshield |
+| Mail plaintext | Ciphertext, size, timing, helper use, recipient count |
+| Sender and recipient addresses in `MessagePosted` | Directory lookups at the configured RPC |
+| OHTTP ciphertext on the relay | The final prover after decapsulation |
 
-## Local
+A replaced frontend can still request signatures and read browser-owned keys.
+Cross-chain amounts, assets, destinations, and timing remain correlatable.
 
-Needs Node.js 24+. From the repository root:
+## Develop
+
+Requires Node.js 24+. From the repository root:
 
 ```bash
 npm install --ignore-scripts
-cp .env.example .env.local   # public VITE_* placeholders only
+cp .env.example .env.local
 npm run dev
 ```
 
 Open `http://127.0.0.1:5173`.
 
-Do not put RPC credentials, Privy App Secret, prover/discovery origins,
-OHTTP session secrets, NEAR partner keys, or TEE keys in any `VITE_*` file.
-Those values are Worker secrets, never browser build variables.
+Every `VITE_*` value is public. Do not put RPC credentials, Privy App Secret,
+prover or discovery origins, OHTTP session secrets, or partner keys in browser
+env files. Those belong in Worker secrets after deploy.
 
-### Localnet mail demo
+This repository does not contain testnet or mainnet prover, discovery, or RPC
+origins. Browser code only sees public metadata and non-routable `.invalid`
+OHTTP names.
+
+### Localnet
 
 ```bash
-npm run pool:setup          # one-time pinned real-pool toolchain
-npm run dev:localnet        # Alice/Bob, real pool, mock proofs
-# http://127.0.0.1:5173
+npm run pool:setup
+npm run dev:localnet
 npm run localnet:stop
 ```
 
-This is the real Cairo pool and the production mail action sequence, including
-the fixed 7-base-unit helper funding withdrawal. It is not a real STARK proof
-and not a Mainnet send.
+This deploys the real Cairo pool and the production mail action sequence,
+including the fixed 7-base-unit helper funding withdrawal. Proofs are simulated.
+It is not a Mainnet send.
 
 ## Packages
 
-```text
-@app20/domain              Canonical accounts, intents, lifecycle
-@app20/near-intents        Dry-only NEAR 1Click connector
-@app20/policy-client       Attestation + policy-receipt verification
-@app20/privacy-adapters    Fail-closed Starknet wallet/network policy
-@app20/privy               Browser-owned STRK20 / Privy integration
-@app20/relay               Cloudflare assets, bootstrap, OHTTP, RPC, quotas
-src/lib/mail*              Quietline mail compatibility (app-local)
-cairo/                     QuietlineMail / QuietlineEscrow
-```
+| Package | Role |
+| --- | --- |
+| `@app20/domain` | Accounts, canonical intents, lifecycle |
+| `@app20/near-intents` | Dry-only NEAR 1Click connector |
+| `@app20/policy-client` | Attestation and policy-receipt verification |
+| `@app20/privacy-adapters` | Fail-closed Starknet wallet and network policy |
+| `@app20/privy` | Browser-owned STRK20 and Privy integration |
+| `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
 
-See [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
+Architecture: [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
 
 ## Checks
 
@@ -94,24 +98,26 @@ See [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
 npm run typecheck
 npm run typecheck:packages
 npm run test:all
-npm run build                 # includes the browser-leak scan
-npx wrangler deploy --dry-run --outdir /tmp/app20-worker-dryrun
+npm run build
 ```
 
-| Command | What it is |
+| Command | Scope |
 | --- | --- |
-| `npm test` | App unit tests |
-| `npm run test:packages` | Domain, Intents, policy, adapters, Privy, relay |
+| `npm test` | Application unit tests |
+| `npm run test:packages` | Workspace packages |
 | `npm run test:ui` | Playwright localnet journeys |
 | `npm run test:e2e:pool` | Real-pool mail harness |
-| `snforge test` in `cairo/` | Helper contract tests |
+| `snforge test` | Mail helper contracts, from `cairo/` |
 
-## Deploy later
+`npm run build` includes a browser-leak scan.
 
-APP20 needs the Cloudflare Worker, not a static Pages site. The first custom
-domain in `wrangler.jsonc` is `app20.gstohl.com`.
+## Deployment
 
-Public browser vars only:
+APP20 deploys as a Cloudflare Worker with assets, not a static Pages site.
+`wrangler.jsonc` names `app20.gstohl.com`. Do not deploy until Worker secrets
+are set with `wrangler secret put`.
+
+Public browser variables:
 
 ```text
 VITE_PRIVY_APP_ID
@@ -122,7 +128,7 @@ VITE_MAIL_HELPER_SEPOLIA
 VITE_MAIL_HELPER_MAINNET
 ```
 
-Worker secrets, never committed:
+Worker secrets:
 
 ```text
 PRIVY_APP_SECRET
@@ -137,15 +143,12 @@ STARKNET_MAINNET_RPC_URL
 STARKNET_MAINNET_AUTHORIZATION
 ```
 
-Do not deploy, push, or send Mainnet value until those secrets are set through
-`wrangler secret put` and you explicitly approve the release.
-
-## Not ready
+## Not in this release
 
 - Live NEAR Intents quotes, deposits, or settlement
-- Any attested TEE that can authorize value
-- Filled `strk20.json` sprint artifacts
-- Cloudflare production deploy
+- An attested TEE that can authorize value
+- Completed `strk20.json` sprint artifacts
+- A production Cloudflare deployment
 
 ## License
 

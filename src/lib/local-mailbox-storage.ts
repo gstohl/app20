@@ -22,7 +22,7 @@ export const LOCAL_MAILBOX_STORAGE_PREFIXES = [
 type MutableStorage = Pick<Storage, "key" | "length" | "removeItem">;
 
 /**
- * Remove all sensitive Quietline mailbox records from this browser profile.
+ * Remove all sensitive mailbox records from this browser profile.
  * Theme and the compile-gated localnet identity are preferences, not mailbox
  * content, and deliberately remain untouched.
  */

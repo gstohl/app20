@@ -883,7 +883,7 @@ export default function InboxPage() {
       (BigInt(registered[0]) === 0n && BigInt(registered[1]) === 0n)
     ) {
       throw new Error(
-        "The response recipient has not registered a Quietline mail key.",
+        "The response recipient has not registered a mail key.",
       );
     }
     return publicKeyFromFelts(registered);
@@ -1066,7 +1066,7 @@ export default function InboxPage() {
     if (!helperAddress) {
       setScanKind("error");
       setScanMessage(
-        `No QuietlineMail helper is configured on ${networkName}.`,
+        `No mail helper is configured on ${networkName}.`,
       );
       return;
     }
@@ -1722,7 +1722,7 @@ export default function InboxPage() {
         throw new Error(
           networkName === "MAINNET"
             ? "Escrow stays off the mainnet scoring path until reviewed."
-            : "No reviewed QuietlineEscrow deployment is configured.",
+            : "No reviewed escrow deployment is configured.",
         );
       }
       if (!feltEquals(fund.escrowAddress, escrowAddress)) {
@@ -2145,7 +2145,7 @@ export default function InboxPage() {
   function forgetThisDevice() {
     if (
       !window.confirm(
-        "Forget this device and clear every Quietline mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again.",
+        "Forget this device and clear every mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again.",
       )
     ) {
       return;
@@ -2186,7 +2186,7 @@ export default function InboxPage() {
     } catch (error: unknown) {
       setStorageNotice({
         kind: "error",
-        message: `Quietline could not clear every local mailbox record. Do not leave this shared profile unattended. ${
+        message: `Mail could not clear every local mailbox record. Do not leave this shared profile unattended. ${
           error instanceof Error ? error.message : "Browser storage failed."
         }`,
       });
@@ -2285,7 +2285,7 @@ export default function InboxPage() {
     if (!helperAddress) {
       setStorageNotice({
         kind: "error",
-        message: "Directory proof needs QuietlineMail on this network.",
+        message: "Directory proof needs the mail helper on this network.",
       });
       return;
     }
@@ -2593,7 +2593,7 @@ export default function InboxPage() {
 
           <footer className={styles.sidebarFooter}>
             <a
-              href="https://github.com/gstohl/quietline"
+              href="https://github.com/gstohl/app20"
               target="_blank"
               rel="noreferrer"
             >
@@ -2742,10 +2742,9 @@ export default function InboxPage() {
                   <p className={styles.eyebrow}>APP20 / PRIVATE MAIL</p>
                   <h1>Private words, public ciphertext.</h1>
                   <p className={styles.welcomeCopy}>
-                    APP20 Mail uses the Quietline mail rail for letters, private
-                    STRK payment memos, invoices, one-sided deals, and
-                    experimental escrow. Your mailbox key decrypts locally;
-                    Quietline never posts plaintext.
+                    APP20 Mail carries letters, private STRK payment memos, invoices,
+                    one-sided deals, and experimental escrow. Your mailbox key
+                    decrypts locally. Mail never posts plaintext.
                   </p>
                   <div className={styles.privacySummary}>
                     <div>
@@ -2784,7 +2783,7 @@ export default function InboxPage() {
                           ? "Device mailbox key is loaded."
                           : helperAddress
                             ? "Register or restore the mailbox key. This is one public transaction plus a one-time backup."
-                            : "Mailbox registration waits on the QuietlineMail helper. Shield still works."}
+                            : "Mailbox registration waits on the mail helper. Shield still works."}
                       </span>
                     </li>
                     <li>

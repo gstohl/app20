@@ -420,7 +420,7 @@ export function paymentRequestIsExpired(
 export function assertSettlesStrk(offer: OfferPayload): void {
   if (!isCanonicalStrkToken(offer.give.token)) {
     throw new Error(
-      "Quietline OTC v1 can settle only STRK with canonical metadata on the give leg.",
+      "Mail can settle only STRK with canonical metadata on the give leg.",
     );
   }
   if (!hasConsistentTokenMetadata(offer.want.token)) {
@@ -433,7 +433,7 @@ export function assertSettlesStrk(offer: OfferPayload): void {
 function assertPaysStrk(request: PaymentRequestPayload): void {
   if (!isCanonicalStrkToken(request.token)) {
     throw new Error(
-      "Quietline payment v1 can pay only STRK with canonical invoice metadata.",
+      "Mail can pay only STRK with canonical invoice metadata.",
     );
   }
 }

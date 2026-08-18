@@ -70,7 +70,7 @@ export function senderProofLabel(proof: SenderProof): string {
     case "directory_bound":
       return `Mailbox key matches the public directory for ${proof.address}`;
     case "mailbox_signed":
-      return "Signed by a Quietline mailbox key. That is not yet a wallet address.";
+      return "Signed by a mailbox key. That is not yet a wallet address.";
     case "invalid_signature":
       return "This letter claims a mailbox signature, but the signature is invalid.";
     case "assignment_only":

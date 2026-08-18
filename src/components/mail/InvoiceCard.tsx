@@ -136,7 +136,7 @@ export default function InvoiceCard({
       setShareMessage(
         error instanceof Error
           ? error.message
-          : "Quietline could not create this payment link.",
+          : "Mail could not create this payment link.",
       );
     }
   }, [canShare, request, shareChainId, shareInitiallyOpen]);
@@ -158,7 +158,7 @@ export default function InvoiceCard({
       setShareMessage(
         error instanceof Error
           ? error.message
-          : "Quietline could not create this payment link.",
+          : "Mail could not create this payment link.",
       );
     }
   }
@@ -226,7 +226,7 @@ export default function InvoiceCard({
         <strong>
           {amount} <bdi>{token.symbol}</bdi> moves now, privately.
         </strong>{" "}
-        Anything else quoted is NOT settled by Quietline — you are trusting the
+        Anything else quoted is NOT settled by Mail — you are trusting the
         counterparty. Not an atomic swap.
       </p>
       <p className={styles.sheetMeta}>
@@ -239,13 +239,13 @@ export default function InvoiceCard({
       {networkMismatch ? (
         <p className={styles.actionWarning}>
           This request is for {requestNetwork}. Switch the connected wallet to
-          that network before paying. Quietline will not submit it on the wrong
+          that network before paying. Mail will not submit it on the wrong
           chain.
         </p>
       ) : null}
       {canShare ? (
         <p className={styles.actionWarning}>
-          Quietline does not globally mark an unsigned link paid. Local status
+          Mail does not globally mark an unsigned link paid. Local status
           blocks a repeat only for this account in this browser profile; another
           device can explicitly approve the same link again.
         </p>
@@ -273,8 +273,8 @@ export default function InvoiceCard({
             level="L"
             boostLevel
             marginSize={4}
-            title="QR code for this Quietline payment link"
-            aria-label="QR code for this Quietline payment link"
+            title="QR code for this payment link"
+            aria-label="QR code for this payment link"
             style={{ alignSelf: "center", maxWidth: "100%", height: "auto" }}
           />
           <code>{shareLink}</code>
@@ -315,19 +315,19 @@ export default function InvoiceCard({
             ) : null
           ) : (
             <p className={styles.actionWarning}>
-              Non-STRK requests are display-only. Quietline v1 will not send
+              Non-STRK requests are display-only. Mail will not send
               this token.
             </p>
           )
         ) : (
           <p className={styles.actionWarning}>
-            Quietline refuses this request: its STRK address has inconsistent
+            Mail refuses this request: its STRK address has inconsistent
             token metadata.
           </p>
         )
       ) : (
         <p className={styles.actionWarning}>
-          Quietline refuses this request: its requester is not a bounded
+          Mail refuses this request: its requester is not a bounded
           Starknet address.
         </p>
       )}

@@ -57,7 +57,7 @@ function assertConfiguredEscrow(address: string): void {
   try {
     if (BigInt(address) === 0n) throw new Error();
   } catch {
-    throw new Error("A deployed QuietlineEscrow contract is required.");
+    throw new Error("A deployed escrow contract is required.");
   }
 }
 

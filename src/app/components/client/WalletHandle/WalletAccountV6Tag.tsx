@@ -522,7 +522,7 @@ export default function WalletAccountV6Tag() {
           <div className={styles.degradeCard}>
             <strong>Checking privacy-wallet capability</strong>
             <p>
-              Quietline has not received the wallet's dapp-facing STRK20
+              Mail has not received the wallet's dapp-facing STRK20
               declarations yet. Privacy actions remain disabled.
             </p>
           </div>
@@ -607,7 +607,7 @@ export default function WalletAccountV6Tag() {
       {isStrk20Network ? (
         providerIndex === 0 ? (
           <div className={styles.warn}>
-            Mainnet moves real funds. Quietline reads the live pool fee and
+            Mainnet moves real funds. Mail reads the live pool fee and
             public STRK balance, then requires an exact confirmation before
             submission. Escrow remains disabled.
           </div>

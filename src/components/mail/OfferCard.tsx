@@ -109,7 +109,7 @@ export default function OfferCard({
 
       <p className={styles.riskCopy}>
         <strong>{giveAmount} STRK moves now, privately.</strong> The{" "}
-        <bdi>{wantToken.symbol}</bdi> leg is NOT settled by Quietline — you are
+        <bdi>{wantToken.symbol}</bdi> leg is NOT settled by Mail — you are
         trusting the counterparty. Not an atomic swap.
       </p>
       <p className={styles.actionWarning}>
@@ -142,13 +142,13 @@ export default function OfferCard({
           ) : null
         ) : (
           <p className={styles.actionWarning}>
-            Quietline refuses this offer: OTC v1 can settle only canonical STRK
+            Mail refuses this offer: OTC v1 can settle only canonical STRK
             on the give leg.
           </p>
         )
       ) : (
         <p className={styles.actionWarning}>
-          Quietline refuses this offer: its STRK address has inconsistent token
+          Mail refuses this offer: its STRK address has inconsistent token
           metadata.
         </p>
       )}

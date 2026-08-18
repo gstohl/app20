@@ -433,13 +433,13 @@ export function parseEscrowContractDeal(
   result: readonly string[],
 ): EscrowContractDeal {
   if (result.length !== 8) {
-    throw new Error("QuietlineEscrow.get_deal returned an unexpected shape.");
+    throw new Error("Escrow get_deal returned an unexpected shape.");
   }
   const statusIndex = Number(BigInt(result[7]));
   const status = CONTRACT_STATUSES[statusIndex];
   const deadlineValue = BigInt(result[5]);
   if (!status || deadlineValue > BigInt(Number.MAX_SAFE_INTEGER)) {
-    throw new Error("QuietlineEscrow.get_deal returned invalid values.");
+    throw new Error("Escrow get_deal returned invalid values.");
   }
   return {
     legAToken: canonicalizeStarknetAddress(result[0]),

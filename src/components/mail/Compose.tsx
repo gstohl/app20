@@ -200,7 +200,7 @@ function TradeFields({
     <div className={styles.dealFields}>
       <p className={styles.termsPreview}>
         {escrow
-          ? "Deposit leg A in QuietlineEscrow; the counterparty deposits leg B before receiving it."
+          ? "Deposit leg A in the escrow contract; the counterparty deposits leg B before receiving it."
           : "Send bilateral quoted terms. Sending the offer moves no asset."}
       </p>
       <label className={styles.field}>
@@ -406,14 +406,14 @@ export default function Compose({
     disabledReason = "Connect a privacy-enabled wallet before sending mail.";
   } else if (!isStrk20Capable) {
     disabledReason =
-      "This wallet does not expose the dapp-facing STRK20 Wallet API Quietline requires. See the wallet capability diagnostic.";
+      "This wallet does not expose the dapp-facing STRK20 Wallet API Mail requires. See the wallet capability diagnostic.";
   } else if (!keyReady) {
     disabledReason = "Load this device's mail key before sending.";
   } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
     disabledReason =
       networkName === "MAINNET"
         ? "Escrow is disabled on Mainnet because it has not been independently reviewed; it stays off the mainnet scoring path until review."
-        : `No reviewed QuietlineEscrow deployment is configured on ${networkName}.`;
+        : `No reviewed escrow deployment is configured on ${networkName}.`;
   } else if (hasEscrow && (!mailSeed || !chainId)) {
     disabledReason = "Reload the mailbox seed before funding escrow.";
   }
@@ -507,7 +507,7 @@ export default function Compose({
     if (attachment.type === "escrow_fund") {
       if (!escrowAddress || !escrowEnabled || !mailSeed || !senderAddress) {
         throw new Error(
-          disabledReason || "QuietlineEscrow is unavailable on this network.",
+          disabledReason || "Escrow is unavailable on this network.",
         );
       }
       const claimKey = deriveEscrowClaimKey(mailSeed, attachment.dealId);
@@ -819,7 +819,7 @@ export default function Compose({
             (BigInt(registeredKey[0]) === 0n && BigInt(registeredKey[1]) === 0n)
           ) {
             throw new Error(
-              `Recipient ${index + 1} has not registered a Quietline mail public key.`,
+              `Recipient ${index + 1} has not registered a mail public key.`,
             );
           }
           return publicKeyFromFelts(registeredKey);
@@ -859,8 +859,8 @@ export default function Compose({
         } else if (existingFund && existingFund.state !== "reverted") {
           throw new Error(
             existingFund.transactionHash
-              ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Quietline will not issue another Fund.`
-              : "Escrow funding is already reserved. Quietline will not risk a second Fund; reopen after checking the prior wallet request.",
+              ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Mail will not issue another Fund.`
+              : "Escrow funding is already reserved. Mail will not risk a second Fund; reopen after checking the prior wallet request.",
           );
         } else {
           if (!poolAddress) {
@@ -1068,9 +1068,9 @@ export default function Compose({
       const message = documentSubmittedHash
         ? `${base} The document transaction ${documentSubmittedHash} was submitted but confirmation was not observed. Its stable action id prevents a duplicate document or payment; check that transaction before retrying.`
         : fundConfirmedHash
-          ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Quietline will skip funding.`
+          ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Mail will skip funding.`
           : escrowReservation?.transactionHash
-            ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Quietline will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
+            ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Mail will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
             : base;
       setSendState({
         kind: "error",

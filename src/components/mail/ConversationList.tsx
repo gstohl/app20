@@ -309,7 +309,7 @@ export default function ConversationList({
         <span>
           “Unread/opened” is session-only and changes only after you activate a
           message while its reading pane is visible. Unsigned letters cannot
-          reveal a sender address, so Quietline labels them “Sealed sender.”
+          reveal a sender address, so Mail labels them “Sealed sender.”
         </span>
       </div>
 

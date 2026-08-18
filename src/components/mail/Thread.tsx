@@ -650,8 +650,8 @@ export default function Thread({
             for deal {update.dealId.slice(0, 12)}…
           </p>
           <p className={styles.riskCopy}>
-            This message does not prove a state transition. Quietline reads the
-            QuietlineEscrow contract before enabling another asset action.
+            This message does not prove a state transition. Mail reads the
+            escrow contract before enabling another asset action.
           </p>
         </article>
       );

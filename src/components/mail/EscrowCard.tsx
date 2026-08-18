@@ -83,7 +83,7 @@ export default function EscrowCard({
       </p>
 
       <div className={styles.addressProof}>
-        <strong>QuietlineEscrow contract</strong>
+        <strong>Escrow contract</strong>
         <code>{canonicalizeStarknetAddress(fund.escrowAddress)}</code>
         <strong>Claimed maker address · unauthenticated</strong>
         <code>{canonicalizeStarknetAddress(fund.maker)}</code>
@@ -91,7 +91,7 @@ export default function EscrowCard({
       </div>
 
       <p className={styles.riskCopy}>
-        Unlike Quietline&apos;s one-sided v1 deals, settlement does not rely
+        Unlike Mail&apos;s one-sided v1 deals, settlement does not rely
         only on an accept memo: the contract will not let the taker take leg A
         without depositing leg B.{" "}
         <strong>This is not a single-transaction atomic swap.</strong> Fill
@@ -107,7 +107,7 @@ export default function EscrowCard({
       <p className={styles.authWarning}>
         The maker address is an unauthenticated envelope claim and is not stored
         by the contract. The per-deal claim public key and settlement terms are
-        what Quietline verifies on-chain.
+        what Mail verifies on-chain.
       </p>
       {fund.note ? (
         <p className={styles.offerNote}>
@@ -117,7 +117,7 @@ export default function EscrowCard({
 
       {!termsVerified && status && status !== "empty" ? (
         <p className={styles.actionWarning}>
-          Quietline refused to match this encrypted announcement to the contract
+          Mail refused to match this encrypted announcement to the contract
           terms. Do not fill it.
         </p>
       ) : null}
@@ -130,7 +130,7 @@ export default function EscrowCard({
       {status ? null : (
         <p className={styles.actionWarning}>
           The message is an unauthenticated coordination payload until the deal
-          is read from QuietlineEscrow.
+          is read from the escrow contract.
         </p>
       )}
       {expired && status === "funded" ? (

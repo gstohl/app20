@@ -166,7 +166,7 @@ export function persistPlaintextSeed(
   const encoded = JSON.stringify(record);
   storage.setItem(mailVaultKey(chainId, address), encoded);
   if (storage.getItem(mailVaultKey(chainId, address)) !== encoded) {
-    throw new Error("Quietline could not persist the device mail key.");
+    throw new Error("Mail could not persist the device mail key.");
   }
 }
 
@@ -277,7 +277,7 @@ export function persistVaultRecord(
     record.kind === "plaintext" ? record.seed : JSON.stringify(record);
   storage.setItem(mailVaultKey(chainId, address), encoded);
   if (storage.getItem(mailVaultKey(chainId, address)) !== encoded) {
-    throw new Error("Quietline could not persist the mailbox vault.");
+    throw new Error("Mail could not persist the mailbox vault.");
   }
 }
 

@@ -20,7 +20,7 @@ function seedToHex(seed: Uint8Array): string {
   return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** Returns the canonical value shown in Quietline's one-time backup. */
+/** Returns the canonical value shown in Mail's one-time backup. */
 export function exportMailSeed(seed: Uint8Array): string {
   const hex = seedToHex(seed);
   const groups: string[] = [];

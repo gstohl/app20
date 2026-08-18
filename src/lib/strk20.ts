@@ -297,7 +297,7 @@ export function formatStrk20CapabilityDiagnostic(
   const list = (values: string[]) =>
     values.length ? JSON.stringify(values) : "[]";
   return [
-    "Quietline STRK20 capability diagnostic",
+    "APP20 STRK20 capability diagnostic",
     `Wallet: ${capability.walletName}`,
     `Wallet Standard version: ${capability.walletVersion ?? "not exposed"}`,
     `Required dapp-facing Wallet API: >= ${MIN_STRK20_WALLET_API}`,
@@ -372,7 +372,7 @@ export class Strk20SubmissionCallbackError extends Error {
 
   constructor(transactionHash: string, cause: unknown) {
     super(
-      `Transaction ${transactionHash} succeeded, but Quietline could not persist its submitted state. Local verification remains false; reconcile the transaction before retrying.`,
+      `Transaction ${transactionHash} succeeded, but Mail could not persist its submitted state. Local verification remains false; reconcile the transaction before retrying.`,
       { cause },
     );
     this.name = "Strk20SubmissionCallbackError";

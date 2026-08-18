@@ -47,7 +47,7 @@ export default function Strk20CapabilityDiagnostic({
         <div>
           <strong id={headingId}>Dapp privacy API not available</strong>
           <p>
-            {capability.walletName} connected for account access, but Quietline
+            {capability.walletName} connected for account access, but Mail
             will keep privacy and mail actions disabled. In-wallet privacy is
             not the same as the dapp-facing STRK20 Wallet API.
           </p>
