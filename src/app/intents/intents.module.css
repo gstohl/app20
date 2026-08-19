@@ -1,3 +1,27 @@
+.page.page {
+  display: grid;
+  width: 100%;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  align-content: start;
+  padding: clamp(18px, 2vw, 28px);
+  color: var(--shell-text);
+  background: var(--shell-bg);
+}
+
+.page :global(.desk-intro) > div {
+  max-width: none;
+}
+
+.page :global(.desk-grid) {
+  width: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.32fr);
+}
+
+.page :global(.lifecycle-strip) {
+  width: 100%;
+}
+
 .desk {
   display: block;
 }
@@ -73,7 +97,7 @@
 
 .scenarios button:hover:not(:disabled) {
   color: var(--shell-text);
-  background: #161818;
+  background: var(--shell-panel);
 }
 
 .scenarios button b {
@@ -88,7 +112,7 @@
 }
 
 .scenarioActive {
-  background: #161818 !important;
+  background: var(--shell-panel) !important;
   box-shadow: inset 0 0 0 1px var(--shell-orange);
 }
 
@@ -110,7 +134,7 @@
   min-height: 44px;
   border: 1px solid var(--shell-orange);
   padding: 0 18px;
-  color: #efb18e;
+  color: var(--shell-orange-soft, #efb18e);
   background: transparent;
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
@@ -121,7 +145,7 @@
 }
 
 .runButton:hover:not(:disabled) {
-  color: #0b0c0c;
+  color: var(--shell-bg);
   background: var(--shell-orange);
 }
 
@@ -153,17 +177,17 @@
 .outcomeVerified,
 .outcomeRejected {
   display: inline-block;
-  border: 1px solid #285d3d;
+  border: 1px solid var(--shell-success-line, #285d3d);
   padding: 7px 10px;
-  color: #73e6a1;
+  color: var(--shell-success, #73e6a1);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
   letter-spacing: 0.1em;
 }
 
 .outcomeRejected {
-  border-color: #73372f;
-  color: #ff715e;
+  border-color: var(--shell-danger-line, #73372f);
+  color: var(--shell-danger, #ff715e);
 }
 
 .checks {
@@ -210,13 +234,13 @@
 }
 
 .statusPassed {
-  border-color: #285d3d;
-  color: #73e6a1;
+  border-color: var(--shell-success-line, #285d3d);
+  color: var(--shell-success, #73e6a1);
 }
 
 .statusFailed {
-  border-color: #73372f;
-  color: #ff715e;
+  border-color: var(--shell-danger-line, #73372f);
+  color: var(--shell-danger, #ff715e);
 }
 
 .statusSkipped {
@@ -233,10 +257,10 @@
 
 .failureBox {
   margin-top: 10px;
-  border: 1px solid #73372f;
+  border: 1px solid var(--shell-danger-line, #73372f);
   padding: 11px 12px;
-  color: #ff715e;
-  background: #1a100e;
+  color: var(--shell-danger, #ff715e);
+  background: var(--shell-danger-bg, #1a100e);
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
   line-height: 1.5;
@@ -252,7 +276,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 12px 0 0;
-  border: 1px solid #285d3d;
+  border: 1px solid var(--shell-success-line, #285d3d);
 }
 
 .quote > div {
@@ -280,13 +304,21 @@
 
 .provenance {
   margin-top: 10px;
-  color: #73e6a1;
+  color: var(--shell-success, #73e6a1);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
   overflow-wrap: anywhere;
 }
 
 @media (max-width: 900px) {
+  .page.page {
+    padding: 14px;
+  }
+
+  .page :global(.desk-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .terms,
   .quote {
     grid-template-columns: 1fr;

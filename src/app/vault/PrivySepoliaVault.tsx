@@ -595,7 +595,7 @@ function PrivySepoliaVaultContent() {
               OHTTP ciphertext, not recovered notes or viewing keys.
             </p>
             <button className={styles.primaryAction} type="button" onClick={login}>
-              CONNECT PRIVY IDENTITY <span aria-hidden="true">→</span>
+              SIGN IN TO PRIVY <span aria-hidden="true">→</span>
             </button>
           </div>
         </div>
@@ -736,9 +736,6 @@ function PrivySepoliaVaultContent() {
                 Active recovery account
               </strong>
             </div>
-            <code className={styles.activeAddress} title={selectedAddress}>
-              {selectedAddress ? short(selectedAddress, 12, 10) : "NO ACCOUNT"}
-            </code>
           </header>
 
           {selected?.authorization.kind === "shared-recovery" ? (
@@ -804,7 +801,7 @@ function PrivySepoliaVaultContent() {
           </div>
 
           <div className={styles.operationActions}>
-            {!accountQuery.data?.deployed ? (
+            {accountQuery.data?.deployed ? null : (
               <button
                 className={styles.actionButton}
                 type="button"
@@ -813,7 +810,7 @@ function PrivySepoliaVaultContent() {
               >
                 DEPLOY ACCOUNT
               </button>
-            ) : null}
+            )}
             <button
               className={styles.actionButton}
               type="button"
@@ -993,9 +990,9 @@ function PrivySepoliaVaultContent() {
               ) : null}
             </div>
           ))}
-          {!activities.length ? (
+          {activities.length ? null : (
             <p className={styles.emptyActivity}>No local vault activity yet.</p>
-          ) : null}
+          )}
         </section>
       </aside>
     </div>

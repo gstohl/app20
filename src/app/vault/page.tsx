@@ -1,15 +1,14 @@
 "use client";
 
-import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
-import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
+import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { privyBrowserConfigured } from "@/app/vault/privy-config";
+import { useVaultMode } from "@/app/vault/vaultMode";
 import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
 import { readPublicStrkBalance } from "@/lib/mainnet-safety";
 import { formatStrkAmount } from "@/lib/strk-amount";
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
-import { useVaultMode } from "@/app/vault/vaultMode";
 import { lazy, Suspense } from "react";
 import styles from "./vault.module.css";
 
@@ -55,12 +54,11 @@ export default function VaultPage() {
           <p className={styles.eyebrow}>APP20 / VAULT</p>
           <h1>Public entry. Private balance. Explicit exit.</h1>
           <span>
-            The vault is APP20&apos;s primary wallet: public STRK on one side,
-            the shielded pool balance on the other, and only three ways across —
-            Shield, Private transfer, Unshield. The same account signs Mail.
-            Mainnet routes through the Ready Wallet Standard adapter; Privy is
-            deliberately restricted to Sepolia and cannot request a Mainnet
-            signature, proof, discovery scan, or submission.
+            One full-width execution desk for public STRK, shielded state, and
+            the three reviewed movements between them. Mainnet routes through
+            Ready Wallet Standard. Privy remains a separate Sepolia-only
+            recovery rail and cannot request a Mainnet signature, proof,
+            discovery scan, or submission.
           </span>
         </div>
         <div
@@ -91,8 +89,8 @@ export default function VaultPage() {
           </button>
           {privyBrowserConfigured ? null : (
             <p className={styles.railSwitchNote}>
-              Sepolia / Privy is disabled until the public App ID, Client ID,
-              and reviewed OHTTP key pins are configured.
+              Sepolia / Privy waits for public application IDs and reviewed
+              OHTTP key pins.
             </p>
           )}
         </div>
@@ -107,7 +105,7 @@ export default function VaultPage() {
           <PrivySepoliaVault />
         </Suspense>
       ) : (
-        <>
+        <div className={styles.readyDesk}>
           <section
             className={styles.session}
             aria-labelledby="vault-session-title"
@@ -120,83 +118,101 @@ export default function VaultPage() {
               <div className={styles.sessionIdentity}>
                 <small>READY / WALLET STANDARD</small>
                 <strong id="vault-session-title">
-                  {connected ? "Vault session" : "Connect the vault"}
+                  {connected
+                    ? "Ready execution rail active"
+                    : "Ready wallet required"}
                 </strong>
-                <code>{address || "No public account connected"}</code>
                 <p>
-                  {chain || "Select Starknet Mainnet in Ready."} · Mainnet
-                  rejects Privy and every unreviewed Wallet Standard feature ID
-                  before privacy execution. Display names are never trusted.
+                  {chain ||
+                    "Select Starknet Mainnet from the shared header session."}
+                  {" · "}Mainnet rejects Privy and every unreviewed Wallet
+                  Standard feature ID before privacy execution. Display names
+                  are never trusted.
                 </p>
               </div>
             </div>
-            <div className={styles.sessionSide}>
-              <SelectWallet variant="ctaBig" />
-              <dl className={styles.sessionFacts}>
-                <div>
-                  <dt>Network</dt>
-                  <dd>{networkName ?? chain ?? "Not selected"}</dd>
-                </div>
-                <div>
-                  <dt>Privacy API</dt>
-                  <dd>{capable ? "Available" : "Not available"}</dd>
-                </div>
-                <div>
-                  <dt>Signing rail</dt>
-                  <dd>Ready only on Mainnet</dd>
-                </div>
-              </dl>
-            </div>
+            <dl className={styles.sessionFacts}>
+              <div>
+                <dt>Connection</dt>
+                <dd>{connected ? "Connected" : "Use header control"}</dd>
+              </div>
+              <div>
+                <dt>Network</dt>
+                <dd>{networkName ?? chain ?? "Not selected"}</dd>
+              </div>
+              <div>
+                <dt>Privacy API</dt>
+                <dd>{capable ? "Available" : "Not available"}</dd>
+              </div>
+              <div>
+                <dt>Signing rail</dt>
+                <dd>Ready only on Mainnet</dd>
+              </div>
+            </dl>
           </section>
 
           <div className={styles.desk}>
             <section
-              className={styles.panel}
+              className={`${styles.panel} ${styles.publicPanel}`}
               aria-labelledby="vault-public-title"
             >
               <header className={styles.panelHeading}>
                 <span>PUBLIC RAIL</span>
-                <strong id="vault-public-title">Public STRK</strong>
+                <strong id="vault-public-title">
+                  Public STRK entry and exit
+                </strong>
               </header>
-              <div className={styles.metric}>
-                <strong>{publicStrkLabel}</strong>
-                <span>STRK</span>
-                <button
-                  type="button"
-                  onClick={() => void publicBalance.refetch()}
-                  disabled={!connected || publicBalance.isFetching}
-                >
-                  {publicBalance.isFetching ? "Refreshing…" : "Refresh"}
-                </button>
+              <div className={styles.publicOverview}>
+                <div className={styles.metric}>
+                  <span>PUBLIC BALANCE</span>
+                  <div>
+                    <strong>{publicStrkLabel}</strong>
+                    <small>STRK</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void publicBalance.refetch()}
+                    disabled={!connected || publicBalance.isFetching}
+                  >
+                    {publicBalance.isFetching
+                      ? "Refreshing…"
+                      : "Refresh balance"}
+                  </button>
+                </div>
+                <p className={styles.metricCaption}>
+                  Public STRK is held by the connected Ready account. Every
+                  action re-reads this balance and the live pool fee before the
+                  wallet is asked to sign.
+                </p>
+                <ul className={styles.railList}>
+                  <li>
+                    <b>Shield entry</b>
+                    <span>Public deposit. Amount and sender are on-chain.</span>
+                  </li>
+                  <li>
+                    <b>Unshield exit</b>
+                    <span>
+                      Public withdrawal. Amount and recipient are on-chain.
+                    </span>
+                  </li>
+                  <li>
+                    <b>Pool</b>
+                    <span>
+                      {poolAddress ? (
+                        <code title={poolAddress}>
+                          {shortAddress(poolAddress)}
+                        </code>
+                      ) : (
+                        "No STRK20 pool on this network."
+                      )}
+                    </span>
+                  </li>
+                </ul>
               </div>
-              <p className={styles.metricCaption}>
-                Held by the connected account and visible to everyone. Shield
-                preflight re-reads this balance and the live pool fee before
-                asking the wallet to sign.
-              </p>
-              <ul className={styles.railList}>
-                <li>
-                  <b>Shield entry</b>
-                  Public deposit into the pool. Amount and sender are on-chain.
-                </li>
-                <li>
-                  <b>Unshield exit</b>
-                  Public withdrawal to this account. Amount and recipient are
-                  on-chain.
-                </li>
-                <li>
-                  <b>Pool</b>
-                  {poolAddress ? (
-                    <code title={poolAddress}>{shortAddress(poolAddress)}</code>
-                  ) : (
-                    "No STRK20 pool on this network."
-                  )}
-                </li>
-              </ul>
             </section>
 
             <section
-              className={styles.panel}
+              className={`${styles.panel} ${styles.shieldedPanel}`}
               aria-labelledby="vault-shielded-title"
             >
               <header className={styles.panelHeading}>
@@ -221,8 +237,8 @@ export default function VaultPage() {
                 <span className={styles.stageBadge}>PUBLIC</span>
               </header>
               <p>
-                Deposit STRK from the public account into the pool. The deposit
-                leg is a normal transaction; everyone can see it happened.
+                Deposit STRK from the public account into the pool. The entry
+                transaction remains visible.
               </p>
             </article>
             <article className={styles.railStage}>
@@ -236,7 +252,7 @@ export default function VaultPage() {
               </header>
               <p>
                 Move STRK inside the pool. Sender, recipient, and amount stay
-                hidden. Mail memos and payments ride this same rail.
+                hidden. Mail memos and payments use the same rail.
               </p>
             </article>
             <article className={styles.railStage}>
@@ -245,19 +261,18 @@ export default function VaultPage() {
                 <span className={styles.stageBadge}>PUBLIC</span>
               </header>
               <p>
-                Withdraw back to a public account. The exit leg is public, so
-                shield and unshield timing can be correlated — space them out.
+                Withdraw to a public account. The exit and its timing remain
+                visible and may be correlated with entry.
               </p>
             </article>
           </section>
 
           <p className={styles.disclosure}>
             APP20 hides in-pool activity, not pool usage. Shield and unshield
-            legs, timing, and pool interaction remain public, and this desk
-            never fabricates a cached balance — every action re-verifies against
-            the wallet and the live pool fee.
+            legs, timing, and pool interaction remain public. This desk never
+            fabricates a cached balance.
           </p>
-        </>
+        </div>
       )}
     </main>
   );

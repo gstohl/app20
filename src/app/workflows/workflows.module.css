@@ -1,28 +1,19 @@
 .page {
-  --workflow-bg: #0a0c0c;
-  --workflow-panel: #111414;
-  --workflow-panel-raised: #151818;
-  --workflow-line: #303434;
-  --workflow-line-strong: #484d4d;
-  --workflow-text: #f2efe8;
-  --workflow-muted: #9c9f9a;
-  --workflow-orange: #e7662f;
-  --workflow-orange-soft: #f0a07c;
-  --workflow-green: #4ee18a;
-  --workflow-red: #ff7868;
-  --workflow-blue: #7faec1;
+  display: grid;
+  width: 100%;
   min-height: calc(100dvh - var(--app-shell-offset, 92px));
-  padding: clamp(28px, 4vw, 52px) max(18px, calc((100vw - 1220px) / 2)) 56px;
-  color: var(--workflow-text);
+  align-content: start;
+  padding: clamp(18px, 2vw, 28px);
+  color: var(--shell-text);
   background:
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     radial-gradient(
       circle at 22% -5%,
-      rgba(231, 102, 47, 0.12),
+      color-mix(in srgb, var(--shell-orange) 12%, transparent),
       transparent 31rem
     ),
-    var(--workflow-bg);
+    var(--shell-bg);
   background-size:
     32px 32px,
     32px 32px,
@@ -38,9 +29,6 @@
   padding-bottom: 28px;
 }
 
-.heroCopy {
-  max-width: 850px;
-}
 
 .eyebrow,
 .panelHeader span,
@@ -48,7 +36,7 @@
 .advisoryCard span,
 .receiptTrace > span,
 .disclosureIntro > span {
-  color: var(--workflow-orange);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
   font-weight: 700;
@@ -56,7 +44,6 @@
 }
 
 .hero h1 {
-  max-width: 760px;
   margin-top: 11px;
   font-size: clamp(38px, 5vw, 66px);
   font-weight: 780;
@@ -67,7 +54,7 @@
 .lede {
   max-width: 68ch;
   margin-top: 20px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 16px;
   line-height: 1.65;
 }
@@ -75,9 +62,9 @@
 .releaseBadge {
   display: grid;
   min-width: 175px;
-  border: 1px solid var(--workflow-orange);
-  background: rgba(231, 102, 47, 0.06);
-  box-shadow: inset 3px 0 var(--workflow-orange);
+  border: 1px solid var(--shell-orange);
+  background: color-mix(in srgb, var(--shell-orange) 6%, transparent);
+  box-shadow: inset 3px 0 var(--shell-orange);
 }
 
 .releaseBadge > * {
@@ -87,20 +74,20 @@
 }
 
 .releaseBadge span {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 8px;
   letter-spacing: 0.14em;
 }
 
 .releaseBadge strong {
-  border-block: 1px solid rgba(231, 102, 47, 0.34);
-  color: var(--workflow-orange-soft);
+  border-block: 1px solid color-mix(in srgb, var(--shell-orange) 34%, transparent);
+  color: var(--shell-orange);
   font-size: 18px;
   letter-spacing: 0.08em;
 }
 
 .releaseBadge small {
-  color: var(--workflow-text);
+  color: var(--shell-text);
   font-size: 9px;
   letter-spacing: 0.12em;
 }
@@ -110,10 +97,10 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  border: 1px solid #713724;
+  border: 1px solid var(--shell-warning-line, #713724);
   padding: 12px 14px;
-  color: #f0b49a;
-  background: rgba(148, 54, 23, 0.12);
+  color: var(--shell-warning-text, #f0b49a);
+  background: color-mix(in srgb, var(--shell-orange) 12%, transparent);
 }
 
 .boundaryMark {
@@ -121,25 +108,25 @@
   width: 28px;
   height: 28px;
   place-items: center;
-  border: 1px solid #9f4a2c;
-  color: var(--workflow-orange-soft);
+  border: 1px solid var(--shell-warning-line, #9f4a2c);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
 }
 
 .boundary strong {
-  color: var(--workflow-text);
+  color: var(--shell-text);
   font-size: 13px;
 }
 
 .boundary p {
   margin-top: 3px;
-  color: #c49c89;
+  color: var(--shell-warning-text, #c49c89);
   font-size: 12px;
   line-height: 1.45;
 }
 
 .boundary code {
-  color: var(--workflow-orange-soft);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   letter-spacing: 0.1em;
@@ -155,8 +142,8 @@
 .policyPanel,
 .receiptPanel,
 .disclosure {
-  border: 1px solid var(--workflow-line);
-  background: rgba(17, 20, 20, 0.96);
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
   box-shadow: 0 18px 45px rgba(0, 0, 0, 0.16);
 }
 
@@ -166,7 +153,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  border-bottom: 1px solid var(--workflow-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 13px 16px;
 }
 
@@ -177,7 +164,7 @@
 }
 
 .panelHeader > p {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   letter-spacing: 0.08em;
@@ -191,19 +178,19 @@
 .phase {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
-  border-bottom: 1px solid var(--workflow-line);
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .phaseIndex {
   display: flex;
   align-items: center;
   flex-direction: column;
-  border-right: 1px solid var(--workflow-line);
+  border-right: 1px solid var(--shell-line);
   padding-top: 24px;
 }
 
 .phaseIndex span {
-  color: var(--workflow-orange);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
   font-size: 12px;
   font-weight: 700;
@@ -214,7 +201,7 @@
   flex: 1;
   min-height: 76px;
   margin-top: 12px;
-  background: linear-gradient(var(--workflow-orange), transparent);
+  background: linear-gradient(var(--shell-orange), transparent);
 }
 
 .phaseBody {
@@ -229,9 +216,9 @@
 }
 
 .phaseMeta em {
-  border: 1px solid var(--workflow-line-strong);
+  border: 1px solid var(--shell-line);
   padding: 4px 7px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   font-style: normal;
@@ -247,7 +234,7 @@
 .phaseBody > p {
   max-width: 72ch;
   margin-top: 9px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 13px;
   line-height: 1.62;
 }
@@ -262,9 +249,9 @@
 
 .phaseBody li {
   min-height: 54px;
-  border: 1px solid var(--workflow-line);
+  border: 1px solid var(--shell-line);
   padding: 9px 10px;
-  color: #c5c7c2;
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   line-height: 1.45;
@@ -272,7 +259,7 @@
 
 .phaseBody li::before {
   margin-right: 6px;
-  color: var(--workflow-orange);
+  color: var(--shell-orange);
   content: "·";
 }
 
@@ -281,22 +268,22 @@
   grid-template-columns: minmax(145px, 0.34fr) minmax(0, 1fr);
   align-items: center;
   gap: 24px;
-  border-bottom: 1px solid var(--workflow-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 18px 20px;
-  background: linear-gradient(90deg, rgba(231, 102, 47, 0.09), transparent 70%);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--shell-orange) 9%, transparent), transparent 70%);
 }
 
 .advisoryCard strong {
   display: block;
   margin-top: 7px;
-  color: var(--workflow-orange-soft);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
   font-size: 14px;
   letter-spacing: 0.11em;
 }
 
 .advisoryCard p {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 13px;
   line-height: 1.55;
 }
@@ -310,25 +297,25 @@
 }
 
 .noExecution span {
-  border: 1px solid var(--workflow-line-strong);
+  border: 1px solid var(--shell-line);
   padding: 5px 8px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   letter-spacing: 0.1em;
 }
 
 .noExecution p {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .failedChip {
-  border: 1px solid #783b34;
+  border: 1px solid var(--shell-danger-line, #783b34);
   padding: 5px 8px;
-  color: var(--workflow-red) !important;
-  background: rgba(255, 120, 104, 0.07);
+  color: var(--shell-danger, #ff7868) !important;
+  background: color-mix(in srgb, var(--shell-danger, #ff7868) 7%, transparent);
 }
 
 .receiptSummary {
@@ -341,8 +328,8 @@
   min-height: 78px;
   align-content: center;
   gap: 7px;
-  border-right: 1px solid var(--workflow-line);
-  border-bottom: 1px solid var(--workflow-line);
+  border-right: 1px solid var(--shell-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 12px 14px;
 }
 
@@ -351,7 +338,7 @@
 }
 
 .receiptSummary span {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   letter-spacing: 0.1em;
@@ -363,21 +350,21 @@
 }
 
 .invalidValue {
-  color: var(--workflow-red);
+  color: var(--shell-danger, #ff7868);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px !important;
 }
 
 .verificationFailure {
   margin: 14px;
-  border: 1px solid #783b34;
+  border: 1px solid var(--shell-danger-line, #783b34);
   padding: 15px;
-  background: rgba(140, 48, 38, 0.12);
-  box-shadow: inset 3px 0 #bf5346;
+  background: var(--shell-danger-bg, rgba(140, 48, 38, 0.12));
+  box-shadow: inset 3px 0 var(--shell-danger-line, #bf5346);
 }
 
 .verificationFailure > span {
-  color: var(--workflow-red);
+  color: var(--shell-danger, #ff7868);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
@@ -388,7 +375,7 @@
   display: block;
   margin-top: 9px;
   overflow-wrap: anywhere;
-  color: var(--workflow-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
   line-height: 1.45;
@@ -397,13 +384,13 @@
 .verificationFailure p,
 .localOnlyNote {
   margin-top: 9px;
-  color: #bdaba4;
+  color: var(--shell-muted);
   font-size: 12px;
   line-height: 1.55;
 }
 
 .receiptTrace {
-  border-top: 1px solid var(--workflow-line);
+  border-top: 1px solid var(--shell-line);
 }
 
 .receiptTrace > span {
@@ -419,15 +406,15 @@
   display: grid;
   grid-template-columns: 27px minmax(0, 1fr) auto;
   gap: 8px;
-  border-top: 1px dashed var(--workflow-line);
+  border-top: 1px dashed var(--shell-line);
   padding: 9px 14px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
 }
 
 .receiptTrace b {
-  color: var(--workflow-text);
+  color: var(--shell-text);
 }
 
 .tracePass::after,
@@ -440,25 +427,25 @@
 }
 
 .tracePass::after {
-  color: var(--workflow-green);
+  color: var(--shell-positive, #4ee18a);
   content: "CHECKED";
 }
 
 .traceFail::after {
-  color: var(--workflow-red);
+  color: var(--shell-danger, #ff7868);
   content: "FAILED";
 }
 
 .traceBlocked::after {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   content: "NOT CALLED";
 }
 
 .localOnlyNote {
   margin: 0;
-  border-top: 1px solid var(--workflow-line);
+  border-top: 1px solid var(--shell-line);
   padding: 13px 14px;
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
 }
 
 .disclosure {
@@ -470,7 +457,7 @@
 .disclosureIntro {
   display: grid;
   align-content: center;
-  border-right: 1px solid var(--workflow-line);
+  border-right: 1px solid var(--shell-line);
   padding: 18px;
 }
 
@@ -492,7 +479,7 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-content: center;
   gap: 10px;
-  border-right: 1px solid var(--workflow-line);
+  border-right: 1px solid var(--shell-line);
   padding: 14px;
 }
 
@@ -519,29 +506,33 @@
 }
 
 .disclosure small {
-  color: var(--workflow-muted);
+  color: var(--shell-muted);
   font-size: 11px;
   line-height: 1.45;
 }
 
 .localDot {
-  background: var(--workflow-green);
-  box-shadow: 0 0 9px rgba(78, 225, 138, 0.45);
+  background: var(--shell-positive, #4ee18a);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--shell-positive, #4ee18a) 45%, transparent);
 }
 
 .enclaveDot {
-  background: var(--workflow-orange);
+  background: var(--shell-orange);
 }
 
 .attestationDot {
-  background: #caa361;
+  background: var(--shell-warning, #caa361);
 }
 
 .publicDot {
-  background: var(--workflow-blue);
+  background: var(--shell-public, #7faec1);
 }
 
 @media (max-width: 980px) {
+  .page {
+    padding: 14px;
+  }
+
   .workspace {
     grid-template-columns: 1fr;
   }
@@ -552,7 +543,7 @@
 
   .disclosureIntro {
     border-right: 0;
-    border-bottom: 1px solid var(--workflow-line);
+    border-bottom: 1px solid var(--shell-line);
   }
 }
 
@@ -592,7 +583,7 @@
   }
 
   .disclosure li:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--workflow-line);
+    border-bottom: 1px solid var(--shell-line);
   }
 }
 
@@ -631,7 +622,7 @@
 
   .disclosure li {
     border-right: 0;
-    border-bottom: 1px solid var(--workflow-line);
+    border-bottom: 1px solid var(--shell-line);
   }
 
   .disclosure li:last-child {

@@ -1,0 +1,109 @@
+.session {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: stretch;
+  border: 1px solid var(--shell-line);
+  background: #0d0f0f;
+  font-family: var(--font-mono-ui), monospace;
+}
+
+.summary {
+  display: grid;
+  min-width: 158px;
+  align-items: center;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+  padding: 5px 11px;
+  border-right: 1px solid var(--shell-line);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6d706d;
+}
+
+.statusDot.connected {
+  background: #39e77d;
+  box-shadow: 0 0 9px rgba(57, 231, 125, 0.58);
+}
+
+.identity {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.rail,
+.address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail {
+  color: var(--shell-muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.address {
+  color: var(--shell-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.walletAction {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+}
+
+.walletAction > button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 0;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .summary {
+    min-width: 132px;
+  }
+
+  .address {
+    max-width: 110px;
+  }
+}
+
+@media (max-width: 560px) {
+  .session {
+    min-height: 40px;
+  }
+
+  .summary {
+    min-width: 94px;
+    gap: 6px;
+    padding-inline: 7px;
+  }
+
+  .rail {
+    font-size: 7px;
+    letter-spacing: 0.04em;
+  }
+
+  .address {
+    max-width: 76px;
+    font-size: 8px;
+  }
+
+  .walletAction > button {
+    min-height: 38px;
+    padding-inline: 8px;
+    font-size: 9px;
+  }
+}

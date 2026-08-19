@@ -1,30 +1,12 @@
+/* Sepolia recovery desk. All color resolves through the shared shell palette. */
+
 .panel,
 .statePanel,
 .loginPanel,
 .unconfiguredPanel {
-  --desk-bg: #0f1111;
-  --desk-raised: #141717;
-  --desk-inset: #0b0d0d;
-  --desk-line: var(--shell-line, #303232);
-  --desk-line-strong: #454848;
-  --desk-text: var(--shell-text, #f1eee7);
-  --desk-muted: var(--shell-muted, #999994);
-  --desk-accent: var(--shell-orange, #e7662f);
-  --desk-accent-soft: rgba(231, 102, 47, 0.12);
-  --desk-good: #57dc8a;
-  --desk-good-soft: rgba(57, 231, 125, 0.09);
-  --desk-warning: #efb18e;
-  --desk-danger: #ff7869;
-  color: var(--desk-text);
-}
-
-.panel {
   min-width: 0;
-  border: 1px solid var(--desk-line);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 8rem),
-    var(--desk-bg);
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+  color: var(--shell-text);
+  background: var(--shell-panel);
 }
 
 .eyebrow,
@@ -35,39 +17,35 @@
 .loginAction > span,
 .stateFacts dt,
 .loginGuardrails dt,
-.configChecklist dt {
+.configChecklist dt,
+.fact dt,
+.trustRow dt,
+.activityHeader,
+.field > span {
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .eyebrow,
 .sectionKicker,
 .loginAction > span {
-  color: var(--desk-accent);
+  color: var(--shell-orange);
 }
 
 .statePanel,
 .loginPanel,
 .unconfiguredPanel {
   width: 100%;
-  margin-top: 24px;
-  border: 1px solid var(--desk-line);
-  background:
-    radial-gradient(
-      circle at 83% 10%,
-      rgba(231, 102, 47, 0.11),
-      transparent 24rem
-    ),
-    var(--desk-bg);
+  min-height: calc(100dvh - var(--app-shell-offset, 92px) - 180px);
+  margin-top: 1px;
 }
 
 .statePanel {
   display: grid;
-  min-height: 320px;
-  grid-template-columns: minmax(0, 1fr) 420px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.48fr);
   align-content: space-between;
 }
 
@@ -77,9 +55,9 @@
   grid-column: 1 / -1;
   align-items: center;
   gap: 9px;
-  border-bottom: 1px solid var(--desk-line);
-  padding: 0 16px;
-  color: var(--desk-muted);
+  border-bottom: 1px solid var(--shell-line);
+  padding: 0 clamp(16px, 2vw, 28px);
+  color: var(--shell-muted);
 }
 
 .stateDot,
@@ -88,44 +66,41 @@
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: var(--desk-accent);
-  box-shadow:
-    0 0 0 4px rgba(231, 102, 47, 0.12),
-    0 0 14px rgba(231, 102, 47, 0.52);
+  background: var(--shell-orange);
+  box-shadow: 0 0 0 3px var(--shell-inset);
   animation: deskPulse 1.65s ease-in-out infinite;
 }
 
 .stateCopy {
   align-self: center;
-  max-width: 700px;
-  padding: clamp(28px, 5vw, 58px);
+  padding: clamp(28px, 5vw, 72px);
 }
 
 .stateCopy h2,
 .loginHeader h2,
 .unconfiguredHeader h2 {
   margin-top: 10px;
-  color: var(--desk-text);
-  font-size: clamp(28px, 4vw, 48px);
-  line-height: 1.02;
+  color: var(--shell-text);
+  font-size: clamp(28px, 4vw, 52px);
+  line-height: 1;
   letter-spacing: -0.045em;
 }
 
 .stateCopy > p:last-child,
 .loginLead,
 .unconfiguredLead {
-  max-width: 66ch;
+  max-width: 78ch;
   margin-top: 16px;
-  color: var(--desk-muted);
-  font-size: 14px;
+  color: var(--shell-muted);
+  font-size: 13px;
   line-height: 1.65;
 }
 
 .stateFacts {
-  align-self: end;
-  margin: 0;
-  border-top: 1px solid var(--desk-line);
-  border-left: 1px solid var(--desk-line);
+  align-self: stretch;
+  margin: 42px 0 0;
+  border-top: 1px solid var(--shell-line);
+  border-left: 1px solid var(--shell-line);
 }
 
 .stateFacts div,
@@ -135,8 +110,8 @@
   grid-template-columns: minmax(110px, 0.38fr) minmax(0, 1fr);
   align-items: center;
   gap: 14px;
-  border-bottom: 1px solid var(--desk-line);
-  padding: 13px 15px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 13px clamp(14px, 2vw, 24px);
 }
 
 .stateFacts div:last-child,
@@ -148,21 +123,17 @@
 .stateFacts dt,
 .loginGuardrails dt,
 .configChecklist dt {
-  color: var(--desk-muted);
+  color: var(--shell-muted);
 }
 
 .stateFacts dd,
 .loginGuardrails dd,
 .configChecklist dd {
   margin: 0;
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
   line-height: 1.5;
-}
-
-.loginPanel {
-  overflow: hidden;
 }
 
 .loginHeader,
@@ -171,7 +142,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: clamp(24px, 4vw, 46px);
+  padding: clamp(24px, 4vw, 54px);
 }
 
 .loginHeader > div,
@@ -181,17 +152,17 @@
 
 .loginHeader h2,
 .unconfiguredHeader h2 {
-  max-width: 760px;
+  max-width: 900px;
 }
 
 .safetyPill,
 .blockedPill,
 .testnetMarker {
   flex: 0 0 auto;
-  border: 1px solid var(--desk-accent);
+  border: 1px solid var(--shell-orange);
   padding: 7px 9px;
-  color: var(--desk-warning);
-  background: rgba(231, 102, 47, 0.06);
+  color: var(--shell-orange);
+  background: var(--shell-inset);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
@@ -200,21 +171,25 @@
 
 .loginBody {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-  border-top: 1px solid var(--desk-line);
+  min-height: 300px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(330px, 0.65fr);
+  border-top: 1px solid var(--shell-line);
 }
 
 .loginGuardrails {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
 }
 
 .loginGuardrails div {
-  min-height: 62px;
+  min-height: 96px;
   grid-template-columns: 132px minmax(0, 1fr);
+  border-right: 1px solid var(--shell-line);
 }
 
 .loginGuardrails dd {
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-family: var(--font-body), sans-serif;
   font-size: 13px;
 }
@@ -224,9 +199,9 @@
   min-width: 0;
   flex-direction: column;
   justify-content: center;
-  border-left: 1px solid var(--desk-line);
-  padding: clamp(24px, 4vw, 42px);
-  background: rgba(0, 0, 0, 0.12);
+  border-left: 1px solid var(--shell-line);
+  padding: clamp(24px, 4vw, 48px);
+  background: var(--shell-inset);
 }
 
 .loginAction strong {
@@ -237,7 +212,7 @@
 
 .loginAction p {
   margin-top: 12px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-size: 13px;
   line-height: 1.58;
 }
@@ -248,27 +223,23 @@
 .exportAction {
   min-height: 44px;
   border: 0;
-  color: var(--desk-text);
-  background: var(--desk-raised);
+  color: var(--shell-text);
+  background: var(--shell-panel);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.075em;
   text-transform: uppercase;
   cursor: pointer;
-  transition:
-    color 120ms ease,
-    background 120ms ease,
-    box-shadow 120ms ease;
 }
 
 .primaryAction:hover:not(:disabled),
 .railButton:hover:not(:disabled),
 .actionButton:hover:not(:disabled),
 .exportAction:hover:not(:disabled) {
-  color: #fff;
-  background: var(--desk-accent-soft);
-  box-shadow: inset 3px 0 var(--desk-accent);
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  box-shadow: inset 3px 0 var(--shell-orange);
 }
 
 .primaryAction:focus-visible,
@@ -277,7 +248,7 @@
 .actionButton:focus-visible,
 .exportAction:focus-visible,
 .field input:focus-visible {
-  outline: 2px solid var(--desk-accent);
+  outline: 2px solid var(--shell-orange);
   outline-offset: -2px;
 }
 
@@ -295,32 +266,32 @@
   margin-top: 24px;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid var(--desk-accent);
+  border: 1px solid var(--shell-orange);
   padding: 0 15px;
-  color: #fff;
-  background: var(--desk-accent);
+  background: var(--shell-orange);
 }
 
 .layout {
   display: grid;
   width: 100%;
-  min-height: 620px;
-  grid-template-columns: minmax(212px, 236px) minmax(0, 1fr) minmax(
-      238px,
-      270px
+  min-height: calc(100dvh - var(--app-shell-offset, 92px) - 180px);
+  grid-template-columns: minmax(220px, 0.24fr) minmax(540px, 1fr) minmax(
+      250px,
+      0.28fr
     );
-  gap: 8px;
-  margin-top: 24px;
+  gap: 1px;
+  margin-top: 1px;
+  background: var(--shell-line);
 }
 
 .sectionHeader {
   display: flex;
-  min-height: 61px;
+  min-height: 58px;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  border-bottom: 1px solid var(--desk-line);
-  padding: 11px 14px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 10px clamp(13px, 1.6vw, 22px);
 }
 
 .sectionHeader > div {
@@ -331,7 +302,7 @@
 
 .sectionTitle {
   overflow: hidden;
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-size: 13px;
   letter-spacing: 0.045em;
   text-overflow: ellipsis;
@@ -339,7 +310,7 @@
 
 .sectionMeta {
   flex: 0 0 auto;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   letter-spacing: 0.1em;
@@ -366,9 +337,9 @@
   align-items: center;
   gap: 8px;
   border: 0;
-  border-bottom: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 10px 12px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -376,15 +347,15 @@
 
 .accountButton:hover,
 .activeAccount {
-  color: var(--desk-text);
-  background: var(--desk-accent-soft);
-  box-shadow: inset 3px 0 var(--desk-accent);
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  box-shadow: inset 3px 0 var(--shell-orange);
 }
 
 .accountIndex {
   align-self: start;
   padding-top: 2px;
-  color: #646767;
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
 }
@@ -404,14 +375,14 @@
 }
 
 .accountName {
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
   letter-spacing: 0.04em;
 }
 
 .accountAddress {
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
 }
@@ -420,7 +391,7 @@
   width: fit-content;
   max-width: 100%;
   margin-top: 2px;
-  color: var(--desk-accent);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
   font-size: 7px;
   font-style: normal;
@@ -428,32 +399,32 @@
 }
 
 .accountChevron {
-  color: var(--desk-line-strong);
+  color: var(--shell-line);
   font-size: 18px;
 }
 
 .activeAccount .accountChevron {
-  color: var(--desk-accent);
+  color: var(--shell-orange);
 }
 
 .emptyAccounts {
   display: grid;
   gap: 8px;
   padding: 22px 14px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .emptyAccounts strong {
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   letter-spacing: 0.08em;
 }
 
 .railActions {
-  border-top: 1px solid var(--desk-line);
+  border-top: 1px solid var(--shell-line);
 }
 
 .railButton {
@@ -461,7 +432,7 @@
   width: 100%;
   align-items: center;
   gap: 7px;
-  border-bottom: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 0 12px;
   text-align: left;
 }
@@ -471,15 +442,16 @@
 }
 
 .railButtonSecondary {
-  color: var(--desk-muted);
-  background: var(--desk-inset);
+  color: var(--shell-muted);
+  background: var(--shell-inset);
 }
 
 .workspace {
   display: grid;
   min-width: 0;
   align-content: start;
-  gap: 8px;
+  gap: 1px;
+  background: var(--shell-line);
 }
 
 .metrics {
@@ -490,11 +462,11 @@
 .metric {
   display: grid;
   min-width: 0;
-  min-height: 108px;
+  min-height: 112px;
   align-content: center;
   gap: 6px;
-  border-right: 1px solid var(--desk-line);
-  padding: 14px 15px;
+  border-right: 1px solid var(--shell-line);
+  padding: 14px clamp(14px, 1.6vw, 22px);
 }
 
 .metric:last-child {
@@ -504,15 +476,15 @@
 .metricLabel,
 .metricMeta {
   overflow: hidden;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .metricValue {
   overflow: hidden;
-  color: var(--desk-text);
-  font-size: clamp(23px, 2.7vw, 36px);
+  color: var(--shell-text);
+  font-size: clamp(23px, 2.7vw, 40px);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   letter-spacing: -0.04em;
@@ -520,7 +492,7 @@
 }
 
 .privateMetric .metricValue {
-  color: var(--desk-accent);
+  color: var(--shell-orange);
 }
 
 .accountPanel,
@@ -532,25 +504,14 @@
   flex: 1;
 }
 
-.activeAddress {
-  min-width: 0;
-  max-width: 44%;
-  overflow: hidden;
-  color: var(--desk-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .warning {
   display: grid;
   grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr);
   gap: 12px;
-  border-bottom: 1px solid #71361f;
-  padding: 10px 14px;
-  color: var(--desk-warning);
-  background: rgba(231, 102, 47, 0.075);
+  border-bottom: 1px solid var(--shell-orange);
+  padding: 10px clamp(14px, 1.6vw, 22px);
+  color: var(--shell-orange);
+  background: var(--shell-inset);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -562,16 +523,15 @@
 }
 
 .buildWarning {
-  border-color: #664d25;
-  color: #e7c58c;
-  background: rgba(176, 124, 41, 0.07);
+  border-color: var(--shell-line);
+  color: var(--shell-muted);
 }
 
 .facts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: 0;
-  border-bottom: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .fact {
@@ -579,8 +539,8 @@
   min-height: 66px;
   align-content: center;
   gap: 7px;
-  border-right: 1px solid var(--desk-line);
-  padding: 11px 14px;
+  border-right: 1px solid var(--shell-line);
+  padding: 11px clamp(14px, 1.6vw, 22px);
 }
 
 .fact:last-child {
@@ -591,32 +551,28 @@
 .trustRow dt,
 .activityHeader,
 .field > span {
-  color: var(--desk-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  color: var(--shell-muted);
 }
 
 .fact dd {
   margin: 0;
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
 }
 
 .operationInputs {
   display: grid;
-  grid-template-columns: minmax(136px, 0.35fr) minmax(260px, 1fr);
-  border-bottom: 1px solid var(--desk-line);
+  grid-template-columns: minmax(150px, 0.32fr) minmax(280px, 1fr);
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .field {
   display: grid;
   min-width: 0;
   gap: 7px;
-  border-right: 1px solid var(--desk-line);
-  padding: 11px 14px;
+  border-right: 1px solid var(--shell-line);
+  padding: 11px clamp(14px, 1.6vw, 22px);
 }
 
 .field:last-child {
@@ -630,19 +586,19 @@
   border-bottom: 1px solid transparent;
   border-radius: 0;
   padding: 0;
-  color: var(--desk-text);
+  color: var(--shell-text);
   background: transparent;
   font-family: var(--font-mono-ui), monospace;
   font-size: 12px;
 }
 
 .field input::placeholder {
-  color: #666a68;
+  color: var(--shell-muted);
 }
 
 .field input:hover,
 .field input:focus {
-  border-bottom-color: var(--desk-line-strong);
+  border-bottom-color: var(--shell-line);
   outline: 0;
 }
 
@@ -653,8 +609,8 @@
 
 .actionButton {
   min-width: 0;
-  border-right: 1px solid var(--desk-line);
-  border-bottom: 1px solid var(--desk-line);
+  border-right: 1px solid var(--shell-line);
+  border-bottom: 1px solid var(--shell-line);
   padding: 0 10px;
 }
 
@@ -663,12 +619,16 @@
 }
 
 .actionPrimary {
-  color: #fff;
-  background: rgba(231, 102, 47, 0.11);
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  box-shadow: inset 3px 0 var(--shell-orange);
 }
 
-.recoverAction {
-  color: var(--desk-good);
+.recoverAction,
+.noteAmount,
+.matureState,
+.goodState {
+  color: var(--shell-live);
 }
 
 .noteTable {
@@ -687,19 +647,19 @@
 }
 
 .tableHeader {
-  color: var(--desk-muted);
-  background: var(--desk-inset);
+  color: var(--shell-muted);
+  background: var(--shell-inset);
 }
 
 .tableRow {
-  border-top: 1px solid var(--desk-line);
-  color: var(--desk-muted);
+  border-top: 1px solid var(--shell-line);
+  color: var(--shell-muted);
 }
 
 .tableHeader > *,
 .tableRow > * {
   min-width: 0;
-  border-right: 1px solid var(--desk-line);
+  border-right: 1px solid var(--shell-line);
   padding: 10px 12px;
   font-size: 9px;
 }
@@ -710,7 +670,7 @@
 }
 
 .noteId summary {
-  color: var(--desk-text);
+  color: var(--shell-text);
   cursor: pointer;
 }
 
@@ -718,21 +678,13 @@
   display: block;
   margin-top: 7px;
   overflow-wrap: anywhere;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-size: 8px;
 }
 
-.noteAmount {
-  color: var(--desk-accent);
-  font-variant-numeric: tabular-nums;
-}
-
-.matureState {
-  color: var(--desk-good);
-}
-
-.waitingState {
-  color: var(--desk-warning);
+.waitingState,
+.cautionState {
+  color: var(--shell-orange);
 }
 
 .emptyNotes {
@@ -742,11 +694,11 @@
   justify-content: center;
   gap: 16px;
   padding: 24px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
 }
 
 .emptyNotes strong {
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   letter-spacing: 0.08em;
@@ -760,14 +712,14 @@
 }
 
 .emptyNoteMark {
-  color: var(--desk-accent);
+  color: var(--shell-orange);
   font-size: 27px;
 }
 
 .testnetMarker {
   display: inline-flex;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -775,7 +727,7 @@
 
 .trustList {
   margin: 0;
-  border-bottom: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .trustRow {
@@ -784,7 +736,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px dashed var(--desk-line);
+  border-bottom: 1px dashed var(--shell-line);
   padding: 0 12px;
 }
 
@@ -794,28 +746,20 @@
 
 .trustRow dd {
   margin: 0;
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   text-align: right;
 }
 
-.trustRow .goodState {
-  color: var(--desk-good);
-}
-
-.trustRow .cautionState {
-  color: var(--desk-warning);
-}
-
 .exportAction {
   margin: 12px;
-  border: 1px solid var(--desk-line-strong);
+  border: 1px solid var(--shell-line);
 }
 
 .disclosure {
   padding: 0 12px 13px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-size: 11px;
   line-height: 1.55;
 }
@@ -826,24 +770,23 @@
   align-items: center;
   gap: 9px;
   margin: 0 12px 12px;
-  border: 1px solid #70401f;
+  border: 1px solid var(--shell-orange);
   padding: 10px;
-  color: var(--desk-warning);
-  background: rgba(231, 102, 47, 0.04);
+  color: var(--shell-orange);
+  background: var(--shell-inset);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   line-height: 1.45;
 }
 
 .error {
-  border-color: #773d37;
-  color: var(--desk-danger);
-  background: rgba(255, 113, 94, 0.055);
+  border-color: var(--shell-danger);
+  color: var(--shell-danger);
 }
 
 .activity {
   margin-top: auto;
-  border-top: 1px solid var(--desk-line);
+  border-top: 1px solid var(--shell-line);
 }
 
 .activityHeader,
@@ -853,18 +796,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px dashed var(--desk-line);
+  border-bottom: 1px dashed var(--shell-line);
   padding: 8px 12px;
 }
 
 .activityHeader strong {
-  color: var(--desk-text);
+  color: var(--shell-text);
   font-size: 8px;
 }
 
 .activityItem {
   align-items: flex-start;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 8px;
   line-height: 1.45;
@@ -872,46 +815,42 @@
 
 .activityLink {
   flex: 0 0 auto;
-  color: var(--desk-accent);
+  color: var(--shell-orange);
 }
 
 .emptyActivity {
   padding: 15px 12px;
-  color: var(--desk-muted);
+  color: var(--shell-muted);
   font-size: 11px;
 }
 
-.unconfiguredPanel {
-  padding-bottom: 0;
-}
-
-.blockedPill {
-  border-color: #743b36;
-  color: var(--desk-danger);
-  background: rgba(255, 113, 94, 0.05);
+.blockedPill,
+.configMissing {
+  border-color: var(--shell-danger);
+  color: var(--shell-danger) !important;
 }
 
 .unconfiguredLead {
-  max-width: 76ch;
+  max-width: 90ch;
   margin: 0;
-  padding: 0 clamp(24px, 4vw, 46px) 28px;
+  padding: 0 clamp(24px, 4vw, 54px) 28px;
 }
 
 .configChecklist {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
-  border-top: 1px solid var(--desk-line);
-  border-bottom: 1px solid var(--desk-line);
+  border-top: 1px solid var(--shell-line);
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .configChecklist div {
   display: grid;
-  min-height: 72px;
+  min-height: 78px;
   grid-template-columns: 1fr;
   align-content: center;
   gap: 7px;
-  border-right: 1px solid var(--desk-line);
+  border-right: 1px solid var(--shell-line);
   border-bottom: 0;
 }
 
@@ -920,23 +859,19 @@
 }
 
 .configReady {
-  color: var(--desk-good) !important;
-}
-
-.configMissing {
-  color: var(--desk-danger) !important;
+  color: var(--shell-live) !important;
 }
 
 .unconfiguredNote {
-  max-width: 86ch;
-  padding: 18px clamp(24px, 4vw, 46px);
-  color: var(--desk-muted);
+  max-width: 96ch;
+  padding: 20px clamp(24px, 4vw, 54px);
+  color: var(--shell-muted);
   font-size: 12px;
   line-height: 1.55;
 }
 
 .unconfiguredNote code {
-  color: var(--desk-warning);
+  color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
 }
 
@@ -975,7 +910,7 @@
   }
 
   .trustRow {
-    border-right: 1px solid var(--desk-line);
+    border-right: 1px solid var(--shell-line);
   }
 
   .activity {
@@ -989,6 +924,7 @@
   }
 
   .stateFacts {
+    margin-top: 0;
     border-left: 0;
   }
 
@@ -997,8 +933,16 @@
     grid-template-columns: 1fr;
   }
 
+  .loginGuardrails {
+    grid-template-columns: 1fr;
+  }
+
+  .loginGuardrails div {
+    border-right: 0;
+  }
+
   .loginAction {
-    border-top: 1px solid var(--desk-line);
+    border-top: 1px solid var(--shell-line);
     border-left: 0;
   }
 
@@ -1023,7 +967,7 @@
   }
 
   .configChecklist div:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--desk-line);
+    border-bottom: 1px solid var(--shell-line);
   }
 }
 
@@ -1065,7 +1009,7 @@
   .configChecklist div:nth-child(2),
   .trustRow {
     border-right: 0;
-    border-bottom: 1px solid var(--desk-line);
+    border-bottom: 1px solid var(--shell-line);
   }
 
   .metric:last-child,
@@ -1088,7 +1032,7 @@
   }
 
   .actionButton:nth-child(3n) {
-    border-right: 1px solid var(--desk-line);
+    border-right: 1px solid var(--shell-line);
   }
 
   .actionButton:nth-child(2n) {
@@ -1098,9 +1042,5 @@
   .sectionHeader {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .activeAddress {
-    max-width: 100%;
   }
 }
