@@ -14,10 +14,11 @@ import {
   saveAddressBookEntry,
   type AddressBookEntry,
 } from "@/lib/address-book";
+import { feltEquals } from "@/lib/addresses";
 import { readPublicStrkBalance } from "@/lib/mainnet-safety";
 import { formatStrkAmount, parseStrkAmount } from "@/lib/strk-amount";
 import { strk20ErrorMessage } from "@/lib/strk20";
-import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
+import { assertWalletSubmissionPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -289,13 +290,16 @@ export default function VaultPage() {
     });
     try {
       if (!selectedWallet) throw new Error("Wallet policy context is missing.");
-      // Public ERC-20 send shares the public-mutation policy class; the
-      // PrivacyOperation set has no dedicated public-send identifier.
-      assertWalletOperationPolicy(
+      assertWalletSubmissionPolicy(
         selectedWallet,
         providerIndex as 0 | 2 | 3,
-        "register",
+        "public-send",
       );
+      if (!feltEquals(walletAccount.address, address)) {
+        throw new Error(
+          "The Ready signer no longer matches the connected account. Disconnect and connect again.",
+        );
+      }
       const balance = await readPublicStrkBalance(provider, address);
       if (balance < amount) {
         throw new Error(

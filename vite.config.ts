@@ -1,6 +1,7 @@
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
+import { devStarknetRelay } from "./scripts/dev-starknet-relay.mjs";
 
 const LOCALNET_WALLET_PATH = "/__quietline_localnet_wallet";
 const LOCALNET_RPC_PATH = "/__quietline_localnet_rpc";
@@ -31,7 +32,7 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [react()],
+    plugins: [react(), devStarknetRelay()],
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),

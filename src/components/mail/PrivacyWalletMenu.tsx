@@ -22,6 +22,7 @@ import {
   strk20ErrorMessage,
   submitActions,
 } from "@/lib/strk20";
+import { feltEquals } from "@/lib/addresses";
 import * as constants from "@/utils/constants";
 import { ProvingProgress } from "./OperationProgress";
 import styles from "./mail.module.css";
@@ -239,6 +240,14 @@ export default function PrivacyWalletMenu({
             ? "unshield"
             : "private-transfer",
       );
+      if (
+        connectedAddress &&
+        !feltEquals(walletAccount.address, connectedAddress)
+      ) {
+        throw new Error(
+          "The Ready signer no longer matches the connected account. Disconnect and connect again.",
+        );
+      }
       await authorizeStrk20ValueAction({
         provider,
         poolAddress,

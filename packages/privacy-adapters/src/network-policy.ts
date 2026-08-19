@@ -10,6 +10,7 @@ export type PrivacyOperation =
   | "public-read"
   | "private-read"
   | "register"
+  | "public-send"
   | "shield"
   | "private-transfer"
   | "unshield"

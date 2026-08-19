@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import {
   assertWalletOperationPolicy,
+  assertWalletSubmissionPolicy,
   isSelectablePrivacyWallet,
 } from "./wallet-policy";
 
@@ -46,5 +47,14 @@ describe("Wallet Standard product policy", () => {
     expect(() =>
       assertWalletOperationPolicy(wallet("ready"), 2, "private-read"),
     ).not.toThrow();
+  });
+
+  it("lets Ready submit a public send and blocks unreviewed wallets", () => {
+    expect(() =>
+      assertWalletSubmissionPolicy(wallet("ready"), 0, "public-send"),
+    ).not.toThrow();
+    expect(() =>
+      assertWalletSubmissionPolicy(wallet("xverse"), 0, "public-send"),
+    ).toThrow(/Ready/i);
   });
 });

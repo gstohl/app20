@@ -2,6 +2,7 @@ import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-walle
 import {
   adapterKindForWalletFeatureId,
   assertNetworkPolicy,
+  assertSubmittableNetworkPolicy,
   isReadyWalletFeatureId,
   type PrivacyOperation,
 } from "@app20/privacy-adapters";
@@ -42,6 +43,31 @@ export function assertWalletOperationPolicy(
           wallet.features["starknet:walletApi"].id,
         );
   assertNetworkPolicy({
+    network,
+    adapter,
+    operation,
+    submissionMode: "live",
+  });
+}
+
+export function assertWalletSubmissionPolicy(
+  wallet: WalletWithStarknetFeatures,
+  providerIndex: 0 | 2 | 3,
+  operation: PrivacyOperation,
+): void {
+  const network =
+    providerIndex === LOCALNET_PROVIDER_INDEX
+      ? "localnet"
+      : providerIndex === 0
+        ? "mainnet"
+        : "sepolia";
+  const adapter =
+    network === "localnet"
+      ? "localnet"
+      : adapterKindForWalletFeatureId(
+          wallet.features["starknet:walletApi"].id,
+        );
+  assertSubmittableNetworkPolicy({
     network,
     adapter,
     operation,
