@@ -6,7 +6,7 @@ APP20 is one private execution desk with three primitives:
 2. bounded cross-chain execution through NEAR Intents;
 3. a remotely attested workflow/policy service.
 
-The current production-capable surface is the Starknet vault and Quietline mail rail. Cross-chain intents and TEE workflows start in **review-only** mode. They must not expose a deposit address, submit a signed intent, or claim attested enforcement until the release gates in this document pass.
+The current production-capable surface is the Starknet vault and APP20 Mail. Cross-chain intents and TEE workflows start in **review-only** mode. They must not expose a deposit address, submit a signed intent, or claim attested enforcement until the release gates in this document pass.
 
 ## Honest product claim
 
@@ -214,7 +214,7 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 @app20/policy-client         Attestation and policy-receipt contracts
 @app20/privacy-adapters      Existing Starknet network and wallet policy
 @app20/privy                 Generic browser/Node STRK20 integration
-src/lib/mail*                Frozen Quietline compatibility implementation
+src/lib/mail*                Frozen Mail compatibility implementation
 workers/relay                Cloudflare edge; no private-state imports
 services/policy-enclave      Future separate attested deployable service
 ```
@@ -250,7 +250,7 @@ Changing from an old origin to `app20.gstohl.com` (or any later domain you actua
 
 ## Release gates
 
-- Quietline storage, crypto, Cairo, and payment-link vectors remain byte-for-byte compatible.
+- Mail storage, crypto, Cairo, and payment-link vectors remain byte-for-byte compatible.
 - No Node/proxy entry point enters the browser bundle.
 - No secret, private origin, witness, viewing key, note, mail plaintext, raw signature, or recipient leaks through logs/assets.
 - Dry Intents mode rejects every funding target and cannot submit.

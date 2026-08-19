@@ -1,14 +1,14 @@
-# STRK20 Privacy Integration Plan — Quietline
+# STRK20 Privacy Integration Plan — APP20 Mail
 
 > Historical implementation record. APP20 routing, Cloudflare relay, Privy Sepolia support, and Mainnet Ready-only policy are now defined in `docs/APP20_ARCHITECTURE.md`. Never restore browser RPC credentials or the former `VITE_PROVIDER_URL` design from this document.
 
 Generated 2026-08-14 by the strk20-privacy-integration skill. Pivoted from Feltproof / RFP-03 the same day. Statuses current at generation; re-verify pins with `python3 .agents/skills/strk20-privacy-integration/scripts/check_freshness.py` before building.
 
-Public repo: <https://github.com/gstohl/quietline>
+Public repo: <https://github.com/gstohl/app20>
 Sprint: STRK20 Private Sprint, 14–31 Aug 2026
 Inspired by RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 
-This plan was approved and Phase 2 was implemented on 2026-08-14. On 2026-08-14, the client migrated from Next.js to a Vite + React + TanStack Router SPA (no SSR); Quietline has no server routes and relies on browser wallet and cryptography APIs. The message helper remains the team’s own Cairo to review, audit, deploy, and maintain; code-complete does not mean deployed or production-audited.
+This plan was approved and Phase 2 was implemented on 2026-08-14. On 2026-08-14, the client migrated from Next.js to a Vite + React + TanStack Router SPA (no SSR); APP20 has no server routes and relies on browser wallet and cryptography APIs. The message helper remains the team’s own Cairo to review, audit, deploy, and maintain; code-complete does not mean deployed or production-audited.
 
 ## 0. Decided interview answers
 
@@ -391,7 +391,7 @@ Escrow remains off the mainnet scoring path until reviewed.
 - RFP-01: <https://strk20.starknet.io/rfp/private-messaging>
 - Hackathon: <https://github.com/starkience/strk20-hackathon>
 - Day 0: <https://github.com/starkience/strk20-hackathon/blob/main/docs/MAINNET-DAY-0.md>
-- Repo: <https://github.com/gstohl/quietline>
+- Repo: <https://github.com/gstohl/app20>
 - What STRK20 is: <https://strk20-by-example.org/what-is-strk20>
 - Channels: <https://strk20-by-example.org/channels-and-subchannels>
 - Viewing keys: <https://strk20-by-example.org/viewing-keys>
