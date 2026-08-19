@@ -34,8 +34,8 @@ const ALLOWED_METHODS = new Set([
 ]);
 
 const UPSTREAM = {
-  mainnet: "https://starknet-mainnet.public.blastapi.io/rpc/v0_8",
-  sepolia: "https://starknet-sepolia.public.blastapi.io/rpc/v0_8",
+  mainnet: "https://rpc.starknet.lava.build",
+  sepolia: "https://starknet-sepolia-rpc.publicnode.com",
 };
 
 const MAX_BYTES = 2 * 1024 * 1024;
