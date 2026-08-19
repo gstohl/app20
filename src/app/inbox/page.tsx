@@ -882,9 +882,7 @@ export default function InboxPage() {
       registered.length !== 2 ||
       (BigInt(registered[0]) === 0n && BigInt(registered[1]) === 0n)
     ) {
-      throw new Error(
-        "The response recipient has not registered a mail key.",
-      );
+      throw new Error("The response recipient has not registered a mail key.");
     }
     return publicKeyFromFelts(registered);
   }
@@ -1065,9 +1063,7 @@ export default function InboxPage() {
     }
     if (!helperAddress) {
       setScanKind("error");
-      setScanMessage(
-        `No mail helper is configured on ${networkName}.`,
-      );
+      setScanMessage(`No mail helper is configured on ${networkName}.`);
       return;
     }
     if (!address || !chainId || !keyFingerprint) {
@@ -2410,8 +2406,13 @@ export default function InboxPage() {
           aria-modal={mobileSidebarMode && sidebarOpen ? true : undefined}
           aria-label="Mailbox sidebar"
         >
-          <div className={styles.sidebarBrandRow}>
-            <strong className={styles.moduleTitle}>APP20 Mail</strong>
+          <header className={styles.sidebarBrandRow}>
+            <span className={styles.brand}>
+              <span className={styles.brandMark} aria-hidden="true">
+                20
+              </span>
+              <span>APP20 Mail</span>
+            </span>
             <button
               ref={sidebarCloseRef}
               className={styles.sidebarClose}
@@ -2421,9 +2422,9 @@ export default function InboxPage() {
             >
               ×
             </button>
-          </div>
+          </header>
           <p className={styles.sidebarTagline}>
-            PRIVATE MAIL / PUBLIC CIPHERTEXT
+            ENCRYPTED CORRESPONDENCE / LOCAL KEYS
           </p>
 
           <div className={styles.sidebarCreateActions}>
@@ -2433,7 +2434,7 @@ export default function InboxPage() {
               onClick={openComposer}
             >
               <span aria-hidden="true">＋</span>
-              New
+              Compose
             </button>
           </div>
 
@@ -2643,14 +2644,16 @@ export default function InboxPage() {
               <span className={styles.sidebarLabel}>
                 {composerOpen
                   ? "LOCAL DRAFT / NOT ENCRYPTED AT REST"
-                  : "LOCAL PLAINTEXT / CARBON COPY"}
+                  : selectedMessage
+                    ? "LOCAL PLAINTEXT / CARBON COPY"
+                    : "APP20 MAIL / ENCRYPTED CORRESPONDENCE"}
               </span>
               <strong>
                 {composerOpen
                   ? "New document"
                   : selectedMessage
                     ? folderLabel
-                    : "APP20 Mail"}
+                    : "Private correspondence desk"}
               </strong>
             </div>
             {composerOpen ? (
@@ -2737,67 +2740,76 @@ export default function InboxPage() {
                 proofs={proofs}
               />
             ) : (
-              <section className={styles.welcomeState}>
+              <section
+                className={styles.welcomeState}
+                aria-labelledby="mail-welcome-title"
+              >
                 <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>APP20 / PRIVATE MAIL</p>
-                  <h1>Private words, public ciphertext.</h1>
+                  <p className={styles.eyebrow}>
+                    APP20 MAIL / ENCRYPTED CORRESPONDENCE
+                  </p>
+                  <h1 id="mail-welcome-title">
+                    A private desk for messages and value.
+                  </h1>
                   <p className={styles.welcomeCopy}>
-                    APP20 Mail carries letters, private STRK payment memos, invoices,
-                    one-sided deals, and experimental escrow. Your mailbox key
-                    decrypts locally. Mail never posts plaintext.
+                    Compose encrypted letters, attach private STRK payment
+                    context, and keep readable mail on this device. The mail
+                    helper records ciphertext and delivery metadata on Starknet;
+                    your mailbox key decrypts locally.
                   </p>
                   <div className={styles.privacySummary}>
                     <div>
-                      <strong>HIDDEN IN THE POOL</strong>
+                      <strong>LOCAL OR IN-POOL</strong>
                       <span>
-                        Sender, recipient identities, message body, and in-pool
-                        amounts.
+                        Plaintext and mailbox keys stay on this device. In-pool
+                        amounts and direct addresses stay out of MessagePosted.
                       </span>
                     </div>
                     <div>
-                      <strong>VISIBLE ON-CHAIN</strong>
+                      <strong>PUBLIC ON STARKNET</strong>
                       <span>
-                        Pool and helper use, timing, ciphertext, size, and
-                        recipient count. Shield and unshield legs are public.
+                        Pool and helper activity, timing, ciphertext size,
+                        recipient count, and every shield or unshield.
                       </span>
                     </div>
                   </div>
                   <p className={styles.honestyNote}>
-                    Privacy is not invisibility: timing and pool use remain
-                    public. For multi-recipient mail, the recipient count is
-                    public while identities are absent from MessagePosted.
+                    APP20 Mail reduces exposed correspondence data; it does not
+                    hide that the pool or mail helper was used. Timing can still
+                    correlate activity.
                   </p>
                   <ol className={styles.readinessList}>
                     <li>
-                      <strong>1. Connect</strong>
+                      <strong>1. Wallet session</strong>
                       <span>
                         {address
-                          ? `Wallet connected on ${networkName}.`
+                          ? `Connected on ${networkName}.`
                           : "Connect a privacy-enabled wallet on Mainnet or Sepolia."}
                       </span>
                     </li>
                     <li>
-                      <strong>2. Mailbox key</strong>
+                      <strong>2. Mailbox access</strong>
                       <span>
                         {keypair
-                          ? "Device mailbox key is loaded."
+                          ? "Your device mailbox key is unlocked."
                           : helperAddress
-                            ? "Register or restore the mailbox key. This is one public transaction plus a one-time backup."
-                            : "Mailbox registration waits on the mail helper. Shield still works."}
+                            ? "Register or restore your mailbox key. Registration is one public transaction."
+                            : "Mailbox registration waits on the mail helper. Vault actions remain available."}
                       </span>
                     </li>
                     <li>
-                      <strong>3. Private funds</strong>
+                      <strong>3. Shielded balance</strong>
                       <span>
-                        Shield is public and pays the live pool fee. Unshield is
-                        also public.
+                        In-pool transfers can carry private payment context.
+                        Shield and unshield remain public and pay the live pool
+                        fee.
                       </span>
                     </li>
                     <li>
-                      <strong>4. Mail</strong>
+                      <strong>4. Correspondence</strong>
                       <span>
-                        Check for new mail, or write a message. Sent copies stay
-                        on this device.
+                        Sync incoming ciphertext or compose a message. Readable
+                        Sent copies remain on this device.
                       </span>
                     </li>
                   </ol>
@@ -2806,7 +2818,7 @@ export default function InboxPage() {
                     type="button"
                     onClick={openComposer}
                   >
-                    Write a private document
+                    Compose encrypted mail
                   </button>
                 </div>
                 {keypair ? null : (

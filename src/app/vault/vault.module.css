@@ -1,0 +1,401 @@
+/* APP20 vault desk. Inherits --shell-* and theme variables from the app shell. */
+
+.page {
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  padding: clamp(24px, 3vw, 40px) max(18px, calc((100vw - 1240px) / 2)) 60px;
+  color: var(--shell-text);
+  background:
+    radial-gradient(
+      circle at 55% 18%,
+      rgba(196, 71, 26, 0.08),
+      transparent 28rem
+    ),
+    var(--shell-bg);
+}
+
+.eyebrow {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+}
+.mastheadCopy {
+  max-width: 860px;
+}
+.mastheadCopy h1 {
+  margin-top: 10px;
+  font-size: clamp(34px, 4vw, 52px);
+  line-height: 1;
+  letter-spacing: -0.055em;
+}
+.mastheadCopy > span {
+  display: block;
+  max-width: 66ch;
+  margin-top: 18px;
+  color: var(--shell-muted);
+  line-height: 1.6;
+}
+
+.railSwitch {
+  display: grid;
+  min-width: 240px;
+  grid-template-columns: 1fr;
+  border: 1px solid var(--shell-line);
+  background: #101212;
+}
+.railSwitch button {
+  min-height: 44px;
+  border: 0;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 0 13px;
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+.railSwitch button:last-of-type {
+  border-bottom: 0;
+}
+.railSwitch button.isActive,
+.railSwitch button:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(208, 75, 25, 0.16);
+  box-shadow: inset 3px 0 var(--shell-orange);
+}
+.railSwitch button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+.railSwitchNote {
+  border-top: 1px solid var(--shell-line);
+  padding: 10px 12px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* Session band */
+
+.session {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(300px, 0.9fr);
+  margin-top: 26px;
+  border: 1px solid var(--shell-line);
+  background: #101212;
+}
+.sessionMain {
+  display: flex;
+  gap: 16px;
+  min-width: 0;
+  padding: 22px 20px;
+}
+.beacon {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #666;
+}
+.beaconLive {
+  background: #39e77d;
+  box-shadow: 0 0 12px rgba(57, 231, 125, 0.6);
+}
+.sessionIdentity {
+  min-width: 0;
+}
+.sessionIdentity small {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.sessionIdentity strong {
+  display: block;
+  margin-top: 9px;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.sessionIdentity code {
+  display: block;
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sessionIdentity p {
+  margin-top: 12px;
+  max-width: 60ch;
+  color: var(--shell-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.sessionSide {
+  display: grid;
+  align-content: start;
+  gap: 0;
+  border-left: 1px solid var(--shell-line);
+}
+.sessionSide > button {
+  min-height: 46px;
+  margin: 16px 16px 0;
+}
+.sessionFacts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 16px 0 0;
+  border-top: 1px solid var(--shell-line);
+}
+.sessionFacts > div {
+  min-height: 70px;
+  padding: 12px 14px;
+}
+.sessionFacts > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+.sessionFacts dt {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sessionFacts dd {
+  margin: 8px 0 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Desk grid */
+
+.desk {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(380px, 1.1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.panel {
+  border: 1px solid var(--shell-line);
+  background: #101212;
+}
+.panelHeading {
+  display: grid;
+  gap: 5px;
+  min-height: 58px;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--shell-line);
+}
+.panelHeading span {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+.panelHeading strong {
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+
+.metric {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 24px 18px 6px;
+}
+.metric strong {
+  font-size: clamp(30px, 3vw, 40px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+.metric span {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.metric button {
+  min-height: 32px;
+  margin-left: auto;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.metric button:hover:not(:disabled) {
+  color: #fff;
+  border-color: var(--shell-orange);
+}
+.metric button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+.metricCaption {
+  padding: 0 18px 18px;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.railList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--shell-line);
+  list-style: none;
+}
+.railList li {
+  display: grid;
+  gap: 6px;
+  padding: 13px 18px;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.railList li + li {
+  border-top: 1px solid var(--shell-line);
+}
+.railList b {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.railList code {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.controlsBody {
+  padding: 6px 4px 10px;
+}
+.controlsBody section {
+  border: 0;
+  background: transparent;
+}
+.controlsBody button {
+  min-height: 44px;
+}
+
+/* Rail map */
+
+.railMap {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.railStage {
+  border: 1px solid var(--shell-line);
+  padding: 16px 16px 18px;
+  background: #101212;
+}
+.railStage header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.railStage h2 {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.railStage p {
+  margin-top: 10px;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.stageBadge {
+  border: 1px solid var(--shell-line);
+  padding: 3px 7px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.stageBadgePrivate {
+  border-color: #285d3d;
+  color: #39e77d;
+}
+
+.disclosure {
+  margin-top: 18px;
+  max-width: 96ch;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.privyFallback {
+  margin-top: 38px;
+  padding: 28px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+}
+
+@media (max-width: 960px) {
+  .masthead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .railSwitch {
+    min-width: 0;
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .railSwitch button {
+    border-bottom: 0;
+    border-right: 1px solid var(--shell-line);
+  }
+  .railSwitch button:last-of-type {
+    border-right: 0;
+  }
+  .railSwitchNote {
+    grid-column: 1 / -1;
+  }
+  .session {
+    grid-template-columns: 1fr;
+  }
+  .sessionSide {
+    border-left: 0;
+    border-top: 1px solid var(--shell-line);
+  }
+  .desk {
+    grid-template-columns: 1fr;
+  }
+  .railMap {
+    grid-template-columns: 1fr;
+  }
+}

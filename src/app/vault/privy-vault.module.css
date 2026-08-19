@@ -1,0 +1,1106 @@
+.panel,
+.statePanel,
+.loginPanel,
+.unconfiguredPanel {
+  --desk-bg: #0f1111;
+  --desk-raised: #141717;
+  --desk-inset: #0b0d0d;
+  --desk-line: var(--shell-line, #303232);
+  --desk-line-strong: #454848;
+  --desk-text: var(--shell-text, #f1eee7);
+  --desk-muted: var(--shell-muted, #999994);
+  --desk-accent: var(--shell-orange, #e7662f);
+  --desk-accent-soft: rgba(231, 102, 47, 0.12);
+  --desk-good: #57dc8a;
+  --desk-good-soft: rgba(57, 231, 125, 0.09);
+  --desk-warning: #efb18e;
+  --desk-danger: #ff7869;
+  color: var(--desk-text);
+}
+
+.panel {
+  min-width: 0;
+  border: 1px solid var(--desk-line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.012), transparent 8rem),
+    var(--desk-bg);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+}
+
+.eyebrow,
+.sectionKicker,
+.metricLabel,
+.metricMeta,
+.stateTopline,
+.loginAction > span,
+.stateFacts dt,
+.loginGuardrails dt,
+.configChecklist dt {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.eyebrow,
+.sectionKicker,
+.loginAction > span {
+  color: var(--desk-accent);
+}
+
+.statePanel,
+.loginPanel,
+.unconfiguredPanel {
+  width: 100%;
+  margin-top: 24px;
+  border: 1px solid var(--desk-line);
+  background:
+    radial-gradient(
+      circle at 83% 10%,
+      rgba(231, 102, 47, 0.11),
+      transparent 24rem
+    ),
+    var(--desk-bg);
+}
+
+.statePanel {
+  display: grid;
+  min-height: 320px;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  align-content: space-between;
+}
+
+.stateTopline {
+  display: flex;
+  min-height: 42px;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid var(--desk-line);
+  padding: 0 16px;
+  color: var(--desk-muted);
+}
+
+.stateDot,
+.progressDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--desk-accent);
+  box-shadow:
+    0 0 0 4px rgba(231, 102, 47, 0.12),
+    0 0 14px rgba(231, 102, 47, 0.52);
+  animation: deskPulse 1.65s ease-in-out infinite;
+}
+
+.stateCopy {
+  align-self: center;
+  max-width: 700px;
+  padding: clamp(28px, 5vw, 58px);
+}
+
+.stateCopy h2,
+.loginHeader h2,
+.unconfiguredHeader h2 {
+  margin-top: 10px;
+  color: var(--desk-text);
+  font-size: clamp(28px, 4vw, 48px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+
+.stateCopy > p:last-child,
+.loginLead,
+.unconfiguredLead {
+  max-width: 66ch;
+  margin-top: 16px;
+  color: var(--desk-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.stateFacts {
+  align-self: end;
+  margin: 0;
+  border-top: 1px solid var(--desk-line);
+  border-left: 1px solid var(--desk-line);
+}
+
+.stateFacts div,
+.loginGuardrails div,
+.configChecklist div {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.38fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--desk-line);
+  padding: 13px 15px;
+}
+
+.stateFacts div:last-child,
+.loginGuardrails div:last-child,
+.configChecklist div:last-child {
+  border-bottom: 0;
+}
+
+.stateFacts dt,
+.loginGuardrails dt,
+.configChecklist dt {
+  color: var(--desk-muted);
+}
+
+.stateFacts dd,
+.loginGuardrails dd,
+.configChecklist dd {
+  margin: 0;
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.loginPanel {
+  overflow: hidden;
+}
+
+.loginHeader,
+.unconfiguredHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(24px, 4vw, 46px);
+}
+
+.loginHeader > div,
+.unconfiguredHeader > div {
+  min-width: 0;
+}
+
+.loginHeader h2,
+.unconfiguredHeader h2 {
+  max-width: 760px;
+}
+
+.safetyPill,
+.blockedPill,
+.testnetMarker {
+  flex: 0 0 auto;
+  border: 1px solid var(--desk-accent);
+  padding: 7px 9px;
+  color: var(--desk-warning);
+  background: rgba(231, 102, 47, 0.06);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.loginBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  border-top: 1px solid var(--desk-line);
+}
+
+.loginGuardrails {
+  margin: 0;
+}
+
+.loginGuardrails div {
+  min-height: 62px;
+  grid-template-columns: 132px minmax(0, 1fr);
+}
+
+.loginGuardrails dd {
+  color: var(--desk-muted);
+  font-family: var(--font-body), sans-serif;
+  font-size: 13px;
+}
+
+.loginAction {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 1px solid var(--desk-line);
+  padding: clamp(24px, 4vw, 42px);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.loginAction strong {
+  margin-top: 10px;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.loginAction p {
+  margin-top: 12px;
+  color: var(--desk-muted);
+  font-size: 13px;
+  line-height: 1.58;
+}
+
+.primaryAction,
+.railButton,
+.actionButton,
+.exportAction {
+  min-height: 44px;
+  border: 0;
+  color: var(--desk-text);
+  background: var(--desk-raised);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.primaryAction:hover:not(:disabled),
+.railButton:hover:not(:disabled),
+.actionButton:hover:not(:disabled),
+.exportAction:hover:not(:disabled) {
+  color: #fff;
+  background: var(--desk-accent-soft);
+  box-shadow: inset 3px 0 var(--desk-accent);
+}
+
+.primaryAction:focus-visible,
+.railButton:focus-visible,
+.accountButton:focus-visible,
+.actionButton:focus-visible,
+.exportAction:focus-visible,
+.field input:focus-visible {
+  outline: 2px solid var(--desk-accent);
+  outline-offset: -2px;
+}
+
+.primaryAction:disabled,
+.railButton:disabled,
+.actionButton:disabled,
+.exportAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.36;
+}
+
+.primaryAction {
+  display: flex;
+  width: 100%;
+  margin-top: 24px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--desk-accent);
+  padding: 0 15px;
+  color: #fff;
+  background: var(--desk-accent);
+}
+
+.layout {
+  display: grid;
+  width: 100%;
+  min-height: 620px;
+  grid-template-columns: minmax(212px, 236px) minmax(0, 1fr) minmax(
+      238px,
+      270px
+    );
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.sectionHeader {
+  display: flex;
+  min-height: 61px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--desk-line);
+  padding: 11px 14px;
+}
+
+.sectionHeader > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.sectionTitle {
+  overflow: hidden;
+  color: var(--desk-text);
+  font-size: 13px;
+  letter-spacing: 0.045em;
+  text-overflow: ellipsis;
+}
+
+.sectionMeta {
+  flex: 0 0 auto;
+  color: var(--desk-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.accountRail,
+.statusRail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.accountList {
+  min-height: 190px;
+  flex: 1;
+  overflow: auto;
+}
+
+.accountButton {
+  display: grid;
+  width: 100%;
+  min-height: 84px;
+  grid-template-columns: 26px minmax(0, 1fr) 10px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid var(--desk-line);
+  padding: 10px 12px;
+  color: var(--desk-muted);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.accountButton:hover,
+.activeAccount {
+  color: var(--desk-text);
+  background: var(--desk-accent-soft);
+  box-shadow: inset 3px 0 var(--desk-accent);
+}
+
+.accountIndex {
+  align-self: start;
+  padding-top: 2px;
+  color: #646767;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.accountIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.accountName,
+.accountAddress,
+.authTag {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountName {
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.accountAddress {
+  color: var(--desk-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.authTag {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 2px;
+  color: var(--desk-accent);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-style: normal;
+  letter-spacing: 0.08em;
+}
+
+.accountChevron {
+  color: var(--desk-line-strong);
+  font-size: 18px;
+}
+
+.activeAccount .accountChevron {
+  color: var(--desk-accent);
+}
+
+.emptyAccounts {
+  display: grid;
+  gap: 8px;
+  padding: 22px 14px;
+  color: var(--desk-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.emptyAccounts strong {
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.railActions {
+  border-top: 1px solid var(--desk-line);
+}
+
+.railButton {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--desk-line);
+  padding: 0 12px;
+  text-align: left;
+}
+
+.railButton:last-child {
+  border-bottom: 0;
+}
+
+.railButtonSecondary {
+  color: var(--desk-muted);
+  background: var(--desk-inset);
+}
+
+.workspace {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.metric {
+  display: grid;
+  min-width: 0;
+  min-height: 108px;
+  align-content: center;
+  gap: 6px;
+  border-right: 1px solid var(--desk-line);
+  padding: 14px 15px;
+}
+
+.metric:last-child {
+  border-right: 0;
+}
+
+.metricLabel,
+.metricMeta {
+  overflow: hidden;
+  color: var(--desk-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metricValue {
+  overflow: hidden;
+  color: var(--desk-text);
+  font-size: clamp(23px, 2.7vw, 36px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-overflow: ellipsis;
+}
+
+.privateMetric .metricValue {
+  color: var(--desk-accent);
+}
+
+.accountPanel,
+.notePanel {
+  overflow: hidden;
+}
+
+.addressHeading {
+  flex: 1;
+}
+
+.activeAddress {
+  min-width: 0;
+  max-width: 44%;
+  overflow: hidden;
+  color: var(--desk-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warning {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+  border-bottom: 1px solid #71361f;
+  padding: 10px 14px;
+  color: var(--desk-warning);
+  background: rgba(231, 102, 47, 0.075);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.warning strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.buildWarning {
+  border-color: #664d25;
+  color: #e7c58c;
+  background: rgba(176, 124, 41, 0.07);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  border-bottom: 1px solid var(--desk-line);
+}
+
+.fact {
+  display: grid;
+  min-height: 66px;
+  align-content: center;
+  gap: 7px;
+  border-right: 1px solid var(--desk-line);
+  padding: 11px 14px;
+}
+
+.fact:last-child {
+  border-right: 0;
+}
+
+.fact dt,
+.trustRow dt,
+.activityHeader,
+.field > span {
+  color: var(--desk-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.fact dd {
+  margin: 0;
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.operationInputs {
+  display: grid;
+  grid-template-columns: minmax(136px, 0.35fr) minmax(260px, 1fr);
+  border-bottom: 1px solid var(--desk-line);
+}
+
+.field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border-right: 1px solid var(--desk-line);
+  padding: 11px 14px;
+}
+
+.field:last-child {
+  border-right: 0;
+}
+
+.field input {
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 0;
+  color: var(--desk-text);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 12px;
+}
+
+.field input::placeholder {
+  color: #666a68;
+}
+
+.field input:hover,
+.field input:focus {
+  border-bottom-color: var(--desk-line-strong);
+  outline: 0;
+}
+
+.operationActions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr));
+}
+
+.actionButton {
+  min-width: 0;
+  border-right: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--desk-line);
+  padding: 0 10px;
+}
+
+.actionButton:nth-child(3n) {
+  border-right: 0;
+}
+
+.actionPrimary {
+  color: #fff;
+  background: rgba(231, 102, 47, 0.11);
+}
+
+.recoverAction {
+  color: var(--desk-good);
+}
+
+.noteTable {
+  overflow-x: auto;
+  font-family: var(--font-mono-ui), monospace;
+}
+
+.tableHeader,
+.tableRow {
+  display: grid;
+  min-width: 570px;
+  grid-template-columns: minmax(135px, 1.2fr) minmax(110px, 0.9fr) minmax(
+      80px,
+      0.55fr
+    ) minmax(78px, 0.55fr);
+}
+
+.tableHeader {
+  color: var(--desk-muted);
+  background: var(--desk-inset);
+}
+
+.tableRow {
+  border-top: 1px solid var(--desk-line);
+  color: var(--desk-muted);
+}
+
+.tableHeader > *,
+.tableRow > * {
+  min-width: 0;
+  border-right: 1px solid var(--desk-line);
+  padding: 10px 12px;
+  font-size: 9px;
+}
+
+.tableHeader > *:last-child,
+.tableRow > *:last-child {
+  border-right: 0;
+}
+
+.noteId summary {
+  color: var(--desk-text);
+  cursor: pointer;
+}
+
+.noteId code {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  color: var(--desk-muted);
+  font-size: 8px;
+}
+
+.noteAmount {
+  color: var(--desk-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.matureState {
+  color: var(--desk-good);
+}
+
+.waitingState {
+  color: var(--desk-warning);
+}
+
+.emptyNotes {
+  display: flex;
+  min-height: 122px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  color: var(--desk-muted);
+}
+
+.emptyNotes strong {
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.emptyNotes p {
+  max-width: 56ch;
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.emptyNoteMark {
+  color: var(--desk-accent);
+  font-size: 27px;
+}
+
+.testnetMarker {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.trustList {
+  margin: 0;
+  border-bottom: 1px solid var(--desk-line);
+}
+
+.trustRow {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed var(--desk-line);
+  padding: 0 12px;
+}
+
+.trustRow:last-child {
+  border-bottom: 0;
+}
+
+.trustRow dd {
+  margin: 0;
+  color: var(--desk-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  text-align: right;
+}
+
+.trustRow .goodState {
+  color: var(--desk-good);
+}
+
+.trustRow .cautionState {
+  color: var(--desk-warning);
+}
+
+.exportAction {
+  margin: 12px;
+  border: 1px solid var(--desk-line-strong);
+}
+
+.disclosure {
+  padding: 0 12px 13px;
+  color: var(--desk-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.progress,
+.error {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 12px 12px;
+  border: 1px solid #70401f;
+  padding: 10px;
+  color: var(--desk-warning);
+  background: rgba(231, 102, 47, 0.04);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.error {
+  border-color: #773d37;
+  color: var(--desk-danger);
+  background: rgba(255, 113, 94, 0.055);
+}
+
+.activity {
+  margin-top: auto;
+  border-top: 1px solid var(--desk-line);
+}
+
+.activityHeader,
+.activityItem {
+  display: flex;
+  min-height: 39px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px dashed var(--desk-line);
+  padding: 8px 12px;
+}
+
+.activityHeader strong {
+  color: var(--desk-text);
+  font-size: 8px;
+}
+
+.activityItem {
+  align-items: flex-start;
+  color: var(--desk-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.activityLink {
+  flex: 0 0 auto;
+  color: var(--desk-accent);
+}
+
+.emptyActivity {
+  padding: 15px 12px;
+  color: var(--desk-muted);
+  font-size: 11px;
+}
+
+.unconfiguredPanel {
+  padding-bottom: 0;
+}
+
+.blockedPill {
+  border-color: #743b36;
+  color: var(--desk-danger);
+  background: rgba(255, 113, 94, 0.05);
+}
+
+.unconfiguredLead {
+  max-width: 76ch;
+  margin: 0;
+  padding: 0 clamp(24px, 4vw, 46px) 28px;
+}
+
+.configChecklist {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--desk-line);
+  border-bottom: 1px solid var(--desk-line);
+}
+
+.configChecklist div {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: 1fr;
+  align-content: center;
+  gap: 7px;
+  border-right: 1px solid var(--desk-line);
+  border-bottom: 0;
+}
+
+.configChecklist div:last-child {
+  border-right: 0;
+}
+
+.configReady {
+  color: var(--desk-good) !important;
+}
+
+.configMissing {
+  color: var(--desk-danger) !important;
+}
+
+.unconfiguredNote {
+  max-width: 86ch;
+  padding: 18px clamp(24px, 4vw, 46px);
+  color: var(--desk-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.unconfiguredNote code {
+  color: var(--desk-warning);
+  font-family: var(--font-mono-ui), monospace;
+}
+
+@keyframes deskPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stateDot,
+  .progressDot {
+    animation: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  .layout {
+    grid-template-columns: minmax(210px, 232px) minmax(0, 1fr);
+  }
+
+  .statusRail {
+    min-height: 0;
+    grid-column: 1 / -1;
+  }
+
+  .statusRail .trustList {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .trustRow {
+    border-right: 1px solid var(--desk-line);
+  }
+
+  .activity {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .statePanel {
+    grid-template-columns: 1fr;
+  }
+
+  .stateFacts {
+    border-left: 0;
+  }
+
+  .loginBody,
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .loginAction {
+    border-top: 1px solid var(--desk-line);
+    border-left: 0;
+  }
+
+  .accountRail {
+    max-height: 420px;
+  }
+
+  .statusRail {
+    grid-column: auto;
+  }
+
+  .statusRail .trustList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .configChecklist {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .configChecklist div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .configChecklist div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--desk-line);
+  }
+}
+
+@media (max-width: 580px) {
+  .loginHeader,
+  .unconfiguredHeader {
+    flex-direction: column;
+  }
+
+  .stateCopy,
+  .loginHeader,
+  .unconfiguredHeader {
+    padding: 24px 18px;
+  }
+
+  .unconfiguredLead,
+  .unconfiguredNote {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .stateFacts div,
+  .loginGuardrails div {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  .metrics,
+  .facts,
+  .operationInputs,
+  .configChecklist,
+  .statusRail .trustList {
+    grid-template-columns: 1fr;
+  }
+
+  .metric,
+  .fact,
+  .field,
+  .configChecklist div,
+  .configChecklist div:nth-child(2),
+  .trustRow {
+    border-right: 0;
+    border-bottom: 1px solid var(--desk-line);
+  }
+
+  .metric:last-child,
+  .fact:last-child,
+  .field:last-child,
+  .configChecklist div:last-child {
+    border-bottom: 0;
+  }
+
+  .metric {
+    min-height: 88px;
+  }
+
+  .warning {
+    grid-template-columns: 1fr;
+  }
+
+  .operationActions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .actionButton:nth-child(3n) {
+    border-right: 1px solid var(--desk-line);
+  }
+
+  .actionButton:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .sectionHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .activeAddress {
+    max-width: 100%;
+  }
+}

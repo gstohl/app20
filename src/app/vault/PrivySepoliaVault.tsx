@@ -21,6 +21,7 @@ import {
   type BrowserStrk20Session,
 } from "@app20/privy/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
+import styles from "./privy-vault.module.css";
 
 type AuthorizationKind =
   | "user-only"
@@ -528,20 +529,76 @@ function PrivySepoliaVaultContent() {
   }
 
   if (!ready) {
-    return <div className="privy-vault-empty">INITIALIZING PRIVY…</div>;
+    return (
+      <section className={styles.statePanel} aria-live="polite">
+        <div className={styles.stateTopline}>
+          <span className={styles.stateDot} aria-hidden="true" />
+          <span>SEPOLIA RECOVERY DESK</span>
+        </div>
+        <div className={styles.stateCopy}>
+          <p className={styles.eyebrow}>PRIVY SIGNER INITIALIZATION</p>
+          <h2>Preparing the browser signer.</h2>
+          <p>
+            APP20 is waiting for Privy and the embedded Starknet wallet proxy.
+            No proof, discovery scan, or signing request has started.
+          </p>
+        </div>
+        <dl className={styles.stateFacts}>
+          <div><dt>NETWORK</dt><dd>SEPOLIA ONLY</dd></div>
+          <div><dt>SUBMISSION</dt><dd>BUILD-ONLY BY DEFAULT</dd></div>
+          <div><dt>FALLBACK</dt><dd>NONE</dd></div>
+        </dl>
+      </section>
+    );
   }
+
   if (!authenticated) {
     return (
-      <section className="privy-login panel-frame">
-        <p>SEPOLIA / PRIVY SIGNER</p>
-        <h2>Open the testnet recovery vault.</h2>
-        <span>
-          Privy authorizes Starknet hashes. Viewing keys and recovered notes
-          remain in this browser. The app bootstrap receives public account
-          metadata, the relay sees OHTTP ciphertext, and the remote prover sees
-          the decrypted witness.
-        </span>
-        <button type="button" onClick={login}>CONNECT PRIVY IDENTITY →</button>
+      <section className={styles.loginPanel} aria-labelledby="privy-login-title">
+        <header className={styles.loginHeader}>
+          <div>
+            <p className={styles.eyebrow}>SEPOLIA / PRIVY SIGNER</p>
+            <h2 id="privy-login-title">Open the testnet recovery vault.</h2>
+            <p className={styles.loginLead}>
+              A separate recovery desk for browser-owned Sepolia accounts. It
+              never selects a Ready account and cannot request a Mainnet
+              signature, proof, discovery scan, or submission.
+            </p>
+          </div>
+          <span className={styles.safetyPill}>TESTNET ONLY</span>
+        </header>
+
+        <div className={styles.loginBody}>
+          <dl className={styles.loginGuardrails}>
+            <div>
+              <dt>IDENTITY</dt>
+              <dd>Privy authorizes Starknet hashes after explicit login.</dd>
+            </div>
+            <div>
+              <dt>PRIVATE STATE</dt>
+              <dd>Viewing keys and recovered notes stay in this browser.</dd>
+            </div>
+            <div>
+              <dt>NETWORK RAIL</dt>
+              <dd>Hard-bound to Starknet Sepolia; Ready is not a fallback.</dd>
+            </div>
+            <div>
+              <dt>PROVER TRUST</dt>
+              <dd>The final remote prover sees the witness after OHTTP.</dd>
+            </div>
+          </dl>
+          <div className={styles.loginAction}>
+            <span>RECOVERY SESSION</span>
+            <strong>Identity first. Private scan only when requested.</strong>
+            <p>
+              The bootstrap receives public account metadata. The relay sees
+              OHTTP ciphertext, not recovered notes or viewing keys.
+            </p>
+            <button className={styles.primaryAction} type="button" onClick={login}>
+              CONNECT PRIVY IDENTITY <span aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
       </section>
     );
   }
@@ -559,120 +616,387 @@ function PrivySepoliaVaultContent() {
   ) ?? [];
   const actionDisabled = Boolean(busy) || !walletsReady || !selected;
   const buildOnly = bootstrapQuery.data?.submissionMode !== "live";
+  const wallets = bootstrapQuery.data?.wallets ?? [];
+  const visibleError =
+    error ??
+    clientState.error ??
+    (bootstrapQuery.error ? safeError(bootstrapQuery.error) : undefined);
 
   return (
-    <div className="privy-vault-layout">
-      <aside className="privy-account-rail panel-frame">
-        <div className="panel-heading">
-          <span>PRIVY / SEPOLIA</span>
-          <strong>Testnet accounts</strong>
-        </div>
-        <div className="privy-account-list">
-          {(bootstrapQuery.data?.wallets ?? []).map((wallet, index) => {
+    <div className={styles.layout}>
+      <aside className={`${styles.panel} ${styles.accountRail}`} aria-label="Privy Sepolia accounts">
+        <header className={styles.sectionHeader}>
+          <div>
+            <span className={styles.sectionKicker}>PRIVY / SEPOLIA</span>
+            <strong className={styles.sectionTitle}>Recovery accounts</strong>
+          </div>
+          <span className={styles.sectionMeta}>{wallets.length} ON FILE</span>
+        </header>
+
+        <div className={styles.accountList}>
+          {wallets.map((wallet, index) => {
             const address = bootstrapQuery.data
               ? computeBrowserAccountAddress(
                   wallet.publicKey,
                   bootstrapQuery.data.readyClassHash,
                 )
               : wallet.privyAddress;
+            const active = wallet.walletId === selectedId;
             return (
               <button
                 type="button"
-                className={wallet.walletId === selectedId ? "is-active" : ""}
+                className={`${styles.accountButton} ${active ? styles.activeAccount : ""}`}
                 key={wallet.walletId}
                 onClick={() => setSelectedId(wallet.walletId)}
+                aria-pressed={active}
               >
-                <small>{String(index + 1).padStart(2, "0")}</small>
-                <span><b>{wallet.displayName ?? `ACCOUNT ${index + 1}`}</b><code>{short(address)}</code></span>
-                <em>{authorizationLabel(wallet.authorization.kind)}</em>
+                <span className={styles.accountIndex}>
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className={styles.accountIdentity}>
+                  <b className={styles.accountName}>
+                    {wallet.displayName ?? `ACCOUNT ${index + 1}`}
+                  </b>
+                  <code className={styles.accountAddress}>{short(address)}</code>
+                  <em className={styles.authTag}>
+                    {authorizationLabel(wallet.authorization.kind)}
+                  </em>
+                </span>
+                <span className={styles.accountChevron} aria-hidden="true">›</span>
               </button>
             );
           })}
-        </div>
-        <button type="button" className="rail-button" onClick={addWallet} disabled={Boolean(busy)}>
-          + USER-ONLY ACCOUNT
-        </button>
-        <button type="button" className="rail-button" onClick={handleLogout}>
-          DISCONNECT PRIVY
-        </button>
-      </aside>
-
-      <section className="privy-vault-workspace">
-        <div className="privy-metrics panel-frame">
-          <article><span>PUBLIC STRK</span><strong>{formatUnits(accountQuery.data?.balance, 18, 5)}</strong><small>VISIBLE ON SEPOLIA</small></article>
-          <article><span>SHIELDED STRK</span><strong>{formatUnits(privateTotal, 18, 5)}</strong><small>{currentPrivate?.status === "ready" ? `${notes.length} NOTE(S)` : "EXPLICIT SCAN REQUIRED"}</small></article>
-          <article><span>SUBMISSION</span><strong>{bootstrapQuery.data?.submissionMode === "live" ? "LIVE" : "BUILD"}</strong><small>PRIVY IS NEVER ENABLED FOR MAINNET</small></article>
-        </div>
-
-        <section className="privy-account-panel panel-frame">
-          <div className="panel-heading">
-            <span>STARKNET ACCOUNT ADDRESS</span>
-            <strong>{selectedAddress ? short(selectedAddress, 12, 10) : "NO ACCOUNT"}</strong>
-          </div>
-          {selected?.authorization.kind === "shared-recovery" ? (
-            <div className="vault-warning">Legacy application signer detected. Recover funds and rotate that authorization.</div>
-          ) : null}
-          <div className="privy-account-facts">
-            <span><small>DEPLOYMENT</small><b>{accountQuery.data?.deployed ? "DEPLOYED" : "COUNTERFACTUAL"}</b></span>
-            <span><small>QUORUM</small><b>{selected ? `${selected.authorization.threshold}/${selected.authorization.userSignerCount + selected.authorization.appSignerCount}` : "—"}</b></span>
-            <span><small>SECURE SIGNER</small><b>{walletsReady ? "READY" : "INITIALIZING"}</b></span>
-          </div>
-          {buildOnly ? (
-            <div className="vault-warning">
-              BUILD-ONLY SAFETY MODE: proofs and calls may be reviewed, but no
-              private transaction will be submitted.
+          {!wallets.length && !bootstrapQuery.isLoading ? (
+            <div className={styles.emptyAccounts}>
+              <strong>NO STARKNET ACCOUNTS</strong>
+              <span>Create a user-only Sepolia wallet to begin recovery.</span>
             </div>
           ) : null}
-          <div className="privy-operation-inputs">
-            <label><span>AMOUNT / STRK</span><input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" /></label>
-            <label><span>RECIPIENT / BLANK = SELF UNSHIELD</span><input value={recipient} onChange={(event) => setRecipient(event.target.value)} placeholder="0x…" spellCheck={false} /></label>
+          {bootstrapQuery.isLoading ? (
+            <div className={styles.emptyAccounts} aria-live="polite">
+              <strong>LOADING ACCOUNT REGISTRY</strong>
+              <span>Reading public wallet and quorum metadata.</span>
+            </div>
+          ) : null}
+        </div>
+
+        <div className={styles.railActions}>
+          <button
+            type="button"
+            className={styles.railButton}
+            onClick={addWallet}
+            disabled={Boolean(busy)}
+          >
+            <span aria-hidden="true">＋</span> USER-ONLY ACCOUNT
+          </button>
+          <button
+            type="button"
+            className={`${styles.railButton} ${styles.railButtonSecondary}`}
+            onClick={handleLogout}
+          >
+            DISCONNECT PRIVY
+          </button>
+        </div>
+      </aside>
+
+      <section className={styles.workspace} aria-label="Sepolia vault workspace">
+        <section className={`${styles.panel} ${styles.metrics}`} aria-label="Vault balances">
+          <article className={styles.metric}>
+            <span className={styles.metricLabel}>PUBLIC STRK</span>
+            <strong className={styles.metricValue}>
+              {formatUnits(accountQuery.data?.balance, 18, 5)}
+            </strong>
+            <small className={styles.metricMeta}>VISIBLE ON SEPOLIA</small>
+          </article>
+          <article className={`${styles.metric} ${styles.privateMetric}`}>
+            <span className={styles.metricLabel}>SHIELDED STRK</span>
+            <strong className={styles.metricValue}>
+              {formatUnits(privateTotal, 18, 5)}
+            </strong>
+            <small className={styles.metricMeta}>
+              {currentPrivate?.status === "ready"
+                ? `${notes.length} NOTE(S) RECOVERED`
+                : "EXPLICIT SCAN REQUIRED"}
+            </small>
+          </article>
+          <article className={styles.metric}>
+            <span className={styles.metricLabel}>SUBMISSION MODE</span>
+            <strong className={styles.metricValue}>
+              {buildOnly ? "BUILD" : "LIVE"}
+            </strong>
+            <small className={styles.metricMeta}>NEVER ENABLED FOR MAINNET</small>
+          </article>
+        </section>
+
+        <section className={`${styles.panel} ${styles.accountPanel}`} aria-labelledby="privy-account-title">
+          <header className={styles.sectionHeader}>
+            <div className={styles.addressHeading}>
+              <span className={styles.sectionKicker}>STARKNET ACCOUNT / SEPOLIA</span>
+              <strong className={styles.sectionTitle} id="privy-account-title">
+                Active recovery account
+              </strong>
+            </div>
+            <code className={styles.activeAddress} title={selectedAddress}>
+              {selectedAddress ? short(selectedAddress, 12, 10) : "NO ACCOUNT"}
+            </code>
+          </header>
+
+          {selected?.authorization.kind === "shared-recovery" ? (
+            <div className={styles.warning} role="status">
+              <strong>LEGACY APPLICATION SIGNER</strong>
+              <span>Recover funds, then rotate this shared authorization.</span>
+            </div>
+          ) : null}
+
+          <dl className={styles.facts}>
+            <div className={styles.fact}>
+              <dt>DEPLOYMENT</dt>
+              <dd>{accountQuery.data?.deployed ? "DEPLOYED" : "COUNTERFACTUAL"}</dd>
+            </div>
+            <div className={styles.fact}>
+              <dt>QUORUM</dt>
+              <dd>
+                {selected
+                  ? `${selected.authorization.threshold}/${
+                      selected.authorization.userSignerCount +
+                      selected.authorization.appSignerCount
+                    }`
+                  : "—"}
+              </dd>
+            </div>
+            <div className={styles.fact}>
+              <dt>SECURE SIGNER</dt>
+              <dd>{walletsReady ? "READY" : "INITIALIZING"}</dd>
+            </div>
+          </dl>
+
+          {buildOnly ? (
+            <div className={`${styles.warning} ${styles.buildWarning}`} role="status">
+              <strong>BUILD-ONLY SAFETY MODE</strong>
+              <span>
+                Proofs and calls can be reviewed. No private transaction will
+                be submitted from this rail.
+              </span>
+            </div>
+          ) : null}
+
+          <div className={styles.operationInputs}>
+            <label className={styles.field}>
+              <span>AMOUNT / STRK</span>
+              <input
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                inputMode="decimal"
+                aria-label="STRK amount"
+              />
+            </label>
+            <label className={`${styles.field} ${styles.recipientField}`}>
+              <span>RECIPIENT / BLANK = SELF UNSHIELD</span>
+              <input
+                value={recipient}
+                onChange={(event) => setRecipient(event.target.value)}
+                placeholder="0x…"
+                spellCheck={false}
+                autoComplete="off"
+                aria-label="Recipient address"
+              />
+            </label>
           </div>
-          <div className="privy-operation-actions">
-            {!accountQuery.data?.deployed ? <button type="button" onClick={() => runAction("deploy")} disabled={actionDisabled}>DEPLOY</button> : null}
-            <button type="button" onClick={() => runAction("register")} disabled={actionDisabled || !accountQuery.data?.deployed}>{buildOnly ? "BUILD REGISTER" : "REGISTER"}</button>
-            <button type="button" onClick={() => runAction("shield")} disabled={actionDisabled || !accountQuery.data?.deployed}>{buildOnly ? "BUILD SHIELD ↓" : "SHIELD ↓"}</button>
-            <button type="button" onClick={() => runAction("transfer")} disabled={actionDisabled || !accountQuery.data?.deployed || !recipient.trim()}>{buildOnly ? "BUILD PRIVATE SEND →" : "SEND PRIVATE →"}</button>
-            <button type="button" onClick={() => runAction("unshield")} disabled={actionDisabled || !accountQuery.data?.deployed}>{buildOnly ? "BUILD UNSHIELD ↑" : "UNSHIELD ↑"}</button>
-            <button type="button" onClick={() => scanPrivate()} disabled={actionDisabled || !accountQuery.data?.deployed}>RECOVER BALANCE</button>
+
+          <div className={styles.operationActions}>
+            {!accountQuery.data?.deployed ? (
+              <button
+                className={styles.actionButton}
+                type="button"
+                onClick={() => runAction("deploy")}
+                disabled={actionDisabled}
+              >
+                DEPLOY ACCOUNT
+              </button>
+            ) : null}
+            <button
+              className={styles.actionButton}
+              type="button"
+              onClick={() => runAction("register")}
+              disabled={actionDisabled || !accountQuery.data?.deployed}
+            >
+              {buildOnly ? "BUILD REGISTER" : "REGISTER"}
+            </button>
+            <button
+              className={`${styles.actionButton} ${styles.actionPrimary}`}
+              type="button"
+              onClick={() => runAction("shield")}
+              disabled={actionDisabled || !accountQuery.data?.deployed}
+            >
+              {buildOnly ? "BUILD SHIELD ↓" : "SHIELD ↓"}
+            </button>
+            <button
+              className={styles.actionButton}
+              type="button"
+              onClick={() => runAction("transfer")}
+              disabled={
+                actionDisabled ||
+                !accountQuery.data?.deployed ||
+                !recipient.trim()
+              }
+            >
+              {buildOnly ? "BUILD PRIVATE SEND →" : "SEND PRIVATE →"}
+            </button>
+            <button
+              className={styles.actionButton}
+              type="button"
+              onClick={() => runAction("unshield")}
+              disabled={actionDisabled || !accountQuery.data?.deployed}
+            >
+              {buildOnly ? "BUILD UNSHIELD ↑" : "UNSHIELD ↑"}
+            </button>
+            <button
+              className={`${styles.actionButton} ${styles.recoverAction}`}
+              type="button"
+              onClick={() => scanPrivate()}
+              disabled={actionDisabled || !accountQuery.data?.deployed}
+            >
+              RECOVER BALANCE
+            </button>
           </div>
         </section>
 
-        <section className="privy-note-panel panel-frame">
-          <div className="panel-heading"><span>BROWSER ONLY</span><strong>Recovered notes</strong></div>
+        <section className={`${styles.panel} ${styles.notePanel}`} aria-labelledby="recovered-notes-title">
+          <header className={styles.sectionHeader}>
+            <div>
+              <span className={styles.sectionKicker}>BROWSER-OWNED STATE</span>
+              <strong className={styles.sectionTitle} id="recovered-notes-title">
+                Recovered notes
+              </strong>
+            </div>
+            <span className={styles.sectionMeta}>
+              {currentPrivate?.status === "scanning" ? "SCANNING" : `${notes.length} LOCAL`}
+            </span>
+          </header>
           {notes.length ? (
-            <div className="privy-note-table">
-              <div><span>NOTE</span><span>AMOUNT</span><span>BLOCK</span><span>STATE</span></div>
+            <div className={styles.noteTable} role="table" aria-label="Recovered private notes">
+              <div className={styles.tableHeader} role="row">
+                <span role="columnheader">NOTE</span>
+                <span role="columnheader">AMOUNT</span>
+                <span role="columnheader">BLOCK</span>
+                <span role="columnheader">STATE</span>
+              </div>
               {notes.map((note, index) => (
-                <div key={`${note.id}:${index}`}>
-                  <details><summary>{short(note.id, 10, 7)}</summary><code>{note.id}</code></details>
-                  <strong>{formatUnits(note.amount, 18, 6)} STRK</strong>
-                  <span>{note.created === undefined ? "—" : `#${note.created}`}</span>
-                  <span>{note.mature ? "MATURE" : "WAITING"}</span>
+                <div className={styles.tableRow} role="row" key={`${note.id}:${index}`}>
+                  <div className={styles.noteId} role="cell">
+                    <details>
+                      <summary>{short(note.id, 10, 7)}</summary>
+                      <code>{note.id}</code>
+                    </details>
+                  </div>
+                  <strong className={styles.noteAmount} role="cell">
+                    {formatUnits(note.amount, 18, 6)} STRK
+                  </strong>
+                  <span role="cell">
+                    {note.created === undefined ? "—" : `#${note.created}`}
+                  </span>
+                  <span
+                    className={note.mature ? styles.matureState : styles.waitingState}
+                    role="cell"
+                  >
+                    {note.mature ? "MATURE" : "WAITING"}
+                  </span>
                 </div>
               ))}
             </div>
-          ) : <p className="vault-empty-copy">No private state is displayed until you explicitly authorize a local scan.</p>}
+          ) : (
+            <div className={styles.emptyNotes}>
+              <span className={styles.emptyNoteMark} aria-hidden="true">◇</span>
+              <div>
+                <strong>NO PRIVATE STATE DISPLAYED</strong>
+                <p>
+                  Notes remain hidden until you explicitly authorize a local
+                  recovery scan for this account.
+                </p>
+              </div>
+            </div>
+          )}
         </section>
       </section>
 
-      <aside className="privy-status-rail panel-frame">
-        <div className="panel-heading"><span>RECOVERY</span><strong>Trust state</strong></div>
-        <div className="privy-trust-list">
-          <span><small>NETWORK</small><b>SEPOLIA ONLY</b></span>
-          <span><small>RELAY</small><b>OHTTP CIPHERTEXT</b></span>
-          <span><small>APP BACKEND</small><b>NO WITNESS</b></span>
-          <span><small>REMOTE PROVER</small><b>SEES WITNESS</b></span>
-        </div>
-        <button type="button" onClick={backupWallet} disabled={!selected || Boolean(busy)}>EXPORT ACTIVE WALLET</button>
-        <p className="vault-disclosure">The remote prover sees the decrypted witness after OHTTP decapsulation. Mail plaintext is separately encrypted before proving.</p>
-        {busy ? <div className="vault-progress">{busy}</div> : null}
-        {error ?? clientState.error ?? bootstrapQuery.error ? <div className="vault-error">{error ?? clientState.error ?? safeError(bootstrapQuery.error)}</div> : null}
-        <div className="privy-activity">
-          <strong>LOCAL ACTIVITY</strong>
+      <aside className={`${styles.panel} ${styles.statusRail}`} aria-label="Privy trust state">
+        <header className={styles.sectionHeader}>
+          <div>
+            <span className={styles.sectionKicker}>RECOVERY BOUNDARY</span>
+            <strong className={styles.sectionTitle}>Trust state</strong>
+          </div>
+          <span className={styles.testnetMarker}>SEP</span>
+        </header>
+
+        <dl className={styles.trustList}>
+          <div className={styles.trustRow}>
+            <dt>NETWORK</dt><dd className={styles.goodState}>SEPOLIA ONLY</dd>
+          </div>
+          <div className={styles.trustRow}>
+            <dt>SUBMISSION</dt><dd>{buildOnly ? "BUILD-ONLY" : "LIVE / SEPOLIA"}</dd>
+          </div>
+          <div className={styles.trustRow}>
+            <dt>RELAY</dt><dd>OHTTP CIPHERTEXT</dd>
+          </div>
+          <div className={styles.trustRow}>
+            <dt>APP BACKEND</dt><dd>NO WITNESS</dd>
+          </div>
+          <div className={styles.trustRow}>
+            <dt>REMOTE PROVER</dt><dd className={styles.cautionState}>SEES WITNESS</dd>
+          </div>
+          <div className={styles.trustRow}>
+            <dt>READY FALLBACK</dt><dd>DISABLED</dd>
+          </div>
+        </dl>
+
+        <button
+          className={styles.exportAction}
+          type="button"
+          onClick={backupWallet}
+          disabled={!selected || Boolean(busy)}
+        >
+          EXPORT ACTIVE WALLET
+        </button>
+
+        <p className={styles.disclosure}>
+          The remote prover sees the decrypted witness after OHTTP
+          decapsulation. Mail plaintext is separately encrypted before proving.
+        </p>
+
+        {busy ? (
+          <div className={styles.progress} role="status">
+            <span className={styles.progressDot} aria-hidden="true" />
+            {busy}
+          </div>
+        ) : null}
+        {visibleError ? (
+          <div className={styles.error} role="alert">{visibleError}</div>
+        ) : null}
+
+        <section className={styles.activity} aria-labelledby="privy-activity-title">
+          <header className={styles.activityHeader}>
+            <strong id="privy-activity-title">LOCAL ACTIVITY</strong>
+            <span>{activities.length}/6</span>
+          </header>
           {activities.map((activity) => (
-            <span key={activity.id}>{activity.label}{activity.transactionHash ? <a href={`https://sepolia.voyager.online/tx/${activity.transactionHash}`} target="_blank" rel="noreferrer">RECEIPT ↗</a> : null}</span>
+            <div className={styles.activityItem} key={activity.id}>
+              <span>{activity.label}</span>
+              {activity.transactionHash ? (
+                <a
+                  className={styles.activityLink}
+                  href={`https://sepolia.voyager.online/tx/${activity.transactionHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  RECEIPT ↗
+                </a>
+              ) : null}
+            </div>
           ))}
-        </div>
+          {!activities.length ? (
+            <p className={styles.emptyActivity}>No local vault activity yet.</p>
+          ) : null}
+        </section>
       </aside>
     </div>
   );
@@ -680,7 +1004,49 @@ function PrivySepoliaVaultContent() {
 
 export default function PrivySepoliaVault() {
   if (!PRIVY_APP_ID || !PRIVY_CLIENT_ID) {
-    return <div className="privy-vault-empty">PRIVY SEPOLIA IS NOT CONFIGURED</div>;
+    return (
+      <section className={styles.unconfiguredPanel} aria-labelledby="privy-unconfigured-title">
+        <header className={styles.unconfiguredHeader}>
+          <div>
+            <p className={styles.eyebrow}>SEPOLIA / PRIVY RECOVERY</p>
+            <h2 id="privy-unconfigured-title">Recovery vault not configured.</h2>
+          </div>
+          <span className={styles.blockedPill}>OFFLINE</span>
+        </header>
+        <p className={styles.unconfiguredLead}>
+          This rail stays unavailable until the public Privy application IDs
+          and reviewed OHTTP key pins are configured. APP20 will not fall back
+          to a different Ready account.
+        </p>
+        <dl className={styles.configChecklist}>
+          <div>
+            <dt>PUBLIC APP ID</dt>
+            <dd className={PRIVY_APP_ID ? styles.configReady : styles.configMissing}>
+              {PRIVY_APP_ID ? "PRESENT" : "MISSING"}
+            </dd>
+          </div>
+          <div>
+            <dt>PUBLIC CLIENT ID</dt>
+            <dd className={PRIVY_CLIENT_ID ? styles.configReady : styles.configMissing}>
+              {PRIVY_CLIENT_ID ? "PRESENT" : "MISSING"}
+            </dd>
+          </div>
+          <div>
+            <dt>NETWORK</dt>
+            <dd>SEPOLIA ONLY</dd>
+          </div>
+          <div>
+            <dt>MAINNET ACCESS</dt>
+            <dd>NOT AVAILABLE</dd>
+          </div>
+        </dl>
+        <p className={styles.unconfiguredNote}>
+          Only public identifiers belong in <code>VITE_*</code>. Prover,
+          discovery, RPC origins, authorization, and private keys remain Worker
+          secrets and are never requested here.
+        </p>
+      </section>
+    );
   }
   return (
     <PrivyProvider
