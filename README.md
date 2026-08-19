@@ -21,17 +21,17 @@ yet. This is not a Mainnet value-moving release.
 
 | Rank | Feature | Route | Status |
 | --- | --- | --- | --- |
-| 1 | Vault | `/vault` | Primary wallet. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
-| 2 | Intents | `/intents` | Review-only dry 1Click quotes. No deposit address, no submit |
+| 1 | Vault | `/vault` | In-pool rail. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
+| 2 | Intents | `/vault#intents` | Cross-chain rail on the same desk. Review-only dry 1Click quotes. No deposit address, no submit |
 | 3 | Workflows | `/workflows` | Review-only advisory policy receipts. No TEE, no execution |
-| 4 | Mailbox | `/mail/inbox` | APP20 Mail. Encrypted letters, private STRK memos, invoices, and one-sided deals. Ready only |
+| 4 | Mailbox | `/mail/inbox` | Encrypted letters and payment context. Shielding lives in Vault, not here |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
 
 ### Vault and Intents
 
-They can share one **value desk** later. They should not become one form.
+They share one **value desk** at `/vault`. They are not one form.
 
 Vault is in-pool Starknet privacy (shield, private transfer, unshield). Intents
 is a public cross-chain quote against NEAR 1Click. Different chains, signers,

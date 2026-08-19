@@ -17,7 +17,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const vaultMode = useVaultMode((state) => state.mode);
   const privyConnected = useVaultMode((state) => state.privyConnected);
   const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
-  const intentsActive = pathname.startsWith("/intents");
+  const vaultActive = pathname === "/vault" || pathname.startsWith("/intents");
   const workflowsActive = pathname.startsWith("/workflows");
   const connected = vaultMode === "privy" ? privyConnected : readyConnected;
 
@@ -47,27 +47,21 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           <nav className="app-tabs" aria-label="APP20 modules">
             <Link
               to="/vault"
-              aria-current={pathname === "/vault" ? "page" : undefined}
+              aria-current={vaultActive ? "page" : undefined}
             >
               Vault
-            </Link>
-            <Link
-              to="/mail/inbox"
-              aria-current={mailActive ? "page" : undefined}
-            >
-              Mail
-            </Link>
-            <Link
-              to="/intents"
-              aria-current={intentsActive ? "page" : undefined}
-            >
-              Intents
             </Link>
             <Link
               to="/workflows"
               aria-current={workflowsActive ? "page" : undefined}
             >
               Workflows
+            </Link>
+            <Link
+              to="/mail/inbox"
+              aria-current={mailActive ? "page" : undefined}
+            >
+              Mailbox
             </Link>
           </nav>
           <div className="app-utilities">

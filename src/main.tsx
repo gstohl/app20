@@ -11,7 +11,6 @@ import AppShell from "@/app/components/AppShell";
 import ReadyRailGate from "@/app/components/ReadyRailGate";
 import AppProviders from "@/app/providers";
 import InboxPage from "@/app/inbox/page";
-import IntentsPage from "@/app/intents/page";
 import PayPage from "@/app/pay/page";
 import VaultPage from "@/app/vault/page";
 import WorkflowsPage from "@/app/workflows/page";
@@ -85,7 +84,9 @@ const mailboxRoute = createRoute({
 const intentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/intents",
-  component: IntentsPage,
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.vault, hash: "intents", replace: true });
+  },
 });
 
 const workflowsRoute = createRoute({

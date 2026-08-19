@@ -253,8 +253,8 @@ test("all Quietline localnet journeys", async ({
     throw new Error("Bob backup was not captured during onboarding.");
 
   await test.step("2. shield STRK and observe truthful progress", async () => {
+    await page.goto("/vault");
     await switchIdentity(page, config, "alice");
-    await loadExistingKey(page);
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
@@ -307,6 +307,7 @@ test("all Quietline localnet journeys", async ({
       },
     );
     await screenshot(page, "05-shielded-balances", testInfo);
+    await page.goto("/mail/inbox");
   });
 
   await test.step("3. send a composite document and inspect Sent evidence", async () => {

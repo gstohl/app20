@@ -14,6 +14,8 @@ export function legacyRouteTarget(pathname: string): string | null {
     case "/mail":
     case "/inbox":
       return CANONICAL_ROUTES.mail;
+    case "/intents":
+      return `${CANONICAL_ROUTES.vault}#intents`;
     default:
       return null;
   }

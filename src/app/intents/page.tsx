@@ -491,7 +491,7 @@ export default function IntentsPage() {
   ];
 
   return (
-    <main className={`desk-page ${styles.page}`}>
+    <section className={`desk-page ${styles.page}`}>
       <header className="desk-intro">
         <div>
           <p>APP20 / CROSS-CHAIN INTENTS</p>
@@ -742,6 +742,6 @@ export default function IntentsPage() {
           </li>
         ))}
       </ol>
-    </main>
+    </section>
   );
 }

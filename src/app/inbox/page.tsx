@@ -3,7 +3,6 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import { useEffect, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
-import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useLocalnetTools } from "@/app/localnetToolsContext";
@@ -15,7 +14,6 @@ import ConversationList, {
 import DraftList from "@/components/mail/DraftList";
 import Onboard from "@/components/mail/Onboard";
 import { ScanProgress } from "@/components/mail/OperationProgress";
-import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
 import Thread, {
   type LocalMailMessage,
   type ThreadActionState,
@@ -2488,7 +2486,6 @@ export default function InboxPage() {
             </small>
           </div>
 
-          <PrivacyWalletMenu />
 
           {renderLocalnetTools ? (
             <div className={styles.localnetSlot}>{renderLocalnetTools()}</div>
@@ -2798,11 +2795,11 @@ export default function InboxPage() {
                       </span>
                     </li>
                     <li>
-                      <strong>3. Shielded balance</strong>
+                      <strong>3. Value stays in Vault</strong>
                       <span>
-                        In-pool transfers can carry private payment context.
-                        Shield and unshield remain public and pay the live pool
-                        fee.
+                        Shield, private transfer, and unshield live on the Vault
+                        desk. Mail can attach payment context; it does not
+                        replace the wallet.
                       </span>
                     </li>
                     <li>

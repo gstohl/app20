@@ -9,7 +9,9 @@ import { readPublicStrkBalance } from "@/lib/mainnet-safety";
 import { formatStrkAmount } from "@/lib/strk-amount";
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
+import IntentsPage from "@/app/intents/page";
 import styles from "./vault.module.css";
 
 const PrivySepoliaVault = lazy(() => import("./PrivySepoliaVault"));
@@ -46,20 +48,41 @@ export default function VaultPage() {
         ? "Unavailable"
         : "—"
       : formatStrkAmount(publicBalance.data);
+  const hash = useRouterState({ select: (state) => state.location.hash });
+  const onIntents = hash === "#intents" || hash === "intents";
 
   return (
     <main className={styles.page}>
       <header className={styles.masthead}>
         <div className={styles.mastheadCopy}>
-          <p className={styles.eyebrow}>APP20 / VAULT</p>
-          <h1>Public entry. Private balance. Explicit exit.</h1>
+          <p className={styles.eyebrow}>APP20 / VALUE DESK</p>
+          <h1>
+            {onIntents
+              ? "Set the bounds. Let execution compete."
+              : "Public entry. Private balance. Explicit exit."}
+          </h1>
           <span>
-            One full-width execution desk for public STRK, shielded state, and
-            the three reviewed movements between them. Mainnet routes through
-            Ready Wallet Standard. Privy remains a separate Sepolia-only
-            recovery rail and cannot request a Mainnet signature, proof,
-            discovery scan, or submission.
+            {onIntents
+              ? "Cross-chain Intents is a second rail on this desk, not a second wallet. Quotes stay dry. No deposit address, no submit."
+              : "In-pool Vault is the primary rail: public STRK, shielded state, shield, private transfer, and unshield. Mainnet is Ready only. Privy is Sepolia recovery."}
           </span>
+          <nav className={styles.deskTabs} aria-label="Value desk rails">
+            <Link
+              to="/vault"
+              aria-current={!onIntents ? "page" : undefined}
+              className={!onIntents ? styles.isActive : undefined}
+            >
+              In-pool
+            </Link>
+            <Link
+              to="/vault"
+              hash="intents"
+              aria-current={onIntents ? "page" : undefined}
+              className={onIntents ? styles.isActive : undefined}
+            >
+              Cross-chain
+            </Link>
+          </nav>
         </div>
         <div
           className={styles.railSwitch}
@@ -96,7 +119,9 @@ export default function VaultPage() {
         </div>
       </header>
 
-      {mode === "privy" && privyBrowserConfigured ? (
+      {onIntents ? (
+        <IntentsPage />
+      ) : mode === "privy" && privyBrowserConfigured ? (
         <Suspense
           fallback={
             <div className={styles.privyFallback}>LOADING PRIVY VAULT…</div>
