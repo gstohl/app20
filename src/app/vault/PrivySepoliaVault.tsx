@@ -21,6 +21,12 @@ import {
   type BrowserStrk20Session,
 } from "@app20/privy/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
+import AddressBookField from "@/components/AddressBookField";
+import {
+  loadAddressBook,
+  resolveAddressBookInput,
+  type AddressBookEntry,
+} from "@/lib/address-book";
 import styles from "./privy-vault.module.css";
 
 type AuthorizationKind =
@@ -409,6 +415,26 @@ function PrivySepoliaVaultContent() {
     }
   }
 
+  async function resolveRecipient(required: boolean): Promise<string> {
+    const raw = recipient.trim();
+    if (!raw && required) throw new Error("Enter a recipient address.");
+    let book: AddressBookEntry[] = [];
+    if (selectedAddress) {
+      try {
+        book = await loadAddressBook(window.localStorage, selectedAddress);
+      } catch {
+        book = [];
+      }
+    }
+    const resolved = resolveAddressBookInput(book, raw);
+    if (!resolved) {
+      throw new Error(
+        "Enter a valid Starknet address or a saved address-book label.",
+      );
+    }
+    return resolved.address;
+  }
+
   async function runAction(
     action: "deploy" | "register" | "shield" | "transfer" | "unshield",
   ) {
@@ -441,15 +467,14 @@ function PrivySepoliaVaultContent() {
           result = await session.shield({ amount: parseAmount(amount) });
           break;
         case "transfer":
-          if (!recipient.trim()) throw new Error("Enter a recipient address.");
           result = await session.transfer({
-            recipient: recipient.trim(),
+            recipient: await resolveRecipient(true),
             amount: parseAmount(amount),
           });
           break;
         case "unshield":
           result = await session.unshield({
-            recipient: recipient.trim() || undefined,
+            recipient: recipient.trim() ? await resolveRecipient(true) : undefined,
             amount: parseAmount(amount),
           });
           break;
@@ -787,17 +812,18 @@ function PrivySepoliaVaultContent() {
                 aria-label="STRK amount"
               />
             </label>
-            <label className={`${styles.field} ${styles.recipientField}`}>
-              <span>RECIPIENT / BLANK = SELF UNSHIELD</span>
-              <input
-                value={recipient}
-                onChange={(event) => setRecipient(event.target.value)}
-                placeholder="0x…"
-                spellCheck={false}
-                autoComplete="off"
-                aria-label="Recipient address"
-              />
-            </label>
+            <AddressBookField
+              className={`${styles.field} ${styles.recipientField}`}
+              rowClassName={styles.bookRow}
+              hintClassName={styles.bookHint}
+              errorClassName={styles.bookErrorText}
+              label="RECIPIENT / BLANK = SELF UNSHIELD"
+              inputAriaLabel="Recipient address"
+              selfAddress={selectedAddress ?? ""}
+              value={recipient}
+              onChange={setRecipient}
+              placeholder="0x… or saved label"
+            />
           </div>
 
           <div className={styles.operationActions}>

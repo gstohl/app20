@@ -1,45 +1,81 @@
-.page.page {
-  display: grid;
+/* Tight cross-chain dry-review rail. Shares the shell palette only. */
+
+.page {
   width: 100%;
-  min-height: calc(100dvh - var(--app-shell-offset, 92px));
-  align-content: start;
-  padding: clamp(18px, 2vw, 28px);
   color: var(--shell-text);
   background: var(--shell-bg);
 }
 
-.page :global(.desk-intro) > div {
-  max-width: none;
-}
-
-.page :global(.desk-grid) {
-  width: 100%;
-  min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.32fr);
-}
-
-.page :global(.lifecycle-strip) {
-  width: 100%;
-}
-
-.desk {
-  display: block;
-}
-
-.sectionLabel {
-  margin: 18px 16px 0;
-  color: var(--shell-orange);
+.eyebrow,
+.blockLabel,
+.bookField label,
+.terms dt,
+.disclosure dt,
+.checkStatus,
+.counters,
+.lifecycle {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 10px 14px;
+}
+
+.eyebrow {
+  color: var(--shell-orange);
+  font-size: 9px;
+}
+
+.boundary {
+  display: block;
+  margin-top: 4px;
+  max-width: 110ch;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 290px);
+  width: 100%;
+  align-items: stretch;
+}
+
+.main {
+  min-width: 0;
+  border-right: 1px solid var(--shell-line);
+  padding: 10px 14px 16px;
+}
+
+.rail {
+  min-width: 0;
+  padding: 10px 14px 16px;
+  background: var(--shell-panel);
+}
+
+.blockLabel {
+  margin: 12px 0 0;
+  color: var(--shell-orange);
+  font-size: 9px;
+}
+
+.blockLabel:first-child {
+  margin-top: 0;
 }
 
 .terms {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 10px 16px 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 6px 0 0;
   border: 1px solid var(--shell-line);
 }
 
@@ -47,67 +83,157 @@
   min-width: 0;
   border-right: 1px solid var(--shell-line);
   border-bottom: 1px solid var(--shell-line);
-  padding: 11px 12px;
+  padding: 7px 9px;
 }
 
 .terms dt {
   color: var(--shell-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 8px;
 }
 
 .terms dd {
-  margin: 7px 0 0;
+  margin: 4px 0 0;
   color: var(--shell-text);
-  font-size: 13px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .terms dd small {
   display: block;
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 8px;
+  font-weight: 400;
   overflow-wrap: anywhere;
 }
 
-.scenarios {
+.accounts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 10px 16px 0;
+  margin: 6px 0 0;
   border: 1px solid var(--shell-line);
 }
 
-.scenarios button {
+.bookField {
+  min-width: 0;
+  border-right: 1px solid var(--shell-line);
+  padding: 8px 9px 9px;
+}
+
+.bookField:last-child {
+  border-right: 0;
+}
+
+.bookField label {
+  display: block;
+  color: var(--shell-muted);
+  font-size: 8px;
+}
+
+.bookField input {
+  width: 100%;
+  margin-top: 5px;
+  border: 1px solid var(--shell-line);
+  padding: 7px 8px;
+  color: var(--shell-text);
+  background: var(--shell-inset, var(--shell-bg));
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 12px;
+}
+
+.bookField input:focus-visible {
+  outline: 1px solid var(--shell-orange);
+  outline-offset: 0;
+}
+
+.bookResolved {
+  margin: 5px 0 0;
+  color: var(--shell-success, #73e6a1);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.bookResolved code {
+  font-size: 10px;
+}
+
+.bookSave {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bookSave input {
+  flex: 1;
+  margin-top: 0;
+}
+
+.bookSave button {
+  border: 1px solid var(--shell-line);
+  padding: 0 12px;
+  color: var(--shell-text);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.bookSave button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  color: var(--shell-orange);
+}
+
+.bookSave button:disabled {
+  color: var(--shell-muted);
+  cursor: not-allowed;
+}
+
+.accountsNote {
+  margin: 6px 0 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.scenarioRow {
   display: grid;
-  gap: 7px;
-  min-height: 62px;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  margin: 6px 0 0;
+  border: 1px solid var(--shell-line);
+}
+
+.scenarioRow > button {
+  display: grid;
+  gap: 4px;
+  min-height: 46px;
   border: 0;
   border-right: 1px solid var(--shell-line);
-  border-bottom: 1px solid var(--shell-line);
-  padding: 12px;
+  padding: 7px 9px;
   color: var(--shell-muted);
   background: transparent;
   text-align: left;
   cursor: pointer;
 }
 
-.scenarios button:hover:not(:disabled) {
+.scenarioRow > button:hover:not(:disabled) {
   color: var(--shell-text);
   background: var(--shell-panel);
 }
 
-.scenarios button b {
+.scenarioRow > button b {
   color: var(--shell-text);
-  font-size: 13px;
+  font-size: 11px;
+  line-height: 1.25;
 }
 
-.scenarios button span {
+.scenarioRow > button span {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 7px;
   letter-spacing: 0.1em;
 }
 
@@ -116,72 +242,58 @@
   box-shadow: inset 0 0 0 1px var(--shell-orange);
 }
 
-.scenarioSummary {
-  margin: 10px 16px 0;
-  color: var(--shell-muted);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.runRow {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 14px 16px 0;
-}
-
 .runButton {
-  min-height: 44px;
-  border: 1px solid var(--shell-orange);
-  padding: 0 18px;
-  color: var(--shell-orange-soft, #efb18e);
-  background: transparent;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border-right: 0 !important;
+  padding: 0 16px !important;
+  color: var(--shell-orange-soft, #efb18e) !important;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  cursor: pointer;
+  white-space: nowrap;
 }
 
 .runButton:hover:not(:disabled) {
-  color: var(--shell-bg);
-  background: var(--shell-orange);
+  color: var(--shell-bg) !important;
+  background: var(--shell-orange) !important;
 }
 
 .runButton:disabled {
-  border-color: var(--shell-line);
-  color: var(--shell-muted);
+  color: var(--shell-muted) !important;
   cursor: wait;
 }
 
-.runRow small {
+.scenarioSummary {
+  margin: 6px 0 0;
   color: var(--shell-muted);
   font-size: 11px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .result {
-  margin: 16px;
+  margin-top: 10px;
   border-top: 1px solid var(--shell-line);
-  padding-top: 14px;
-  padding-bottom: 4px;
+  padding-top: 10px;
 }
 
 .idleNote {
   color: var(--shell-muted);
-  font-size: 13px;
-  line-height: 1.55;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .outcomeVerified,
 .outcomeRejected {
   display: inline-block;
   border: 1px solid var(--shell-success-line, #285d3d);
-  padding: 7px 10px;
+  padding: 5px 8px;
   color: var(--shell-success, #73e6a1);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.1em;
 }
 
@@ -192,7 +304,7 @@
 
 .checks {
   display: grid;
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   border: 1px solid var(--shell-line);
   padding: 0;
   list-style: none;
@@ -200,10 +312,10 @@
 
 .checks li {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 9px;
   border-bottom: 1px solid var(--shell-line);
-  padding: 11px 12px;
+  padding: 7px 9px;
 }
 
 .checks li:last-child {
@@ -211,24 +323,22 @@
 }
 
 .checks li strong {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .checks li p {
-  margin-top: 5px;
+  margin-top: 2px;
   color: var(--shell-muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
 
 .checkStatus {
   align-self: start;
   border: 1px solid var(--shell-line);
-  padding: 4px 0;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
-  letter-spacing: 0.08em;
+  padding: 3px 0;
+  font-size: 7px;
   text-align: center;
   white-space: nowrap;
 }
@@ -248,21 +358,20 @@
 }
 
 .counters {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--shell-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.06em;
 }
 
 .failureBox {
-  margin-top: 10px;
+  margin-top: 8px;
   border: 1px solid var(--shell-danger-line, #73372f);
-  padding: 11px 12px;
+  padding: 8px 9px;
   color: var(--shell-danger, #ff715e);
   background: var(--shell-danger-bg, #1a100e);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -275,7 +384,7 @@
 .quote {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 12px 0 0;
+  margin: 8px 0 0;
   border: 1px solid var(--shell-success-line, #285d3d);
 }
 
@@ -283,53 +392,142 @@
   min-width: 0;
   border-right: 1px solid var(--shell-line);
   border-bottom: 1px solid var(--shell-line);
-  padding: 10px 12px;
+  padding: 6px 9px;
 }
 
 .quote dt {
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .quote dd {
-  margin: 6px 0 0;
+  margin: 3px 0 0;
   color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 12px;
+  font-size: 11px;
   overflow-wrap: anywhere;
 }
 
 .provenance {
-  margin-top: 10px;
+  margin-top: 8px;
   color: var(--shell-success, #73e6a1);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 900px) {
-  .page.page {
-    padding: 14px;
+.disclosure {
+  display: grid;
+  margin: 6px 0 0;
+  border: 1px solid var(--shell-line);
+}
+
+.disclosure > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 8px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 6px 8px;
+}
+
+.disclosure > div:last-child {
+  border-bottom: 0;
+}
+
+.disclosure dt {
+  color: var(--shell-muted);
+  font-size: 8px;
+  align-self: center;
+}
+
+.disclosure dd {
+  margin: 0;
+  color: var(--shell-text);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.railNote {
+  margin: 8px 0 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.lifecycle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+}
+
+.lifecycle li {
+  border: 1px solid var(--shell-line);
+  padding: 3px 6px;
+  color: var(--shell-muted);
+  white-space: nowrap;
+}
+
+.lifecycle b {
+  margin-right: 4px;
+  color: var(--shell-orange);
+  font-weight: 700;
+}
+
+@media (max-width: 1100px) {
+  .scenarioRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .page :global(.desk-grid) {
+  .runButton {
+    grid-column: 1 / -1;
+    min-height: 44px;
+    border-top: 1px solid var(--shell-line);
+  }
+
+  .terms {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .terms,
+  .main {
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-line);
+  }
+
+  .bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .accounts {
+    grid-template-columns: 1fr;
+  }
+
+  .bookField {
+    border-right: 0;
+    border-bottom: 1px solid var(--shell-line);
+  }
+
+  .bookField:last-child {
+    border-bottom: 0;
+  }
+
   .quote {
     grid-template-columns: 1fr;
-  }
-
-  .scenarios {
-    grid-template-columns: 1fr;
-  }
-
-  .runRow {
-    align-items: stretch;
-    flex-direction: column;
   }
 }

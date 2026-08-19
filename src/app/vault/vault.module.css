@@ -1,4 +1,4 @@
-/* Full-estate APP20 vault. All color comes from the shared shell palette. */
+/* Dense full-estate APP20 vault. All color comes from the shared shell palette. */
 
 .page {
   width: 100%;
@@ -13,8 +13,13 @@
 .sessionFacts dt,
 .metric > span,
 .metric button,
-.railList b,
-.stageBadge {
+.stageBadge,
+.tokenHead span,
+.sendHead span,
+.sendAmount > span,
+.sendRecipient > span,
+.bookAdd button,
+.sendButton {
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
@@ -24,59 +29,60 @@
 
 .eyebrow,
 .sessionIdentity small,
-.panelHeading span {
+.panelHeading span,
+.sendHead span {
   color: var(--shell-orange);
 }
 
 .masthead {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 260px);
   align-items: stretch;
   border-bottom: 1px solid var(--shell-line);
 }
 
 .mastheadCopy {
   min-width: 0;
-  padding: clamp(22px, 3vw, 42px);
+  padding: clamp(12px, 1.6vw, 20px);
 }
 
 .mastheadCopy h1 {
-  margin-top: 10px;
-  font-size: clamp(34px, 4vw, 58px);
-  line-height: 0.96;
-  letter-spacing: -0.055em;
+  margin-top: 5px;
+  font-size: clamp(21px, 2.3vw, 32px);
+  line-height: 1;
+  letter-spacing: -0.045em;
 }
 
 .mastheadCopy > span {
   display: block;
-  max-width: 90ch;
-  margin-top: 18px;
+  max-width: 100ch;
+  margin-top: 7px;
   color: var(--shell-muted);
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .deskTabs {
   display: flex;
-  gap: 0;
-  margin-top: 22px;
-  border: 1px solid var(--shell-line);
   width: max-content;
+  margin-top: 10px;
+  border: 1px solid var(--shell-line);
+  gap: 0;
 }
 
 .deskTabs a {
-  min-height: 40px;
-  padding: 0 16px;
   display: inline-flex;
+  min-height: 30px;
   align-items: center;
+  padding: 0 12px;
   color: var(--shell-muted);
   background: transparent;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
   text-decoration: none;
+  text-transform: uppercase;
 }
 
 .deskTabs a + a {
@@ -98,19 +104,19 @@
 }
 
 .railSwitch button {
-  min-height: 48px;
+  min-height: 36px;
   border: 0;
   border-bottom: 1px solid var(--shell-line);
-  padding: 0 15px;
+  padding: 0 12px;
   color: var(--shell-muted);
   background: transparent;
+  cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-align: left;
   text-transform: uppercase;
-  cursor: pointer;
 }
 
 .railSwitch button.isActive,
@@ -121,7 +127,10 @@
 }
 
 .railSwitch button:focus-visible,
-.metric button:focus-visible {
+.metric button:focus-visible,
+.sendButton:focus-visible,
+.bookAdd button:focus-visible,
+.bookList button:focus-visible {
   outline: 2px solid var(--shell-orange);
   outline-offset: -2px;
 }
@@ -133,11 +142,11 @@
 
 .railSwitchNote {
   align-self: end;
-  padding: 14px 15px;
+  padding: 8px 12px;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .readyDesk {
@@ -148,20 +157,20 @@
 
 .session {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(520px, 1.35fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(480px, 1.3fr);
   background: var(--shell-panel);
 }
 
 .sessionMain {
   display: flex;
   min-width: 0;
-  gap: 14px;
-  padding: 18px clamp(18px, 2vw, 30px);
+  gap: 10px;
+  padding: 10px 14px;
 }
 
 .beacon {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   flex: 0 0 auto;
   margin-top: 5px;
   border-radius: 50%;
@@ -179,17 +188,17 @@
 
 .sessionIdentity strong {
   display: block;
-  margin-top: 7px;
-  font-size: 16px;
-  letter-spacing: -0.02em;
+  margin-top: 3px;
+  font-size: 13px;
+  letter-spacing: -0.01em;
 }
 
 .sessionIdentity p {
-  max-width: 78ch;
-  margin-top: 9px;
+  max-width: 84ch;
+  margin-top: 4px;
   color: var(--shell-muted);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .sessionFacts {
@@ -202,10 +211,10 @@
 .sessionFacts > div {
   display: grid;
   min-width: 0;
-  min-height: 88px;
+  min-height: 52px;
   align-content: center;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 3px;
+  padding: 7px 10px;
 }
 
 .sessionFacts > div + div {
@@ -222,12 +231,17 @@
   color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
-  line-height: 1.45;
+  line-height: 1.4;
+}
+
+.sessionFacts dd code {
+  color: var(--shell-orange);
+  font-size: 9px;
 }
 
 .desk {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1.2fr) minmax(330px, 0.8fr);
   gap: 1px;
   background: var(--shell-line);
 }
@@ -239,36 +253,34 @@
 
 .panelHeading {
   display: flex;
-  min-height: 54px;
+  min-height: 38px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
   border-bottom: 1px solid var(--shell-line);
-  padding: 11px clamp(16px, 2vw, 28px);
+  padding: 6px 14px;
 }
 
 .panelHeading strong {
   min-width: 0;
-  font-size: 13px;
-  letter-spacing: 0.045em;
+  font-size: 12px;
+  letter-spacing: 0.03em;
   text-align: right;
 }
 
 .publicOverview {
   display: grid;
-  grid-template-columns: minmax(240px, 0.62fr) minmax(240px, 0.72fr) minmax(
-      520px,
-      1.66fr
-    );
+  grid-template-columns: minmax(190px, 0.55fr) minmax(0, 1.45fr);
   align-items: stretch;
+  border-bottom: 1px solid var(--shell-line);
 }
 
 .metric {
   display: grid;
   min-width: 0;
   align-content: center;
-  gap: 8px;
-  padding: 18px clamp(16px, 2vw, 28px);
+  gap: 5px;
+  padding: 10px 14px;
 }
 
 .metric > span {
@@ -279,93 +291,235 @@
   display: flex;
   min-width: 0;
   align-items: baseline;
-  gap: 9px;
+  gap: 7px;
 }
 
 .metric strong {
   overflow: hidden;
-  font-size: clamp(30px, 3.5vw, 54px);
+  font-size: clamp(22px, 2.2vw, 34px);
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  letter-spacing: -0.05em;
+  letter-spacing: -0.04em;
   text-overflow: ellipsis;
 }
 
 .metric small {
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.08em;
 }
 
 .metric button {
   width: fit-content;
-  min-height: 32px;
+  min-height: 24px;
   border: 1px solid var(--shell-line);
-  padding: 0 10px;
+  padding: 0 8px;
   color: var(--shell-muted);
   background: var(--shell-inset);
   cursor: pointer;
 }
 
-.metric button:hover:not(:disabled) {
+.metric button:hover:not(:disabled),
+.sendButton:hover:not(:disabled),
+.bookAdd button:hover:not(:disabled),
+.bookList button:hover:not(:disabled) {
   border-color: var(--shell-orange);
   color: var(--shell-text);
 }
 
-.metric button:disabled {
+.metric button:disabled,
+.sendButton:disabled,
+.bookAdd button:disabled,
+.bookList button:disabled {
   cursor: not-allowed;
   opacity: 0.38;
 }
 
-.metricCaption {
-  display: flex;
-  align-items: center;
-  border-left: 1px solid var(--shell-line);
-  padding: 18px clamp(16px, 2vw, 28px);
-  color: var(--shell-muted);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.railList {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-  padding: 0;
-  border-left: 1px solid var(--shell-line);
-  list-style: none;
-}
-
-.railList li {
+.tokenTable {
   display: grid;
   min-width: 0;
-  align-content: center;
+  align-content: start;
+  border-left: 1px solid var(--shell-line);
+}
+
+.tokenHead,
+.tokenTable > div[role="row"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.tokenHead {
+  border-bottom: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+}
+
+.tokenTable > div[role="row"]:not(.tokenHead) {
+  border-bottom: 1px solid var(--shell-line);
+  font-size: 12px;
+}
+
+.tokenTable [role="cell"] {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
   gap: 7px;
-  padding: 16px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.tokenTable [role="cell"] code {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.tokenNote {
+  margin: 0;
+  padding: 7px 12px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.sendForm {
+  display: grid;
+  gap: 6px;
+  padding: 9px 14px 11px;
+}
+
+.sendHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.sendHead small {
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.sendControls {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.sendAmount,
+.sendRecipient {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.sendAmount > span,
+.sendRecipient > span {
+  color: var(--shell-muted);
+}
+
+.sendAmount input,
+.sendBookRow input,
+.sendBookRow select,
+.bookAdd input {
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font-size: 12px;
+}
+
+.sendAmount input:focus-visible,
+.sendBookRow input:focus-visible,
+.sendBookRow select:focus-visible,
+.bookAdd input:focus-visible {
+  outline: 2px solid var(--shell-orange);
+  outline-offset: -1px;
+}
+
+.sendBookRow {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.sendBookRow select {
+  min-width: 0;
+  max-width: 150px;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.sendBookRow button {
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 9px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sendBookRow button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.sendBookRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.sendHint,
+.sendError {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.sendError {
+  color: var(--shell-danger, #e5484d);
+}
+
+.sendButton {
+  min-height: 30px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 12px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+}
+
+.sendButton:hover:not(:disabled) {
+  color: var(--shell-orange);
+  background: transparent;
+}
+
+.sendStatus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
   color: var(--shell-muted);
   font-size: 11px;
   line-height: 1.5;
 }
 
-.railList li + li {
-  border-left: 1px solid var(--shell-line);
-}
-
-.railList b {
-  color: var(--shell-text);
-}
-
-.railList span,
-.railList code {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.railList code {
+.sendStatus a {
   color: var(--shell-orange);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+}
+
+.sendStatusError {
+  color: var(--shell-danger, #e5484d);
 }
 
 .controlsBody {
@@ -375,11 +529,108 @@
 
 .controlsBody section {
   border: 0;
+  padding: 10px 14px 12px;
   background: transparent;
 }
 
 .controlsBody button {
-  min-height: 44px;
+  min-height: 38px;
+}
+
+.controlsBody small {
+  font-size: 10px;
+}
+
+.bookPanel {
+  min-width: 0;
+}
+
+.bookBody {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.bookAdd {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.bookAdd button {
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 12px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+}
+
+.bookError {
+  margin: 0;
+  color: var(--shell-danger, #e5484d);
+  font-size: 11px;
+}
+
+.bookStatus {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.bookEmpty {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.bookList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--shell-line);
+  list-style: none;
+}
+
+.bookList li {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.bookList li + li {
+  border-top: 1px solid var(--shell-line);
+}
+
+.bookList b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookList code {
+  overflow-wrap: anywhere;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.bookList button {
+  min-height: 24px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .railMap {
@@ -391,7 +642,7 @@
 
 .railStage {
   min-width: 0;
-  padding: 16px clamp(16px, 2vw, 28px) 18px;
+  padding: 9px 14px 11px;
   background: var(--shell-panel);
 }
 
@@ -404,24 +655,24 @@
 
 .railStage h2 {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
 .railStage p {
-  max-width: 70ch;
-  margin-top: 10px;
+  max-width: 72ch;
+  margin-top: 4px;
   color: var(--shell-muted);
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .stageBadge {
   flex: 0 0 auto;
   border: 1px solid var(--shell-line);
-  padding: 3px 7px;
+  padding: 2px 6px;
   color: var(--shell-muted);
 }
 
@@ -432,16 +683,16 @@
 
 .disclosure {
   margin: 0;
-  padding: 15px clamp(16px, 2vw, 28px);
+  padding: 8px 14px;
   color: var(--shell-muted);
   background: var(--shell-bg);
-  font-size: 11px;
-  line-height: 1.55;
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .privyFallback {
   min-height: 50dvh;
-  padding: clamp(28px, 5vw, 72px);
+  padding: clamp(20px, 4vw, 48px);
   color: var(--shell-muted);
   background: var(--shell-panel);
   font-family: var(--font-mono-ui), monospace;
@@ -457,14 +708,8 @@
     border-left: 0;
   }
 
-  .publicOverview {
-    grid-template-columns: minmax(230px, 0.7fr) minmax(0, 1.3fr);
-  }
-
-  .railList {
-    grid-column: 1 / -1;
-    border-top: 1px solid var(--shell-line);
-    border-left: 0;
+  .desk {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -506,10 +751,14 @@
     grid-template-columns: 1fr;
   }
 
-  .metricCaption,
-  .railList {
+  .tokenTable {
     border-top: 1px solid var(--shell-line);
     border-left: 0;
+  }
+
+  .sendControls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .railMap .railStage:last-child {
@@ -519,11 +768,10 @@
 
 @media (max-width: 580px) {
   .mastheadCopy {
-    padding: 22px 16px;
+    padding: 12px;
   }
 
   .sessionFacts,
-  .railList,
   .railMap {
     grid-template-columns: 1fr;
   }
@@ -531,15 +779,12 @@
   .sessionFacts > div,
   .sessionFacts > div + div,
   .sessionFacts > div:nth-child(3),
-  .sessionFacts > div:nth-child(4),
-  .railList li,
-  .railList li + li {
+  .sessionFacts > div:nth-child(4) {
     border-top: 1px solid var(--shell-line);
     border-left: 0;
   }
 
-  .sessionFacts > div:first-child,
-  .railList li:first-child {
+  .sessionFacts > div:first-child {
     border-top: 0;
   }
 
@@ -554,5 +799,19 @@
 
   .panelHeading strong {
     text-align: left;
+  }
+
+  .bookAdd,
+  .sendBookRow {
+    grid-template-columns: 1fr;
+  }
+
+  .sendBookRow select {
+    max-width: none;
+  }
+
+  .bookList li {
+    grid-template-columns: 1fr;
+    gap: 3px;
   }
 }

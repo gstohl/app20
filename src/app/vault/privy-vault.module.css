@@ -602,6 +602,62 @@
   outline: 0;
 }
 
+.bookRow {
+  display: grid;
+  grid-template-columns: minmax(84px, auto) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.bookRow select {
+  min-height: 26px;
+  max-width: 130px;
+  border: 1px solid var(--shell-line);
+  padding: 0 6px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.bookRow button {
+  min-height: 26px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bookRow button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.bookRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.bookHint {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.bookErrorText {
+  color: var(--shell-danger, #e5484d);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
 .operationActions {
   display: grid;
   grid-template-columns: repeat(3, minmax(130px, 1fr));

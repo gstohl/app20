@@ -32,6 +32,7 @@ import {
   type EscrowFundPayload,
   type EscrowState,
 } from "@/lib/escrow";
+import AddressBookField from "@/components/AddressBookField";
 import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
@@ -316,6 +317,7 @@ function ConversationControls({
   const claimed = replyAddressForMessage(message, selfAddress);
   const assigned = message.assignedAddress;
   const canContinue = Boolean(onReply);
+  const [assignInput, setAssignInput] = useState(assigned ?? "");
   return (
     <div className={styles.replyRow}>
       {proof ? <p>{senderProofLabel(proof)}</p> : null}
@@ -345,15 +347,17 @@ function ConversationControls({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const value = String(data.get("address") ?? "");
-            if (value.trim()) onAssign(message.id, value);
+            if (assignInput.trim()) onAssign(message.id, assignInput);
           }}
         >
-          <label>
-            Assign on this device
-            <input name="address" placeholder="0x…" defaultValue={assigned ?? ""} />
-          </label>
+          <AddressBookField
+            selfAddress={selfAddress ?? ""}
+            inputAriaLabel="Assign on this device"
+            label="Assign on this device"
+            value={assignInput}
+            onChange={setAssignInput}
+            placeholder="0x… or saved label"
+          />
           <button type="submit">Save local assignment</button>
         </form>
       ) : null}

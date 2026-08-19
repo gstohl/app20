@@ -1,7 +1,7 @@
 "use client";
 
 import type { WALLET_API } from "@starknet-io/types-js";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
@@ -19,6 +19,10 @@ import Thread, {
   type ThreadActionState,
 } from "@/components/mail/Thread";
 import ThemeSwitcher from "@/components/mail/ThemeSwitcher";
+import {
+  ADDRESS_BOOK_CHANGED_EVENT,
+  loadAddressBook,
+} from "@/lib/address-book";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
 import { parseCompositePayload } from "@/lib/composite";
@@ -411,6 +415,51 @@ export default function InboxPage() {
   const [mailSeed, setMailSeed] = useState<Uint8Array | null>(null);
   const [messages, setMessages] = useState<LocalMailMessage[]>([]);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
+  const [bookEntries, setBookEntries] = useState<
+    { address: string; label: string; addedAt: number }[]
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const reload = () => {
+      if (!address) {
+        setBookEntries([]);
+        return;
+      }
+      void loadAddressBook(window.localStorage, address)
+        .then((entries) => {
+          if (cancelled) return;
+          setBookEntries(
+            entries.map((entry) => ({
+              address: entry.address,
+              label: entry.label,
+              addedAt: entry.updatedAt,
+            })),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setBookEntries([]);
+        });
+    };
+    reload();
+    window.addEventListener(ADDRESS_BOOK_CHANGED_EVENT, reload);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(ADDRESS_BOOK_CHANGED_EVENT, reload);
+    };
+  }, [address]);
+
+  const displayAliases = useMemo(() => {
+    const seen = new Set(
+      bookEntries.map((entry) => BigInt(entry.address).toString(16)),
+    );
+    return [
+      ...bookEntries,
+      ...aliases.filter(
+        (alias) => !seen.has(BigInt(alias.address).toString(16)),
+      ),
+    ];
+  }, [aliases, bookEntries]);
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
   const [escrowState, setEscrowState] = useState<EscrowState>(
     emptyEscrowState(),
@@ -2616,7 +2665,7 @@ export default function InboxPage() {
             messages={annotatedMessages}
             selectedMessageId={selectedMessageId}
             readMessageIds={readMessageIds}
-            aliases={aliases}
+            aliases={displayAliases}
             selfAddress={address}
             folderLabel={folderLabel}
             filterLabel={filterLabel}
@@ -2703,14 +2752,13 @@ export default function InboxPage() {
                   setSelectedMessageId(`sent:${message.documentId}`);
                   setComposerOpen(false);
                 }}
-                onAliasesChange={setAliases}
               />
             ) : selectedMessage ? (
               <Thread
                 messages={conversationMessages}
                 focusVersion={messageActivation}
                 selfAddress={address}
-                aliases={aliases}
+                aliases={displayAliases}
                 otcState={otcState}
                 escrowState={escrowState}
                 actionStates={actionStates}

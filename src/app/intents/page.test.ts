@@ -4,10 +4,19 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import IntentsPage, {
+  ADDRESS_BOOK_STORAGE_PREFIX,
   REVIEW_SCENARIOS,
   buildReviewIntent,
+  resolveAddressBookInput,
   runDryReview,
+  type AddressBookEntry,
 } from "./page";
+
+const BOOK: readonly AddressBookEntry[] = [
+  { label: "Exchange", address: "treasury.near", chainId: "near:mainnet" },
+  { label: "cold", address: "0xabc123", chainId: "starknet:SN_MAIN" },
+  { label: "anywhere", address: "0xdef456" },
+];
 
 describe("intents dry review desk", () => {
   it("builds one canonical cross-chain intent that maps to a pinned dry request", () => {
@@ -101,5 +110,95 @@ describe("intents dry review desk", () => {
     expect(markup).not.toContain("Create live intent");
     expect(markup).not.toContain('type="submit"');
     expect(markup).not.toContain("<form");
+  });
+});
+
+describe("book-backed accounts", () => {
+  it("uses the shared address-book storage prefix and never a second one", () => {
+    expect(ADDRESS_BOOK_STORAGE_PREFIX).toBe("app20/address-book/v1/");
+  });
+
+  it("resolves labels case-insensitively, with or without the @ prefix", () => {
+    expect(resolveAddressBookInput("@exchange", BOOK, "near:mainnet")).toEqual({
+      address: "treasury.near",
+      entry: BOOK[0],
+    });
+    expect(resolveAddressBookInput("EXCHANGE", BOOK, "near:mainnet")).toEqual({
+      address: "treasury.near",
+      entry: BOOK[0],
+    });
+    expect(
+      resolveAddressBookInput("  @Cold ", BOOK, "starknet:SN_MAIN"),
+    ).toEqual({ address: "0xabc123", entry: BOOK[1] });
+  });
+
+  it("passes raw addresses through and trims them", () => {
+    expect(
+      resolveAddressBookInput(" alice.near ", BOOK, "near:mainnet"),
+    ).toEqual({ address: "alice.near" });
+    expect(resolveAddressBookInput("", BOOK)).toEqual({ address: "" });
+  });
+
+  it("never resolves a label across chains, but allows chain-agnostic entries", () => {
+    expect(resolveAddressBookInput("@cold", BOOK, "near:mainnet")).toEqual({
+      address: "@cold",
+    });
+    expect(resolveAddressBookInput("@anywhere", BOOK, "near:mainnet")).toEqual({
+      address: "0xdef456",
+      entry: BOOK[2],
+    });
+  });
+
+  it("verifies a replay whose accounts came from book labels and binds them into the digest", async () => {
+    const destination = resolveAddressBookInput(
+      "@exchange",
+      BOOK,
+      "near:mainnet",
+    );
+    const refund = resolveAddressBookInput("@cold", BOOK, "starknet:SN_MAIN");
+    const report = await runDryReview("provider-honors-terms", {
+      destinationAddress: destination.address,
+      refundAddress: refund.address,
+    });
+    expect(report.outcome).toBe("verified");
+    expect(report.transportCalls).toBe(1);
+    expect(report.verifierCalls).toBe(1);
+
+    const intent = buildReviewIntent({
+      destinationAddress: destination.address,
+      refundAddress: refund.address,
+    });
+    expect(() => assertCrossChainIntent(intent)).not.toThrow();
+    const request = mapCrossChainIntentToDryQuote(intent);
+    expect(request.recipient).toBe("treasury.near");
+    expect(request.refundTo).toBe("0xabc123");
+
+    const defaultReport = await runDryReview("provider-honors-terms");
+    expect(report.intentDigest).not.toBe(defaultReport.intentDigest);
+  });
+
+  it("fails closed before any transport call when an address is malformed", async () => {
+    const report = await runDryReview("provider-honors-terms", {
+      destinationAddress: "not a near account",
+    });
+    expect(report.outcome).toBe("rejected");
+    expect(report.failure).toContain("destinationAccount.address");
+    expect(report.transportCalls).toBe(0);
+    expect(report.verifierCalls).toBe(0);
+    const byId = new Map(report.checks.map((check) => [check.id, check]));
+    expect(byId.get("canonical-intent")?.status).toBe("failed");
+    expect(byId.get("preflight-order")?.status).toBe("skipped");
+    expect(byId.get("intent-bounds")?.status).toBe("skipped");
+    expect(report.quote).toBeUndefined();
+    expect(report.provenance).toBeUndefined();
+  });
+
+  it("renders destination and refund book fields on the desk", () => {
+    const markup = renderToStaticMarkup(createElement(IntentsPage));
+    expect(markup).toContain("Destination account (NEAR)");
+    expect(markup).toContain("Refund account (Starknet)");
+    expect(markup).toContain('list="intents-destination-book"');
+    expect(markup).toContain('list="intents-refund-book"');
+    expect(markup).toContain("review-fixture.near");
   });
 });

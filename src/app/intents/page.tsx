@@ -52,8 +52,155 @@ const FIXTURE_TOKENS: readonly OneClickToken[] = [
   },
 ];
 
+const DEFAULT_DESTINATION_ADDRESS = "review-fixture.near";
+const DEFAULT_REFUND_ADDRESS = "0x123";
+const DESTINATION_CHAIN_ID = "near:mainnet";
+const REFUND_CHAIN_ID = "starknet:SN_MAIN";
+
+/**
+ * Shared encrypted-book storage prefix from the vault slice. This page never
+ * writes it: the vault module owns AES-GCM persistence under
+ * `${prefix}${selfAddress}`; the stub below stays session-only so it cannot
+ * corrupt that encrypted payload.
+ */
+export const ADDRESS_BOOK_STORAGE_PREFIX = "app20/address-book/v1/";
+
+export type AddressBookEntry = Readonly<{
+  label: string;
+  address: string;
+  chainId?: string;
+}>;
+
+/**
+ * Resolves either a raw address or a saved book label (`name` or `@name`,
+ * case-insensitive). Entries scoped to a different chain never resolve, so a
+ * Starknet label cannot silently become a NEAR destination.
+ */
+export function resolveAddressBookInput(
+  input: string,
+  entries: readonly AddressBookEntry[],
+  chainId?: string,
+): { address: string; entry?: AddressBookEntry } {
+  const trimmed = input.trim();
+  if (trimmed.length === 0) return { address: "" };
+  const label = (
+    trimmed.startsWith("@") ? trimmed.slice(1) : trimmed
+  ).toLowerCase();
+  const entry = entries.find(
+    (candidate) =>
+      candidate.label.toLowerCase() === label &&
+      (chainId === undefined ||
+        candidate.chainId === undefined ||
+        candidate.chainId === chainId),
+  );
+  if (entry) return { address: entry.address, entry };
+  return { address: trimmed };
+}
+
+// Session-only stand-in for the shared vault AddressBookField. Same props and
+// resolver semantics; swap the import once the vault module merges.
+export function AddressBookField({
+  id,
+  label,
+  chainId,
+  value,
+  onChange,
+  entries,
+  onSaveEntry,
+  placeholder,
+}: {
+  id: string;
+  label: string;
+  chainId?: string;
+  value: string;
+  onChange: (next: string) => void;
+  entries: readonly AddressBookEntry[];
+  onSaveEntry?: (entry: AddressBookEntry) => void;
+  placeholder?: string;
+}) {
+  const [saveLabel, setSaveLabel] = useState("");
+  const resolved = resolveAddressBookInput(value, entries, chainId);
+  const scoped = entries.filter(
+    (entry) =>
+      chainId === undefined ||
+      entry.chainId === undefined ||
+      entry.chainId === chainId,
+  );
+  const alreadySaved = entries.some(
+    (entry) => entry.address === resolved.address,
+  );
+  const canSave =
+    onSaveEntry !== undefined &&
+    resolved.entry === undefined &&
+    resolved.address.length > 0 &&
+    !alreadySaved;
+
+  return (
+    <div className={styles.bookField}>
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        list={`${id}-book`}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+      />
+      <datalist id={`${id}-book`}>
+        {scoped.map((entry) => (
+          <option key={entry.label} value={`@${entry.label}`}>
+            {`${entry.label} · ${entry.address}`}
+          </option>
+        ))}
+      </datalist>
+      {resolved.entry ? (
+        <p className={styles.bookResolved}>
+          @{resolved.entry.label} → <code>{resolved.entry.address}</code>
+        </p>
+      ) : null}
+      {canSave ? (
+        <div className={styles.bookSave}>
+          <input
+            aria-label={`Book label for ${label}`}
+            value={saveLabel}
+            onChange={(event) => setSaveLabel(event.target.value)}
+            placeholder="Save as label"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            disabled={saveLabel.trim().length === 0}
+            onClick={() => {
+              const nextLabel = saveLabel.trim();
+              if (nextLabel.length === 0) return;
+              onSaveEntry({
+                label: nextLabel,
+                address: resolved.address,
+                ...(chainId === undefined ? {} : { chainId }),
+              });
+              setSaveLabel("");
+            }}
+          >
+            Save
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export type ReviewAccounts = Readonly<{
+  destinationAddress?: string;
+  refundAddress?: string;
+}>;
+
 /** One reviewed reference route: 2.5 STRK on Starknet -> wNEAR on NEAR. */
-export function buildReviewIntent(): CrossChainIntentV1 {
+export function buildReviewIntent(
+  accounts: ReviewAccounts = {},
+): CrossChainIntentV1 {
   return {
     version: 1,
     intentId: "app20-review-fixture-intent-0000000000000001",
@@ -69,10 +216,13 @@ export function buildReviewIntent(): CrossChainIntentV1 {
       policyMode: "advisory",
     },
     destinationAccount: {
-      chainId: "near:mainnet",
-      address: "review-fixture.near",
+      chainId: DESTINATION_CHAIN_ID,
+      address: accounts.destinationAddress ?? DEFAULT_DESTINATION_ADDRESS,
     },
-    refundAccount: { chainId: "starknet:SN_MAIN", address: "0x123" },
+    refundAccount: {
+      chainId: REFUND_CHAIN_ID,
+      address: accounts.refundAddress ?? DEFAULT_REFUND_ADDRESS,
+    },
     sourceAsset: {
       chainId: "starknet:SN_MAIN",
       assetId: STRK_ASSET_ID,
@@ -250,16 +400,76 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function rejectedBeforeTransport(
+  scenarioId: ReviewScenarioId,
+  failure: string,
+): DryReviewReport {
+  return {
+    scenarioId,
+    outcome: "rejected",
+    intentDigest: "",
+    checks: [
+      {
+        id: "canonical-intent",
+        label: "Canonical APP20 intent",
+        status: "failed",
+        detail: failure,
+      },
+      {
+        id: "dry-mapping",
+        label: "Pinned 1Click dry mapping",
+        status: "skipped",
+        detail: "No canonical intent exists to map.",
+      },
+      {
+        id: "preflight-order",
+        label: "Policy preflight before transport",
+        status: "skipped",
+        detail: "no calls recorded",
+      },
+      {
+        id: "strict-echo",
+        label: "Pinned response schema & echoed request",
+        status: "skipped",
+        detail: "The fixture transport was never consulted.",
+      },
+      {
+        id: "provenance",
+        label: "Quote signature provenance",
+        status: "skipped",
+        detail: "Never consulted — the intent failed closed first.",
+      },
+      {
+        id: "intent-bounds",
+        label: "Quote satisfies reviewed bounds",
+        status: "skipped",
+        detail: "No verified quote exists to compare against the intent.",
+      },
+    ],
+    transportCalls: 0,
+    verifierCalls: 0,
+    failure,
+  };
+}
+
 /**
  * Replays the dry-only connector against an in-memory fixture. Nothing leaves
  * the page: no quote HTTP, no deposit address, no wallet signature, no submit.
  */
 export async function runDryReview(
   scenarioId: ReviewScenarioId,
+  accounts: ReviewAccounts = {},
 ): Promise<DryReviewReport> {
-  const intent = buildReviewIntent();
-  const intentDigest = await digestCrossChainIntent(intent);
-  const dryRequest = mapCrossChainIntentToDryQuote(intent);
+  let intent: CrossChainIntentV1;
+  let intentDigest: string;
+  let dryRequest: DryQuoteRequest;
+  try {
+    intent = buildReviewIntent(accounts);
+    intentDigest = await digestCrossChainIntent(intent);
+    dryRequest = mapCrossChainIntentToDryQuote(intent);
+  } catch (error) {
+    return rejectedBeforeTransport(scenarioId, errorMessage(error));
+  }
   const counters: Counters = { transport: 0, verifier: 0 };
   const order: string[] = [];
   const client = new DryOnlyNearIntentsClient(
@@ -426,7 +636,7 @@ const STATUS_CLASS: Record<ReviewCheckStatus, string> = {
 };
 
 export default function IntentsPage() {
-  const intent = useMemo(buildReviewIntent, []);
+  const intent = useMemo(() => buildReviewIntent(), []);
   const dryRequest = useMemo(
     () => mapCrossChainIntentToDryQuote(intent),
     [intent],
@@ -435,15 +645,40 @@ export default function IntentsPage() {
     "provider-honors-terms",
   );
   const [state, setState] = useState<RunState>({ kind: "idle" });
+  const [book, setBook] = useState<readonly AddressBookEntry[]>([]);
+  const [destinationInput, setDestinationInput] = useState(
+    DEFAULT_DESTINATION_ADDRESS,
+  );
+  const [refundInput, setRefundInput] = useState(DEFAULT_REFUND_ADDRESS);
   const busy = state.kind === "running";
   const selected =
     REVIEW_SCENARIOS.find((scenario) => scenario.id === scenarioId) ??
     REVIEW_SCENARIOS[0];
 
+  const destination = resolveAddressBookInput(
+    destinationInput,
+    book,
+    DESTINATION_CHAIN_ID,
+  );
+  const refund = resolveAddressBookInput(refundInput, book, REFUND_CHAIN_ID);
+
+  const saveEntry = (entry: AddressBookEntry) => {
+    setBook((current) => [
+      ...current.filter(
+        (existing) =>
+          existing.label.toLowerCase() !== entry.label.toLowerCase(),
+      ),
+      entry,
+    ]);
+  };
+
   const replay = () => {
     if (busy) return;
     setState({ kind: "running", scenarioId });
-    runDryReview(scenarioId)
+    runDryReview(scenarioId, {
+      destinationAddress: destination.address,
+      refundAddress: refund.address,
+    })
       .then((report) => setState({ kind: "done", report }))
       .catch((error) =>
         setState({ kind: "error", message: errorMessage(error) }),
@@ -454,7 +689,7 @@ export default function IntentsPage() {
     {
       label: "Route",
       value: "STRK (Starknet) → wNEAR (NEAR)",
-      note: `${FIXTURE_TOKENS.map((token) => token.symbol).join(" · ")} from the catalog fixture`,
+      note: `${FIXTURE_TOKENS.map((token) => token.symbol).join(" · ")} fixture catalog`,
     },
     {
       label: "Amount in",
@@ -467,7 +702,7 @@ export default function IntentsPage() {
       note: `${intent.minimumOutput} base units`,
     },
     {
-      label: "Explicit fee ceiling",
+      label: "Fee ceiling",
       value: "0.03 wNEAR",
       note: `${intent.maximumFee} base units`,
     },
@@ -478,31 +713,35 @@ export default function IntentsPage() {
       value: `${dryRequest.depositType} → ${dryRequest.recipientType}`,
     },
     {
+      label: "Destination",
+      value: destination.address || "—",
+      note: destination.entry
+        ? `book @${destination.entry.label} · ${DESTINATION_CHAIN_ID}`
+        : DESTINATION_CHAIN_ID,
+    },
+    {
       label: "Refund",
-      value: `${intent.refundMode} · ${intent.refundAccount.address}`,
+      value: refund.address || "—",
+      note: refund.entry
+        ? `book @${refund.entry.label} · ${intent.refundMode}`
+        : `${intent.refundMode} · ${REFUND_CHAIN_ID}`,
     },
     { label: "Deadline", value: intent.deadline },
     { label: "Privacy mode", value: intent.privacyMode },
     { label: "Disclosed to", value: intent.disclosedTo.join(", ") },
-    {
-      label: "Intent",
-      value: `${intent.intentId} · rev ${intent.revision}`,
-    },
   ];
 
   return (
-    <section className={`desk-page ${styles.page}`}>
-      <header className="desk-intro">
+    <section className={styles.page} aria-label="Cross-chain dry review desk">
+      <header className={styles.bar}>
         <div>
-          <p>APP20 / CROSS-CHAIN INTENTS</p>
-          <h1>Set the bounds. Let execution compete.</h1>
-          <span>
-            APP20 integrates NEAR Intents behind a dry-only connector. This desk
-            replays that connector against in-memory fixtures so every
-            fail-closed boundary is visible before any live integration exists.
-            No deposit address is created, no quote leaves this page, no wallet
-            signature is requested, and no cross-chain value can move from this
-            build.
+          <p className={styles.eyebrow}>
+            APP20 / CROSS-CHAIN INTENTS — DRY REVIEW
+          </p>
+          <span className={styles.boundary}>
+            In-memory fixture replay. No deposit address, no quote HTTP, no
+            wallet signature, no submit — a provider would learn route, amount,
+            destination, refund, and timing once live.
           </span>
         </div>
         <strong className="review-only-stamp">
@@ -510,25 +749,9 @@ export default function IntentsPage() {
         </strong>
       </header>
 
-      <p className="desk-boundary-summary">
-        <b>DRY REVIEW:</b> a future provider and solver would learn route,
-        amount, destination, refund, and timing data. This build sends none of
-        it — the transport below is an in-memory fixture.
-      </p>
-
-      <div className="desk-grid">
-        <section
-          className={`panel-frame ${styles.desk}`}
-          aria-labelledby="intents-desk-title"
-        >
-          <div className="panel-heading">
-            <span>DRY REVIEW DESK</span>
-            <strong id="intents-desk-title">
-              One reviewed intent, replayed against fixtures
-            </strong>
-          </div>
-
-          <h2 className={styles.sectionLabel}>
+      <div className={styles.grid}>
+        <section className={styles.main} aria-labelledby="intents-desk-title">
+          <h2 className={styles.blockLabel} id="intents-desk-title">
             Reviewed terms — fixture route
           </h2>
           <dl className={styles.terms}>
@@ -543,9 +766,38 @@ export default function IntentsPage() {
             ))}
           </dl>
 
-          <h2 className={styles.sectionLabel}>Fixture scenario</h2>
+          <h2 className={styles.blockLabel}>Accounts — book-backed</h2>
+          <div className={styles.accounts}>
+            <AddressBookField
+              id="intents-destination"
+              label="Destination account (NEAR)"
+              chainId={DESTINATION_CHAIN_ID}
+              value={destinationInput}
+              onChange={setDestinationInput}
+              entries={book}
+              onSaveEntry={saveEntry}
+              placeholder="account.near or @label"
+            />
+            <AddressBookField
+              id="intents-refund"
+              label="Refund account (Starknet)"
+              chainId={REFUND_CHAIN_ID}
+              value={refundInput}
+              onChange={setRefundInput}
+              entries={book}
+              onSaveEntry={saveEntry}
+              placeholder="0x… or @label"
+            />
+          </div>
+          <p className={styles.accountsNote}>
+            Labels resolve from the APP20 address book; saves here stay in this
+            session. A malformed address fails closed at the canonical-intent
+            check — nothing is sent either way.
+          </p>
+
+          <h2 className={styles.blockLabel}>Fixture scenario</h2>
           <div
-            className={styles.scenarios}
+            className={styles.scenarioRow}
             role="group"
             aria-label="Dry review fixture scenarios"
           >
@@ -568,10 +820,6 @@ export default function IntentsPage() {
                 </span>
               </button>
             ))}
-          </div>
-          <p className={styles.scenarioSummary}>{selected.summary}</p>
-
-          <div className={styles.runRow}>
             <button
               type="button"
               className={styles.runButton}
@@ -580,11 +828,8 @@ export default function IntentsPage() {
             >
               {busy ? "Replaying fixture…" : "Replay dry review (fixture)"}
             </button>
-            <small>
-              Runs entirely in this tab. The production connector exposes no
-              submit or funding method.
-            </small>
           </div>
+          <p className={styles.scenarioSummary}>{selected.summary}</p>
 
           <section className={styles.result} aria-live="polite">
             {state.kind === "idle" ? (
@@ -683,16 +928,13 @@ export default function IntentsPage() {
         </section>
 
         <aside
-          className="panel-frame desk-disclosure"
+          className={styles.rail}
           aria-labelledby="intent-disclosure-title"
         >
-          <div className="panel-heading">
-            <span>DISCLOSURE</span>
-            <strong id="intent-disclosure-title">
-              Cross-chain is a public boundary
-            </strong>
-          </div>
-          <dl>
+          <h2 className={styles.blockLabel} id="intent-disclosure-title">
+            Disclosure — public boundary
+          </h2>
+          <dl className={styles.disclosure}>
             <div>
               <dt>Intents testnet</dt>
               <dd>{ONE_CLICK_HAS_TESTNET ? "Available" : "None"}</dd>
@@ -726,22 +968,24 @@ export default function IntentsPage() {
               <dd>Deposits, destination settlement, amount and timing</dd>
             </div>
           </dl>
-          <p>
+          <p className={styles.railNote}>
             Amount and timing can reconnect source and destination activity.
             Confidential Intents does not make destination settlement private.
             APP20 does not promise unlinkability.
           </p>
+          <ol
+            className={styles.lifecycle}
+            aria-label="Cross-chain lifecycle model"
+          >
+            {REVIEW_STAGES.map((stage, index) => (
+              <li key={stage}>
+                <b>{String(index + 1).padStart(2, "0")}</b>
+                {stage.replaceAll("_", " ")}
+              </li>
+            ))}
+          </ol>
         </aside>
       </div>
-
-      <ol className="lifecycle-strip" aria-label="Cross-chain lifecycle model">
-        {REVIEW_STAGES.map((stage, index) => (
-          <li key={stage}>
-            <b>{String(index + 1).padStart(2, "0")}</b>
-            {stage.replaceAll("_", " ")}
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }

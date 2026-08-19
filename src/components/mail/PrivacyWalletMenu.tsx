@@ -4,6 +4,8 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
 import { useEffect, useRef, useState } from "react";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
+import AddressBookField from "@/components/AddressBookField";
+import { loadAddressBook, resolveAddressBookInput } from "@/lib/address-book";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
@@ -357,15 +359,7 @@ export default function PrivacyWalletMenu({
     );
   }
 
-  function privateTransfer() {
-    if (!recipientInput.trim()) {
-      setAction({
-        kind: "error",
-        title: "Private transfer unavailable",
-        message: "Enter a Starknet recipient address.",
-      });
-      return;
-    }
+  async function privateTransfer() {
     if (parsedAmount === null) {
       setAction({
         kind: "error",
@@ -374,13 +368,31 @@ export default function PrivacyWalletMenu({
       });
       return;
     }
-    void runAction(
+    let book: Awaited<ReturnType<typeof loadAddressBook>> = [];
+    if (connectedAddress) {
+      try {
+        book = await loadAddressBook(window.localStorage, connectedAddress);
+      } catch {
+        book = [];
+      }
+    }
+    const resolved = resolveAddressBookInput(book, recipientInput);
+    if (!resolved) {
+      setAction({
+        kind: "error",
+        title: "Private transfer unavailable",
+        message:
+          "Enter a valid Starknet address or a saved address-book label.",
+      });
+      return;
+    }
+    await runAction(
       [
         {
           type: "transfer",
           token: TOKEN,
           amount: num.toHex(parsedAmount),
-          recipient: recipientInput.trim(),
+          recipient: resolved.address,
         },
       ],
       "Private transfer",
@@ -470,20 +482,18 @@ export default function PrivacyWalletMenu({
         </small>
       </label>
 
-      <label className={styles.walletAmount}>
-        <span>Private-transfer recipient</span>
-        <span className={styles.walletAmountInput}>
-          <input
-            aria-label="Private transfer recipient"
-            value={recipientInput}
-            onChange={(event) => setRecipientInput(event.target.value)}
-            placeholder="0x…"
-            autoComplete="off"
-            spellCheck={false}
-            disabled={actionPending}
-          />
-        </span>
-      </label>
+      <AddressBookField
+        className={styles.walletAmount}
+        rowClassName={styles.walletAmountInput}
+        errorClassName={styles.walletErrorText}
+        label="Private-transfer recipient"
+        inputAriaLabel="Private transfer recipient"
+        selfAddress={connectedAddress ?? ""}
+        value={recipientInput}
+        onChange={setRecipientInput}
+        disabled={actionPending}
+        placeholder="0x… or saved label"
+      />
 
       <div className={styles.sidebarWalletActions}>
         <button
@@ -516,7 +526,7 @@ export default function PrivacyWalletMenu({
         </button>
         <button
           type="button"
-          onClick={privateTransfer}
+          onClick={() => void privateTransfer()}
           disabled={
             !isConnected ||
             !isStrk20Capable ||

@@ -5,10 +5,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import AddressBookField from "@/components/AddressBookField";
 import {
   loadAliases,
   resolveAliasInput,
-  saveAlias,
   type AliasRecord,
 } from "@/lib/aliases";
 import type { CompositeAttachment, CompositePayload } from "@/lib/composite";
@@ -103,7 +103,6 @@ type ComposeProps = {
   onDraftChange: (draft: CompositeDraft) => void;
   onDeleteDraft: (draftId: string) => void;
   onSent: (message: SentEnvelope) => void;
-  onAliasesChange?: (aliases: AliasRecord[]) => void;
 };
 
 type SendState = {
@@ -303,7 +302,6 @@ export default function Compose({
   onDraftChange,
   onDeleteDraft,
   onSent,
-  onAliasesChange,
 }: ComposeProps) {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
@@ -318,8 +316,6 @@ export default function Compose({
   const draftRef = useRef(initialDraft);
   const recipientInputRef = useRef<HTMLTextAreaElement>(null);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
-  const [aliasLabel, setAliasLabel] = useState("");
-  const [aliasNotice, setAliasNotice] = useState("");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
 
   useEffect(() => {
@@ -442,40 +438,6 @@ export default function Compose({
       fingerprints.add(fingerprint);
     }
     return addresses;
-  }
-
-  function saveCurrentAlias() {
-    if (!senderAddress) {
-      setAliasNotice("Connect a wallet before saving a local alias.");
-      return;
-    }
-    try {
-      if (recipientEntries.length !== 1) {
-        throw new Error("Choose exactly one recipient when saving an alias.");
-      }
-      const [address] = resolvedRecipients();
-      const next = saveAlias(
-        window.localStorage,
-        senderAddress,
-        address,
-        aliasLabel,
-      );
-      setAliases(next);
-      setAliasLabel("");
-      setAliasNotice("Alias saved only in this browser profile.");
-      onAliasesChange?.(next);
-    } catch (error: unknown) {
-      setAliasNotice(
-        error instanceof Error ? error.message : "Could not save that alias.",
-      );
-    }
-  }
-
-  function appendAlias(alias: AliasRecord) {
-    const separator = draft.recipient.trim() ? "\n" : "";
-    updateDraft({
-      recipient: `${draft.recipient.trimEnd()}${separator}${alias.label}`,
-    });
   }
 
   function tradePayload(
@@ -1110,71 +1072,35 @@ export default function Compose({
 
       <form className={styles.form} onSubmit={handleSubmit}>
         <fieldset className={styles.composeFieldset} disabled={sendPending}>
-          <label className={styles.field}>
-            <span>
-              To
-              <em className={styles.fieldBadge}>COUNT PUBLIC</em>
-            </span>
-            <textarea
-              ref={recipientInputRef}
-              value={draft.recipient}
-              onChange={(event) =>
-                updateDraft({ recipient: event.target.value })
-              }
-              placeholder={
-                hasAnyAttachment
-                  ? "One counterparty address or local alias"
-                  : "One address or alias per line"
-              }
-              autoComplete="off"
-              rows={hasAnyAttachment ? 2 : 3}
-              required
-            />
-            <small>
-              {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
-              Recipient count is public; identities are absent from
-              MessagePosted. Attachments are bilateral; body-only delivery can
-              be multi-recipient.
-            </small>
-          </label>
-
-          {aliases.length ? (
-            <div
-              className={styles.aliasChips}
-              aria-label="Device-private aliases"
-            >
-              <span>ADD LOCAL:</span>
-              {aliases.map((alias) => (
-                <button
-                  key={alias.address}
-                  type="button"
-                  onClick={() => appendAlias(alias)}
-                >
-                  <bdi>{alias.label}</bdi>
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          <div className={styles.aliasEditor}>
-            <input
-              value={aliasLabel}
-              onChange={(event) => setAliasLabel(event.target.value)}
-              placeholder="Local name for one entered address"
-              aria-label="Local alias label"
-            />
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={saveCurrentAlias}
-              disabled={recipientEntries.length !== 1 || !aliasLabel.trim()}
-            >
-              Save on device
-            </button>
-          </div>
-          {aliasNotice ? (
-            <p className={styles.finePrint}>{aliasNotice}</p>
-          ) : null}
+          <AddressBookField
+            selfAddress={senderAddress}
+            inputAriaLabel="To"
+            multiline
+            inputRef={recipientInputRef}
+            label={
+              <>
+                To
+                <em className={styles.fieldBadge}>COUNT PUBLIC</em>
+              </>
+            }
+            value={draft.recipient}
+            onChange={(recipient) => updateDraft({ recipient })}
+            placeholder={
+              hasAnyAttachment
+                ? "One counterparty address or saved contact"
+                : "One address per line"
+            }
+            rows={hasAnyAttachment ? 2 : 3}
+            required
+            hint={
+              <>
+                {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
+                Recipient count is public; identities are absent from
+                MessagePosted. Attachments are bilateral; body-only delivery
+                can be multi-recipient.
+              </>
+            }
+          />
 
           <label className={styles.field}>
             <span>Message</span>

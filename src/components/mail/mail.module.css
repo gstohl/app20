@@ -129,7 +129,7 @@
 
 .card {
   position: relative;
-  padding: 20px;
+  padding: 14px;
   border: 1px solid var(--shell-line);
   background: var(--shell-panel);
   box-shadow: none;
@@ -147,9 +147,9 @@
 }
 
 .cardTitle {
-  margin-top: 6px;
+  margin-top: 4px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 21px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.025em;
 }
@@ -352,12 +352,12 @@
 .disclosureGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-  margin-top: 20px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .disclosureGrid p {
-  padding: 10px;
+  padding: 7px 8px;
   border: 1px solid var(--shell-line);
   color: var(--shell-muted);
   font-size: 11px;
@@ -375,7 +375,7 @@
 }
 
 .form {
-  margin-top: 20px;
+  margin-top: 12px;
 }
 
 .paymentLinkForm {
@@ -460,7 +460,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 16px;
+  gap: 11px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -498,15 +498,15 @@
   background: var(--shell-deal, #c496ae);
 }
 
-.aliasEditor {
+.addressBookSave {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: 6px;
 }
 
-.aliasEditor input {
+.addressBookSave input {
   min-width: 0;
-  padding: 10px 12px;
+  padding: 7px 10px;
   border: 1px solid var(--shell-line);
   border-radius: 0;
   outline: none;
@@ -516,15 +516,16 @@
   font-size: 12px;
 }
 
-.aliasEditor .secondaryButton {
-  padding: 10px 12px;
+.addressBookSave .secondaryButton {
+  margin-top: 0;
+  padding: 7px 10px;
 }
 
 .dealFields {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 16px;
+  gap: 10px;
+  padding: 10px 12px;
   border-left: 4px solid var(--shell-deal, #c496ae);
   background: var(--shell-deal-wash, #201820);
 }
@@ -551,7 +552,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 4px;
   color: var(--shell-text);
   font-size: 13px;
   font-weight: 700;
@@ -560,7 +561,7 @@
 .field input,
 .field textarea {
   width: 100%;
-  padding: 12px 13px;
+  padding: 8px 10px;
   border: 1px solid var(--shell-line);
   border-radius: 0;
   outline: none;
@@ -1116,7 +1117,7 @@
   .privacyStrip,
   .setupGrid,
   .disclosureGrid,
-  .aliasEditor,
+  .addressBookSave,
   .chainFields,
   .absentFields,
   .paymentLinkForm {
@@ -1177,7 +1178,7 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  grid-template-columns: 260px 360px minmax(0, 1fr);
+  grid-template-columns: 236px 320px minmax(0, 1fr);
   overflow: hidden;
   background: var(--shell-bg);
 }
@@ -1197,10 +1198,10 @@
 .mailSidebar {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 18px 0 16px;
+  padding: 12px 0;
   border-right: 1px solid var(--shell-line);
   background: var(--shell-panel);
 }
@@ -1213,7 +1214,7 @@
 .sidebarBrandRow,
 .sidebarTagline,
 .sidebarFooter {
-  padding-inline: 18px;
+  padding-inline: 14px;
 }
 
 .sidebarBrandRow,
@@ -1296,7 +1297,7 @@
   gap: 7px;
   width: 100%;
   min-width: 0;
-  padding: 13px 10px;
+  padding: 9px 10px;
   border: 0;
   box-shadow: none;
   font: inherit;
@@ -1353,7 +1354,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 9px 10px;
+  padding: 6px 10px;
   border: 0;
   color: var(--shell-text);
   background: transparent;
@@ -1652,7 +1653,7 @@
 }
 
 .sidebarScan {
-  padding: 12px;
+  padding: 10px 12px;
   border: 0;
   background: var(--shell-public-wash, #121a1c);
 }
@@ -1664,7 +1665,7 @@
 }
 
 .forgetDevice {
-  padding: 12px;
+  padding: 10px 12px;
   border: 0;
   background: var(--shell-deal-quiet, #2e2129);
   color: var(--shell-text);
@@ -1781,15 +1782,15 @@
 
 .railHeading {
   flex: none;
-  min-height: 80px;
-  padding: 16px 16px 13px;
+  min-height: 54px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid var(--shell-line);
 }
 
 .railHeading h1 {
-  margin-top: 3px;
+  margin-top: 2px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 21px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -1808,9 +1809,9 @@
 .railPrivacyNote {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   flex: none;
-  padding: 10px 16px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--shell-line);
   color: var(--shell-muted);
   background: var(--shell-panel);
@@ -1842,10 +1843,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
   width: 100%;
-  min-height: 112px;
-  padding: 15px 17px 14px 19px;
+  min-height: 74px;
+  padding: 9px 12px 8px 14px;
   border: 0;
   border-left: 4px solid transparent;
   color: var(--shell-text);
@@ -1988,9 +1989,9 @@
 
 .readingToolbar {
   flex: none;
-  min-height: 64px;
-  gap: 15px;
-  padding: 11px 22px;
+  min-height: 46px;
+  gap: 12px;
+  padding: 6px 14px;
   border-bottom: 1px solid var(--shell-line);
   background: var(--shell-bg);
 }
@@ -2035,13 +2036,13 @@
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: clamp(20px, 3vw, 38px) 0;
+  padding: 12px 14px;
 }
 
 .storageNotice {
   width: 100%;
-  margin: 0 0 16px;
-  padding: 11px 13px;
+  margin: 0 0 10px;
+  padding: 8px 10px;
   border-left: 4px solid var(--shell-orange);
   background: color-mix(in srgb, var(--shell-orange) 16%, var(--shell-bg));
   color: var(--shell-text);
@@ -2062,12 +2063,12 @@
 }
 
 .threadPanel .threadHeading {
-  padding-bottom: 14px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--shell-line);
 }
 
 .threadPanel .threadList {
-  margin-top: 18px;
+  margin-top: 10px;
 }
 
 .threadPanel .message {
@@ -2099,7 +2100,7 @@
 }
 
 .composerSheet {
-  padding: clamp(22px, 4vw, 42px);
+  padding: 14px 16px 18px;
   border: 1px solid var(--shell-line);
   background: var(--shell-panel);
   box-shadow: none;
@@ -2109,15 +2110,15 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 16px;
+  gap: 12px;
+  padding-bottom: 9px;
   border-bottom: 1px solid var(--shell-line);
 }
 
 .composerHeading h2 {
-  margin-top: 4px;
+  margin-top: 2px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 21px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.03em;
 }
@@ -2163,22 +2164,39 @@
   letter-spacing: 0.07em;
 }
 
-.aliasChips {
+.addressBookField {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.addressBookPicks {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  align-items: center;
+  gap: 4px;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
 }
 
-.aliasChips button {
-  padding: 4px 7px;
+.addressBookPicks button {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 3px 7px;
   border: 1px solid var(--shell-orange);
   color: var(--shell-orange);
   background: transparent;
   font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
+}
+
+.addressBookPicks button:hover {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
 }
 
 .letterInput {
@@ -2238,7 +2256,7 @@
 
 .welcomeSheet {
   position: relative;
-  padding: clamp(24px, 4vw, 46px);
+  padding: 16px 18px 18px;
   border: 0;
   background: var(--shell-panel);
   box-shadow: none;
@@ -2268,18 +2286,18 @@
 .welcomeSheet h1 {
   width: 100%;
   max-width: none;
-  margin-top: 12px;
+  margin-top: 8px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: clamp(32px, 4.5vw, 54px);
+  font-size: clamp(20px, 2.4vw, 30px);
   font-weight: 800;
-  line-height: 1.02;
-  letter-spacing: -0.05em;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
 }
 
 .welcomeCopy {
   width: 100%;
   max-width: none;
-  margin-top: 22px;
+  margin-top: 8px;
   color: var(--shell-muted);
   font-family: var(--font-reading), Georgia, serif;
   font-size: 14px;
@@ -2290,7 +2308,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1px;
-  margin-top: 26px;
+  margin-top: 12px;
   border: 1px solid var(--shell-line);
   background: var(--shell-line);
 }
@@ -2298,8 +2316,8 @@
 .privacySummary > div {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 14px;
+  gap: 5px;
+  padding: 9px 10px;
   background: var(--shell-bg);
 }
 
@@ -2318,15 +2336,15 @@
 }
 
 .honestyNote {
-  margin-top: 16px;
-  padding: 11px 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
   border: 0;
   background: var(--shell-public-quiet, #18262a);
 }
 
 .welcomeCompose {
-  margin-top: 20px;
-  padding: 11px 15px;
+  margin-top: 12px;
+  padding: 9px 12px;
   border: 1px solid var(--shell-orange);
   color: var(--shell-on-accent, #fff);
   background: var(--shell-orange);
@@ -2499,7 +2517,7 @@
   }
 
   .readingScroll {
-    padding: 24px 0;
+    padding: 12px;
   }
 }
 
@@ -2533,13 +2551,13 @@
   }
 
   .readingScroll {
-    padding: 14px 0 32px;
+    padding: 10px 10px 28px;
   }
 
   .composerSheet,
   .welcomeSheet,
   .card {
-    padding: 20px;
+    padding: 14px;
   }
 
   .composerSheet,
@@ -2590,7 +2608,7 @@
   .chainFields,
   .absentFields,
   .disclosureGrid,
-  .aliasEditor {
+  .addressBookSave {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2650,7 +2668,7 @@
 }
 
 .attachmentTray {
-  padding: 15px;
+  padding: 10px 12px;
   border: 1px solid var(--shell-line);
   background: var(--shell-panel);
 }
@@ -2679,15 +2697,15 @@
 }
 
 .attachmentTray > p {
-  margin-top: 10px;
+  margin-top: 7px;
   line-height: 1.5;
 }
 
 .attachmentButtons {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  margin-top: 12px;
+  gap: 5px;
+  margin-top: 8px;
 }
 
 .attachmentButtons button,
@@ -2971,14 +2989,14 @@
 
 .readinessList {
   display: grid;
-  gap: 10px;
-  margin: 18px 0 0;
+  gap: 5px;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .readinessList li {
-  padding: 10px 12px;
+  padding: 7px 10px;
   border: 1px solid var(--shell-line);
   background: var(--shell-bg);
 }
