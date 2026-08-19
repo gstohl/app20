@@ -14,7 +14,10 @@ import {
   saveAddressBookEntry,
   type AddressBookEntry,
 } from "@/lib/address-book";
-import { feltEquals } from "@/lib/addresses";
+import {
+  assertReadyExecutionUnchanged,
+  snapshotReadyExecution,
+} from "@/lib/ready-execution";
 import { readPublicStrkBalance } from "@/lib/mainnet-safety";
 import { formatStrkAmount, parseStrkAmount } from "@/lib/strk-amount";
 import {
@@ -23,7 +26,6 @@ import {
   transactionHashFromError,
   waitForStrk20Transaction,
 } from "@/lib/strk20";
-import { assertWalletSubmissionPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -288,30 +290,21 @@ export default function VaultPage() {
       });
       return;
     }
-    const provider = constants.myFrontendProviders[providerIndex];
     setSendState({
       kind: "pending",
       message: "Reading the live public STRK balance…",
     });
     try {
-      if (!selectedWallet) throw new Error("Wallet policy context is missing.");
-      assertWalletSubmissionPolicy(
-        selectedWallet,
-        providerIndex as 0 | 2 | 3,
-        "public-send",
-      );
-      if (!feltEquals(walletAccount.address, address)) {
-        throw new Error(
-          "The Ready signer no longer matches the connected account. Disconnect and connect again.",
-        );
-      }
-      const balance = await readPublicStrkBalance(provider, address);
+      const started = snapshotReadyExecution();
+      assertReadyExecutionUnchanged(started, "public-send");
+      const provider = constants.myFrontendProviders[started.providerIndex];
+      const balance = await readPublicStrkBalance(provider, started.address);
       if (balance < amount) {
         throw new Error(
           `Public balance is ${formatStrkAmount(balance)} STRK, below the ${formatStrkAmount(amount)} STRK send. Network fees come on top.`,
         );
       }
-      if (providerIndex === 0) {
+      if (started.providerIndex === 0) {
         const confirmed = window.confirm(
           [
             "APP20 MAINNET PUBLIC SEND",
@@ -336,7 +329,8 @@ export default function VaultPage() {
       });
       const low = amount & ((1n << 128n) - 1n);
       const high = amount >> 128n;
-      const { transaction_hash: transactionHash } = await walletAccount.execute(
+      const live = assertReadyExecutionUnchanged(started, "public-send");
+      const { transaction_hash: transactionHash } = await live.account.execute(
         {
           contractAddress: constants.addrSTRK,
           entrypoint: "transfer",
@@ -638,7 +632,13 @@ export default function VaultPage() {
                 </strong>
               </header>
               <div className={styles.controlsBody}>
-                <PrivacyWalletMenu showIdentity={false} />
+                <PrivacyWalletMenu
+                  showIdentity={false}
+                  active={
+                    !onIntents &&
+                    !(mode === "privy" && privyBrowserConfigured)
+                  }
+                />
               </div>
             </section>
           </div>

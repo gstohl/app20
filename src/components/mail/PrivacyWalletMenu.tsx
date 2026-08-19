@@ -10,6 +10,10 @@ import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Str
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
+import {
+  assertReadyExecutionUnchanged,
+  snapshotReadyExecution,
+} from "@/lib/ready-execution";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import {
   formatStrkAmount,
@@ -94,8 +98,10 @@ function readStrkBalance(raw: unknown): bigint {
 
 export default function PrivacyWalletMenu({
   showIdentity = true,
+  active = true,
 }: {
   showIdentity?: boolean;
+  active?: boolean;
 }) {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
@@ -171,14 +177,16 @@ export default function PrivacyWalletMenu({
   }, [connectedAddress]);
 
   useEffect(() => {
-    if (!walletAccount || !isConnected) {
+    if (!active || !walletAccount || !isConnected) {
       balanceGeneration.current += 1;
+      if (!active) return;
       setBalance({ kind: "idle" });
       setAction({ kind: "idle" });
       return;
     }
     void refreshBalance();
   }, [
+    active,
     connectedAddress,
     isConnected,
     isStrk20Capable,
@@ -228,31 +236,21 @@ export default function PrivacyWalletMenu({
       startedAt,
     });
 
+    const operation =
+      actionName === "Shield"
+        ? "shield"
+        : actionName === "Unshield"
+          ? "unshield"
+          : "private-transfer";
     let submittedHash: string | undefined;
     try {
-      if (!selectedWallet) throw new Error("Wallet policy context is missing.");
-      assertWalletOperationPolicy(
-        selectedWallet,
-        providerIndex as 0 | 2 | 3,
-        actionName === "Shield"
-          ? "shield"
-          : actionName === "Unshield"
-            ? "unshield"
-            : "private-transfer",
-      );
-      if (
-        connectedAddress &&
-        !feltEquals(walletAccount.address, connectedAddress)
-      ) {
-        throw new Error(
-          "The Ready signer no longer matches the connected account. Disconnect and connect again.",
-        );
-      }
+      const started = snapshotReadyExecution();
+      assertReadyExecutionUnchanged(started, operation);
       await authorizeStrk20ValueAction({
-        provider,
+        provider: constants.myFrontendProviders[started.providerIndex],
         poolAddress,
-        accountAddress: connectedAddress || walletAccount.address,
-        network: networkName,
+        accountAddress: started.address,
+        network: constants.Strk20Networks[started.providerIndex] ?? networkName,
         action: actionName,
         amount,
       });
@@ -268,23 +266,12 @@ export default function PrivacyWalletMenu({
         startedAt: Date.now(),
       });
       const { transactionHash } = await submitActions(
-        walletAccount,
-        provider,
+        started.account,
+        constants.myFrontendProviders[started.providerIndex],
         actions,
         {
           policy: () => {
-            if (!selectedWallet) {
-              throw new Error("Wallet policy context is missing.");
-            }
-            assertWalletOperationPolicy(
-              selectedWallet,
-              providerIndex as 0 | 2 | 3,
-              actionName === "Shield"
-                ? "shield"
-                : actionName === "Unshield"
-                  ? "unshield"
-                  : "private-transfer",
-            );
+            assertReadyExecutionUnchanged(started, operation);
           },
           onSubmitted: (hash) => {
             submittedHash = hash;
