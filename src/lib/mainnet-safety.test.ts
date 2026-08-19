@@ -148,6 +148,24 @@ describe("mainnet value safety", () => {
     ).toThrow(/amount \+ live pool fee/i);
   });
 
+  it("requires only the live pool fee for private transfer and unshield", async () => {
+    const present = vi.fn<(preflight: ValueActionPreflight) => boolean>(
+      () => true,
+    );
+    const result = await authorizeStrk20ValueAction({
+      provider: providerWith(2n * STRK, 2n * STRK),
+      poolAddress,
+      accountAddress,
+      network: "MAINNET",
+      action: "Private transfer",
+      amount: 5n * STRK,
+      presentMainnet: present,
+    });
+    expect(result.publicCover).toBe("fee-only");
+    expect(result.requiredPublicBalance).toBe(2n * STRK);
+    expect(result.sufficientBalance).toBe(true);
+  });
+
   it("keeps Sepolia confirmation-free while retaining the live guard", async () => {
     const present = vi.fn<(preflight: ValueActionPreflight) => boolean>(
       () => true,

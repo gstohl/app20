@@ -427,7 +427,7 @@ function isRevertedOrRejected(error: unknown): boolean {
   return /\b(?:REVERTED|REJECTED)\b/i.test(candidate);
 }
 
-async function waitForStrk20Transaction(
+export async function waitForStrk20Transaction(
   provider: ProviderInterface,
   transactionHash: string,
   timeoutMs = STRK20_WAIT_TIMEOUT_MS,

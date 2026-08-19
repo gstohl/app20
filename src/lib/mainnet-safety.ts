@@ -13,6 +13,7 @@ export type ValueActionPreflight = {
   publicBalanceError?: string;
   requiredPublicBalance?: bigint;
   sufficientBalance: boolean;
+  publicCover: "amount-and-fee" | "fee-only";
 };
 
 export type MainnetPreflightPresenter = (
@@ -108,14 +109,33 @@ export async function readPublicStrkBalance(
   return parseUint256Result(result, "STRK balance_of");
 }
 
+export function requiredPublicBalanceForAction(
+  amount: bigint,
+  poolFee: bigint,
+  cover: "amount-and-fee" | "fee-only",
+): bigint {
+  if (amount <= 0n) throw new Error("Value amount must be greater than zero.");
+  if (poolFee < 0n) throw new Error("Pool fee cannot be negative.");
+  return cover === "fee-only" ? poolFee : amount + poolFee;
+}
+
+export function publicCoverForAction(
+  action: string,
+): "amount-and-fee" | "fee-only" {
+  const normalized = action.trim().toLowerCase();
+  if (normalized === "shield" || normalized.includes("public send")) {
+    return "amount-and-fee";
+  }
+  return "fee-only";
+}
+
 export function assertPublicBalanceCovers(
   publicBalance: bigint,
   amount: bigint,
   poolFee: bigint,
+  cover: "amount-and-fee" | "fee-only" = "amount-and-fee",
 ): bigint {
-  if (amount <= 0n) throw new Error("Value amount must be greater than zero.");
-  if (poolFee < 0n) throw new Error("Pool fee cannot be negative.");
-  const required = amount + poolFee;
+  const required = requiredPublicBalanceForAction(amount, poolFee, cover);
   if (publicBalance < required) {
     throw new InsufficientPublicStrkBalanceError(publicBalance, required);
   }
@@ -148,7 +168,8 @@ export function formatMainnetPreflight(
     `Amount in base units: ${preflight.amount}`,
     `Live pool fee (pool.get_fee_amount): ${fee}`,
     `Public STRK balance: ${balance}`,
-    `Required public balance (amount + pool fee): ${required}`,
+    `Required public STRK: ${required}`,
+    `Cover rule: ${preflight.publicCover === "fee-only" ? "live pool fee only (amount is already in-pool)" : "amount + live pool fee"}`,
     "",
     "Visibility: shield and unshield legs are PUBLIC on-chain. Private transfers remain inside the pool, but timing and the public pool-fee payment are observable.",
     "WARNING: This moves real funds on Starknet Mainnet.",
@@ -179,6 +200,7 @@ export type AuthorizeValueActionInput = {
   network: string;
   action: string;
   amount: bigint;
+  publicCover?: "amount-and-fee" | "fee-only";
   presentMainnet?: MainnetPreflightPresenter;
 };
 
@@ -194,10 +216,12 @@ export async function authorizeStrk20ValueAction({
   network,
   action,
   amount,
+  publicCover,
   presentMainnet = presentMainnetPreflight,
 }: AuthorizeValueActionInput): Promise<ValueActionPreflight> {
   if (amount <= 0n) throw new Error("Value amount must be greater than zero.");
   const mainnet = network === "MAINNET";
+  const cover = publicCover ?? publicCoverForAction(action);
 
   let poolFee: bigint;
   try {
@@ -210,6 +234,7 @@ export async function authorizeStrk20ValueAction({
       poolAddress,
       poolFeeError: errorMessage(error),
       sufficientBalance: false,
+      publicCover: cover,
     };
     if (mainnet) await presentMainnet(preflight);
     throw new PoolFeeUnavailableError(errorMessage(error));
@@ -228,12 +253,17 @@ export async function authorizeStrk20ValueAction({
       poolFeeError: undefined,
       publicBalanceError: errorMessage(error),
       sufficientBalance: false,
+      publicCover: cover,
     };
     if (mainnet) await presentMainnet(preflight);
     throw new PublicBalanceUnavailableError(errorMessage(error));
   }
 
-  const requiredPublicBalance = amount + poolFee;
+  const requiredPublicBalance = requiredPublicBalanceForAction(
+    amount,
+    poolFee,
+    cover,
+  );
   const sufficientBalance = publicBalance >= requiredPublicBalance;
   const preflight: ValueActionPreflight = {
     network,
@@ -244,11 +274,12 @@ export async function authorizeStrk20ValueAction({
     publicBalance,
     requiredPublicBalance,
     sufficientBalance,
+    publicCover: cover,
   };
 
   if (!sufficientBalance) {
     if (mainnet) await presentMainnet(preflight);
-    assertPublicBalanceCovers(publicBalance, amount, poolFee);
+    assertPublicBalanceCovers(publicBalance, amount, poolFee, cover);
   }
   if (mainnet && !(await presentMainnet(preflight))) {
     throw new MainnetPreflightDeclinedError();

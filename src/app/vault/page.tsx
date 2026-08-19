@@ -17,7 +17,12 @@ import {
 import { feltEquals } from "@/lib/addresses";
 import { readPublicStrkBalance } from "@/lib/mainnet-safety";
 import { formatStrkAmount, parseStrkAmount } from "@/lib/strk-amount";
-import { strk20ErrorMessage } from "@/lib/strk20";
+import {
+  Strk20WaitTimeoutError,
+  strk20ErrorMessage,
+  transactionHashFromError,
+  waitForStrk20Transaction,
+} from "@/lib/strk20";
 import { assertWalletSubmissionPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
@@ -36,7 +41,7 @@ type SendState =
   | { kind: "idle" }
   | { kind: "pending"; message: string; transactionHash?: string }
   | { kind: "ok"; message: string; transactionHash: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; transactionHash?: string };
 
 function explorerTx(providerIndex: number, hash: string): string | null {
   if (providerIndex === 0) return `https://voyager.online/tx/${hash}`;
@@ -343,10 +348,7 @@ export default function VaultPage() {
         message: "Submitted. Waiting for confirmation…",
         transactionHash,
       });
-      await provider.waitForTransaction(transactionHash, {
-        retries: 120,
-        retryInterval: 3_000,
-      });
+      await waitForStrk20Transaction(provider, transactionHash);
       setSendState({
         kind: "ok",
         message: `Sent ${formatStrkAmount(amount)} STRK publicly.`,
@@ -354,12 +356,22 @@ export default function VaultPage() {
       });
       void publicBalance.refetch();
     } catch (cause: unknown) {
-      setSendState({ kind: "error", message: strk20ErrorMessage(cause) });
+      const hash = transactionHashFromError(cause);
+      setSendState({
+        kind: "error",
+        message:
+          cause instanceof Strk20WaitTimeoutError
+            ? cause.message
+            : strk20ErrorMessage(cause),
+        ...(hash === undefined ? {} : { transactionHash: hash }),
+      });
     }
   }
 
   const sendTxLink =
-    sendState.kind === "ok" || sendState.kind === "pending"
+    sendState.kind === "ok" ||
+    sendState.kind === "pending" ||
+    sendState.kind === "error"
       ? sendState.transactionHash
         ? explorerTx(providerIndex, sendState.transactionHash)
         : null
@@ -433,9 +445,8 @@ export default function VaultPage() {
         </div>
       </header>
 
-      {onIntents ? (
-        <IntentsPage />
-      ) : mode === "privy" && privyBrowserConfigured ? (
+      {onIntents ? <IntentsPage /> : null}
+      {mode === "privy" && privyBrowserConfigured && !onIntents ? (
         <Suspense
           fallback={
             <div className={styles.privyFallback}>LOADING PRIVY VAULT…</div>
@@ -443,8 +454,11 @@ export default function VaultPage() {
         >
           <PrivySepoliaVault />
         </Suspense>
-      ) : (
-        <div className={styles.readyDesk}>
+      ) : null}
+      <div
+        className={styles.readyDesk}
+        hidden={onIntents || (mode === "privy" && privyBrowserConfigured)}
+      >
           <section
             className={styles.session}
             aria-labelledby="vault-session-title"
@@ -667,8 +681,7 @@ export default function VaultPage() {
             public sends remain on-chain. Balances are live reads, never cached
             fabrications. The address book never leaves this browser.
           </p>
-        </div>
-      )}
+      </div>
     </main>
   );
 }
