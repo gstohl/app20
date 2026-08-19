@@ -2,10 +2,15 @@
 
 Private superapp on Starknet.
 
-APP20 is a browser-owned workspace for shielded STRK, encrypted mail, and
-review-only cross-chain and policy surfaces. Users connect a wallet, keep
-viewing keys and mailbox keys on the device, and talk to the STRK20 pool
-through the official Starknet privacy path.
+Four features, in product order:
+
+1. **Vault** — shielded STRK wallet
+2. **Intents** — cross-chain review desk
+3. **Workflows** — advisory policy desk
+4. **Mailbox** — encrypted Mail
+
+Users connect once in the header. Viewing keys and mailbox keys stay on the
+device. The STRK20 pool is reached through the official Starknet privacy path.
 
 Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
 
@@ -14,13 +19,26 @@ yet. This is not a Mainnet value-moving release.
 
 ## Product
 
-| Surface | Route | Status |
-| --- | --- | --- |
-| Vault | `/vault` | Shielded wallet. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
-| Mail | `/mail/inbox` | APP20 Mail. Encrypted letters, private STRK memos, invoices, and one-sided deals. Ready only |
-| Pay | `/pay` | Unsigned payment request links. Nothing is sent until the payer confirms in Mail |
-| Intents | `/intents` | Review-only. Dry 1Click quotes. No deposit address, no submit |
-| Workflows | `/workflows` | Review-only. Advisory policy receipts. No TEE, no execution |
+| Rank | Feature | Route | Status |
+| --- | --- | --- | --- |
+| 1 | Vault | `/vault` | Primary wallet. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
+| 2 | Intents | `/intents` | Review-only dry 1Click quotes. No deposit address, no submit |
+| 3 | Workflows | `/workflows` | Review-only advisory policy receipts. No TEE, no execution |
+| 4 | Mailbox | `/mail/inbox` | APP20 Mail. Encrypted letters, private STRK memos, invoices, and one-sided deals. Ready only |
+
+`/pay` is a Mail helper, not a fifth product. It only creates an unsigned
+payment-request link. Nothing is sent until the payer confirms in Mail.
+
+### Vault and Intents
+
+They can share one **value desk** later. They should not become one form.
+
+Vault is in-pool Starknet privacy (shield, private transfer, unshield). Intents
+is a public cross-chain quote against NEAR 1Click. Different chains, signers,
+disclosure, and failure modes. A combined page is fine as two rails on the
+same estate, with the header session unchanged. Merging them into a single
+submit path would hide that Intents settlement is public and that there is no
+Intents testnet.
 
 Wallet policy is enforced below the UI:
 
@@ -28,7 +46,7 @@ Wallet policy is enforced below the UI:
 - **Sepolia** — Ready, plus an optional Privy browser signer
 - **Localnet** — build-gated development wallet
 
-In the product, the mail module is **Mail**. Compatibility identifiers
+In the product, mail is **Mailbox** / **Mail**. Compatibility identifiers
 (`QuietlineMail`, `quietline/*` storage, payment-link domains) stay unchanged
 so existing backups and on-chain registrations keep working.
 
