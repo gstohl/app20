@@ -2902,48 +2902,7 @@
   }
 }
 
-.themeSwitcher {
-  min-width: 0;
-  border: 0;
-}
-
-.themeSwitcher > legend {
-  margin: 0 4px 6px;
-}
-
-.themeSwitcher > div {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
-  border: 0;
-  background: var(--shell-line);
-}
-
-.themeSwitcher button {
-  min-width: 0;
-  padding: 6px 4px;
-  border: 0;
-  color: var(--shell-muted);
-  background: transparent;
-  font: inherit;
-  font-size: 10px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.themeSwitcher button:hover {
-  color: var(--shell-text);
-  background: var(--shell-panel);
-}
-
-.themeSwitcher button[aria-pressed="true"] {
-  color: var(--shell-on-accent, #fff);
-  background: var(--shell-orange);
-}
-
 .typeFilterNav button,
-.themeSwitcher button,
 .sidebarBalance button,
 .scanActions button,
 .backToList,
@@ -2955,8 +2914,7 @@
 
 @media (max-width: 900px) {
   .typeFilterNav button,
-  .themeSwitcher button,
-  .sidebarBalance button,
+    .sidebarBalance button,
   .scanActions button,
   .backToList,
   .closeCompose,

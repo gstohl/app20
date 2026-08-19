@@ -18,7 +18,6 @@ import Thread, {
   type LocalMailMessage,
   type ThreadActionState,
 } from "@/components/mail/Thread";
-import ThemeSwitcher from "@/components/mail/ThemeSwitcher";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
@@ -149,257 +148,27 @@ import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
 import styles from "@/components/mail/mail.module.css";
 
-type ScanWorkerResponse =
-  | { ok: true; decrypted: DecryptedMail[] }
-  | { ok: false; message: string };
-
-type ActiveScanWorker = {
-  worker: Worker;
-  reject: (error: Error) => void;
-};
-
-type ScanKind = "idle" | "scanning" | "ok" | "error";
-
-const TYPE_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
-  { id: "all", label: "All types" },
-  { id: "letters", label: "Letters" },
-  { id: "deals", label: "Deals" },
-  { id: "invoices", label: "Invoices" },
-  { id: "escrow", label: "Escrow" },
-];
-
-type MailFolder = "inbox" | "sent" | "drafts";
-const MAIL_FOLDERS: Array<{ id: MailFolder; label: string }> = [
-  { id: "inbox", label: "Inbox" },
-  { id: "sent", label: "Sent" },
-  { id: "drafts", label: "Drafts" },
-];
-
-type LocalnetEscrowSigner = {
-  private_key: string;
-  operation: "claim" | "timeout";
-  open_note_index: number;
-};
-
-type LocalnetDynamicEscrowInvoke = WALLET_API.STRK20_INVOKE_ACTION & {
-  quietline_escrow_signer: LocalnetEscrowSigner;
-};
-
-function secretKeyHex(bytes: Uint8Array): string {
-  return `0x${Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("")}`;
-}
-
-function helperForNetwork(providerIndex: number): string | null {
-  const configured =
-    providerIndex === 0
-      ? constants.mailHelperMainnet
-      : providerIndex === 2
-        ? constants.mailHelperSepolia
-        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
-            constants.localnetWalletEnabled
-          ? constants.mailHelperLocalnet
-          : null;
-  if (!isConfiguredMailHelper(configured)) return null;
-
-  try {
-    return validateAndParseAddress(configured);
-  } catch {
-    return null;
-  }
-}
-
-function escrowForNetwork(providerIndex: number): string | null {
-  const configured =
-    providerIndex === 0
-      ? constants.escrowHelperMainnet
-      : providerIndex === 2
-        ? constants.escrowHelperSepolia
-        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
-            constants.localnetWalletEnabled
-          ? constants.escrowHelperLocalnet
-          : null;
-  if (!isConfiguredMailHelper(configured)) return null;
-  try {
-    return validateAndParseAddress(configured);
-  } catch {
-    return null;
-  }
-}
-
-function loadPersistedMailSeed(
-  storage: Pick<Storage, "getItem">,
-  chainId: string,
-  address: string,
-): Uint8Array | null {
-  const vault = inspectMailVault(storage, chainId, address);
-  return vault.kind === "plaintext" ? vault.seed : null;
-}
-
-function mailKeyFingerprint(keypair: MailKeypair | null): string {
-  if (!keypair) return "";
-  return Array.from(keypair.publicKey, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
-function sortMailMessages(messages: LocalMailMessage[]): LocalMailMessage[] {
-  return messages.sort((left, right) => {
-    const leftTime =
-      left.localCreatedAt ??
-      (left.blockTimestamp === undefined
-        ? undefined
-        : left.blockTimestamp * 1_000);
-    const rightTime =
-      right.localCreatedAt ??
-      (right.blockTimestamp === undefined
-        ? undefined
-        : right.blockTimestamp * 1_000);
-    if (leftTime !== undefined || rightTime !== undefined) {
-      const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
-      if (timeDifference) return timeDifference;
-    }
-    const blockDifference =
-      (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
-    if (blockDifference) return blockDifference;
-    return (right.eventIndex ?? -1) - (left.eventIndex ?? -1);
-  });
-}
-
-function mergeMailMessages(
-  current: LocalMailMessage[],
-  incoming: LocalMailMessage[],
-): LocalMailMessage[] {
-  const byId = new Map(current.map((message) => [message.id, message]));
-  for (const message of incoming) byId.set(message.id, message);
-
-  // When the same invoice later arrives as sealed mail, prefer its real
-  // MessagePosted evidence over the local unsigned-link projection.
-  const actualRequestIds = new Set(
-    [...byId.values()]
-      .filter((message) => message.transport !== "payment_link")
-      .flatMap(messagePaymentRequestIds),
-  );
-  const deduplicated = [...byId.values()].filter(
-    (message) =>
-      message.transport !== "payment_link" ||
-      !messagePaymentRequestIds(message).some((requestId) =>
-        actualRequestIds.has(requestId),
-      ),
-  );
-  return sortMailMessages(deduplicated).slice(0, MAIL_SCAN_MAX_MESSAGES);
-}
-
-function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
-  return {
-    id: `sent:${message.documentId}`,
-    documentId: message.documentId,
-    index: "local",
-    plaintext: message.plaintext,
-    envelope: decodeEnvelope(encodeEnvelope(message.type, message.payload)),
-    record: message.record,
-    transactionHash: message.transactionHash,
-    transactionHashes: message.transactionHashes,
-    deliveryState: message.deliveryState,
-    direction: "outgoing",
-    recipientCount: message.recipientCount,
-    recipients: message.recipients,
-    localCreatedAt: message.createdAt,
-  };
-}
-
-function paymentLinkToLocal(
-  request: PaymentRequestPayload,
-  updatedAt = Math.floor(Date.now() / 1_000),
-): LocalMailMessage {
-  return {
-    id: `payment-link:${request.requestId}`,
-    index: "unsigned-link",
-    plaintext: request.memo ?? "",
-    envelope: decodeEnvelope(encodeEnvelope("payment_request", request)),
-    // Link imports have no ciphertext. Thread deliberately suppresses the
-    // public-evidence panel for this transport instead of inventing one.
-    record: {
-      ephemeralPub: ["0x0", "0x0"],
-      viewTag: 0,
-      nonce: ["0x0", "0x0"],
-      ciphertextFelts: [],
-    },
-    transactionHash: "",
-    direction: "incoming",
-    transport: "payment_link",
-    localCreatedAt: updatedAt * 1_000,
-  };
-}
-
-function messagePaymentRequestIds(message: LocalMailMessage): string[] {
-  if (message.envelope.type === "payment_request") {
-    const request = parsePaymentRequestPayload(message.envelope.payload);
-    return request ? [request.requestId] : [];
-  }
-  if (message.envelope.type !== "composite") return [];
-  const composite = parseCompositePayload(message.envelope.payload);
-  return (composite?.attachments ?? [])
-    .filter((attachment) => attachment.type === "payment_request")
-    .map((attachment) => attachment.payload.requestId);
-}
-
-function paymentLinkRecords(state: OtcState): PaymentRecord[] {
-  return Object.values(state.payments).filter(
-    (payment) => payment.origin === "payment_link",
-  );
-}
-
-function draftMatchesFilter(
-  draft: CompositeDraft,
-  filter: MailboxFilter,
-): boolean {
-  if (filter === "all") return true;
-  if (filter === "letters" && draft.body.trim()) return true;
-  if (filter === "invoices") {
-    return draft.attachments.some(
-      (attachment) => attachment.type === "payment_request",
-    );
-  }
-  if (filter === "escrow") {
-    return draft.attachments.some(
-      (attachment) => attachment.type === "escrow_fund",
-    );
-  }
-  if (filter === "deals") {
-    return draft.attachments.some(
-      (attachment) =>
-        attachment.type === "offer" || attachment.type === "payment",
-    );
-  }
-  return false;
-}
-
-function parseBlockTimestamp(value: unknown): number | undefined {
-  try {
-    let timestamp: bigint;
-    if (typeof value === "bigint") {
-      timestamp = value;
-    } else if (typeof value === "number" && Number.isSafeInteger(value)) {
-      timestamp = BigInt(value);
-    } else if (
-      typeof value === "string" &&
-      /^(?:0x[0-9a-f]+|[0-9]+)$/i.test(value)
-    ) {
-      timestamp = BigInt(value);
-    } else {
-      return undefined;
-    }
-
-    if (timestamp < 0n || timestamp > BigInt(Number.MAX_SAFE_INTEGER)) {
-      return undefined;
-    }
-    return Number(timestamp);
-  } catch {
-    return undefined;
-  }
-}
+import {
+  TYPE_FILTERS,
+  MAIL_FOLDERS,
+  type MailFolder,
+  type ScanKind,
+  type ScanWorkerResponse,
+  type ActiveScanWorker,
+  type LocalnetDynamicEscrowInvoke,
+  secretKeyHex,
+  helperForNetwork,
+  escrowForNetwork,
+  loadPersistedMailSeed,
+  mailKeyFingerprint,
+  mergeMailMessages,
+  sortMailMessages,
+  storedSentToLocal,
+  paymentLinkToLocal,
+  paymentLinkRecords,
+  draftMatchesFilter,
+  parseBlockTimestamp,
+} from "./mailbox-model";
 
 export default function InboxPage() {
   const providerIndex = useFrontendProvider(
@@ -2518,7 +2287,6 @@ export default function InboxPage() {
             ))}
           </nav>
 
-          <ThemeSwitcher />
 
           <div className={styles.networkRow}>
             <span
