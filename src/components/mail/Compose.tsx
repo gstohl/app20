@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import AddressBookField from "@/components/AddressBookField";
+import AddressBookField from "@/components/address-book/AddressBookField";
 import {
   loadAliases,
   resolveAliasInput,

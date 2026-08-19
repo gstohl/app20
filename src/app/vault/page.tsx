@@ -4,8 +4,8 @@ import { useFrontendProvider } from "@/app/components/client/provider/providerCo
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { privyBrowserConfigured } from "@/app/vault/privy-config";
 import { useVaultMode } from "@/app/vault/vaultMode";
-import AddressBookField from "@/components/AddressBookField";
-import PrivacyWalletMenu from "@/components/mail/PrivacyWalletMenu";
+import AddressBookField from "@/components/address-book/AddressBookField";
+import PrivacyWalletMenu from "@/app/vault/PrivacyWalletMenu";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,

@@ -4,7 +4,7 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
 import { useEffect, useRef, useState } from "react";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
-import AddressBookField from "@/components/AddressBookField";
+import AddressBookField from "@/components/address-book/AddressBookField";
 import { loadAddressBook, resolveAddressBookInput } from "@/lib/address-book";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -28,8 +28,8 @@ import {
 } from "@/lib/strk20";
 import { feltEquals } from "@/lib/addresses";
 import * as constants from "@/utils/constants";
-import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import { ProvingProgress } from "@/components/mail/OperationProgress";
+import styles from "./PrivacyWalletMenu.module.css";
 
 const TOKEN = constants.addrSTRK;
 

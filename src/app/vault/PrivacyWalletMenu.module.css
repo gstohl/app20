@@ -1,0 +1,319 @@
+/* Vault shielded-rail controls. Colors come from --shell-*. */
+
+.sidebarLabel {
+  display: block;
+  color: var(--shell-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+}
+
+.mailboxNav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mailboxNav > .sidebarLabel {
+  margin: 0 8px 5px;
+}
+
+.mailboxNav button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  color: var(--shell-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mailboxNav button:hover {
+  background: var(--shell-panel);
+}
+
+.mailboxNav button[aria-current="page"] {
+  background: var(--shell-panel);
+  color: var(--shell-orange);
+  font-weight: 800;
+}
+
+.mailboxNav button strong {
+  display: grid;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  place-items: center;
+  border: 0;
+  background: var(--shell-bg);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+}
+
+.networkRow {
+  gap: 7px;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--shell-panel);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.networkRow small {
+  margin-left: auto;
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.networkDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--shell-muted);
+}
+
+.networkDotLive {
+  background: var(--shell-orange);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--shell-orange) 16%, var(--shell-bg));
+}
+
+.sidebarAccount {
+  padding: 13px;
+  border: 0;
+  background: var(--shell-panel);
+  box-shadow: none;
+}
+
+.sidebarAccount .accountHeading > button,
+.sidebarAccount .provingProgress,
+.sidebarAccount .progressTrack,
+.sidebarAccount > section,
+.sidebarAccount > section button,
+.sidebarAccount > section dl,
+.sidebarAccount > section dl > div,
+.sidebarAccount > section p {
+  border: 0;
+  box-shadow: none;
+}
+
+.accountHeading {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.accountHeading > div {
+  min-width: 0;
+}
+
+.accountHeading strong {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.accountHeading > button {
+  flex: none;
+  max-width: 104px;
+  min-height: 28px;
+  padding: 5px 8px;
+  overflow: hidden;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.accountAddress {
+  display: block;
+  margin-top: 10px;
+  padding: 8px;
+  overflow-wrap: anywhere;
+  border: 0;
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.accountHint {
+  margin-top: 9px;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sidebarBalance {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: end;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 0;
+}
+
+.sidebarBalance span {
+  grid-column: 1 / -1;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.sidebarBalance strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.sidebarBalance button {
+  padding: 3px 0;
+  border: 0;
+  color: var(--shell-orange);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.sidebarBalance button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.walletAmount {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 12px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.walletAmountInput {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 0;
+  background: var(--shell-bg);
+}
+
+.walletAmountInput input {
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  outline: none;
+  color: var(--shell-text);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 12px;
+}
+
+.walletAmountInput:focus-within {
+  box-shadow: 0 0 0 1px var(--shell-orange);
+}
+
+.walletAmountInput strong {
+  padding: 0 8px;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.walletAmount small {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.walletErrorText {
+  color: var(--shell-deal, #c496ae);
+}
+
+.sidebarWalletActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sidebarWalletActions button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border: 0;
+  color: var(--shell-text);
+  background: var(--shell-bg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebarWalletActions button:first-child {
+  color: var(--shell-on-accent, #fff);
+  background: var(--shell-orange);
+}
+
+.sidebarWalletActions button:last-child {
+  grid-column: 1 / -1;
+}
+
+.sidebarWalletActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.sidebarWalletActions span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.sidebarWalletActions small {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.walletError,
+.mainnetSafety,
+.walletResult {
+  margin-top: 9px;
+  padding: 8px;
+  border: 0;
+  background: var(--shell-deal-quiet, #2e2129);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.mainnetSafety {
+  background: var(--shell-public-quiet, #18262a);
+}
+
+.walletResult {
+  background: color-mix(in srgb, var(--shell-orange) 16%, var(--shell-bg));
+}
+
+.walletResultError {
+  background: var(--shell-deal-quiet, #2e2129);
+}
+
+.walletResult p,
+.walletResult a,
+.walletResult code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+

@@ -32,7 +32,7 @@ import {
   type EscrowFundPayload,
   type EscrowState,
 } from "@/lib/escrow";
-import AddressBookField from "@/components/AddressBookField";
+import AddressBookField from "@/components/address-book/AddressBookField";
 import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";

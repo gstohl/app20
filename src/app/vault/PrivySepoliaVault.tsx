@@ -21,7 +21,7 @@ import {
   type BrowserStrk20Session,
 } from "@app20/privy/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
-import AddressBookField from "@/components/AddressBookField";
+import AddressBookField from "@/components/address-book/AddressBookField";
 import {
   loadAddressBook,
   resolveAddressBookInput,
