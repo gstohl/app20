@@ -70,7 +70,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
               to="/pay"
               aria-current={pathname === "/pay" ? "page" : undefined}
             >
-              Payment request
+              Pay
             </Link>
             <SessionControl />
           </div>

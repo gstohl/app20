@@ -2239,9 +2239,6 @@ export default function InboxPage() {
               ×
             </button>
           </header>
-          <p className={styles.sidebarTagline}>
-            ENCRYPTED CORRESPONDENCE / LOCAL KEYS
-          </p>
 
           <div className={styles.sidebarCreateActions}>
             <button
@@ -2310,13 +2307,7 @@ export default function InboxPage() {
 
           <section className={styles.sidebarScan} aria-labelledby="scan-title">
             <div className={styles.scanHeading}>
-              <div>
-                <span className={styles.sidebarLabel}>INBOX CHECK</span>
-                <strong id="scan-title">Check for mail</strong>
-              </div>
-              <span className={styles.sealGlyph} aria-hidden="true">
-                ✉
-              </span>
+              <strong id="scan-title">Check for mail</strong>
             </div>
             <div className={styles.scanActions}>
               <button
@@ -2378,17 +2369,11 @@ export default function InboxPage() {
             ) : null}
           </section>
 
-          <section
-            className={styles.forgetDevice}
-            aria-labelledby="forget-device-title"
-          >
-            <span className={styles.sidebarLabel}>SHARED-MACHINE SAFETY</span>
-            <strong id="forget-device-title">You choose device risk</strong>
+          <details className={styles.forgetDevice}>
+            <summary>Device safety</summary>
             <p>
-              Disconnecting is not logout. Drafts, Sent copies, and aliases stay
-              in this profile. The mailbox seed is clear by default, or
-              passphrase-wrapped if you chose that. Lock this tab to drop the
-              unlocked key from memory.
+              Disconnecting is not logout: drafts, Sent copies, and aliases
+              stay in this browser profile.
             </p>
             <button
               className={styles.secondaryButton}
@@ -2402,9 +2387,9 @@ export default function InboxPage() {
               type="button"
               onClick={forgetThisDevice}
             >
-              Forget this device / clear local mailbox
+              Forget this device
             </button>
-          </section>
+          </details>
 
           <footer className={styles.sidebarFooter}>
             <a
@@ -2558,74 +2543,15 @@ export default function InboxPage() {
                 aria-labelledby="mail-welcome-title"
               >
                 <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>
-                    APP20 MAIL / ENCRYPTED CORRESPONDENCE
-                  </p>
+                  <p className={styles.eyebrow}>APP20 MAIL</p>
                   <h1 id="mail-welcome-title">
-                    A private desk for messages and value.
+                    Encrypted messages. Private value.
                   </h1>
                   <p className={styles.welcomeCopy}>
-                    Compose encrypted letters, attach private STRK payment
-                    context, and keep readable mail on this device. The mail
-                    helper records ciphertext and delivery metadata on Starknet;
-                    your mailbox key decrypts locally.
+                    {keypair
+                      ? "Check for mail or compose a letter."
+                      : "Composing sets up your mailbox key when needed."}
                   </p>
-                  <div className={styles.privacySummary}>
-                    <div>
-                      <strong>LOCAL OR IN-POOL</strong>
-                      <span>
-                        Plaintext and mailbox keys stay on this device. In-pool
-                        amounts and direct addresses stay out of MessagePosted.
-                      </span>
-                    </div>
-                    <div>
-                      <strong>PUBLIC ON STARKNET</strong>
-                      <span>
-                        Pool and helper activity, timing, ciphertext size,
-                        recipient count, and every shield or unshield.
-                      </span>
-                    </div>
-                  </div>
-                  <p className={styles.honestyNote}>
-                    APP20 Mail reduces exposed correspondence data; it does not
-                    hide that the pool or mail helper was used. Timing can still
-                    correlate activity.
-                  </p>
-                  <ol className={styles.readinessList}>
-                    <li>
-                      <strong>1. Wallet session</strong>
-                      <span>
-                        {address
-                          ? `Connected on ${networkName}.`
-                          : "Connect a privacy-enabled wallet on Mainnet or Sepolia."}
-                      </span>
-                    </li>
-                    <li>
-                      <strong>2. Mailbox access</strong>
-                      <span>
-                        {keypair
-                          ? "Your device mailbox key is unlocked."
-                          : helperAddress
-                            ? "Register or restore your mailbox key. Registration is one public transaction."
-                            : "Mailbox registration waits on the mail helper. Vault actions remain available."}
-                      </span>
-                    </li>
-                    <li>
-                      <strong>3. Value stays in Vault</strong>
-                      <span>
-                        Shield, private transfer, and unshield live on the Vault
-                        desk. Mail can attach payment context; it does not
-                        replace the wallet.
-                      </span>
-                    </li>
-                    <li>
-                      <strong>4. Correspondence</strong>
-                      <span>
-                        Sync incoming ciphertext or compose a message. Readable
-                        Sent copies remain on this device.
-                      </span>
-                    </li>
-                  </ol>
                   <button
                     className={styles.welcomeCompose}
                     type="button"
@@ -2634,13 +2560,6 @@ export default function InboxPage() {
                     Compose encrypted mail
                   </button>
                 </div>
-                {keypair ? null : (
-                  <Onboard
-                    key={`${providerIndex}:${address}`}
-                    helperAddress={helperAddress}
-                    onKeyReady={handleKeyReady}
-                  />
-                )}
               </section>
             )}
           </div>

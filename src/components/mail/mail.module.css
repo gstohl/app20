@@ -1665,20 +1665,32 @@
 }
 
 .forgetDevice {
-  padding: 10px 12px;
+  padding: 0;
   border: 0;
-  background: var(--shell-deal-quiet, #2e2129);
-  color: var(--shell-text);
+  background: transparent;
+  color: var(--shell-muted);
   font-size: 11px;
   line-height: 1.5;
 }
 
-.forgetDevice strong {
-  display: block;
-  margin-top: 4px;
-  font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 13px;
+.forgetDevice summary {
+  padding: 8px 12px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.forgetDevice[open] {
+  background: var(--shell-panel);
+}
+
+.forgetDevice > p,
+.forgetDevice > button {
+  margin: 0 12px 8px;
 }
 
 .forgetDevice p {
@@ -1687,6 +1699,8 @@
 
 .forgetDevice .secondaryButton,
 .forgetDevice .warningButton {
+  display: block;
+  width: calc(100% - 24px);
   border: 0;
   box-shadow: none;
   font-size: 11px;
