@@ -12,6 +12,7 @@ import ReadyRailGate from "@/app/components/ReadyRailGate";
 import AppProviders from "@/app/providers";
 import InboxPage from "@/app/inbox/page";
 import PayPage from "@/app/pay/page";
+import ContactsPage from "@/app/contacts/page";
 import VaultPage from "@/app/vault/page";
 import WorkflowsPage from "@/app/workflows/page";
 import { CANONICAL_ROUTES } from "@/app/routes";
@@ -89,6 +90,12 @@ const intentsRoute = createRoute({
   },
 });
 
+const contactsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/contacts",
+  component: ContactsPage,
+});
+
 const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
@@ -109,6 +116,7 @@ const router = createRouter({
     legacyInboxRoute,
     mailboxRoute,
     intentsRoute,
+    contactsRoute,
     workflowsRoute,
     payRoute,
   ]),

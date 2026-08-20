@@ -4,6 +4,7 @@ export const CANONICAL_ROUTES = {
   mail: "/mail/inbox",
   intents: "/intents",
   workflows: "/workflows",
+  contacts: "/contacts",
   pay: "/pay",
 } as const;
 

@@ -15,6 +15,7 @@ describe("APP20 canonical routes", () => {
     expect(legacyRouteTarget(CANONICAL_ROUTES.vault)).toBeNull();
     expect(legacyRouteTarget(CANONICAL_ROUTES.mail)).toBeNull();
     expect(legacyRouteTarget(CANONICAL_ROUTES.workflows)).toBeNull();
+    expect(legacyRouteTarget(CANONICAL_ROUTES.contacts)).toBeNull();
     expect(legacyRouteTarget(CANONICAL_ROUTES.pay)).toBeNull();
   });
 });

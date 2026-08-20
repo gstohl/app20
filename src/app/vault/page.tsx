@@ -7,11 +7,8 @@ import { useVaultMode } from "@/app/vault/vaultMode";
 import AddressBookField from "@/components/address-book/AddressBookField";
 import PrivacyWalletMenu from "@/app/vault/PrivacyWalletMenu";
 import {
-  ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
-  removeAddressBookEntry,
   resolveAddressBookInput,
-  saveAddressBookEntry,
   type AddressBookEntry,
 } from "@/lib/address-book";
 import {
@@ -29,7 +26,7 @@ import {
 import * as constants from "@/utils/constants";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import IntentsPage from "@/app/intents/page";
 import styles from "./vault.module.css";
 
@@ -51,177 +48,6 @@ function explorerTx(providerIndex: number, hash: string): string | null {
   return null;
 }
 
-function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
-  const [entries, setEntries] = useState<AddressBookEntry[]>([]);
-  const [labelDraft, setLabelDraft] = useState("");
-  const [addressDraft, setAddressDraft] = useState("");
-  const [status, setStatus] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const scope = selfAddress.trim();
-
-  useEffect(() => {
-    let cancelled = false;
-    function reload() {
-      if (!scope) {
-        setEntries([]);
-        setError(null);
-        return;
-      }
-      loadAddressBook(window.localStorage, scope)
-        .then((loaded) => {
-          if (!cancelled) {
-            setEntries(loaded);
-            setError(null);
-          }
-        })
-        .catch((cause: unknown) => {
-          if (!cancelled) {
-            setEntries([]);
-            setError(
-              cause instanceof Error
-                ? cause.message
-                : "The address book could not be opened.",
-            );
-          }
-        });
-    }
-    reload();
-    window.addEventListener(ADDRESS_BOOK_CHANGED_EVENT, reload);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(ADDRESS_BOOK_CHANGED_EVENT, reload);
-    };
-  }, [scope]);
-
-  async function addEntry() {
-    if (!scope) return;
-    setBusy(true);
-    setStatus(null);
-    try {
-      const next = await saveAddressBookEntry(window.localStorage, scope, {
-        label: labelDraft,
-        address: addressDraft,
-      });
-      setEntries(next);
-      setLabelDraft("");
-      setAddressDraft("");
-      setError(null);
-      setStatus("Saved. The book is AES-GCM encrypted in this browser only.");
-      window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
-    } catch (cause: unknown) {
-      setError(
-        cause instanceof Error ? cause.message : "Saving the entry failed.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(label: string) {
-    if (!scope) return;
-    setBusy(true);
-    try {
-      const next = await removeAddressBookEntry(
-        window.localStorage,
-        scope,
-        label,
-      );
-      setEntries(next);
-      setStatus(null);
-      window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
-    } catch (cause: unknown) {
-      setError(
-        cause instanceof Error ? cause.message : "Removing the entry failed.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section
-      className={`${styles.panel} ${styles.bookPanel}`}
-      aria-labelledby="vault-book-title"
-    >
-      <header className={styles.panelHeading}>
-        <span>ADDRESS BOOK</span>
-        <strong id="vault-book-title">
-          Encrypted on this device · usable in every address field
-        </strong>
-      </header>
-      <div className={styles.bookBody}>
-        <div className={styles.bookAdd}>
-          <input
-            aria-label="New address book label"
-            value={labelDraft}
-            onChange={(event) => setLabelDraft(event.target.value)}
-            placeholder="Label"
-            maxLength={40}
-            disabled={!scope || busy}
-          />
-          <input
-            aria-label="New address book address"
-            value={addressDraft}
-            onChange={(event) => setAddressDraft(event.target.value)}
-            placeholder="0x…"
-            spellCheck={false}
-            disabled={!scope || busy}
-          />
-          <button
-            type="button"
-            onClick={() => void addEntry()}
-            disabled={
-              !scope || busy || !labelDraft.trim() || !addressDraft.trim()
-            }
-          >
-            Add
-          </button>
-        </div>
-        {error ? (
-          <p className={styles.bookError} role="alert">
-            {error}
-          </p>
-        ) : null}
-        {status && !error ? (
-          <p className={styles.bookStatus}>{status}</p>
-        ) : null}
-        {scope ? (
-          entries.length ? (
-            <ul className={styles.bookList}>
-              {entries.map((entry) => (
-                <li key={entry.label}>
-                  <b>{entry.label}</b>
-                  <code title={entry.address}>
-                    {shortAddress(entry.address)}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={() => void remove(entry.label)}
-                    disabled={busy}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.bookEmpty}>
-              No saved addresses yet. Entries are stored under
-              app20/address-book/v1 in this browser profile, AES-GCM encrypted
-              with a device-local key, and never uploaded.
-            </p>
-          )
-        ) : (
-          <p className={styles.bookEmpty}>
-            Connect a wallet to open this account's encrypted book.
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export default function VaultPage() {
   const connected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
@@ -234,6 +60,7 @@ export default function VaultPage() {
   );
   const mode = useVaultMode((state) => state.mode);
   const setMode = useVaultMode((state) => state.setMode);
+  const [rail, setRail] = useState<"private" | "public">("private");
   const [sendAmount, setSendAmount] = useState("0.1");
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
@@ -376,21 +203,14 @@ export default function VaultPage() {
       <header className={styles.masthead}>
         <div className={styles.mastheadCopy}>
           <p className={styles.eyebrow}>APP20 / VALUE DESK</p>
-          <h1>
-            {onIntents
-              ? "Set the bounds. Let execution compete."
-              : "Public entry. Private balance. Explicit exit."}
-          </h1>
-          <span>
-            {onIntents
-              ? "Cross-chain Intents is a second rail on this desk, not a second wallet. Quotes stay dry. No deposit address, no submit."
-              : "Tokens, public sends, shielded movements, and the encrypted address book in one desk. Mainnet is Ready only. Privy is Sepolia recovery."}
-          </span>
           <nav className={styles.deskTabs} aria-label="Value desk rails">
             <Link
               to="/vault"
-              aria-current={onIntents ? undefined : "page"}
-              className={onIntents ? undefined : styles.isActive}
+              aria-current={!onIntents && mode !== "privy" ? "page" : undefined}
+              className={
+                !onIntents && mode !== "privy" ? styles.isActive : undefined
+              }
+              onClick={() => setMode("ready")}
             >
               In-pool
             </Link>
@@ -402,40 +222,21 @@ export default function VaultPage() {
             >
               Cross-chain
             </Link>
+            {privyBrowserConfigured ? (
+              <Link
+                to="/vault"
+                aria-current={
+                  mode === "privy" && !onIntents ? "page" : undefined
+                }
+                className={
+                  mode === "privy" && !onIntents ? styles.isActive : undefined
+                }
+                onClick={() => setMode("privy")}
+              >
+                Privy recovery
+              </Link>
+            ) : null}
           </nav>
-        </div>
-        <div
-          className={styles.railSwitch}
-          aria-label="Vault authorization rail"
-        >
-          <button
-            type="button"
-            aria-pressed={mode === "ready"}
-            className={mode === "ready" ? styles.isActive : ""}
-            onClick={() => setMode("ready")}
-          >
-            MAINNET / READY
-          </button>
-          <button
-            type="button"
-            aria-pressed={mode === "privy"}
-            className={mode === "privy" ? styles.isActive : ""}
-            onClick={() => setMode("privy")}
-            disabled={!privyBrowserConfigured}
-            title={
-              privyBrowserConfigured
-                ? "Open the Privy Sepolia recovery vault"
-                : "Configure the public Privy App ID and Client ID to enable Sepolia"
-            }
-          >
-            SEPOLIA / PRIVY
-          </button>
-          {privyBrowserConfigured ? null : (
-            <p className={styles.railSwitchNote}>
-              Sepolia / Privy waits for public application IDs and reviewed
-              OHTTP key pins.
-            </p>
-          )}
         </div>
       </header>
 
@@ -469,12 +270,6 @@ export default function VaultPage() {
                     ? "Ready execution rail active"
                     : "Ready wallet required"}
                 </strong>
-                <p>
-                  {chain ||
-                    "Select Starknet Mainnet from the shared header session."}
-                  {" · "}Mainnet rejects Privy and every unreviewed Wallet
-                  Standard feature ID before execution.
-                </p>
               </div>
             </div>
             <dl className={styles.sessionFacts}>
@@ -503,10 +298,31 @@ export default function VaultPage() {
             </dl>
           </section>
 
+          <div className={styles.railPick} role="tablist" aria-label="Send rail">
+            <button
+              type="button"
+              aria-pressed={rail === "private"}
+              className={rail === "private" ? styles.isActive : undefined}
+              onClick={() => setRail("private")}
+            >
+              PRIVATE · RECOMMENDED
+            </button>
+            <button
+              type="button"
+              aria-pressed={rail === "public"}
+              className={rail === "public" ? styles.isActive : undefined}
+              onClick={() => setRail("public")}
+            >
+              PUBLIC · VISIBLE ON-CHAIN
+            </button>
+            <Link to="/contacts">Contacts →</Link>
+          </div>
+
           <div className={styles.desk}>
             <section
               className={`${styles.panel} ${styles.publicPanel}`}
               aria-labelledby="vault-public-title"
+              hidden={rail !== "public"}
             >
               <header className={styles.panelHeading}>
                 <span>PUBLIC RAIL</span>
@@ -624,6 +440,7 @@ export default function VaultPage() {
             <section
               className={`${styles.panel} ${styles.shieldedPanel}`}
               aria-labelledby="vault-shielded-title"
+              hidden={rail !== "private"}
             >
               <header className={styles.panelHeading}>
                 <span>SHIELDED RAIL</span>
@@ -643,7 +460,6 @@ export default function VaultPage() {
             </section>
           </div>
 
-          <AddressBookPanel selfAddress={address ?? ""} />
 
           <section
             className={styles.railMap}

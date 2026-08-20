@@ -95,59 +95,11 @@
   background: var(--shell-orange);
 }
 
-.railSwitch {
-  display: grid;
-  min-width: 0;
-  grid-template-rows: auto auto 1fr;
-  border-left: 1px solid var(--shell-line);
-  background: var(--shell-panel);
-}
 
-.railSwitch button {
-  min-height: 36px;
-  border: 0;
-  border-bottom: 1px solid var(--shell-line);
-  padding: 0 12px;
-  color: var(--shell-muted);
-  background: transparent;
-  cursor: pointer;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-align: left;
-  text-transform: uppercase;
-}
 
-.railSwitch button.isActive,
-.railSwitch button:hover:not(:disabled) {
-  color: var(--shell-text);
-  background: var(--shell-inset);
-  box-shadow: inset 3px 0 var(--shell-orange);
-}
 
-.railSwitch button:focus-visible,
-.metric button:focus-visible,
-.sendButton:focus-visible,
-.bookAdd button:focus-visible,
-.bookList button:focus-visible {
-  outline: 2px solid var(--shell-orange);
-  outline-offset: -2px;
-}
 
-.railSwitch button:disabled {
-  cursor: not-allowed;
-  opacity: 0.38;
-}
 
-.railSwitchNote {
-  align-self: end;
-  padding: 8px 12px;
-  color: var(--shell-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
-  line-height: 1.5;
-}
 
 .readyDesk {
   display: grid;
@@ -243,10 +195,50 @@
   font-size: 9px;
 }
 
+.railPick {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.railPick button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+}
+
+.railPick button.isActive {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.railPick a {
+  margin-left: auto;
+  padding: 0 16px;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-decoration: none;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
 .desk {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(330px, 0.8fr);
-  gap: 1px;
+  display: block;
   background: var(--shell-line);
 }
 
@@ -712,7 +704,49 @@
     border-left: 0;
   }
 
-  .desk {
+  .railPick {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.railPick button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+}
+
+.railPick button.isActive {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.railPick a {
+  margin-left: auto;
+  padding: 0 16px;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-decoration: none;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.desk {
     grid-template-columns: 1fr;
   }
 }

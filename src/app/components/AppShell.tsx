@@ -63,6 +63,12 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
             >
               Mailbox
             </Link>
+            <Link
+              to="/contacts"
+              aria-current={pathname === "/contacts" ? "page" : undefined}
+            >
+              Contacts
+            </Link>
           </nav>
           <div className="app-utilities">
             <Link
