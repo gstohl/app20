@@ -105,6 +105,7 @@ It is not a Mainnet send.
 | `@app20/near-intents` | Dry-only NEAR 1Click connector |
 | `@app20/policy-client` | Attestation and policy-receipt verification |
 | `@app20/privacy-adapters` | Fail-closed Starknet wallet and network policy |
+| `@app20/private-intents` | Intent, solver quote, fill-or-refund, restock netting |
 | `@app20/privy` | Browser-owned STRK20 and Privy integration |
 | `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
 
