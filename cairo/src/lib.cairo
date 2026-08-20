@@ -139,6 +139,7 @@ pub mod QuietlineMail {
         }
     }
 }
+pub mod claim_ticket;
 pub mod escrow;
 
 pub mod mock_erc20;

@@ -18,7 +18,10 @@ const QUOTE_DOMAIN = "app20/private-intent-quote/v1";
 const TOKEN_PATTERN = /^0x[0-9a-fA-F]{1,64}$/;
 const MIN_INTENT_ID_LENGTH = 32;
 
-export type StarknetPool = "starknet:SN_MAIN" | "starknet:SN_SEPOLIA";
+export type StarknetPool =
+  | "starknet:SN_MAIN"
+  | "starknet:SN_SEPOLIA"
+  | "starknet:APP20_LOCALNET";
 
 export interface PrivateSwapIntentV1 {
   readonly version: 1;
@@ -44,7 +47,9 @@ export class PrivateIntentError extends Error {
 
 function requireToken(value: string, label: string): string {
   if (!TOKEN_PATTERN.test(value) || BigInt(value) === 0n) {
-    throw new PrivateIntentError(`${label} must be a non-zero Starknet token address.`);
+    throw new PrivateIntentError(
+      `${label} must be a non-zero Starknet token address.`,
+    );
   }
   return value.toLowerCase();
 }
@@ -58,7 +63,9 @@ function requireAmount(value: bigint, label: string): bigint {
 
 function requireUnixSeconds(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new PrivateIntentError(`${label} must be a positive unix-seconds timestamp.`);
+    throw new PrivateIntentError(
+      `${label} must be a positive unix-seconds timestamp.`,
+    );
   }
   return value;
 }
@@ -76,8 +83,14 @@ export function assertPrivateSwapIntent(intent: PrivateSwapIntentV1): void {
       "intentId must encode at least 128 bits of unpredictable input.",
     );
   }
-  if (intent.pool !== "starknet:SN_MAIN" && intent.pool !== "starknet:SN_SEPOLIA") {
-    throw new PrivateIntentError("pool must name a supported STRK20 deployment.");
+  if (
+    intent.pool !== "starknet:SN_MAIN" &&
+    intent.pool !== "starknet:SN_SEPOLIA" &&
+    intent.pool !== "starknet:APP20_LOCALNET"
+  ) {
+    throw new PrivateIntentError(
+      "pool must name a supported STRK20 deployment.",
+    );
   }
   const sellToken = requireToken(intent.sellToken, "sellToken");
   const buyToken = requireToken(intent.buyToken, "buyToken");
@@ -177,7 +190,10 @@ export async function quotePrivateSwapIntent(
   ) {
     throw new PrivateIntentError("spreadBps must be an integer in [0, 10000).");
   }
-  if (!Number.isSafeInteger(options.quoteTtlSeconds) || options.quoteTtlSeconds <= 0) {
+  if (
+    !Number.isSafeInteger(options.quoteTtlSeconds) ||
+    options.quoteTtlSeconds <= 0
+  ) {
     throw new PrivateIntentError("quoteTtlSeconds must be a positive integer.");
   }
   const now = options.now ?? Math.floor(Date.now() / 1_000);
@@ -192,7 +208,10 @@ export async function quotePrivateSwapIntent(
     buyToken: intent.buyToken,
   });
   if (priced.buyAmount <= 0n) {
-    return { kind: "declined", reason: "The pricing source returned no output." };
+    return {
+      kind: "declined",
+      reason: "The pricing source returned no output.",
+    };
   }
 
   const afterSpread =
@@ -265,7 +284,9 @@ export function fillLockedIntent(
   now: number,
 ): IntentState {
   if (state.kind !== "locked") {
-    throw new PrivateIntentError(`Cannot fill an intent in state ${state.kind}.`);
+    throw new PrivateIntentError(
+      `Cannot fill an intent in state ${state.kind}.`,
+    );
   }
   if (now >= intent.expiresAt) {
     throw new PrivateIntentError(

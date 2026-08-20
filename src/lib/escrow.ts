@@ -42,6 +42,9 @@ export type EscrowFundPayload = {
   legA: EscrowLeg;
   legB: EscrowLeg;
   deadline: number;
+  /** V2 claim-ticket contract. Mail seeds cannot spend this private note. */
+  ticket?: string;
+  /** Historical V1 display alias; equals `ticket` for V2 payloads. */
   claimPubkey: string;
   note?: string;
 };
@@ -81,6 +84,8 @@ export type EscrowContractDeal = {
   legBTerms: string;
   legBAmount: string;
   deadline: number;
+  ticket: string;
+  /** Compatibility alias for historical V1 display paths. */
   claimPubkey: string;
   status: EscrowContractStatus;
 };
@@ -229,6 +234,7 @@ export function parseEscrowFundPayload(
   const legA = parseLeg(value.legA);
   const legB = parseLeg(value.legB);
   const deadline = parseDeadline(value.deadline);
+  const ticket = parseAddress(value.ticket);
   const claimPubkey = parseFelt(value.claimPubkey, false);
   const note = parseNote(value.note);
   if (
@@ -238,7 +244,8 @@ export function parseEscrowFundPayload(
     !legA ||
     !legB ||
     !deadline ||
-    !claimPubkey ||
+    (!ticket && !claimPubkey) ||
+    Boolean(ticket && claimPubkey && !feltEquals(ticket, claimPubkey)) ||
     note === null ||
     feltEquals(legA.token.address, legB.token.address)
   ) {
@@ -251,7 +258,9 @@ export function parseEscrowFundPayload(
     legA,
     legB,
     deadline,
-    claimPubkey,
+    ...(ticket
+      ? { ticket, claimPubkey: ticket }
+      : { claimPubkey: claimPubkey! }),
     ...(note === undefined ? {} : { note }),
   };
 }
@@ -448,6 +457,7 @@ export function parseEscrowContractDeal(
     legBTerms: BigInt(result[3]).toString(),
     legBAmount: BigInt(result[4]).toString(),
     deadline: Number(deadlineValue),
+    ticket: canonicalizeStarknetAddress(result[6]),
     claimPubkey: num.toHex(result[6]),
     status,
   };
@@ -463,7 +473,9 @@ export function contractDealMatchesFund(
     feltEquals(deal.legBToken, fund.legB.token.address) &&
     deal.legBTerms === fund.legB.amount &&
     deal.deadline === fund.deadline &&
-    feltEquals(deal.claimPubkey, fund.claimPubkey)
+    (fund.ticket
+      ? feltEquals(deal.ticket, fund.ticket)
+      : feltEquals(deal.claimPubkey, fund.claimPubkey))
   );
 }
 
@@ -533,6 +545,7 @@ export function recordEscrowFund(
       prior.legB.token.decimals !== fund.legB.token.decimals ||
       prior.legB.amount !== fund.legB.amount ||
       prior.deadline !== fund.deadline ||
+      prior.ticket !== fund.ticket ||
       prior.claimPubkey !== fund.claimPubkey ||
       prior.note !== fund.note
     ) {

@@ -3,8 +3,10 @@ import {
   ADDRESS_BOOK_STORAGE_PREFIX,
   addressBookStorageKey,
   loadAddressBook,
+  mergeAddressBookEntries,
   normalizeStarknetAddress,
   removeAddressBookEntry,
+  replaceAddressBookEntries,
   resolveAddressBookInput,
   saveAddressBookEntry,
 } from "./address-book";
@@ -128,6 +130,35 @@ describe("encrypted address book", () => {
     await expect(loadAddressBook(keyless, SELF)).rejects.toThrow(
       /could not be opened/,
     );
+  });
+
+  it("replaces and merge-restores validated snapshots atomically", async () => {
+    const storage = makeStorage();
+    await saveAddressBookEntry(storage, SELF, { label: "Desk", address: BOB });
+    const current = await loadAddressBook(storage, SELF);
+
+    const replaced = await replaceAddressBookEntries(storage, SELF, [
+      { label: "Treasury", address: ALICE, updatedAt: Date.now() - 10 },
+    ]);
+    expect(replaced.map((entry) => entry.label)).toEqual(["Treasury"]);
+
+    const merged = await mergeAddressBookEntries(storage, SELF, [
+      { label: "Treasury", address: BOB, updatedAt: replaced[0].updatedAt - 1 },
+      { label: "Desk", address: BOB, updatedAt: current[0].updatedAt + 1 },
+    ]);
+    expect(merged.map((entry) => entry.label)).toEqual(["Desk", "Treasury"]);
+    expect(merged.find((entry) => entry.label === "Treasury")?.address).toBe(
+      normalizeStarknetAddress(ALICE),
+    );
+
+    const beforeFailure = await loadAddressBook(storage, SELF);
+    await expect(
+      replaceAddressBookEntries(storage, SELF, [
+        { label: "Duplicate", address: ALICE, updatedAt: Date.now() },
+        { label: "duplicate", address: BOB, updatedAt: Date.now() },
+      ]),
+    ).rejects.toThrow(/left untouched/i);
+    expect(await loadAddressBook(storage, SELF)).toEqual(beforeFailure);
   });
 
   it("resolves labels, raw addresses, and rejects unknown input", async () => {

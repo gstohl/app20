@@ -1,10 +1,7 @@
 import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
-import {
-  OPEN_NOTE_ID_PLACEHOLDER,
-  POOL_ADDRESS_PLACEHOLDER,
-} from "./strk20";
-import { STARK_FIELD_PRIME, type EscrowSignature } from "./escrow";
+import { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER } from "./strk20";
+import { STARK_FIELD_PRIME } from "./escrow";
 
 export { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER };
 
@@ -17,18 +14,18 @@ export const ESCROW_OPERATION_VARIANT = {
 
 const U128_MAX = 2n ** 128n - 1n;
 const U64_MAX = 2n ** 64n - 1n;
-
 type FeltInput = string | bigint | number;
 
 export type EscrowFundBatchInput = {
   escrowAddress: string;
+  recoveryAddress: string;
+  ticketAddress: string;
   dealId: string;
   token: string;
   amount: string | bigint;
   counterToken: string;
   counterAmount: string | bigint;
   deadline: number | bigint | string;
-  claimPubkey: string;
 };
 
 export type EscrowFillBatchInput = {
@@ -43,14 +40,9 @@ export type EscrowFillBatchInput = {
 export type EscrowPayoutBatchInput = {
   escrowAddress: string;
   recoveryAddress: string;
+  ticketAddress: string;
   dealId: string;
   payoutToken: string;
-  signature: EscrowSignature;
-  /**
-   * Literal note id already bound by signature, or `${openNoteIds[0]}` for a
-   * compiler that can sign only after assembling the OPEN note (localnet).
-   */
-  noteId: string;
 };
 
 function assertConfiguredEscrow(address: string): void {
@@ -87,7 +79,7 @@ function positiveU128(value: string | bigint, label: string): string {
   return boundedHex(value, U128_MAX, label);
 }
 
-function felt(value: FeltInput, label: string, allowZero = false): string {
+function felt(value: FeltInput, label: string): string {
   if (typeof value === "number" && !Number.isSafeInteger(value)) {
     throw new Error(`${label} must be a safe integer or integer string.`);
   }
@@ -97,17 +89,13 @@ function felt(value: FeltInput, label: string, allowZero = false): string {
   } catch {
     throw new Error(`${label} must be a felt.`);
   }
-  if (
-    parsed < 0n ||
-    parsed >= STARK_FIELD_PRIME ||
-    (!allowZero && parsed === 0n)
-  ) {
-    throw new Error(`${label} must be ${allowZero ? "a" : "a non-zero"} felt.`);
+  if (parsed <= 0n || parsed >= STARK_FIELD_PRIME) {
+    throw new Error(`${label} must be a non-zero felt.`);
   }
   return num.toHex(parsed);
 }
 
-function withdrawToEscrow(
+function withdraw(
   token: string,
   amount: string,
   recipient: string,
@@ -130,43 +118,37 @@ function invoke(
   return { type: "invoke", contract: escrowAddress, calldata };
 }
 
-/**
- * Fund first withdraws leg A from the private pool into the escrow contract,
- * then flattens enum tag, FundParams, deal, pool placeholder, and unused note.
- */
+/** Fund locks leg A and mints the deal ticket into an OPEN private note. */
 export function buildEscrowFundActions({
   escrowAddress,
+  recoveryAddress,
+  ticketAddress,
   dealId,
   token,
   amount,
   counterToken,
   counterAmount,
   deadline,
-  claimPubkey,
 }: EscrowFundBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
-  const fundingAmount = positiveU128(amount, "Funding amount");
+  felt(ticketAddress, "Ticket address");
   return [
-    withdrawToEscrow(token, fundingAmount, escrowAddress),
+    withdraw(token, positiveU128(amount, "Funding amount"), escrowAddress),
+    openNote(ticketAddress, recoveryAddress),
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT.Fund,
       token,
       counterToken,
       positiveU128(counterAmount, "Counter amount"),
       boundedHex(deadline, U64_MAX, "Deadline"),
-      felt(claimPubkey, "Claim public key"),
       felt(dealId, "Deal id"),
       POOL_ADDRESS_PLACEHOLDER,
-      "0x0",
+      OPEN_NOTE_ID_PLACEHOLDER,
     ]),
   ];
 }
 
-/**
- * Fill withdraws leg B into escrow, creates the taker's OPEN leg-A destination,
- * then invokes the flattened Fill variant. The contract will not release A unless it
- * observes at least the agreed leg-B amount.
- */
+/** Fill deposits leg B and creates the taker's OPEN leg-A destination. */
 export function buildEscrowFillActions({
   escrowAddress,
   recoveryAddress,
@@ -177,11 +159,7 @@ export function buildEscrowFillActions({
 }: EscrowFillBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
   return [
-    withdrawToEscrow(
-      token,
-      positiveU128(amount, "Fill amount"),
-      escrowAddress,
-    ),
+    withdraw(token, positiveU128(amount, "Fill amount"), escrowAddress),
     openNote(payoutToken, recoveryAddress),
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT.Fill,
@@ -198,43 +176,31 @@ function buildPayoutActions(
   {
     escrowAddress,
     recoveryAddress,
+    ticketAddress,
     dealId,
     payoutToken,
-    signature,
-    noteId,
   }: EscrowPayoutBatchInput,
 ): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
-  const calldataNoteId =
-    noteId === OPEN_NOTE_ID_PLACEHOLDER
-      ? OPEN_NOTE_ID_PLACEHOLDER
-      : felt(noteId, "Payout note id");
-  const payoutInvoke = invoke(escrowAddress, [
-    ESCROW_OPERATION_VARIANT[operation],
-    felt(signature.sigR, "Signature r"),
-    felt(signature.sigS, "Signature s"),
-    felt(dealId, "Deal id"),
-    POOL_ADDRESS_PLACEHOLDER,
-    calldataNoteId,
-  ]);
-
-  // An explicit id is for a compatible compiler that has already assembled the
-  // destination note. The current Wallet API route can only express the
-  // placeholder form, which requires dynamic signing and is intentionally not
-  // submitted by production UI.
-  return calldataNoteId === OPEN_NOTE_ID_PLACEHOLDER
-    ? [openNote(payoutToken, recoveryAddress), payoutInvoke]
-    : [payoutInvoke];
+  felt(ticketAddress, "Ticket address");
+  return [
+    withdraw(ticketAddress, "0x1", escrowAddress),
+    openNote(payoutToken, recoveryAddress),
+    invoke(escrowAddress, [
+      ESCROW_OPERATION_VARIANT[operation],
+      felt(dealId, "Deal id"),
+      POOL_ADDRESS_PLACEHOLDER,
+      OPEN_NOTE_ID_PLACEHOLDER,
+    ]),
+  ];
 }
 
-/** Pure Claim builder; it never derives or invents a destination-bound signature. */
 export function buildEscrowClaimActions(
   input: EscrowPayoutBatchInput,
 ): WALLET_API.STRK20_ACTION[] {
   return buildPayoutActions("Claim", input);
 }
 
-/** Pure Timeout builder; it never derives or invents a destination-bound signature. */
 export function buildEscrowTimeoutActions(
   input: EscrowPayoutBatchInput,
 ): WALLET_API.STRK20_ACTION[] {

@@ -38,11 +38,7 @@ export function snapshotReadyExecution(): ReadyExecutionSnapshot {
   ) {
     throw new Error("Connect a Ready wallet first.");
   }
-  if (
-    providerIndex !== 0 &&
-    providerIndex !== 2 &&
-    providerIndex !== 3
-  ) {
+  if (providerIndex !== 0 && providerIndex !== 2 && providerIndex !== 3) {
     throw new Error("Unsupported network.");
   }
   if (!feltEquals(wallet.myWalletAccount.address, wallet.address)) {
@@ -65,7 +61,10 @@ export function assertReadyExecutionUnchanged(
   const current = snapshotReadyExecution();
   const drift = readyExecutionDrift(started, current);
   if (drift) throw new Error(drift);
-  if (current.wallet !== started.wallet || current.account !== started.account) {
+  if (
+    current.wallet !== started.wallet ||
+    current.account !== started.account
+  ) {
     throw new Error("The wallet session changed. The action was cancelled.");
   }
   assertWalletSubmissionPolicy(

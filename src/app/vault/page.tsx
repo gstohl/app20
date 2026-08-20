@@ -31,6 +31,9 @@ import IntentsPage from "@/app/intents/page";
 import styles from "./vault.module.css";
 
 const PrivySepoliaVault = lazy(() => import("./PrivySepoliaVault"));
+const LocalnetPrivateIntentDesk = constants.localnetWalletEnabled
+  ? lazy(() => import("./LocalnetPrivateIntentDesk"))
+  : null;
 
 function shortAddress(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
@@ -157,13 +160,11 @@ export default function VaultPage() {
       const low = amount & ((1n << 128n) - 1n);
       const high = amount >> 128n;
       const live = assertReadyExecutionUnchanged(started, "public-send");
-      const { transaction_hash: transactionHash } = await live.account.execute(
-        {
-          contractAddress: constants.addrSTRK,
-          entrypoint: "transfer",
-          calldata: [resolved.address, low.toString(), high.toString()],
-        },
-      );
+      const { transaction_hash: transactionHash } = await live.account.execute({
+        contractAddress: constants.addrSTRK,
+        entrypoint: "transfer",
+        calldata: [resolved.address, low.toString(), high.toString()],
+      });
       setSendState({
         kind: "pending",
         message: "Submitted. Waiting for confirmation…",
@@ -254,249 +255,261 @@ export default function VaultPage() {
         className={styles.readyDesk}
         hidden={onIntents || (mode === "privy" && privyBrowserConfigured)}
       >
-          <section
-            className={styles.session}
-            aria-labelledby="vault-session-title"
+        <section
+          className={styles.session}
+          aria-labelledby="vault-session-title"
+        >
+          <div className={styles.sessionMain}>
+            <span
+              className={`${styles.beacon} ${connected ? styles.beaconLive : ""}`}
+              aria-hidden="true"
+            />
+            <div className={styles.sessionIdentity}>
+              <small>READY / WALLET STANDARD</small>
+              <strong id="vault-session-title">
+                {connected
+                  ? "Ready execution rail active"
+                  : "Ready wallet required"}
+              </strong>
+            </div>
+          </div>
+          <dl className={styles.sessionFacts}>
+            <div>
+              <dt>Connection</dt>
+              <dd>{connected ? "Connected" : "Use header control"}</dd>
+            </div>
+            <div>
+              <dt>Network</dt>
+              <dd>{networkName ?? chain ?? "Not selected"}</dd>
+            </div>
+            <div>
+              <dt>Privacy API</dt>
+              <dd>{capable ? "Available" : "Not available"}</dd>
+            </div>
+            <div>
+              <dt>Pool</dt>
+              <dd>
+                {poolAddress ? (
+                  <code title={poolAddress}>{shortAddress(poolAddress)}</code>
+                ) : (
+                  "None on this network"
+                )}
+              </dd>
+            </div>
+          </dl>
+        </section>
+
+        <div className={styles.railPick} role="tablist" aria-label="Send rail">
+          <button
+            type="button"
+            aria-pressed={rail === "private"}
+            className={rail === "private" ? styles.isActive : undefined}
+            onClick={() => setRail("private")}
           >
-            <div className={styles.sessionMain}>
-              <span
-                className={`${styles.beacon} ${connected ? styles.beaconLive : ""}`}
-                aria-hidden="true"
-              />
-              <div className={styles.sessionIdentity}>
-                <small>READY / WALLET STANDARD</small>
-                <strong id="vault-session-title">
-                  {connected
-                    ? "Ready execution rail active"
-                    : "Ready wallet required"}
-                </strong>
+            PRIVATE · RECOMMENDED
+          </button>
+          <button
+            type="button"
+            aria-pressed={rail === "public"}
+            className={rail === "public" ? styles.isActive : undefined}
+            onClick={() => setRail("public")}
+          >
+            PUBLIC · VISIBLE ON-CHAIN
+          </button>
+          <Link to="/contacts">Contacts →</Link>
+        </div>
+
+        <div className={styles.desk}>
+          <section
+            className={`${styles.panel} ${styles.publicPanel}`}
+            aria-labelledby="vault-public-title"
+            hidden={rail !== "public"}
+          >
+            <header className={styles.panelHeading}>
+              <span>PUBLIC RAIL</span>
+              <strong id="vault-public-title">
+                Tokens · balances · public send
+              </strong>
+            </header>
+            <div className={styles.publicOverview}>
+              <div className={styles.metric}>
+                <span>PUBLIC STRK</span>
+                <div>
+                  <strong>{publicStrkLabel}</strong>
+                  <small>STRK</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void publicBalance.refetch()}
+                  disabled={!connected || publicBalance.isFetching}
+                >
+                  {publicBalance.isFetching ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+              <div
+                className={styles.tokenTable}
+                role="table"
+                aria-label="Public token balances"
+              >
+                <div className={styles.tokenHead} role="row">
+                  <span role="columnheader">TOKEN</span>
+                  <span role="columnheader">PUBLIC BALANCE</span>
+                  <span role="columnheader">SOURCE</span>
+                </div>
+                <div role="row">
+                  <span role="cell">
+                    STRK
+                    <code title={constants.addrSTRK}>
+                      {shortAddress(constants.addrSTRK)}
+                    </code>
+                  </span>
+                  <span role="cell">{connected ? publicStrkLabel : "—"}</span>
+                  <span role="cell">
+                    {publicBalance.isError
+                      ? "RPC read failed"
+                      : "Live balance_of"}
+                  </span>
+                </div>
+                <p className={styles.tokenNote}>
+                  Only tokens with live RPC reads get a row. Balances are never
+                  fabricated; other ERC-20s appear once this build reads them.
+                </p>
               </div>
             </div>
-            <dl className={styles.sessionFacts}>
-              <div>
-                <dt>Connection</dt>
-                <dd>{connected ? "Connected" : "Use header control"}</dd>
+            <div className={styles.sendForm} aria-label="Public STRK send">
+              <div className={styles.sendHead}>
+                <span>PUBLIC SEND</span>
+                <small>Visible on-chain · wallet shows the network fee</small>
               </div>
-              <div>
-                <dt>Network</dt>
-                <dd>{networkName ?? chain ?? "Not selected"}</dd>
-              </div>
-              <div>
-                <dt>Privacy API</dt>
-                <dd>{capable ? "Available" : "Not available"}</dd>
-              </div>
-              <div>
-                <dt>Pool</dt>
-                <dd>
-                  {poolAddress ? (
-                    <code title={poolAddress}>{shortAddress(poolAddress)}</code>
-                  ) : (
-                    "None on this network"
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <div className={styles.railPick} role="tablist" aria-label="Send rail">
-            <button
-              type="button"
-              aria-pressed={rail === "private"}
-              className={rail === "private" ? styles.isActive : undefined}
-              onClick={() => setRail("private")}
-            >
-              PRIVATE · RECOMMENDED
-            </button>
-            <button
-              type="button"
-              aria-pressed={rail === "public"}
-              className={rail === "public" ? styles.isActive : undefined}
-              onClick={() => setRail("public")}
-            >
-              PUBLIC · VISIBLE ON-CHAIN
-            </button>
-            <Link to="/contacts">Contacts →</Link>
-          </div>
-
-          <div className={styles.desk}>
-            <section
-              className={`${styles.panel} ${styles.publicPanel}`}
-              aria-labelledby="vault-public-title"
-              hidden={rail !== "public"}
-            >
-              <header className={styles.panelHeading}>
-                <span>PUBLIC RAIL</span>
-                <strong id="vault-public-title">
-                  Tokens · balances · public send
-                </strong>
-              </header>
-              <div className={styles.publicOverview}>
-                <div className={styles.metric}>
-                  <span>PUBLIC STRK</span>
-                  <div>
-                    <strong>{publicStrkLabel}</strong>
-                    <small>STRK</small>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void publicBalance.refetch()}
-                    disabled={!connected || publicBalance.isFetching}
-                  >
-                    {publicBalance.isFetching ? "Refreshing…" : "Refresh"}
-                  </button>
-                </div>
-                <div
-                  className={styles.tokenTable}
-                  role="table"
-                  aria-label="Public token balances"
-                >
-                  <div className={styles.tokenHead} role="row">
-                    <span role="columnheader">TOKEN</span>
-                    <span role="columnheader">PUBLIC BALANCE</span>
-                    <span role="columnheader">SOURCE</span>
-                  </div>
-                  <div role="row">
-                    <span role="cell">
-                      STRK
-                      <code title={constants.addrSTRK}>
-                        {shortAddress(constants.addrSTRK)}
-                      </code>
-                    </span>
-                    <span role="cell">{connected ? publicStrkLabel : "—"}</span>
-                    <span role="cell">
-                      {publicBalance.isError
-                        ? "RPC read failed"
-                        : "Live balance_of"}
-                    </span>
-                  </div>
-                  <p className={styles.tokenNote}>
-                    Only tokens with live RPC reads get a row. Balances are
-                    never fabricated; other ERC-20s appear once this build reads
-                    them.
-                  </p>
-                </div>
-              </div>
-              <div className={styles.sendForm} aria-label="Public STRK send">
-                <div className={styles.sendHead}>
-                  <span>PUBLIC SEND</span>
-                  <small>Visible on-chain · wallet shows the network fee</small>
-                </div>
-                <div className={styles.sendControls}>
-                  <label className={styles.sendAmount}>
-                    <span>AMOUNT / STRK</span>
-                    <input
-                      aria-label="Public send amount in STRK"
-                      value={sendAmount}
-                      onChange={(event) => setSendAmount(event.target.value)}
-                      inputMode="decimal"
-                      autoComplete="off"
-                      disabled={sending}
-                    />
-                  </label>
-                  <AddressBookField
-                    className={styles.sendRecipient}
-                    rowClassName={styles.sendBookRow}
-                    hintClassName={styles.sendHint}
-                    errorClassName={styles.sendError}
-                    label="RECIPIENT"
-                    inputAriaLabel="Public send recipient"
-                    selfAddress={address ?? ""}
-                    value={sendRecipient}
-                    onChange={setSendRecipient}
+              <div className={styles.sendControls}>
+                <label className={styles.sendAmount}>
+                  <span>AMOUNT / STRK</span>
+                  <input
+                    aria-label="Public send amount in STRK"
+                    value={sendAmount}
+                    onChange={(event) => setSendAmount(event.target.value)}
+                    inputMode="decimal"
+                    autoComplete="off"
                     disabled={sending}
                   />
-                  <button
-                    className={styles.sendButton}
-                    type="button"
-                    onClick={() => void runPublicSend()}
-                    disabled={
-                      !connected ||
-                      sending ||
-                      !sendRecipient.trim() ||
-                      !sendAmount.trim()
-                    }
-                  >
-                    {sending ? "Sending…" : "Send public STRK"}
-                  </button>
-                </div>
-                {sendState.kind === "idle" ? null : (
-                  <p
-                    className={`${styles.sendStatus} ${
-                      sendState.kind === "error" ? styles.sendStatusError : ""
-                    }`}
-                    role={sendState.kind === "error" ? "alert" : "status"}
-                  >
-                    {sendState.message}
-                    {sendTxLink ? (
-                      <a href={sendTxLink} target="_blank" rel="noreferrer">
-                        View transaction ↗
-                      </a>
-                    ) : null}
-                  </p>
-                )}
+                </label>
+                <AddressBookField
+                  className={styles.sendRecipient}
+                  rowClassName={styles.sendBookRow}
+                  hintClassName={styles.sendHint}
+                  errorClassName={styles.sendError}
+                  label="RECIPIENT"
+                  inputAriaLabel="Public send recipient"
+                  selfAddress={address ?? ""}
+                  value={sendRecipient}
+                  onChange={setSendRecipient}
+                  disabled={sending}
+                />
+                <button
+                  className={styles.sendButton}
+                  type="button"
+                  onClick={() => void runPublicSend()}
+                  disabled={
+                    !connected ||
+                    sending ||
+                    !sendRecipient.trim() ||
+                    !sendAmount.trim()
+                  }
+                >
+                  {sending ? "Sending…" : "Send public STRK"}
+                </button>
               </div>
-            </section>
+              {sendState.kind === "idle" ? null : (
+                <p
+                  className={`${styles.sendStatus} ${
+                    sendState.kind === "error" ? styles.sendStatusError : ""
+                  }`}
+                  role={sendState.kind === "error" ? "alert" : "status"}
+                >
+                  {sendState.message}
+                  {sendTxLink ? (
+                    <a href={sendTxLink} target="_blank" rel="noreferrer">
+                      View transaction ↗
+                    </a>
+                  ) : null}
+                </p>
+              )}
+            </div>
+          </section>
 
-            <section
-              className={`${styles.panel} ${styles.shieldedPanel}`}
-              aria-labelledby="vault-shielded-title"
-              hidden={rail !== "private"}
-            >
-              <header className={styles.panelHeading}>
-                <span>SHIELDED RAIL</span>
-                <strong id="vault-shielded-title">
-                  Shield · Private transfer · Unshield
-                </strong>
-              </header>
-              <div className={styles.controlsBody}>
+          <section
+            className={`${styles.panel} ${styles.shieldedPanel}`}
+            aria-labelledby="vault-shielded-title"
+            hidden={rail !== "private"}
+          >
+            <header className={styles.panelHeading}>
+              <span>SHIELDED RAIL</span>
+              <strong id="vault-shielded-title">
+                Shield · Private transfer · Unshield
+              </strong>
+            </header>
+            <div className={styles.controlsBody}>
+              {LocalnetPrivateIntentDesk &&
+              providerIndex === constants.LOCALNET_PROVIDER_INDEX ? (
+                <Suspense
+                  fallback={
+                    <p className={styles.privateIntentHint}>
+                      Loading local solver…
+                    </p>
+                  }
+                >
+                  <LocalnetPrivateIntentDesk />
+                </Suspense>
+              ) : null}
+              <details className={styles.fundingDetails} open>
+                <summary>Balances &amp; funding</summary>
                 <PrivacyWalletMenu
                   showIdentity={false}
                   active={
-                    !onIntents &&
-                    !(mode === "privy" && privyBrowserConfigured)
+                    !onIntents && !(mode === "privy" && privyBrowserConfigured)
                   }
                 />
-              </div>
-            </section>
-          </div>
-
-
-          <section
-            className={styles.railMap}
-            aria-label="How STRK moves through the vault"
-          >
-            <article className={styles.railStage}>
-              <header>
-                <h2>1 · Shield</h2>
-                <span className={styles.stageBadge}>PUBLIC</span>
-              </header>
-              <p>Public deposit into the pool. Entry stays visible.</p>
-            </article>
-            <article className={styles.railStage}>
-              <header>
-                <h2>2 · Private transfer</h2>
-                <span
-                  className={`${styles.stageBadge} ${styles.stageBadgePrivate}`}
-                >
-                  IN-POOL
-                </span>
-              </header>
-              <p>Sender, recipient, and amount stay hidden inside the pool.</p>
-            </article>
-            <article className={styles.railStage}>
-              <header>
-                <h2>3 · Unshield</h2>
-                <span className={styles.stageBadge}>PUBLIC</span>
-              </header>
-              <p>Public exit. Timing can be correlated with entry.</p>
-            </article>
+              </details>
+            </div>
           </section>
+        </div>
 
-          <p className={styles.disclosure}>
-            APP20 hides in-pool activity, not pool usage. Shield, unshield, and
-            public sends remain on-chain. Balances are live reads, never cached
-            fabrications. The address book never leaves this browser.
-          </p>
+        <section
+          className={styles.railMap}
+          aria-label="How STRK moves through the vault"
+        >
+          <article className={styles.railStage}>
+            <header>
+              <h2>1 · Shield</h2>
+              <span className={styles.stageBadge}>PUBLIC</span>
+            </header>
+            <p>Public deposit into the pool. Entry stays visible.</p>
+          </article>
+          <article className={styles.railStage}>
+            <header>
+              <h2>2 · Private transfer</h2>
+              <span
+                className={`${styles.stageBadge} ${styles.stageBadgePrivate}`}
+              >
+                IN-POOL
+              </span>
+            </header>
+            <p>Sender, recipient, and amount stay hidden inside the pool.</p>
+          </article>
+          <article className={styles.railStage}>
+            <header>
+              <h2>3 · Unshield</h2>
+              <span className={styles.stageBadge}>PUBLIC</span>
+            </header>
+            <p>Public exit. Timing can be correlated with entry.</p>
+          </article>
+        </section>
+
+        <p className={styles.disclosure}>
+          APP20 hides in-pool activity, not pool usage. Shield, unshield, and
+          public sends remain on-chain. Balances are live reads, never cached
+          fabrications. The address book never leaves this browser.
+        </p>
       </div>
     </main>
   );

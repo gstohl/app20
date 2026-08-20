@@ -1,6 +1,5 @@
 "use client";
 
-import type { WALLET_API } from "@starknet-io/types-js";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -21,10 +20,12 @@ import Thread, {
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
+  mergeAddressBookEntries,
 } from "@/lib/address-book";
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
 import { parseCompositePayload } from "@/lib/composite";
+import { consumeDeskHandoff } from "@/lib/desk-handoff";
 import {
   createBlankDraft,
   deleteDraft,
@@ -32,11 +33,14 @@ import {
   saveDraft,
   type CompositeDraft,
 } from "@/lib/drafts";
-import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
+import {
+  decodeEnvelope,
+  encodeEnvelope,
+  envelopeByteLength,
+} from "@/lib/envelope";
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
-  deriveEscrowClaimKey,
   emptyEscrowState,
   loadEscrowState,
   markEscrowOperationOutcome,
@@ -54,20 +58,22 @@ import {
   type EscrowState,
 } from "@/lib/escrow";
 import {
-  ESCROW_OPERATION_VARIANT,
-  OPEN_NOTE_ID_PLACEHOLDER,
-  POOL_ADDRESS_PLACEHOLDER,
+  buildEscrowClaimActions,
   buildEscrowFillActions,
+  buildEscrowTimeoutActions,
 } from "@/lib/escrow-actions";
 import type {
   DecryptedMail,
   EncryptedMailRecord,
   MailKeypair,
 } from "@/lib/mail";
-import { encryptMail, publicKeyFromFelts } from "@/lib/mail";
+import {
+  encryptMail,
+  projectEncryptedMailSize,
+  publicKeyFromFelts,
+} from "@/lib/mail";
 import {
   MAIL_SCAN_CHUNK_SIZE,
-  MAIL_SCAN_MAX_MESSAGES,
   MAIL_SCAN_MAX_PAGES,
   completeMailScan,
   loadMailScanCursor,
@@ -80,11 +86,13 @@ import {
   type MailEvent,
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
-import { isConfiguredMailHelper } from "@/lib/mail-actions";
+import {
+  createContactSnapshot,
+  verifyContactSnapshot,
+} from "@/lib/contact-backup";
 import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
-import { inspectMailVault } from "@/lib/mail-vault";
 import { paymentLinkChainIdsEqual } from "@/lib/payment-link";
 import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
 import {
@@ -105,7 +113,6 @@ import {
   markPaymentOutcome,
   markPaymentSubmitted,
   parseAcceptPayload,
-  parseDeclinePayload,
   parseOfferPayload,
   parsePaymentRequestPayload,
   parseReceiptPayload,
@@ -118,7 +125,6 @@ import {
   type AcceptPayload,
   type OfferPayload,
   type OtcState,
-  type PaymentRecord,
   type PaymentRequestPayload,
 } from "@/lib/otc";
 import {
@@ -132,11 +138,7 @@ import {
   submitMemoTransfer,
   submitOtcAccept,
 } from "@/lib/strk20";
-import {
-  loadSentMail,
-  saveSentMail,
-  type StoredSentMail,
-} from "@/lib/sent-mail";
+import { loadSentMail, saveSentMail } from "@/lib/sent-mail";
 import {
   loadMailAssignments,
   saveMailAssignment,
@@ -155,8 +157,6 @@ import {
   type ScanKind,
   type ScanWorkerResponse,
   type ActiveScanWorker,
-  type LocalnetDynamicEscrowInvoke,
-  secretKeyHex,
   helperForNetwork,
   escrowForNetwork,
   loadPersistedMailSeed,
@@ -295,7 +295,47 @@ export default function InboxPage() {
   const sidebarCloseRef = useRef<HTMLButtonElement | null>(null);
   const sidebarWasOpenRef = useRef(false);
   const activatedMessageIdRef = useRef<string | null>(null);
+  const contactHandoffRef = useRef("");
   scanIdentityRef.current = scanIdentity;
+
+  useEffect(() => {
+    if (!address || !chainId) return;
+    const url = new URL(window.location.href);
+    const queryRecipient = url.searchParams.get("recipient");
+    if (queryRecipient) {
+      url.searchParams.delete("recipient");
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+    }
+    const recipientInput =
+      consumeDeskHandoff(window.sessionStorage, "mail") ?? queryRecipient;
+    if (!recipientInput) return;
+    let recipient: string;
+    try {
+      recipient = validateAndParseAddress(recipientInput);
+    } catch {
+      setStorageNotice({
+        kind: "error",
+        message:
+          "The Counterparties link contained an invalid Starknet address.",
+      });
+      return;
+    }
+    const handoffKey = `${chainId}:${address}:${recipient}`;
+    if (contactHandoffRef.current === handoffKey) return;
+    contactHandoffRef.current = handoffKey;
+    const draft = { ...createBlankDraft(), recipient };
+    setDrafts(saveDraft(window.localStorage, chainId, address, draft));
+    setMailFolder("drafts");
+    setMailboxFilter("all");
+    setSelectedDraftId(draft.id);
+    setComposerOpen(true);
+    setMobileDetailOpen(true);
+    setSidebarOpen(false);
+  }, [address, chainId]);
 
   useEffect(() => {
     const query = window.matchMedia("(max-width: 900px)");
@@ -760,13 +800,9 @@ export default function InboxPage() {
             );
           }
         } else if (envelope.type === "decline") {
-          const decline = parseDeclinePayload(envelope.payload);
-          if (decline) {
-            recordDealEvent(window.localStorage, chainId, address, {
-              type: "decline",
-              payload: decline,
-            });
-          }
+          // Decrypted Mail is not authenticated wallet identity. Keep the
+          // notice visible in Thread, but never let it advance local RFQ state.
+          continue;
         } else if (envelope.type === "receipt") {
           const receipt = parseReceiptPayload(envelope.payload);
           if (receipt) {
@@ -1078,6 +1114,203 @@ export default function InboxPage() {
       }
     } finally {
       if (isCurrentScan()) setScanning(false);
+    }
+  }
+
+  async function handleContactBackup() {
+    const actionKey = "contacts:backup";
+    try {
+      const context = requireActionContext();
+      if (!keypair || !mailSeed || !keyFingerprint) {
+        throw new Error(
+          "Unlock the mailbox and save its recovery phrase before backing up contacts.",
+        );
+      }
+      setActionState(actionKey, {
+        pending: true,
+        message: "Authenticating and sizing the encrypted contact snapshot…",
+        startedAt: Date.now(),
+      });
+      const entries = await loadAddressBook(
+        window.localStorage,
+        context.address,
+      );
+      const snapshot = createContactSnapshot({
+        owner: context.address,
+        chainId: context.chainId,
+        helperAddress: context.helperAddress,
+        mailboxFingerprint: keyFingerprint,
+        mailboxSeed: mailSeed,
+        entries,
+      });
+      const encoded = encodeEnvelope("contact_snapshot", snapshot);
+      const plaintextBytes = envelopeByteLength("contact_snapshot", snapshot);
+      const size = projectEncryptedMailSize(plaintextBytes, 1);
+      if (!size.fits) {
+        throw new Error(
+          `This ${entries.length}-contact snapshot is ${plaintextBytes - size.maxPlaintextBytes} encoded bytes over the one-letter limit. Nothing was submitted; remove contacts or use a future chunked backup.`,
+        );
+      }
+      await authorizeValueAction(
+        context,
+        "Back up contacts to encrypted Mail",
+        QUIETLINE_HELPER_FUNDING_BASE_UNITS.toString(),
+      );
+      setActionState(actionKey, {
+        pending: true,
+        message: "Encrypting the snapshot to this mailbox key…",
+        startedAt: Date.now(),
+      });
+      const record = await encryptMail(keypair.publicKey, encoded);
+      setActionState(actionKey, {
+        pending: true,
+        message: "Waiting for the wallet to post encrypted self-mail…",
+        startedAt: Date.now(),
+      });
+      const result = await submitMail({
+        account: context.walletAccount,
+        provider: context.provider,
+        helperAddress: context.helperAddress,
+        recoveryAddress: context.address,
+        tokenAddress: constants.addrSTRK,
+        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        policy: context.policy,
+        record,
+      });
+      setActionState(actionKey, {
+        pending: false,
+        message: `Encrypted ${entries.length}-contact snapshot posted in ${result.transactionHash.slice(0, 12)}… Check for new mail to restore it.`,
+      });
+      setStorageNotice({
+        kind: "ok",
+        message:
+          "Contact plaintext never left this browser. The chain received mailbox ciphertext; wallet plus mailbox recovery phrase are required to decrypt it.",
+      });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The encrypted contact backup failed.",
+      });
+    }
+  }
+
+  async function restoreContactBackup(
+    payload: unknown,
+    sourceMessage: LocalMailMessage,
+  ) {
+    const actionKey = "contacts:restore";
+    try {
+      if (
+        !address ||
+        !chainId ||
+        !helperAddress ||
+        !keypair ||
+        !mailSeed ||
+        !keyFingerprint
+      ) {
+        throw new Error(
+          "Connect the matching wallet and unlock its mailbox recovery phrase first.",
+        );
+      }
+      setActionState(actionKey, {
+        pending: true,
+        message: "Verifying the contact snapshot…",
+        startedAt: Date.now(),
+      });
+      const snapshot = verifyContactSnapshot(payload, {
+        owner: address,
+        chainId,
+        helperAddress,
+        mailboxFingerprint: keyFingerprint,
+        mailboxSeed: mailSeed,
+      });
+      const existing = await loadAddressBook(window.localStorage, address);
+      const newestLocalUpdate = existing.reduce(
+        (latest, entry) => Math.max(latest, entry.updatedAt),
+        0,
+      );
+      const verifiedLoadedSnapshots = messages.flatMap((message) => {
+        if (message.envelope.type !== "contact_snapshot") return [];
+        try {
+          return [
+            {
+              message,
+              snapshot: verifyContactSnapshot(message.envelope.payload, {
+                owner: address,
+                chainId,
+                helperAddress,
+                mailboxFingerprint: keyFingerprint,
+                mailboxSeed: mailSeed,
+              }),
+            },
+          ];
+        } catch {
+          return [];
+        }
+      });
+      verifiedLoadedSnapshots.sort((left, right) => {
+        const blockDifference =
+          (right.message.blockNumber ?? -1) - (left.message.blockNumber ?? -1);
+        if (blockDifference) return blockDifference;
+        return (
+          (right.message.eventIndex ?? -1) - (left.message.eventIndex ?? -1)
+        );
+      });
+      const olderThanLoaded =
+        verifiedLoadedSnapshots[0]?.message.id !== undefined &&
+        verifiedLoadedSnapshots[0].message.id !== sourceMessage.id;
+      const warnings = [
+        snapshot.createdAt < newestLocalUpdate
+          ? "This snapshot predates at least one local contact update."
+          : "",
+        olderThanLoaded
+          ? "A newer authenticated contact snapshot is loaded in this mailbox."
+          : "",
+      ].filter(Boolean);
+      const preview = snapshot.entries
+        .slice(0, 10)
+        .map(
+          (entry) =>
+            `• ${entry.label} — ${entry.address.slice(0, 10)}…${entry.address.slice(-6)}`,
+        )
+        .join("\n");
+      const remainder = Math.max(0, snapshot.entries.length - 10);
+      const confirmed = window.confirm(
+        `Merge ${snapshot.entries.length} authenticated contact${snapshot.entries.length === 1 ? "" : "s"} from ${new Date(snapshot.createdAt).toISOString()}?\n\n${preview}${remainder ? `\n• …and ${remainder} more` : ""}${warnings.length ? `\n\nROLLBACK WARNING\n${warnings.join("\n")}` : ""}\n\nMerge is additive: newer local labels win. Old on-chain snapshots cannot be deleted.`,
+      );
+      if (!confirmed) {
+        setActionState(actionKey, {
+          pending: false,
+          message: "Contact restore cancelled; the local book was untouched.",
+        });
+        return;
+      }
+      const restored = await mergeAddressBookEntries(
+        window.localStorage,
+        address,
+        snapshot.entries,
+      );
+      window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
+      setActionState(actionKey, {
+        pending: false,
+        message: `${restored.length} contact${restored.length === 1 ? "" : "s"} restored and re-encrypted with this device's local address-book key.`,
+      });
+      setStorageNotice({
+        kind: "ok",
+        message:
+          "Authenticated contact snapshot restored. Mail supplied encrypted evidence only; it did not trigger a trade or prove settlement.",
+      });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The contact snapshot could not be restored.",
+      });
     }
   }
 
@@ -1651,29 +1884,25 @@ export default function InboxPage() {
     const actionKey = `escrow:${fund.dealId}`;
     let reserved = false;
     let submittedHash = "";
-    let dynamicInvoke: LocalnetDynamicEscrowInvoke | undefined;
-    let claimPrivateKey: Uint8Array | undefined;
     try {
       if (
         providerIndex !== constants.LOCALNET_PROVIDER_INDEX ||
         !constants.localnetWalletEnabled
       ) {
         throw new Error(
-          "Destination-bound escrow payouts are unavailable through this wallet.",
+          "Claim-ticket escrow payouts are unavailable through this wallet.",
         );
       }
       const context = requireActionContext();
-      if (!escrowAddress || !mailSeed) {
-        throw new Error(
-          "Load the localnet mailbox seed and escrow deployment.",
-        );
+      if (!escrowAddress) {
+        throw new Error("Load the localnet escrow deployment.");
       }
       if (!feltEquals(fund.escrowAddress, escrowAddress)) {
         throw new Error("This deal names a different escrow deployment.");
       }
       if (!feltEquals(fund.maker, context.address)) {
         throw new Error(
-          "Only this deal's maker mailbox can derive the claim key.",
+          "Only the maker wallet that holds this deal's private ticket can request payout.",
         );
       }
 
@@ -1686,50 +1915,29 @@ export default function InboxPage() {
       );
       reserved = true;
       refreshEscrowState();
-      const claimKey = deriveEscrowClaimKey(mailSeed, fund.dealId);
-      claimPrivateKey = claimKey.privateKey;
-      if (!feltEquals(claimKey.claimPubkey, fund.claimPubkey)) {
+      if (!fund.ticket) {
         throw new Error(
-          "This restored mailbox seed does not match the deal's on-chain claim key.",
+          "Historical V1 signature deals are display-only; localnet payouts require a V2 claim ticket.",
         );
       }
       const payoutToken =
         operation === "claim"
           ? fund.legB.token.address
           : fund.legA.token.address;
-      dynamicInvoke = {
-        type: "invoke",
-        contract: escrowAddress,
-        calldata: [
-          operation === "claim"
-            ? ESCROW_OPERATION_VARIANT.Claim
-            : ESCROW_OPERATION_VARIANT.Timeout,
-          "${quietlineEscrowSigR}",
-          "${quietlineEscrowSigS}",
-          fund.dealId,
-          POOL_ADDRESS_PLACEHOLDER,
-          OPEN_NOTE_ID_PLACEHOLDER,
-        ],
-        quietline_escrow_signer: {
-          private_key: secretKeyHex(claimKey.privateKey),
-          operation,
-          open_note_index: 0,
-        },
-      };
-      const actions = [
-        {
-          type: "transfer" as const,
-          token: payoutToken,
-          amount: "OPEN" as const,
-          recipient: context.address,
-        },
-        dynamicInvoke,
-      ] as WALLET_API.STRK20_ACTION[];
+      const actions = (operation === "claim"
+        ? buildEscrowClaimActions
+        : buildEscrowTimeoutActions)({
+        escrowAddress,
+        recoveryAddress: context.address,
+        ticketAddress: fund.ticket,
+        dealId: fund.dealId,
+        payoutToken,
+      });
       const startedAt = Date.now();
       setActionState(actionKey, {
         pending: true,
         message:
-          "Localnet compiler is assembling the payout note before signing it…",
+          "Withdrawing the private claim ticket and assembling the payout note…",
         startedAt,
       });
 
@@ -1753,7 +1961,7 @@ export default function InboxPage() {
             setActionState(actionKey, {
               pending: true,
               message:
-                "Destination-bound payout submitted; waiting for localnet confirmation…",
+                "Claim-ticket payout submitted; waiting for localnet confirmation…",
               startedAt: Date.now(),
             });
           },
@@ -1808,13 +2016,6 @@ export default function InboxPage() {
         pending: false,
         message: strk20ErrorMessage(error),
       });
-    } finally {
-      // The scalar is localnet-only, never persisted, and erased from mutable
-      // buffers immediately after the compiler request completes.
-      claimPrivateKey?.fill(0);
-      if (dynamicInvoke) {
-        dynamicInvoke.quietline_escrow_signer.private_key = "0x0";
-      }
     }
   }
 
@@ -2116,17 +2317,15 @@ export default function InboxPage() {
         directoryMailboxKey: directoryKey,
       });
       setProofs((current) => ({ ...current, [messageId]: proof }));
-      setStorageNotice({
-        kind: proof.kind === "directory_bound" ? "ok" : "error",
-        message:
-          proof.kind === "directory_bound"
-            ? `Directory match: this letter's mailbox key is registered to ${assignedAddress}.`
-            : proof.kind === "mailbox_signed"
-              ? "The letter is signed by a mailbox key, but that key is not the one registered to this address."
-              : proof.kind === "invalid_signature"
-                ? "The claimed mailbox signature is invalid."
-                : "This letter has no mailbox signature, so the assignment stays a local label.",
-      });
+      let proofMessage =
+        "This letter has no usable auth signature, so the assignment stays a local label.";
+      if (proof.kind === "unbound_signature") {
+        proofMessage =
+          "The Mail auth signature is valid, but that auth key is not registered by the mailbox directory. It cannot prove this mailbox or wallet address.";
+      } else if (proof.kind === "invalid_signature") {
+        proofMessage = "The claimed Mail auth signature is invalid.";
+      }
+      setStorageNotice({ kind: "error", message: proofMessage });
     } catch (error: unknown) {
       setStorageNotice({
         kind: "error",
@@ -2158,18 +2357,6 @@ export default function InboxPage() {
     setMailboxFilter(nextFilter);
     setSidebarOpen(false);
     setMobileDetailOpen(false);
-  }
-
-  function focusMailboxKeySetup() {
-    setSidebarOpen(false);
-    setMobileDetailOpen(true);
-    window.requestAnimationFrame(() => {
-      const setup = document.getElementById("mailbox-key-setup");
-      setup?.scrollIntoView({ block: "start" });
-      setup
-        ?.querySelector<HTMLButtonElement>("button:not([disabled])")
-        ?.focus();
-    });
   }
 
   return (
@@ -2284,7 +2471,6 @@ export default function InboxPage() {
             ))}
           </nav>
 
-
           <div className={styles.networkRow}>
             <span
               className={`${styles.networkDot} ${
@@ -2299,7 +2485,6 @@ export default function InboxPage() {
               {helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}
             </small>
           </div>
-
 
           {renderLocalnetTools ? (
             <div className={styles.localnetSlot}>{renderLocalnetTools()}</div>
@@ -2369,11 +2554,45 @@ export default function InboxPage() {
             ) : null}
           </section>
 
+          <section
+            className={styles.contactBackupPanel}
+            aria-labelledby="contact-backup-title"
+          >
+            <strong id="contact-backup-title">
+              Encrypted contact recovery
+            </strong>
+            <p>
+              Post a self-addressed encrypted snapshot. The same wallet locates
+              it; the mailbox recovery phrase decrypts it. Wallet alone is not
+              enough.
+            </p>
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              disabled={
+                !keypair ||
+                !mailSeed ||
+                !helperAddress ||
+                actionStates["contacts:backup"]?.pending
+              }
+              onClick={() => void handleContactBackup()}
+            >
+              {actionStates["contacts:backup"]?.pending
+                ? "Backing up…"
+                : "Back up contacts to Mailbox"}
+            </button>
+            {actionStates["contacts:backup"]?.message ? (
+              <p className={styles.scanMessage} role="status">
+                {actionStates["contacts:backup"].message}
+              </p>
+            ) : null}
+          </section>
+
           <details className={styles.forgetDevice}>
             <summary>Device safety</summary>
             <p>
-              Disconnecting is not logout: drafts, Sent copies, and aliases
-              stay in this browser profile.
+              Disconnecting is not logout: drafts, Sent copies, and aliases stay
+              in this browser profile.
             </p>
             <button
               className={styles.secondaryButton}
@@ -2529,6 +2748,12 @@ export default function InboxPage() {
                   providerIndex === constants.LOCALNET_PROVIDER_INDEX
                     ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
                     : undefined
+                }
+                onRestoreContacts={(payload, message) =>
+                  void restoreContactBackup(payload, message)
+                }
+                contactRestorePending={
+                  actionStates["contacts:restore"]?.pending
                 }
                 onReply={openComposerForRecipient}
                 onAssign={assignMessageAddress}

@@ -5,6 +5,9 @@ pub trait IMockErc20<TState> {
     fn balance_of(self: @TState, account: ContractAddress) -> u256;
     fn allowance(self: @TState, owner: ContractAddress, spender: ContractAddress) -> u256;
     fn transfer(ref self: TState, recipient: ContractAddress, amount: u256) -> bool;
+    fn transfer_from(
+        ref self: TState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
+    ) -> bool;
     fn approve(ref self: TState, spender: ContractAddress, amount: u256) -> bool;
 }
 
@@ -41,6 +44,20 @@ pub mod MockErc20 {
 
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) -> bool {
             let sender = get_caller_address();
+            self.balances.entry(sender).write(self.balances.entry(sender).read() - amount);
+            self.balances.entry(recipient).write(self.balances.entry(recipient).read() + amount);
+            true
+        }
+
+        fn transfer_from(
+            ref self: ContractState,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256,
+        ) -> bool {
+            let spender = get_caller_address();
+            let allowance = self.allowances.entry((sender, spender)).read();
+            self.allowances.entry((sender, spender)).write(allowance - amount);
             self.balances.entry(sender).write(self.balances.entry(sender).read() - amount);
             self.balances.entry(recipient).write(self.balances.entry(recipient).read() + amount);
             true

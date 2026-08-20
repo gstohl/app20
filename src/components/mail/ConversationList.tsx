@@ -17,9 +17,7 @@ import {
   parseEscrowFundPayload,
   parseEscrowTimeoutPayload,
 } from "@/lib/escrow";
-import {
-  formatDeviceSentRecipients,
-} from "@/lib/mail-correspondents";
+import { formatDeviceSentRecipients } from "@/lib/mail-correspondents";
 import type { LocalMailMessage } from "./Thread";
 import styles from "./mail.module.css";
 
@@ -44,6 +42,7 @@ function mailboxCategory(
   }
   switch (message.envelope.type) {
     case "text":
+    case "contact_snapshot":
       return "letters";
     case "payment_request":
       return "invoices";
@@ -96,6 +95,8 @@ function envelopeLabel(message: LocalMailMessage): string {
       return "Escrow claim";
     case "escrow_timeout":
       return "Escrow timeout";
+    case "contact_snapshot":
+      return "Contact backup";
     case "composite": {
       const composite = parseCompositePayload(message.envelope.payload);
       const count = composite?.attachments.length ?? 0;
@@ -156,8 +157,17 @@ export function conversationCorrespondent(
       fullAddress: address,
     };
   }
-  if (message.direction === "outgoing" && (message.recipients?.length ?? 0) > 0) {
+  if (
+    message.direction === "outgoing" &&
+    (message.recipients?.length ?? 0) > 0
+  ) {
     return formatDeviceSentRecipients(message.recipients ?? [], aliases);
+  }
+  if (message.envelope.type === "contact_snapshot") {
+    return {
+      primary: "This mailbox",
+      detail: "Encrypted self-backup · verify before restore",
+    };
   }
   if (message.envelope.type === "text") {
     return {
@@ -230,6 +240,8 @@ function messagePreview(message: LocalMailMessage): string {
       return parseEscrowTimeoutPayload(payload)
         ? "Escrow timeout notice"
         : "Escrow update";
+    case "contact_snapshot":
+      return "Wallet + mailbox recovery phrase required";
     case "composite": {
       const composite = parseCompositePayload(payload);
       if (!composite) return "Unsupported composite document";

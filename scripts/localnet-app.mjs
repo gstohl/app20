@@ -340,8 +340,75 @@ async function deployHelper(env, starknet) {
   };
 }
 
+async function deployLocalUsdc(env, starknet, recipient) {
+  const artifactRoot = join(ROOT, "cairo", "target", "dev");
+  const sierra = starknet.json.parse(
+    readFileSync(
+      join(artifactRoot, "quietline_mail_MockErc20.contract_class.json"),
+      "utf8",
+    ),
+  );
+  const casm = starknet.json.parse(
+    readFileSync(
+      join(
+        artifactRoot,
+        "quietline_mail_MockErc20.compiled_contract_class.json",
+      ),
+      "utf8",
+    ),
+  );
+  const declaration = await env.admin.declare({ contract: sierra, casm });
+  await waitForSuccess(
+    env.node,
+    declaration.transaction_hash,
+    "local USDC declaration",
+  );
+  const supply = starknet.cairo.uint256(100_000n * 10n ** 6n);
+  const deployment = await env.admin.deployContract({
+    classHash: declaration.class_hash,
+    constructorCalldata: [recipient, supply.low, supply.high],
+  });
+  await waitForSuccess(
+    env.node,
+    deployment.transaction_hash,
+    "local USDC deployment",
+  );
+  const address = deployment.contract_address ?? deployment.address;
+  if (!address) fail("local USDC deployment returned no address.");
+  return {
+    address,
+    declareTransactionHash: declaration.transaction_hash,
+    deployTransactionHash: deployment.transaction_hash,
+  };
+}
+
 async function deployEscrow(env, starknet) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
+  const ticketSierra = starknet.json.parse(
+    readFileSync(
+      join(artifactRoot, "quietline_mail_ClaimTicket.contract_class.json"),
+      "utf8",
+    ),
+  );
+  const ticketCasm = starknet.json.parse(
+    readFileSync(
+      join(
+        artifactRoot,
+        "quietline_mail_ClaimTicket.compiled_contract_class.json",
+      ),
+      "utf8",
+    ),
+  );
+  const ticketDeclaration = await env.admin.declare({
+    contract: ticketSierra,
+    casm: ticketCasm,
+  });
+  await waitForSuccess(
+    env.node,
+    ticketDeclaration.transaction_hash,
+    "ClaimTicket declaration",
+  );
+
   const sierra = starknet.json.parse(
     readFileSync(
       join(artifactRoot, "quietline_mail_QuietlineEscrow.contract_class.json"),
@@ -365,7 +432,7 @@ async function deployEscrow(env, starknet) {
   );
   const deployment = await env.admin.deployContract({
     classHash: declaration.class_hash,
-    constructorCalldata: [env.privacy.address],
+    constructorCalldata: [env.privacy.address, ticketDeclaration.class_hash],
   });
   await waitForSuccess(
     env.node,
@@ -376,6 +443,8 @@ async function deployEscrow(env, starknet) {
   if (!address) fail("QuietlineEscrow deployment returned no address.");
   return {
     address,
+    ticketClassHash: ticketDeclaration.class_hash,
+    ticketDeclareTransactionHash: ticketDeclaration.transaction_hash,
     declareTransactionHash: declaration.transaction_hash,
     deployTransactionHash: deployment.transaction_hash,
   };
@@ -452,153 +521,6 @@ function toCoreCallAndProof(prepared) {
   };
 }
 
-const OPEN_NOTE_PLACEHOLDER = /^\$\{openNoteIds\[(\d+)\]\}$/;
-const LOCAL_ESCROW_SIG_R = "${quietlineEscrowSigR}";
-const LOCAL_ESCROW_SIG_S = "${quietlineEscrowSigS}";
-const ESCROW_CLAIM_TAG = "QUIETLINE_ESCROW_CLAIM_V1";
-
-function resolveLocalPlaceholder(item, args, starknet) {
-  const openNote = OPEN_NOTE_PLACEHOLDER.exec(String(item));
-  if (openNote) {
-    const note = args.openNotes[Number(openNote[1])];
-    if (!note) fail(`${item} references an unavailable OPEN note.`);
-    return starknet.num.toHex(note.noteId);
-  }
-  if (item === "${poolAddress}") {
-    return starknet.num.toHex(args.poolAddress);
-  }
-  return starknet.num.toHex(starknet.num.toBigInt(item));
-}
-
-function localEscrowSignature(action, args, starknet, escrowAddress) {
-  const signer = action.quietline_escrow_signer;
-  if (!signer || typeof signer !== "object") return null;
-  if (starknet.num.toBigInt(action.contract) !== starknet.num.toBigInt(escrowAddress)) {
-    fail("dynamic escrow signing is restricted to the deployed local contract.");
-  }
-  if (!/^0x[0-9a-f]{1,64}$/i.test(String(signer.private_key))) {
-    fail("dynamic escrow signing received an invalid ephemeral claim key.");
-  }
-  const variant = starknet.num.toBigInt(action.calldata[0]);
-  const operation =
-    variant === 2n ? "CLAIM" : variant === 3n ? "TIMEOUT" : null;
-  if (!operation || signer.operation !== operation.toLowerCase()) {
-    fail("dynamic escrow signing received an invalid payout operation.");
-  }
-  const noteIndex = Number(signer.open_note_index);
-  const note = args.openNotes[noteIndex];
-  if (!Number.isSafeInteger(noteIndex) || noteIndex < 0 || !note) {
-    fail("dynamic escrow signing could not resolve its payout note.");
-  }
-  const dealId = resolveLocalPlaceholder(action.calldata[3], args, starknet);
-  const noteId = starknet.num.toHex(note.noteId);
-  const message = starknet.hash.computePoseidonHashOnElements([
-    starknet.shortString.encodeShortString(ESCROW_CLAIM_TAG),
-    action.contract,
-    dealId,
-    starknet.shortString.encodeShortString(operation),
-    noteId,
-  ]);
-  const signature = starknet.ec.starkCurve.sign(message, signer.private_key);
-  return {
-    noteIndex,
-    noteId,
-    sigR: starknet.num.toHex(signature.r),
-    sigS: starknet.num.toHex(signature.s),
-  };
-}
-
-/**
- * Localnet-only compiler seam. Production Wallet API cannot sign over an OPEN
- * note because it does not expose args.openNotes. The vendored compiler does,
- * so this callback derives the destination-bound signature after assembly.
- */
-async function proveLocalEscrowActions(
-  identity,
-  actions,
-  escrowAddress,
-  { sdk, starknet },
-) {
-  if (!actions.some((action) => action.quietline_escrow_signer)) {
-    return identity.prover.prove(actions);
-  }
-  const builder = identity.prover.transfers.build({
-    autoRegister: true,
-    autoSetup: true,
-    autoSelectNotes: "naive",
-    autoDiscover: { channels: "refresh", notes: "refresh" },
-    registry: sdk.createEmptyRegistry(),
-  });
-
-  for (const action of actions) {
-    switch (action.type) {
-      case "deposit":
-        builder.with(action.token).deposit({
-          amount: starknet.num.toBigInt(action.amount),
-        });
-        break;
-      case "withdraw":
-        builder.with(action.token).withdraw({
-          recipient: action.recipient,
-          amount: starknet.num.toBigInt(action.amount),
-        });
-        break;
-      case "transfer":
-        builder.with(action.token).transfer({
-          recipient: action.recipient,
-          amount:
-            action.amount === "OPEN"
-              ? sdk.Open
-              : starknet.num.toBigInt(action.amount),
-        });
-        break;
-      case "invoke":
-        builder.invoke((args) => {
-          const signature = localEscrowSignature(
-            action,
-            args,
-            starknet,
-            escrowAddress,
-          );
-          return {
-            contractAddress: action.contract,
-            calldata: action.calldata.map((item) => {
-              if (item === LOCAL_ESCROW_SIG_R) {
-                if (!signature) fail("missing dynamic escrow signature r.");
-                return signature.sigR;
-              }
-              if (item === LOCAL_ESCROW_SIG_S) {
-                if (!signature) fail("missing dynamic escrow signature s.");
-                return signature.sigS;
-              }
-              if (signature && item === `\${openNoteIds[${signature.noteIndex}]}`) {
-                return signature.noteId;
-              }
-              return resolveLocalPlaceholder(item, args, starknet);
-            }),
-          };
-        });
-        break;
-      default:
-        fail(`unsupported local escrow action: ${String(action.type)}.`);
-    }
-  }
-
-  const result = await builder.execute();
-  const callAndProof = result.callAndProof;
-  return {
-    call: {
-      contract_address: String(callAndProof.call.contractAddress),
-      entry_point: callAndProof.call.entrypoint,
-      calldata: callAndProof.call.calldata ?? [],
-    },
-    proof: {
-      data: callAndProof.proof.data,
-      output: callAndProof.proof.output,
-      proof_facts: callAndProof.proof.proofFacts,
-    },
-  };
-}
 
 function normalizeIdentity(value, identities) {
   if (value !== "alice" && value !== "bob") {
@@ -621,6 +543,16 @@ function assertActions(value) {
     }
     if (!["deposit", "withdraw", "transfer", "invoke"].includes(action.type)) {
       fail(`unsupported localnet privacy action: ${String(action.type)}.`);
+    }
+    const allowed = {
+      deposit: ["type", "token", "amount"],
+      withdraw: ["type", "token", "amount", "recipient"],
+      transfer: ["type", "token", "amount", "recipient"],
+      invoke: ["type", "contract", "calldata"],
+    }[action.type];
+    const unexpected = Object.keys(action).filter((key) => !allowed.includes(key));
+    if (unexpected.length) {
+      fail(`non-standard ${action.type} action properties: ${unexpected.join(", ")}.`);
     }
   }
   return value;
@@ -690,13 +622,15 @@ async function approveDeposits(identity, actions, env, starknet) {
 }
 
 async function seedEscrowPrivateBalances(identities, env, starknet) {
-  // Local demo only: start Alice with leg-A STRK and Bob with leg-B ETH so the
-  // browser can exercise Fund -> Fill -> Claim without adding a generic
-  // multi-token faucet to production UI. Both deposits remain public on devnet.
-  const amount = 10n * 10n ** 18n;
-  for (const [identity, token] of [
-    [identities.alice, env.strk],
-    [identities.bob, env.eth],
+  // Local demo only: Alice starts with STRK and APP20's Bob solver starts with
+  // six-decimal USDC inventory. The first STRK→USDC fill gives the solver STRK
+  // inventory, which then supports the reverse USDC→STRK market. Bob's legacy
+  // ETH fixture remains independently seeded for existing Mail OTC coverage.
+  // All seed deposits remain public on devnet.
+  for (const [identity, token, amount] of [
+    [identities.alice, env.strk, 10n * 10n ** 18n],
+    [identities.bob, env.usdc, 10_000n * 10n ** 6n],
+    [identities.bob, env.eth, 10n * 10n ** 18n],
   ]) {
     const actions = [
       { type: "deposit", token, amount: starknet.num.toHex(amount) },
@@ -711,7 +645,7 @@ async function seedEscrowPrivateBalances(identities, env, starknet) {
   await createDevnetBlocks(devnet.url);
 }
 
-async function privateBalances(identity, tokens, env, starknet) {
+async function privateBalances(identity, tokens, starknet) {
   if (!Array.isArray(tokens)) fail("balance tokens must be an array.");
   const requested = tokens.map((token) => starknet.num.toBigInt(String(token)));
   const discovery = await identity.transfers.discoverNotes({
@@ -728,6 +662,167 @@ async function privateBalances(identity, tokens, env, starknet) {
     token: starknet.num.toHex(token),
     balance: starknet.num.toHex(discovered.get(token) ?? 0n),
   }));
+}
+
+function positiveBaseUnits(value, label, starknet) {
+  if (typeof value !== "string" || !/^(?:0|[1-9]\d*)$/.test(value)) {
+    fail(`${label} must be a canonical base-unit integer string.`);
+  }
+  const parsed = starknet.num.toBigInt(value);
+  if (parsed <= 0n || parsed >= 2n ** 128n) {
+    fail(`${label} must be greater than zero and fit in u128.`);
+  }
+  return parsed;
+}
+
+function feltInput(value, label, starknet) {
+  if (typeof value !== "string" || !/^0x[0-9a-f]{1,63}$/i.test(value)) {
+    fail(`${label} must be a non-zero Starknet felt.`);
+  }
+  const parsed = starknet.num.toBigInt(value);
+  if (parsed <= 0n) fail(`${label} must be non-zero.`);
+  return starknet.num.toHex(parsed);
+}
+
+function assertLocalIntentPair(body, env, starknet) {
+  const sellToken = starknet.num.toBigInt(String(body.sellToken));
+  const buyToken = starknet.num.toBigInt(String(body.buyToken));
+  const strk = starknet.num.toBigInt(env.strk);
+  const usdc = starknet.num.toBigInt(env.usdc);
+  let direction = null;
+  if (sellToken === strk && buyToken === usdc) {
+    direction = "STRK_USDC";
+  } else if (sellToken === usdc && buyToken === strk) {
+    direction = "USDC_STRK";
+  }
+  if (!direction) {
+    fail("the local solver supports only the private USDC↔STRK market.");
+  }
+  return {
+    sellToken: starknet.num.toHex(sellToken),
+    buyToken: starknet.num.toHex(buyToken),
+    direction,
+  };
+}
+
+function priceLocalIntent(direction, sellAmount) {
+  // Deterministic local RFQ fixture: 1 STRK = 2 USDC before the solver spread.
+  // Raw-unit conversion is explicit so the six-decimal USDC path cannot inherit
+  // STRK's 18-decimal assumptions.
+  const strkScale = 10n ** 18n;
+  const usdcScale = 10n ** 6n;
+  const grossBuyAmount =
+    direction === "STRK_USDC"
+      ? (sellAmount * 2n * usdcScale) / strkScale
+      : (sellAmount * strkScale) / (2n * usdcScale);
+  if (grossBuyAmount <= 0n) fail("the local solver quote rounds to zero.");
+  return {
+    grossBuyAmount,
+    provenance: "localnet:fixed-2-usdc-per-strk",
+  };
+}
+
+async function executePrivacyActions(
+  identity,
+  actions,
+  label,
+  env,
+  escrowAddress,
+  runtime,
+  starknet,
+) {
+  return serializeOperation(label, identity.id, async () => {
+    await approveDeposits(identity, actions, env, starknet);
+    const prepared = await identity.prover.prove(actions);
+    if (prepared.proof.data !== undefined && prepared.proof.data !== "") {
+      fail("devnet unexpectedly returned non-mock proof bytes.");
+    }
+    if (prepared.proof.proof_facts.length !== 9) {
+      fail(
+        `devnet mock proof returned ${prepared.proof.proof_facts.length} proof facts, expected 9.`,
+      );
+    }
+    if (
+      prepared.call.calldata.some(
+        (item) => typeof item === "string" && item.includes("${"),
+      )
+    ) {
+      fail("vendored client left an unresolved wallet placeholder.");
+    }
+    const receipt = await devnet.executeOutside(toCoreCallAndProof(prepared));
+    const transactionHash = receipt.transaction_hash;
+    if (!transactionHash)
+      fail("outside execution returned no transaction hash.");
+    return { transaction_hash: transactionHash };
+  });
+}
+
+async function readLocalEscrowDeal(dealId, env, escrowAddress) {
+  const result = await env.node.callContract({
+    contractAddress: escrowAddress,
+    entrypoint: "get_deal",
+    calldata: [dealId],
+  });
+  if (!Array.isArray(result) || result.length < 8) {
+    fail("local escrow returned a malformed deal.");
+  }
+  return {
+    legAToken: result[0],
+    legAAmount: BigInt(result[1]),
+    legBToken: result[2],
+    legBTerms: BigInt(result[3]),
+    legBAmount: BigInt(result[4]),
+    deadline: Number(BigInt(result[5])),
+    ticket: result[6],
+    status: Number(BigInt(result[7])),
+  };
+}
+
+async function ensureLocalEscrowTicket(dealId, env, escrowAddress, starknet) {
+  const existing = await env.node.callContract({
+    contractAddress: escrowAddress,
+    entrypoint: "get_ticket",
+    calldata: [dealId],
+  });
+  if (starknet.num.toBigInt(existing[0] ?? "0x0") !== 0n) return existing[0];
+  const submitted = await env.admin.execute({
+    contractAddress: escrowAddress,
+    entrypoint: "ensure_ticket",
+    calldata: [dealId],
+  });
+  await waitForSuccess(
+    env.node,
+    submitted.transaction_hash,
+    "claim ticket deployment",
+  );
+  const result = await env.node.callContract({
+    contractAddress: escrowAddress,
+    entrypoint: "get_ticket",
+    calldata: [dealId],
+  });
+  const ticketAddress = result[0];
+  if (!ticketAddress || starknet.num.toBigInt(ticketAddress) === 0n) {
+    fail("claim ticket deployment returned no address.");
+  }
+  return ticketAddress;
+}
+
+function assertFundedIntentDeal(
+  deal,
+  { sellToken, sellAmount, buyToken, buyAmount },
+  starknet,
+) {
+  if (deal.status !== 1)
+    fail("the private intent is not awaiting a solver fill.");
+  if (
+    starknet.num.toBigInt(deal.legAToken) !==
+      starknet.num.toBigInt(sellToken) ||
+    deal.legAAmount !== sellAmount ||
+    starknet.num.toBigInt(deal.legBToken) !== starknet.num.toBigInt(buyToken) ||
+    deal.legBTerms !== buyAmount
+  ) {
+    fail("the on-chain escrow terms do not match the quoted private intent.");
+  }
 }
 
 function jsonResponse(response, statusCode, payload) {
@@ -792,6 +887,170 @@ function startApi({
       }
 
       const body = await readRequestBody(request);
+      if (url.pathname === "/escrow/ensure-ticket") {
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const ticketAddress = await serializeOperation(
+          "ensure claim ticket",
+          "localnet-admin",
+          () => ensureLocalEscrowTicket(dealId, env, escrowAddress, starknet),
+        );
+        jsonResponse(response, 200, { result: { ticketAddress } });
+        return;
+      }
+      if (url.pathname === "/escrow/deal") {
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
+        jsonResponse(response, 200, {
+          result: {
+            ...deal,
+            legAAmount: deal.legAAmount.toString(),
+            legBTerms: deal.legBTerms.toString(),
+            legBAmount: deal.legBAmount.toString(),
+          },
+        });
+        return;
+      }
+      if (url.pathname === "/private-intents/quote") {
+        const { sellToken, buyToken, direction } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const sellAmount = positiveBaseUnits(
+          body.sellAmount,
+          "sellAmount",
+          starknet,
+        );
+        const { grossBuyAmount: buyAmount, provenance } = priceLocalIntent(
+          direction,
+          sellAmount,
+        );
+        const balanceRows = await serializeOperation(
+          "quote private-intent inventory",
+          identities.bob.id,
+          () => privateBalances(identities.bob, [buyToken], starknet),
+        );
+        const solverInventory = BigInt(balanceRows[0]?.balance ?? "0x0");
+        if (solverInventory < buyAmount) {
+          fail("the local solver inventory cannot cover this quote.");
+        }
+        jsonResponse(response, 200, {
+          result: {
+            solverId: "app20-localnet-solver",
+            buyAmount: buyAmount.toString(),
+            solverInventory: solverInventory.toString(),
+            sellToken,
+            buyToken,
+            provenance,
+          },
+        });
+        return;
+      }
+      if (url.pathname === "/private-intents/solve") {
+        const { sellToken, buyToken } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const sellAmount = positiveBaseUnits(
+          body.sellAmount,
+          "sellAmount",
+          starknet,
+        );
+        const buyAmount = positiveBaseUnits(
+          body.buyAmount,
+          "buyAmount",
+          starknet,
+        );
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
+        assertFundedIntentDeal(
+          deal,
+          { sellToken, sellAmount, buyToken, buyAmount },
+          starknet,
+        );
+        const actions = [
+          {
+            type: "withdraw",
+            token: buyToken,
+            amount: starknet.num.toHex(buyAmount),
+            recipient: escrowAddress,
+          },
+          {
+            type: "transfer",
+            token: sellToken,
+            amount: "OPEN",
+            recipient: identities.bob.account.address,
+          },
+          {
+            type: "invoke",
+            contract: escrowAddress,
+            calldata: [
+              "0x1",
+              buyToken,
+              dealId,
+              "${poolAddress}",
+              "${openNoteIds[0]}",
+            ],
+          },
+        ];
+        const result = await executePrivacyActions(
+          identities.bob,
+          actions,
+          "APP20 solver fills private intent",
+          env,
+          escrowAddress,
+          runtime,
+          starknet,
+        );
+        jsonResponse(response, 200, {
+          result: { ...result, solverId: "app20-localnet-solver" },
+        });
+        return;
+      }
+      if (url.pathname === "/private-intents/expire") {
+        const { sellToken, buyToken } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const sellAmount = positiveBaseUnits(
+          body.sellAmount,
+          "sellAmount",
+          starknet,
+        );
+        const buyAmount = positiveBaseUnits(
+          body.buyAmount,
+          "buyAmount",
+          starknet,
+        );
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
+        assertFundedIntentDeal(
+          deal,
+          { sellToken, sellAmount, buyToken, buyAmount },
+          starknet,
+        );
+        const timestamp = deal.deadline + 1;
+        const setTimeResponse = await fetch(devnet.url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "devnet_setTime",
+            params: { time: timestamp },
+          }),
+        });
+        const setTimePayload = await setTimeResponse.json();
+        if (!setTimeResponse.ok || setTimePayload.error) {
+          fail("devnet could not advance the private-intent expiry.");
+        }
+        await createDevnetBlocks(devnet.url, 1);
+        jsonResponse(response, 200, { result: { expiredAt: timestamp } });
+        return;
+      }
+
       const identity = normalizeIdentity(body.identity, identities);
       if (url.pathname === "/invoke") {
         const calls = assertCalls(body.calls);
@@ -813,43 +1072,14 @@ function startApi({
       }
       if (url.pathname === "/privacy") {
         const actions = assertActions(body.actions);
-        const result = await serializeOperation(
+        const result = await executePrivacyActions(
+          identity,
+          actions,
           "compile, mock-prove, and submit privacy actions",
-          identity.id,
-          async () => {
-            await approveDeposits(identity, actions, env, starknet);
-            const prepared = await proveLocalEscrowActions(
-              identity,
-              actions,
-              escrowAddress,
-              runtime,
-            );
-            if (
-              prepared.proof.data !== undefined &&
-              prepared.proof.data !== ""
-            ) {
-              fail("devnet unexpectedly returned non-mock proof bytes.");
-            }
-            if (prepared.proof.proof_facts.length !== 9) {
-              fail(
-                `devnet mock proof returned ${prepared.proof.proof_facts.length} proof facts, expected 9.`,
-              );
-            }
-            if (
-              prepared.call.calldata.some(
-                (item) => typeof item === "string" && item.includes("${"),
-              )
-            ) {
-              fail("vendored client left an unresolved wallet placeholder.");
-            }
-            const receipt = await devnet.executeOutside(
-              toCoreCallAndProof(prepared),
-            );
-            const transactionHash = receipt.transaction_hash;
-            if (!transactionHash)
-              fail("outside execution returned no transaction hash.");
-            return { transaction_hash: transactionHash };
-          },
+          env,
+          escrowAddress,
+          runtime,
+          starknet,
         );
         jsonResponse(response, 200, { result });
         return;
@@ -858,7 +1088,7 @@ function startApi({
         const result = await serializeOperation(
           "discover private balances",
           identity.id,
-          () => privateBalances(identity, body.tokens ?? [], env, starknet),
+          () => privateBalances(identity, body.tokens ?? [], starknet),
         );
         jsonResponse(response, 200, { result });
         return;
@@ -885,6 +1115,7 @@ function writeGeneratedEnv({
   helperAddress,
   escrowAddress,
   poolAddress,
+  usdcTokenAddress,
 }) {
   const contents = [
     "# Generated by npm run dev:localnet. Do not edit or commit.",
@@ -894,6 +1125,7 @@ function writeGeneratedEnv({
     `VITE_MAIL_HELPER_LOCALNET=${helperAddress}`,
     `VITE_ESCROW_HELPER_LOCALNET=${escrowAddress}`,
     `VITE_LOCALNET_POOL_ADDRESS=${poolAddress}`,
+    `VITE_LOCALNET_USDC_TOKEN_ADDRESS=${usdcTokenAddress}`,
     `QUIETLINE_LOCALNET_BACKEND_TARGET=${BACKEND_TARGET}`,
     `QUIETLINE_LOCALNET_RPC_TARGET=${rpcTarget}`,
     "",
@@ -953,7 +1185,9 @@ try {
   const poolClassHash = await env.node.getClassHashAt(env.privacy.address);
 
   currentStage = "Quietline helpers deployment";
-  console.log("\n==> deploying QuietlineMail and QuietlineEscrow against the real pool");
+  console.log(
+    "\n==> deploying QuietlineMail and QuietlineEscrow against the real pool",
+  );
   const helper = await deployHelper(env, runtime.starknet);
   const escrow = await deployEscrow(env, runtime.starknet);
 
@@ -974,8 +1208,20 @@ try {
       ...makePrivacyRuntime(env.bob, "quietline-localnet-bob-v1", env, runtime),
     },
   };
+
+  currentStage = "local USDC deployment";
+  console.log("\n==> deploying six-decimal local USDC inventory token");
+  const usdc = await deployLocalUsdc(
+    env,
+    runtime.starknet,
+    identities.bob.account.address,
+  );
+  env.usdc = usdc.address;
+
   currentStage = "local escrow balance seed";
-  console.log("\n==> seeding local Alice STRK and Bob ETH private balances");
+  console.log(
+    "\n==> seeding Alice STRK and APP20 solver USDC private balances",
+  );
   await seedEscrowPrivateBalances(identities, env, runtime.starknet);
 
   const config = {
@@ -987,6 +1233,12 @@ try {
     escrowAddress: escrow.address,
     tokenAddress: env.strk,
     counterTokenAddress: env.eth,
+    usdcTokenAddress: env.usdc,
+    marketTokens: [
+      { symbol: "STRK", address: env.strk, decimals: 18 },
+      { symbol: "USDC", address: env.usdc, decimals: 6 },
+    ],
+    marketPairs: ["STRK_USDC", "USDC_STRK"],
     proofMode: "upstream devnet mock proof · no STARK bytes",
     identities: Object.values(identities).map((identity) => ({
       id: identity.id,
@@ -1010,6 +1262,7 @@ try {
     helperAddress: helper.address,
     escrowAddress: escrow.address,
     poolAddress: env.privacy.address,
+    usdcTokenAddress: env.usdc,
   });
 
   currentStage = "Vite startup";
@@ -1022,6 +1275,7 @@ try {
     VITE_MAIL_HELPER_LOCALNET: helper.address,
     VITE_ESCROW_HELPER_LOCALNET: escrow.address,
     VITE_LOCALNET_POOL_ADDRESS: env.privacy.address,
+    VITE_LOCALNET_USDC_TOKEN_ADDRESS: env.usdc,
     QUIETLINE_LOCALNET_BACKEND_TARGET: BACKEND_TARGET,
     QUIETLINE_LOCALNET_RPC_TARGET: devnet.url,
   };
@@ -1069,6 +1323,9 @@ try {
     escrowAddress: escrow.address,
     escrowDeclareTransactionHash: escrow.declareTransactionHash,
     escrowDeployTransactionHash: escrow.deployTransactionHash,
+    usdcAddress: usdc.address,
+    usdcDeclareTransactionHash: usdc.declareTransactionHash,
+    usdcDeployTransactionHash: usdc.deployTransactionHash,
     aliceAddress: identities.alice.account.address,
     bobAddress: identities.bob.account.address,
   };
@@ -1084,7 +1341,8 @@ try {
   console.log(`  pool class hash:    ${poolClassHash}`);
   console.log(`  QuietlineMail:      ${helper.address}`);
   console.log(`  QuietlineEscrow:    ${escrow.address}`);
-  console.log(`  Counter token ETH:  ${env.eth}`);
+  console.log(`  Market token USDC:  ${env.usdc}`);
+  console.log("  Private market:     USDC ↔ STRK · 1 STRK = 2 USDC fixture");
   console.log(`  Alice:              ${identities.alice.account.address}`);
   console.log(`  Bob:                ${identities.bob.account.address}`);
   console.log(

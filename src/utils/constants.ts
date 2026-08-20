@@ -70,6 +70,9 @@ export const strk20PoolSepolia =
 export const strk20PoolLocalnet = localnetWalletEnabled
   ? (import.meta.env.VITE_LOCALNET_POOL_ADDRESS ?? "0x0")
   : "0x0";
+export const localnetUsdcToken = localnetWalletEnabled
+  ? (import.meta.env.VITE_LOCALNET_USDC_TOKEN_ADDRESS ?? "0x0")
+  : "0x0";
 
 export function strk20PoolForProviderIndex(
   providerIndex: number,

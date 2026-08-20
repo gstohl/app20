@@ -820,6 +820,17 @@
  cursor: not-allowed;
 }
 
+@media (max-width: 560px) {
+ .addrDisconnect {
+  display: none;
+ }
+ .addrPill {
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 10px;
+ }
+}
+
 @media (prefers-reduced-motion: reduce) {
  .btn,
  .connectPill,

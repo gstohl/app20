@@ -130,22 +130,24 @@
 
 @media (max-width: 560px) {
   .session {
+    min-width: 0;
+    flex: 1 1 auto;
     min-height: 40px;
   }
 
   .summary {
-    min-width: 94px;
-    gap: 6px;
-    padding-inline: 7px;
+    display: none;
   }
 
-  .rail {
-    font-size: 7px;
-    letter-spacing: 0.04em;
+  .networkToggle {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
-  .address {
-    max-width: 76px;
+  .networkToggle button {
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 0 6px;
     font-size: 8px;
   }
 

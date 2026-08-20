@@ -1,6 +1,5 @@
 "use client";
 
-import type { WALLET_API } from "@starknet-io/types-js";
 import { validateAndParseAddress } from "starknet";
 import type { MailboxFilter } from "@/components/mail/ConversationList";
 import type { LocalMailMessage } from "@/components/mail/Thread";
@@ -11,10 +10,14 @@ import { inspectMailVault } from "@/lib/mail-vault";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
 import type { DecryptedMail, MailKeypair } from "@/lib/mail";
 import { MAIL_SCAN_MAX_MESSAGES } from "@/lib/mail-scan";
-import { parsePaymentRequestPayload, type OtcState, type PaymentRecord, type PaymentRequestPayload } from "@/lib/otc";
+import {
+  parsePaymentRequestPayload,
+  type OtcState,
+  type PaymentRecord,
+  type PaymentRequestPayload,
+} from "@/lib/otc";
 import type { StoredSentMail } from "@/lib/sent-mail";
 import * as constants from "@/utils/constants";
-
 
 export type ScanWorkerResponse =
   | { ok: true; decrypted: DecryptedMail[] }
@@ -30,7 +33,7 @@ export type ScanKind = "idle" | "scanning" | "ok" | "error";
 export const TYPE_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
   { id: "all", label: "All types" },
   { id: "letters", label: "Letters" },
-  { id: "deals", label: "Deals" },
+  { id: "deals", label: "RFQs & deals" },
   { id: "invoices", label: "Invoices" },
   { id: "escrow", label: "Escrow" },
 ];
@@ -42,32 +45,30 @@ export const MAIL_FOLDERS: Array<{ id: MailFolder; label: string }> = [
   { id: "drafts", label: "Drafts" },
 ];
 
-export type LocalnetEscrowSigner = {
-  private_key: string;
-  operation: "claim" | "timeout";
-  open_note_index: number;
-};
-
-export type LocalnetDynamicEscrowInvoke = WALLET_API.STRK20_INVOKE_ACTION & {
-  quietline_escrow_signer: LocalnetEscrowSigner;
-};
-
-export function secretKeyHex(bytes: Uint8Array): string {
-  return `0x${Array.from(bytes, (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("")}`;
+function configuredForNetwork(
+  providerIndex: number,
+  mainnet: string,
+  sepolia: string,
+  localnet: string,
+): string | null {
+  if (providerIndex === 0) return mainnet;
+  if (providerIndex === 2) return sepolia;
+  if (
+    providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
+    constants.localnetWalletEnabled
+  ) {
+    return localnet;
+  }
+  return null;
 }
 
 export function helperForNetwork(providerIndex: number): string | null {
-  const configured =
-    providerIndex === 0
-      ? constants.mailHelperMainnet
-      : providerIndex === 2
-        ? constants.mailHelperSepolia
-        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
-            constants.localnetWalletEnabled
-          ? constants.mailHelperLocalnet
-          : null;
+  const configured = configuredForNetwork(
+    providerIndex,
+    constants.mailHelperMainnet,
+    constants.mailHelperSepolia,
+    constants.mailHelperLocalnet,
+  );
   if (!isConfiguredMailHelper(configured)) return null;
 
   try {
@@ -78,15 +79,12 @@ export function helperForNetwork(providerIndex: number): string | null {
 }
 
 export function escrowForNetwork(providerIndex: number): string | null {
-  const configured =
-    providerIndex === 0
-      ? constants.escrowHelperMainnet
-      : providerIndex === 2
-        ? constants.escrowHelperSepolia
-        : providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
-            constants.localnetWalletEnabled
-          ? constants.escrowHelperLocalnet
-          : null;
+  const configured = configuredForNetwork(
+    providerIndex,
+    constants.escrowHelperMainnet,
+    constants.escrowHelperSepolia,
+    constants.escrowHelperLocalnet,
+  );
   if (!isConfiguredMailHelper(configured)) return null;
   try {
     return validateAndParseAddress(configured);
@@ -111,27 +109,31 @@ export function mailKeyFingerprint(keypair: MailKeypair | null): string {
   ).join("");
 }
 
-export function sortMailMessages(messages: LocalMailMessage[]): LocalMailMessage[] {
-  return messages.sort((left, right) => {
-    const leftTime =
-      left.localCreatedAt ??
-      (left.blockTimestamp === undefined
-        ? undefined
-        : left.blockTimestamp * 1_000);
-    const rightTime =
-      right.localCreatedAt ??
-      (right.blockTimestamp === undefined
-        ? undefined
-        : right.blockTimestamp * 1_000);
-    if (leftTime !== undefined || rightTime !== undefined) {
-      const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
-      if (timeDifference) return timeDifference;
-    }
-    const blockDifference =
-      (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
-    if (blockDifference) return blockDifference;
-    return (right.eventIndex ?? -1) - (left.eventIndex ?? -1);
-  });
+function messageTime(message: LocalMailMessage): number | undefined {
+  if (message.localCreatedAt !== undefined) return message.localCreatedAt;
+  if (message.blockTimestamp === undefined) return undefined;
+  return message.blockTimestamp * 1_000;
+}
+
+function compareMailMessages(
+  left: LocalMailMessage,
+  right: LocalMailMessage,
+): number {
+  const leftTime = messageTime(left);
+  const rightTime = messageTime(right);
+  if (leftTime !== undefined || rightTime !== undefined) {
+    const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
+    if (timeDifference) return timeDifference;
+  }
+  const blockDifference = (right.blockNumber ?? -1) - (left.blockNumber ?? -1);
+  if (blockDifference) return blockDifference;
+  return (right.eventIndex ?? -1) - (left.eventIndex ?? -1);
+}
+
+export function sortMailMessages(
+  messages: LocalMailMessage[],
+): LocalMailMessage[] {
+  return messages.sort(compareMailMessages);
 }
 
 export function mergeMailMessages(
@@ -144,9 +146,11 @@ export function mergeMailMessages(
   // When the same invoice later arrives as sealed mail, prefer its real
   // MessagePosted evidence over the local unsigned-link projection.
   const actualRequestIds = new Set(
-    [...byId.values()]
-      .filter((message) => message.transport !== "payment_link")
-      .flatMap(messagePaymentRequestIds),
+    [...byId.values()].flatMap((message) =>
+      message.transport === "payment_link"
+        ? []
+        : messagePaymentRequestIds(message),
+    ),
   );
   const deduplicated = [...byId.values()].filter(
     (message) =>
@@ -200,16 +204,16 @@ export function paymentLinkToLocal(
   };
 }
 
-export function messagePaymentRequestIds(message: LocalMailMessage): string[] {
+function messagePaymentRequestIds(message: LocalMailMessage): string[] {
   if (message.envelope.type === "payment_request") {
     const request = parsePaymentRequestPayload(message.envelope.payload);
     return request ? [request.requestId] : [];
   }
   if (message.envelope.type !== "composite") return [];
   const composite = parseCompositePayload(message.envelope.payload);
-  return (composite?.attachments ?? [])
-    .filter((attachment) => attachment.type === "payment_request")
-    .map((attachment) => attachment.payload.requestId);
+  return (composite?.attachments ?? []).flatMap((attachment) =>
+    attachment.type === "payment_request" ? [attachment.payload.requestId] : [],
+  );
 }
 
 export function paymentLinkRecords(state: OtcState): PaymentRecord[] {

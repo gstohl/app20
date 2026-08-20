@@ -10,24 +10,25 @@ import {
 } from "./escrow-actions";
 
 const escrowAddress = "0xe5c";
+const ticketAddress = "0x71c";
 const dealId = "0xd001";
 const tokenA = "0xaaa";
 const tokenB = "0xbbb";
 const recoveryAddress = "0xa11ce";
-const signature = { sigR: "0x123", sigS: "0x456" };
 
-describe("QuietlineEscrow STRK20 action batches", () => {
-  it("flattens Fund in Cairo enum and privacy_invoke order", () => {
+describe("QuietlineEscrow V2 STRK20 action batches", () => {
+  it("locks leg A, opens the ticket note, and flattens Fund exactly", () => {
     expect(
       buildEscrowFundActions({
         escrowAddress,
+        recoveryAddress,
+        ticketAddress,
         dealId,
         token: tokenA,
         amount: "500",
         counterToken: tokenB,
         counterAmount: "700",
         deadline: 2_000_000_000,
-        claimPubkey: "0xc1a1",
       }),
     ).toEqual([
       {
@@ -35,6 +36,12 @@ describe("QuietlineEscrow STRK20 action batches", () => {
         token: tokenA,
         amount: "0x1f4",
         recipient: escrowAddress,
+      },
+      {
+        type: "transfer",
+        token: ticketAddress,
+        amount: "OPEN",
+        recipient: recoveryAddress,
       },
       {
         type: "invoke",
@@ -45,26 +52,25 @@ describe("QuietlineEscrow STRK20 action batches", () => {
           tokenB,
           "0x2bc",
           "0x77359400",
-          "0xc1a1",
           dealId,
           POOL_ADDRESS_PLACEHOLDER,
-          "0x0",
+          OPEN_NOTE_ID_PLACEHOLDER,
         ],
       },
     ]);
   });
 
-  it("deposits leg B, opens leg A, and flattens Fill with literal placeholders", () => {
-    const actions = buildEscrowFillActions({
-      escrowAddress,
-      recoveryAddress,
-      dealId,
-      token: tokenB,
-      amount: "700",
-      payoutToken: tokenA,
-    });
-
-    expect(actions).toEqual([
+  it("deposits leg B, opens leg A, and flattens Fill", () => {
+    expect(
+      buildEscrowFillActions({
+        escrowAddress,
+        recoveryAddress,
+        dealId,
+        token: tokenB,
+        amount: "700",
+        payoutToken: tokenA,
+      }),
+    ).toEqual([
       {
         type: "withdraw",
         token: tokenB,
@@ -89,121 +95,78 @@ describe("QuietlineEscrow STRK20 action batches", () => {
         ],
       },
     ]);
-    if (actions[2].type !== "invoke") throw new Error("Expected invoke.");
-    expect(actions[2].calldata[3]).toBe("${poolAddress}");
-    expect(actions[2].calldata[4]).toBe("${openNoteIds[0]}");
   });
 
-  it("builds Claim and Timeout OPEN-note batches without inventing signatures", () => {
-    const claim = buildEscrowClaimActions({
+  it("withdraws the ticket, opens payout, and invokes signature-free Claim/Timeout", () => {
+    for (const [variant, actions] of [
+      [
+        ESCROW_OPERATION_VARIANT.Claim,
+        buildEscrowClaimActions({
+          escrowAddress,
+          recoveryAddress,
+          ticketAddress,
+          dealId,
+          payoutToken: tokenB,
+        }),
+      ],
+      [
+        ESCROW_OPERATION_VARIANT.Timeout,
+        buildEscrowTimeoutActions({
+          escrowAddress,
+          recoveryAddress,
+          ticketAddress,
+          dealId,
+          payoutToken: tokenA,
+        }),
+      ],
+    ] as const) {
+      expect(actions).toEqual([
+        {
+          type: "withdraw",
+          token: ticketAddress,
+          amount: "0x1",
+          recipient: escrowAddress,
+        },
+        {
+          type: "transfer",
+          token: variant === ESCROW_OPERATION_VARIANT.Claim ? tokenB : tokenA,
+          amount: "OPEN",
+          recipient: recoveryAddress,
+        },
+        {
+          type: "invoke",
+          contract: escrowAddress,
+          calldata: [
+            variant,
+            dealId,
+            POOL_ADDRESS_PLACEHOLDER,
+            OPEN_NOTE_ID_PLACEHOLDER,
+          ],
+        },
+      ]);
+    }
+  });
+
+  it("rejects zero deployments, zero tickets, and out-of-range fields", () => {
+    const valid = {
       escrowAddress,
       recoveryAddress,
+      ticketAddress,
       dealId,
-      payoutToken: tokenB,
-      signature,
-      noteId: OPEN_NOTE_ID_PLACEHOLDER,
-    });
-    const timeout = buildEscrowTimeoutActions({
-      escrowAddress,
-      recoveryAddress,
-      dealId,
-      payoutToken: tokenA,
-      signature,
-      noteId: OPEN_NOTE_ID_PLACEHOLDER,
-    });
-
-    expect(claim).toEqual([
-      {
-        type: "transfer",
-        token: tokenB,
-        amount: "OPEN",
-        recipient: recoveryAddress,
-      },
-      {
-        type: "invoke",
-        contract: escrowAddress,
-        calldata: [
-          ESCROW_OPERATION_VARIANT.Claim,
-          signature.sigR,
-          signature.sigS,
-          dealId,
-          POOL_ADDRESS_PLACEHOLDER,
-          OPEN_NOTE_ID_PLACEHOLDER,
-        ],
-      },
-    ]);
-    expect(timeout).toEqual([
-      {
-        type: "transfer",
-        token: tokenA,
-        amount: "OPEN",
-        recipient: recoveryAddress,
-      },
-      {
-        type: "invoke",
-        contract: escrowAddress,
-        calldata: [
-          ESCROW_OPERATION_VARIANT.Timeout,
-          signature.sigR,
-          signature.sigS,
-          dealId,
-          POOL_ADDRESS_PLACEHOLDER,
-          OPEN_NOTE_ID_PLACEHOLDER,
-        ],
-      },
-    ]);
-  });
-
-  it("accepts an explicitly assembled note id without creating a mismatched OPEN note", () => {
-    expect(
-      buildEscrowClaimActions({
-        escrowAddress,
-        recoveryAddress,
-        dealId,
-        payoutToken: tokenB,
-        signature,
-        noteId: "0xcafe",
-      }),
-    ).toEqual([
-      {
-        type: "invoke",
-        contract: escrowAddress,
-        calldata: [
-          ESCROW_OPERATION_VARIANT.Claim,
-          signature.sigR,
-          signature.sigS,
-          dealId,
-          POOL_ADDRESS_PLACEHOLDER,
-          "0xcafe",
-        ],
-      },
-    ]);
-  });
-
-  it("rejects zero deployment and out-of-range Cairo integer fields", () => {
+      token: tokenA,
+      amount: "1",
+      counterToken: tokenB,
+      counterAmount: "1",
+      deadline: 1,
+    };
     expect(() =>
-      buildEscrowFundActions({
-        escrowAddress: "0x0",
-        dealId,
-        token: tokenA,
-        amount: "1",
-        counterToken: tokenB,
-        counterAmount: "1",
-        deadline: 1,
-        claimPubkey: "0x1",
-      }),
+      buildEscrowFundActions({ ...valid, escrowAddress: "0x0" }),
     ).toThrow(/deployed/i);
     expect(() =>
-      buildEscrowFundActions({
-        escrowAddress,
-        dealId,
-        token: tokenA,
-        amount: 2n ** 128n,
-        counterToken: tokenB,
-        counterAmount: "1",
-        deadline: 1,
-        claimPubkey: "0x1",
-      }),
+      buildEscrowFundActions({ ...valid, ticketAddress: "0x0" }),
+    ).toThrow(/ticket/i);
+    expect(() =>
+      buildEscrowFundActions({ ...valid, amount: 2n ** 128n }),
     ).toThrow(/range/i);
   });
 });

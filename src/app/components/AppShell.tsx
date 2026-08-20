@@ -32,24 +32,23 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
             className={`signal-dot ${connected ? "is-live" : ""}`}
             aria-hidden="true"
           />
-          {connected ? "WALLET CONNECTED" : "APP20 PRIVATE WORKSPACE"}
+          {connected
+            ? "TRADING SESSION CONNECTED"
+            : "APP20 PRIVATE TRADING DESK"}
           <span>PUBLIC BOUNDARIES REMAIN CORRELATABLE</span>
         </div>
         <header className="app-header">
           <Link
             className="app-brand"
             to="/vault"
-            aria-label="APP20 private superapp"
+            aria-label="APP20 private trading desk"
           >
             <span>APP</span>
             <b>[20]</b>
           </Link>
           <nav className="app-tabs" aria-label="APP20 modules">
-            <Link
-              to="/vault"
-              aria-current={vaultActive ? "page" : undefined}
-            >
-              Vault
+            <Link to="/vault" aria-current={vaultActive ? "page" : undefined}>
+              Desk
             </Link>
             <Link
               to="/workflows"
@@ -67,7 +66,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
               to="/contacts"
               aria-current={pathname === "/contacts" ? "page" : undefined}
             >
-              Contacts
+              Counterparties
             </Link>
           </nav>
           <div className="app-utilities">

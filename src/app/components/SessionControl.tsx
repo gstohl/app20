@@ -8,6 +8,7 @@ import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useVaultMode, type VaultMode } from "@/app/vault/vaultMode";
 import {
   isStrk20Chain,
+  localnetWalletEnabled,
   providerIndexForChain,
   Strk20Networks,
 } from "@/utils/constants";
@@ -77,11 +78,19 @@ function NetworkToggle() {
 
   if (mode === "privy") return null;
 
-  async function choose(target: 0 | 2) {
+  async function choose(target: 0 | 2 | 3) {
     setNotice("");
     if (providerIndex === target) return;
     if (!connected || !wallet) {
       setProviderIndex(target);
+      return;
+    }
+    if (target === 3) {
+      setNotice("Disconnect the live wallet, then connect Localnet (dev).");
+      return;
+    }
+    if (providerIndex === 3) {
+      setNotice("Disconnect Localnet (dev) before selecting a live network.");
       return;
     }
     setBusy(true);
@@ -124,6 +133,17 @@ function NetworkToggle() {
       >
         SEPOLIA
       </button>
+      {localnetWalletEnabled ? (
+        <button
+          type="button"
+          aria-pressed={providerIndex === 3}
+          className={providerIndex === 3 ? styles.networkActive : undefined}
+          onClick={() => void choose(3)}
+          disabled={busy}
+        >
+          LOCAL
+        </button>
+      ) : null}
       {notice ? <span role="status">{notice}</span> : null}
     </div>
   );

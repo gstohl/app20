@@ -1,4 +1,10 @@
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import {
+  expect,
+  test,
+  type Locator,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -65,24 +71,31 @@ async function switchIdentity(
 ) {
   const target = identity(config, id);
   const selector = page.locator(`[data-localnet-identity="${id}"]`);
-  await selector.click();
+  if ((await selector.getAttribute("aria-pressed")) !== "true") {
+    await selector.click();
+  }
   await expect(selector).toHaveAttribute("aria-pressed", "true");
-  const account = page.getByRole("region", {
-    name: "Wallet and shielded balance",
-  });
-  await expect(account.locator("code[title]")).toHaveAttribute(
+  if (
+    (await page.getByRole("button", { name: "Connect wallet" }).count()) > 0
+  ) {
+    await connectLocalnet(page);
+  }
+  const session = page.getByRole("region", { name: "Wallet session" });
+  await expect(session.locator("[title]").first()).toHaveAttribute(
     "title",
     new RegExp(target.address.slice(2), "i"),
   );
-  await expect(
-    page.getByRole("button", { name: "Load device key & register" }),
-  ).toBeVisible();
 }
 
 async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
-  await page
-    .getByRole("button", { name: "Load device key & register" })
-    .click();
+  const setup = page.getByRole("button", {
+    name: "Load device key & register",
+  });
+  if ((await setup.count()) === 0) {
+    await page.getByRole("button", { name: "Compose", exact: true }).click();
+  }
+  await expect(setup).toBeVisible();
+  await setup.click();
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
@@ -100,6 +113,21 @@ async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
   await expect(
     page.getByRole("heading", { name: "Register a mail key" }),
   ).toHaveCount(0);
+  const deleteDraft = page.getByRole("button", {
+    name: "Delete draft…",
+    exact: true,
+  });
+  if ((await deleteDraft.count()) > 0) {
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteDraft.click();
+  } else {
+    const close = page.getByRole("button", { name: "Close", exact: true });
+    if ((await close.count()) > 0) await close.click();
+  }
+  await page
+    .getByRole("button", { name: /^Inbox/ })
+    .first()
+    .click();
   return backup;
 }
 
@@ -107,9 +135,27 @@ async function loadExistingKey(page: Page) {
   const button = page.getByRole("button", {
     name: "Load device key & register",
   });
+  if ((await button.count()) === 0) {
+    await page.getByRole("button", { name: "Compose", exact: true }).click();
+  }
   await expect(button).toBeVisible();
   await button.click();
   await expect(button).toHaveCount(0, { timeout: 60_000 });
+  const deleteDraft = page.getByRole("button", {
+    name: "Delete draft…",
+    exact: true,
+  });
+  if ((await deleteDraft.count()) > 0) {
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteDraft.click();
+  } else {
+    const close = page.getByRole("button", { name: "Close", exact: true });
+    if ((await close.count()) > 0) await close.click();
+  }
+  await page
+    .getByRole("button", { name: /^Inbox/ })
+    .first()
+    .click();
 }
 
 async function scanRecent(page: Page) {
@@ -125,7 +171,7 @@ async function scanRecent(page: Page) {
 }
 
 async function openNewDocument(page: Page) {
-  await page.getByRole("button", { name: /New/ }).first().click();
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "New document" }),
   ).toBeVisible();
@@ -138,6 +184,35 @@ function messageRow(page: Page, body: string) {
 
 function threadBody(page: Page, body: string) {
   return page.getByLabel("Correspondence").getByText(body, { exact: true });
+}
+
+const STRK_SCALE = 10n ** 18n;
+
+function parseDisplayedStrk(label: string): bigint {
+  const match = /^(\d+)(?:\.(\d+))? STRK$/.exec(label.trim());
+  if (!match) {
+    throw new Error(`Unexpected shielded balance label: ${label}`);
+  }
+  const fraction = (match[2] ?? "").padEnd(18, "0");
+  return BigInt(match[1]) * STRK_SCALE + BigInt(fraction || "0");
+}
+
+function formatDisplayedStrk(amount: bigint): string {
+  const whole = amount / STRK_SCALE;
+  const fraction = (amount % STRK_SCALE)
+    .toString()
+    .padStart(18, "0")
+    .replace(/0+$/, "")
+    .slice(0, 4);
+  return fraction ? `${whole}.${fraction} STRK` : `${whole} STRK`;
+}
+
+async function shieldedBalanceLabel(walletRegion: Locator) {
+  const label = walletRegion.getByText(/^\d+(?:\.\d+)? STRK$/, {
+    exact: true,
+  });
+  await expect(label).toBeVisible({ timeout: 60_000 });
+  return (await label.innerText()).trim();
 }
 
 test("creates a standalone payment link without an on-chain action", async ({
@@ -157,7 +232,7 @@ test("creates a standalone payment link without an on-chain action", async ({
 
   await page.goto("/mail/inbox");
   await connectLocalnet(page);
-  await page.getByRole("link", { name: "Request", exact: true }).click();
+  await page.getByRole("link", { name: "Pay", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
   ).toBeVisible();
@@ -208,7 +283,7 @@ test("all Quietline localnet journeys", async ({
   browser,
   request,
 }, testInfo) => {
-  test.setTimeout(30 * 60_000);
+  test.setTimeout(15 * 60_000);
   const configResponse = await request.get(
     `${BASE_URL}/__quietline_localnet_wallet/config`,
   );
@@ -252,9 +327,51 @@ test("all Quietline localnet journeys", async ({
   if (!bobBackup)
     throw new Error("Bob backup was not captured during onboarding.");
 
-  await test.step("2. shield STRK and observe truthful progress", async () => {
-    await page.goto("/vault");
+  await test.step("1b. Alice backs up and restores Contacts through encrypted self-mail", async () => {
     await switchIdentity(page, config, "alice");
+    await loadExistingKey(page);
+    await page.getByRole("link", { name: "Counterparties" }).click();
+    await page.getByLabel("New address book label").fill("Bob recovery desk");
+    await page.getByLabel("New address book address").fill(bob.address);
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await loadExistingKey(page);
+
+    const backupContacts = page.getByRole("button", {
+      name: "Back up contacts to Mailbox",
+    });
+    await expect(backupContacts).toBeEnabled({ timeout: 60_000 });
+    await backupContacts.click();
+    await expect(
+      page.getByText(/Encrypted 1-contact snapshot posted/),
+    ).toBeVisible({ timeout: 60_000 });
+
+    await page.getByRole("link", { name: "Counterparties" }).click();
+    await page.getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(page.getByText("Bob recovery desk")).toHaveCount(0);
+    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await loadExistingKey(page);
+    await scanRecent(page);
+    await page
+      .getByRole("button", { name: /Contact backup/ })
+      .first()
+      .click();
+    await expect(
+      page.getByText("CONTACT BACKUP", { exact: true }),
+    ).toBeVisible();
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Merge verified contacts" }).click();
+    await expect(
+      page.getByText(/Authenticated contact snapshot restored/),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "Counterparties" }).click();
+    await expect(page.getByText("Bob recovery desk")).toBeVisible();
+    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+  });
+
+  await test.step("2. shield STRK and observe truthful progress", async () => {
+    await switchIdentity(page, config, "alice");
+    await page.getByRole("link", { name: "Desk", exact: true }).click();
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
@@ -265,6 +382,10 @@ test("all Quietline localnet journeys", async ({
         exact: true,
       }),
     ).toBeVisible();
+    const aliceBefore = parseDisplayedStrk(
+      await shieldedBalanceLabel(walletRegion),
+    );
+    const aliceAfter = formatDisplayedStrk(aliceBefore + 100000000000000000n);
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
     await expect(
       page.getByText("Shield 0.1 STRK", { exact: true }),
@@ -281,14 +402,21 @@ test("all Quietline localnet journeys", async ({
       timeout: 180_000,
     });
     await expect(
-      walletRegion.getByText("10.1 STRK", { exact: true }),
+      walletRegion.getByText(aliceAfter, { exact: true }),
     ).toBeVisible({
       timeout: 60_000,
     });
 
     // Bob needs STRK for the later offer acceptance and invoice payment.
+    // The identity switch stays in Mail's dev-only sidebar; Vault keeps one
+    // shared wallet session control instead of duplicating that test chrome.
+    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
     await switchIdentity(page, config, "bob");
-    await loadExistingKey(page);
+    await page.getByRole("link", { name: "Desk", exact: true }).click();
+    const bobBefore = parseDisplayedStrk(
+      await shieldedBalanceLabel(walletRegion),
+    );
+    const bobAfter = formatDisplayedStrk(bobBefore + STRK_SCALE);
     await amountInput.fill("1");
     await expect(
       walletRegion.getByText("1 STRK · 1000000000000000000 base units", {
@@ -301,13 +429,13 @@ test("all Quietline localnet journeys", async ({
     ).toBeVisible({
       timeout: 180_000,
     });
-    await expect(walletRegion.getByText("1 STRK", { exact: true })).toBeVisible(
+    await expect(walletRegion.getByText(bobAfter, { exact: true })).toBeVisible(
       {
         timeout: 60_000,
       },
     );
     await screenshot(page, "05-shielded-balances", testInfo);
-    await page.goto("/mail/inbox");
+    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
   });
 
   await test.step("3. send a composite document and inspect Sent evidence", async () => {
@@ -431,6 +559,10 @@ test("all Quietline localnet journeys", async ({
     const wrongKeyPage = await unrelated.newPage();
     await wrongKeyPage.goto("/mail/inbox");
     await connectLocalnet(wrongKeyPage);
+    await switchIdentity(wrongKeyPage, config, "bob");
+    await wrongKeyPage
+      .getByRole("button", { name: "Compose", exact: true })
+      .click();
     await wrongKeyPage.getByText("Restore from backup").click();
     await wrongKeyPage.getByLabel("Backup value").fill(WRONG_KEY_BACKUP);
     await wrongKeyPage
@@ -660,9 +792,7 @@ test("all Quietline localnet journeys", async ({
         "Write a private message, or leave blank when sending attachments only",
       ),
     ).toHaveValue(draftBody);
-    await page
-      .getByRole("button", { name: "Send message (no asset transfer)" })
-      .click();
+    await page.getByRole("button", { name: "Send encrypted message" }).click();
     await expect(
       page.getByRole("heading", { name: "New document" }),
     ).toHaveCount(0, {
@@ -688,20 +818,13 @@ test("all Quietline localnet journeys", async ({
       page.getByText(/2 \/ 66 recipients\. Recipient count is public/),
     ).toBeVisible();
     await screenshot(page, "24-multi-recipient-compose", testInfo);
-    await page
-      .getByRole("button", { name: "Send message (no asset transfer)" })
-      .click();
+    await page.getByRole("button", { name: "Send encrypted message" }).click();
     await expect(
       page.getByRole("heading", { name: "New document" }),
     ).toHaveCount(0, {
       timeout: 180_000,
     });
     await expect(page.getByText(/2 recipients · posted/i)).toBeVisible();
-    await expect(
-      page.getByText("Recipient count is public in the ciphertext format.", {
-        exact: false,
-      }),
-    ).toBeVisible();
 
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
@@ -721,45 +844,39 @@ test("all Quietline localnet journeys", async ({
     await expect(messageRow(page, multiBody)).toBeVisible({ timeout: 60_000 });
     await messageRow(page, multiBody).click();
     await expect(threadBody(page, multiBody)).toBeVisible();
-    await expect(
-      page.getByText("Recipient count is public in the ciphertext format.", {
-        exact: false,
-      }),
-    ).toBeVisible();
     await screenshot(page, "26-multi-recipient-alice", testInfo);
   });
 
-  await test.step("10. render both themes and responsive widths without overflow", async () => {
+  await test.step("10. render responsive widths without overflow", async () => {
     await page.setViewportSize({ width: 1_440, height: 900 });
-    for (const theme of ["Light", "Dark"] as const) {
-      await page.getByRole("button", { name: theme, exact: true }).click();
-      await expect(page.locator("html")).toHaveAttribute(
-        "data-theme",
-        theme.toLowerCase(),
-      );
-      await screenshot(page, `27-theme-${theme.toLowerCase()}`, testInfo);
-    }
-    await expect(
-      page.getByRole("button", { name: "System", exact: true }),
-    ).toBeVisible();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      /^(light|dark)$/,
+    );
+    await screenshot(page, "27-shared-shell-theme", testInfo);
 
     for (const width of [375, 768, 1_440]) {
       await page.setViewportSize({ width, height: 900 });
       if (width === 375) {
-        const drawer = page.getByRole("complementary", {
-          name: "Mailbox sidebar",
-        });
+        const drawer = page.locator("#mail-sidebar");
         const menu = page.getByRole("button", {
           name: "Open mailbox sidebar",
         });
         await expect(drawer).toHaveAttribute("inert", "");
+        await expect(menu).toHaveAttribute("aria-expanded", "false");
         await menu.click();
-        await expect(drawer).not.toHaveAttribute("inert", "");
+        const sidebarDialog = page.getByRole("dialog", {
+          name: "Mailbox sidebar",
+        });
+        await expect(sidebarDialog).toBeVisible();
+        await expect(drawer).not.toHaveAttribute("inert");
         await expect(
-          drawer.getByRole("button", { name: "Close mailbox sidebar" }),
+          sidebarDialog.getByRole("button", { name: "Close mailbox sidebar" }),
         ).toBeFocused();
         await page.keyboard.press("Escape");
+        await expect(sidebarDialog).toHaveCount(0);
         await expect(drawer).toHaveAttribute("inert", "");
+        await expect(menu).toHaveAttribute("aria-expanded", "false");
         await expect(menu).toBeFocused();
       }
       const metrics = await page.evaluate(() => ({
@@ -792,10 +909,11 @@ test("all Quietline localnet journeys", async ({
   });
 
   await test.step("11. forget this device clears every sensitive local mailbox store", async () => {
+    await page.getByText("Device safety", { exact: true }).click();
     page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", {
-        name: "Forget this device / clear local mailbox",
+        name: "Forget this device",
       })
       .click();
     await expect(page.getByText(/Forgot this device: removed/)).toBeVisible();
@@ -816,7 +934,10 @@ test("all Quietline localnet journeys", async ({
       );
     });
     expect(remaining).toEqual([]);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-theme",
+      /^(light|dark)$/,
+    );
     await screenshot(page, "29-forgotten-device", testInfo);
   });
 });

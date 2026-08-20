@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { storeDeskHandoff } from "@/lib/desk-handoff";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
@@ -71,7 +73,9 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
       setLabelDraft("");
       setAddressDraft("");
       setError(null);
-      setStatus("Saved. The book is AES-GCM encrypted in this browser only.");
+      setStatus(
+        "Saved under this device's AES-GCM key. Use Mailbox for an encrypted on-chain recovery snapshot.",
+      );
       window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
     } catch (cause: unknown) {
       setError(
@@ -109,9 +113,9 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
       aria-labelledby="vault-book-title"
     >
       <header className={styles.panelHeading}>
-        <span>ADDRESS BOOK</span>
+        <span>COUNTERPARTIES</span>
         <strong id="vault-book-title">
-          Encrypted on this device · usable in every address field
+          Device-encrypted directory · RFQ and Mail actions
         </strong>
       </header>
       <div className={styles.bookBody}>
@@ -159,21 +163,47 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
                   <code title={entry.address}>
                     {shortAddress(entry.address)}
                   </code>
-                  <button
-                    type="button"
-                    onClick={() => void remove(entry.label)}
-                    disabled={busy}
-                  >
-                    Remove
-                  </button>
+                  <div className={styles.bookActions}>
+                    <Link
+                      to="/vault"
+                      onClick={() =>
+                        storeDeskHandoff(
+                          window.sessionStorage,
+                          "rfq",
+                          entry.address,
+                        )
+                      }
+                    >
+                      New RFQ
+                    </Link>
+                    <Link
+                      to="/mail/inbox"
+                      onClick={() =>
+                        storeDeskHandoff(
+                          window.sessionStorage,
+                          "mail",
+                          entry.address,
+                        )
+                      }
+                    >
+                      Encrypted Mail
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => void remove(entry.label)}
+                      disabled={busy}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
           ) : (
             <p className={styles.bookEmpty}>
-              No saved addresses yet. Entries are stored under
-              app20/address-book/v1 in this browser profile, AES-GCM encrypted
-              with a device-local key, and never uploaded.
+              No saved counterparties yet. Entries stay AES-GCM encrypted under
+              a device-local key until you explicitly post an encrypted recovery
+              snapshot from Mailbox.
             </p>
           )
         ) : (
@@ -192,14 +222,19 @@ export default function ContactsPage() {
     <main className={styles.page}>
       <header className={styles.masthead}>
         <div className={styles.mastheadCopy}>
-          <p className={styles.eyebrow}>APP20 / CONTACTS</p>
+          <p className={styles.eyebrow}>
+            APP20 / PRIVATE DESK / COUNTERPARTIES
+          </p>
         </div>
       </header>
       <AddressBookPanel selfAddress={address ?? ""} />
       <p className={styles.disclosure}>
-        Contacts are AES-GCM encrypted with a device-local key under
-        app20/address-book/v1 and never uploaded. Every address field in
-        Vault, Mailbox, and Pay can read them.
+        Local contacts are AES-GCM encrypted under app20/address-book/v1. Code
+        running in this browser profile can still read an unlocked book. For
+        cross-device recovery, Mailbox can post a self-addressed encrypted
+        snapshot: connect the same wallet and restore the mailbox recovery
+        phrase. Wallet possession alone cannot decrypt it. On-chain ciphertext,
+        size, timing, and helper activity remain public and cannot be deleted.
       </p>
     </main>
   );

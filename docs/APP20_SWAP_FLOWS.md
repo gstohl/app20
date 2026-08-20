@@ -206,3 +206,98 @@ NEAR is depth.
 CCTP is the USDC pipe.  
 TEE is the clerk.  
 None of them turn a same-size round trip into unlinkability.
+
+---
+
+## 8. Focus market — private USDC ↔ STRK RFQ
+
+The first market is intentionally narrow. APP20 quotes from pre-positioned
+private inventory, locks the taker note in Cairo escrow, and either fills before
+the deadline or returns the original asset after expiry.
+
+```mermaid
+flowchart LR
+  T[Private taker note] --> Q[APP20 RFQ]
+  Q --> C{Cross another order?}
+  C -->|yes| X[Private note-for-note settlement]
+  C -->|no| I[APP20 private inventory]
+  I --> E[Fill-or-refund Cairo escrow]
+  E --> U[Private output note]
+  I -. delayed net residual .-> H[PUBLIC hedge]
+```
+
+The localnet implementation proves both STRK→USDC and USDC→STRK with a
+six-decimal USDC fixture, a deterministic test price, live solver-note inventory,
+and fail-closed insufficient-inventory handling. It is not a production price
+feed, deployed market, or yield product.
+
+The moat is crossing and netting recurring private flow. Bridges remain public
+commodity ingress and hedge infrastructure.
+
+---
+
+## 9. Future SOL market — exact allowlisted bridge asset
+
+A SOL-denominated Starknet market is technically possible through the existing
+Wormhole representation on Ethereum and StarkGate. It must never be labeled
+native SOL on Starknet.
+
+```mermaid
+flowchart LR
+  S[Native SOL / Solana] -->|Wormhole Portal · PUBLIC| W[Wormhole WSOL / Ethereum]
+  W -->|StarkGate · PUBLIC| L[Starknet ERC-20 representation]
+  L -->|Shield · PUBLIC| N[Private WSOL-origin note]
+  N --> D[APP20 private RFQ market]
+```
+
+Candidate Ethereum asset:
+
+```text
+Wormhole SOL ERC-20
+0xd31a59c85ae9d8edefec411d448f90841571b89c
+```
+
+Before APP20 admits it, an operator must:
+
+1. Verify the exact Wormhole origin, implementation, decimals, redemption path,
+   and current contract status from first-party sources.
+2. Query `StarkgateRegistry.getBridge(token)`. Do not assume the token is
+   enrolled or shown in the StarkGate UI.
+3. If enrollment is permitted and approved, use the StarkGate Manager's
+   `enrollTokenBridge(token)` flow and independently verify the resulting L2
+   token returned by the canonical bridge.
+4. Complete a tiny round trip: Solana → Ethereum representation → Starknet →
+   Ethereum → Solana. A one-way deposit is not sufficient evidence.
+5. Verify Ready and STRK20 can discover, shield, transfer, and unshield that
+   exact L2 token.
+6. Seed bounded solver notes and demonstrate both fill and expiry refund before
+   exposing the pair.
+7. Measure exit liquidity and disable quoting if the bridge, oracle, redemption,
+   or inventory health check fails.
+
+This asset stacks Wormhole, Ethereum, StarkGate, Starknet, and STRK20 risk. A
+same-symbol token from any other contract is a different asset and must be
+rejected.
+
+### Maker earnings are a later, separate product
+
+People cannot earn from the current escrow. A maker programme would require a
+reviewed inventory-vault/accounting design that defines:
+
+- which exact token notes the maker supplies;
+- whether capital remains non-custodial or enters a managed vault;
+- how filled principal, spreads, losses, and bridge costs are attributed;
+- withdrawal queues and inventory concentration limits;
+- bridge/depeg/adverse-selection loss disclosure;
+- jurisdiction, sanctions, tax, and licensing treatment.
+
+Returns would come from realized RFQ spreads and fees, not guaranteed yield.
+APP20 must not advertise earnings until that accounting is implemented, audited,
+and producing attributable realized results.
+
+First-party references:
+
+- [Wormhole Token Bridge](https://wormhole.com/docs/products/token-transfers/wrapped-token-transfers/portal/)
+- [StarkGate app](https://starkgate.starknet.io/)
+- [StarkGate contracts](https://github.com/starknet-io/starkgate-contracts)
+- [StarkGate reference](https://docs.starknet.io/learn/cheatsheets/starkgate-reference)

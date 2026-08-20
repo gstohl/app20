@@ -130,20 +130,30 @@ function parsePayload(raw: string): AddressBookPayload {
 }
 
 function sanitizeEntries(value: unknown): AddressBookEntry[] {
-  if (!Array.isArray(value)) throw corruptBookError();
+  if (!Array.isArray(value) || value.length > ADDRESS_BOOK_MAX_ENTRIES) {
+    throw corruptBookError();
+  }
   const entries: AddressBookEntry[] = [];
+  const labels = new Set<string>();
   for (const item of value) {
     if (item === null || typeof item !== "object") throw corruptBookError();
     const record = item as Record<string, unknown>;
     if (
       typeof record.label !== "string" ||
       typeof record.address !== "string" ||
-      typeof record.updatedAt !== "number"
+      typeof record.updatedAt !== "number" ||
+      !Number.isSafeInteger(record.updatedAt) ||
+      record.updatedAt < 0 ||
+      record.updatedAt > Date.now() + 5 * 60 * 1_000
     ) {
       throw corruptBookError();
     }
+    const label = validateLabel(record.label);
+    const labelKey = label.toLocaleLowerCase("en-US");
+    if (labels.has(labelKey)) throw corruptBookError();
+    labels.add(labelKey);
     entries.push({
-      label: record.label,
+      label,
       address: normalizeStarknetAddress(record.address),
       updatedAt: record.updatedAt,
     });
@@ -152,9 +162,15 @@ function sanitizeEntries(value: unknown): AddressBookEntry[] {
 }
 
 function sortEntries(entries: AddressBookEntry[]): AddressBookEntry[] {
-  return [...entries].sort((a, b) =>
-    a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
-  );
+  return [...entries].sort((left, right) => {
+    const leftFolded = left.label.toLowerCase();
+    const rightFolded = right.label.toLowerCase();
+    if (leftFolded < rightFolded) return -1;
+    if (leftFolded > rightFolded) return 1;
+    if (left.label < right.label) return -1;
+    if (left.label > right.label) return 1;
+    return 0;
+  });
 }
 
 export async function loadAddressBook(
@@ -184,7 +200,11 @@ export async function loadAddressBook(
   } catch {
     throw corruptBookError();
   }
-  return sanitizeEntries(JSON.parse(new TextDecoder().decode(plaintext)));
+  try {
+    return sanitizeEntries(JSON.parse(new TextDecoder().decode(plaintext)));
+  } catch {
+    throw corruptBookError();
+  }
 }
 
 async function encryptBook(
@@ -221,7 +241,7 @@ async function encryptBook(
 }
 
 function validateLabel(label: string): string {
-  const trimmed = label.trim().replace(/\s+/g, " ");
+  const trimmed = label.normalize("NFKC").trim().replace(/\s+/g, " ");
   if (!trimmed) throw new Error("Enter an address-book label.");
   if (trimmed.length > ADDRESS_BOOK_MAX_LABEL_LENGTH) {
     throw new Error(
@@ -265,6 +285,43 @@ export async function removeAddressBookEntry(
   const next = existing.filter(
     (item) => item.label.toLowerCase() !== label.trim().toLowerCase(),
   );
+  await encryptBook(storage, selfAddress, next);
+  return next;
+}
+
+/** Replaces the complete local book only after every imported entry validates. */
+export async function replaceAddressBookEntries(
+  storage: StorageLike,
+  selfAddress: string,
+  entries: readonly AddressBookEntry[],
+): Promise<AddressBookEntry[]> {
+  const next = sanitizeEntries(entries);
+  await encryptBook(storage, selfAddress, next);
+  return next;
+}
+
+/**
+ * Additively restores a snapshot. A newer local label wins over an older
+ * snapshot entry; a newer authenticated snapshot entry may update that label.
+ */
+export async function mergeAddressBookEntries(
+  storage: StorageLike,
+  selfAddress: string,
+  entries: readonly AddressBookEntry[],
+): Promise<AddressBookEntry[]> {
+  const incoming = sanitizeEntries(entries);
+  const existing = await loadAddressBook(storage, selfAddress);
+  const byLabel = new Map(
+    existing.map((entry) => [entry.label.toLocaleLowerCase("en-US"), entry]),
+  );
+  for (const entry of incoming) {
+    const key = entry.label.toLocaleLowerCase("en-US");
+    const current = byLabel.get(key);
+    if (!current || entry.updatedAt > current.updatedAt) {
+      byLabel.set(key, entry);
+    }
+  }
+  const next = sanitizeEntries([...byLabel.values()]);
   await encryptBook(storage, selfAddress, next);
   return next;
 }

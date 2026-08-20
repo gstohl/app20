@@ -95,12 +95,6 @@
   background: var(--shell-orange);
 }
 
-
-
-
-
-
-
 .readyDesk {
   display: grid;
   gap: 1px;
@@ -537,6 +531,27 @@
   font-size: 10px;
 }
 
+.fundingDetails {
+  margin: 10px 14px 12px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.fundingDetails summary {
+  padding: 9px 11px;
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fundingDetails[open] summary {
+  border-bottom: 1px solid var(--shell-line);
+}
+
 .bookPanel {
   min-width: 0;
 }
@@ -615,8 +630,18 @@
   font-size: 10px;
 }
 
-.bookList button {
+.bookActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.bookList button,
+.bookActions a {
+  display: inline-flex;
   min-height: 24px;
+  align-items: center;
   border: 1px solid var(--shell-line);
   padding: 0 8px;
   color: var(--shell-muted);
@@ -626,7 +651,377 @@
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
+  text-decoration: none;
   text-transform: uppercase;
+}
+
+.bookActions a:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.privateIntentDesk {
+  margin-top: 12px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-bg);
+}
+
+.privateIntentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.privateIntentHeader span,
+.privateIntentHeader > strong,
+.privateIntentForm span,
+.privateIntentQuote span,
+.privateIntentOutcome legend,
+.privateIntentExecute,
+.privateIntentSuccess span {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.privateIntentHeader span,
+.privateIntentHeader > strong,
+.privateIntentForm span,
+.privateIntentOutcome legend {
+  color: var(--shell-orange);
+}
+
+.privateIntentHeader h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+
+.privateIntentCounterparty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.privateIntentCounterparty > div {
+  display: grid;
+  gap: 3px;
+}
+
+.privateIntentCounterparty span,
+.privateIntentCounterparty a {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.privateIntentCounterparty span {
+  color: var(--shell-muted);
+}
+
+.privateIntentCounterparty code {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.privateIntentCounterparty a {
+  border: 1px solid var(--shell-line);
+  padding: 6px 9px;
+  color: var(--shell-text);
+  text-decoration: none;
+}
+
+.privateIntentCounterparty a:hover {
+  border-color: var(--shell-orange);
+}
+
+.privateIntentForm {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.75fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 12px;
+}
+
+.privateIntentForm label {
+  display: grid;
+  gap: 5px;
+}
+
+.privateIntentForm input,
+.privateIntentForm select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--shell-line);
+  border-radius: 0;
+  padding: 0 10px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font-family: var(--font-mono-ui), monospace;
+}
+
+.privateIntentForm select {
+  appearance: none;
+}
+
+.privateIntentForm button,
+.privateIntentExecute {
+  min-height: 38px;
+  border: 1px solid var(--shell-orange);
+  border-radius: 0;
+  padding: 0 13px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+}
+
+.privateIntentForm button:disabled,
+.privateIntentExecute:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.privateIntentQuote {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid var(--shell-line);
+}
+
+.privateIntentQuote > div {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px;
+}
+
+.privateIntentQuote > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+
+.privateIntentQuote span {
+  color: var(--shell-muted);
+}
+
+.privateIntentQuote > div:first-child strong {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.privateIntentQuote strong {
+  font-size: 12px;
+}
+
+.privateIntentStepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-line);
+  list-style: none;
+}
+
+.privateIntentStepper li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.privateIntentStepper li + li::before {
+  width: 18px;
+  height: 1px;
+  margin-right: 2px;
+  background: var(--shell-line);
+  content: "";
+}
+
+.privateIntentStepper li > span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--shell-line);
+}
+
+.privateIntentStepper li[data-state="complete"],
+.privateIntentStepper li[data-state="current"] {
+  color: var(--shell-text);
+}
+
+.privateIntentStepper li[data-state="complete"] > span {
+  border-color: var(--shell-live);
+  color: var(--shell-bg);
+  background: var(--shell-live);
+}
+
+.privateIntentStepper li[data-state="current"] > span {
+  border-color: var(--shell-orange);
+  color: var(--shell-orange);
+}
+
+.privateIntentDemoControls {
+  margin: 8px 12px 0;
+  border: 1px dashed var(--shell-line);
+  padding: 7px 9px;
+}
+
+.privateIntentDemoControls summary {
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.privateIntentDemoControls .privateIntentOutcome {
+  margin: 9px 0 0;
+}
+
+.privateIntentOutcome {
+  display: flex;
+  gap: 16px;
+  margin: 10px 12px 0;
+  border: 0;
+  padding: 0;
+}
+
+.privateIntentOutcome label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.privateIntentExecute {
+  width: calc(100% - 24px);
+  margin: 11px 12px 0;
+}
+
+.privateIntentHint,
+.privateIntentStatus,
+.privateIntentDisclosure {
+  margin: 8px 12px 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.privateIntentStatus,
+.privateIntentSuccess {
+  border: 1px solid var(--shell-line);
+  padding: 8px 10px;
+  background: var(--shell-inset);
+}
+
+.privateIntentError {
+  color: var(--shell-danger, #ff6666);
+}
+
+.privateIntentSuccess {
+  display: grid;
+  gap: 10px;
+  margin: 8px 12px 0;
+  color: var(--shell-live);
+}
+
+.privateIntentSuccess > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.privateIntentSuccess span {
+  color: var(--shell-muted);
+}
+
+.privateIntentReceipt {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--shell-line);
+}
+
+.privateIntentReceipt > div {
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.privateIntentReceipt > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+
+.privateIntentReceipt dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.privateIntentReceipt dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.privateIntentReceipt code,
+.privateIntentTransactions code {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.privateIntentTransactions summary {
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.privateIntentTransactions code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--shell-muted);
+}
+
+.privateIntentLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.privateIntentLinks a {
+  border: 1px solid var(--shell-line);
+  padding: 6px 9px;
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.privateIntentLinks a:hover {
+  border-color: var(--shell-orange);
+}
+
+.privateIntentDisclosure {
+  margin-bottom: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--shell-line);
 }
 
 .railMap {
@@ -705,48 +1100,48 @@
   }
 
   .railPick {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  border-bottom: 1px solid var(--shell-line);
-  background: var(--shell-panel);
-}
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--shell-line);
+    background: var(--shell-panel);
+  }
 
-.railPick button {
-  min-height: 40px;
-  padding: 0 16px;
-  border: 0;
-  border-right: 1px solid var(--shell-line);
-  color: var(--shell-muted);
-  background: transparent;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  cursor: pointer;
-}
+  .railPick button {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-right: 1px solid var(--shell-line);
+    color: var(--shell-muted);
+    background: transparent;
+    font-family: var(--font-mono-ui), monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    cursor: pointer;
+  }
 
-.railPick button.isActive {
-  color: var(--shell-bg);
-  background: var(--shell-orange);
-}
+  .railPick button.isActive {
+    color: var(--shell-bg);
+    background: var(--shell-orange);
+  }
 
-.railPick a {
-  margin-left: auto;
-  padding: 0 16px;
-  color: var(--shell-orange);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-decoration: none;
-}
+  .railPick a {
+    margin-left: auto;
+    padding: 0 16px;
+    color: var(--shell-orange);
+    font-family: var(--font-mono-ui), monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-decoration: none;
+  }
 
-.panel[hidden] {
-  display: none;
-}
+  .panel[hidden] {
+    display: none;
+  }
 
-.desk {
+  .desk {
     grid-template-columns: 1fr;
   }
 }
@@ -799,6 +1194,15 @@
     align-items: stretch;
   }
 
+  .privateIntentForm,
+  .privateIntentQuote {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .privateIntentForm > button {
+    grid-column: 1 / -1;
+  }
+
   .railMap .railStage:last-child {
     grid-column: 1 / -1;
   }
@@ -840,8 +1244,15 @@
   }
 
   .bookAdd,
-  .sendBookRow {
+  .sendBookRow,
+  .privateIntentForm,
+  .privateIntentQuote {
     grid-template-columns: 1fr;
+  }
+
+  .privateIntentQuote > div + div {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
   }
 
   .sendBookRow select {
@@ -850,6 +1261,34 @@
 
   .bookList li {
     grid-template-columns: 1fr;
-    gap: 3px;
+    gap: 5px;
+  }
+
+  .bookActions {
+    justify-content: flex-start;
+  }
+
+  .privateIntentStepper,
+  .privateIntentReceipt {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .privateIntentStepper li + li::before {
+    display: none;
+  }
+
+  .privateIntentReceipt > div + div {
+    border-left: 0;
+  }
+
+  .privateIntentReceipt > div:nth-child(n + 3) {
+    border-top: 1px solid var(--shell-line);
+  }
+
+  .privateIntentSuccess > div:first-child,
+  .privateIntentCounterparty {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

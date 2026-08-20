@@ -101,7 +101,9 @@ async function handleRelay(req, res, network) {
   res.statusCode = upstream.ok ? 200 : 502;
   res.setHeader("content-type", "application/json");
   res.setHeader("cache-control", "no-store");
-  res.end(upstream.ok ? body : JSON.stringify({ error: "RPC upstream unavailable." }));
+  res.end(
+    upstream.ok ? body : JSON.stringify({ error: "RPC upstream unavailable." }),
+  );
 }
 
 export function devStarknetRelay() {

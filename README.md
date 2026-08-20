@@ -1,16 +1,17 @@
 # APP20
 
-Private superapp on Starknet.
+Professional private RFQ trading desk on Starknet.
 
-Four features, in product order:
+Three surfaces form one workflow:
 
-1. **Vault** — shielded STRK wallet
-2. **Intents** — cross-chain review desk
-3. **Workflows** — advisory policy desk
-4. **Mailbox** — encrypted Mail
+1. **Desk** — inventory-backed private USDC↔STRK RFQs and shielded funding
+2. **Mailbox** — encrypted deal correspondence, structured evidence, and contact recovery
+3. **Counterparties** — a device-encrypted directory with RFQ and Mail handoffs
 
 Users connect once in the header. Viewing keys and mailbox keys stay on the
 device. The STRK20 pool is reached through the official Starknet privacy path.
+Workflows, dry cross-chain review, and payment links remain secondary tools,
+not separate claims in the judged trading flow.
 
 Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
 
@@ -21,24 +22,29 @@ yet. This is not a Mainnet value-moving release.
 
 | Rank | Feature | Route | Status |
 | --- | --- | --- | --- |
-| 1 | Vault | `/vault` | In-pool rail. Mainnet is Ready Wallet Standard only. Privy is Sepolia-only and stays off until public App ID and Client ID are set |
-| 2 | Intents | `/vault#intents` | Cross-chain rail on the same desk. Review-only dry 1Click quotes. No deposit address, no submit |
-| 3 | Workflows | `/workflows` | Review-only advisory policy receipts. No TEE, no execution |
-| 4 | Mailbox | `/mail/inbox` | Encrypted letters and payment context. Shielding lives in Vault, not here |
+| 1 | Private Desk | `/vault` | Localnet proves inventory-backed USDC↔STRK quote, lock, solver fill, claim, expiry refund, and insufficient-inventory refusal. Funding remains a distinct STRK20 rail. No production solver is deployed |
+| 2 | Mailbox | `/mail/inbox` | On-chain ciphertext for letters, legacy OTC documents, receipts, and authenticated self-addressed contact snapshots. Mail is correspondence/evidence, never settlement authority |
+| 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase |
+| 4 | Secondary tools | `/vault#intents`, `/workflows`, `/pay` | Dry cross-chain review, advisory workflows, and unsigned payment links. No live 1Click submission or TEE execution |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
 
-### Vault and Intents
+### Desk, Mailbox, and Counterparties
 
-They share one **value desk** at `/vault`. They are not one form.
+The RFQ is authoritative only when Cairo and the pool confirm its lifecycle.
+Mailbox letters can carry coordination and evidence but cannot prove a fill.
+Counterparty labels remain local unless the user explicitly posts an encrypted
+self-backup through Mail.
 
-Vault is in-pool Starknet privacy (shield, private transfer, unshield). Intents
-is a public cross-chain quote against NEAR 1Click. Different chains, signers,
-disclosure, and failure modes. A combined page is fine as two rails on the
-same estate, with the header session unchanged. Merging them into a single
-submit path would hide that Intents settlement is public and that there is no
-Intents testnet.
+The same wallet opens all three surfaces. A Counterparty can start a prefilled
+RFQ or encrypted letter; a settled local RFQ produces a lifecycle receipt and
+links back to Mailbox. Shield, private transfer, and unshield remain separate
+funding actions under **Balances & funding**.
+
+Dry cross-chain Intents still share `/vault`, but remain a public review rail
+against NEAR 1Click. They have different signers, disclosure, and failure modes
+and are never merged into the private RFQ submit path.
 
 Wallet policy is enforced below the UI:
 
@@ -58,12 +64,18 @@ unlinkability.
 | Hidden | Public |
 | --- | --- |
 | In-pool sender, recipient, and amount | Shield and unshield |
-| Mail plaintext | Ciphertext, size, timing, helper use, recipient count |
+| Mail plaintext and self-backed contact labels | Ciphertext, size, timing, helper use, recipient count, backup frequency |
+| Device-local contact labels and notes | Addresses when publicly used; code running in an unlocked browser profile can read them |
 | Sender and recipient addresses in `MessagePosted` | Directory lookups at the configured RPC |
+| Private note ownership in the RFQ | Prototype escrow pair, amounts, deadline, OPEN-note amount, and helper activity |
 | OHTTP ciphertext on the relay | The final prover after decapsulation |
 
 A replaced frontend can still request signatures and read browser-owned keys.
-Cross-chain amounts, assets, destinations, and timing remain correlatable.
+Ready signatures are not used as encryption keys and the dapp never requests a
+STRK20 viewing key. Wallet connection identifies the mailbox but cannot decrypt
+Mail or contact snapshots by itself: recovery also requires the mailbox backup
+phrase. Old on-chain ciphertext cannot be deleted. Cross-chain amounts, assets,
+destinations, and timing remain correlatable.
 
 ## Develop
 
@@ -93,9 +105,14 @@ npm run dev:localnet
 npm run localnet:stop
 ```
 
-This deploys the real Cairo pool and the production mail action sequence,
-including the fixed 7-base-unit helper funding withdrawal. Proofs are simulated.
-It is not a Mainnet send.
+This deploys the real Cairo pool, a six-decimal local USDC fixture, and the
+production mail action sequence, including the fixed 7-base-unit helper funding
+withdrawal. It also proves both directions of the private USDC↔STRK RFQ market:
+lock, inventory-first solver fill, claim, expiry refund, and insufficient-
+inventory refusal. The browser journey also proves Counterparty → RFQ handoff
+and contact snapshot → encrypted self-mail → explicit merge restore. The price
+is a deterministic fixture and proofs are simulated. It is not a Mainnet market
+or send.
 
 ## Packages
 
@@ -110,6 +127,10 @@ It is not a Mainnet send.
 | `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
 
 Architecture: [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
+Private Desk and contact-recovery model:
+[`docs/APP20_PRIVATE_DESK.md`](docs/APP20_PRIVATE_DESK.md).
+Value flows and the gated future SOL/Wormhole→StarkGate market:
+[`docs/APP20_SWAP_FLOWS.md`](docs/APP20_SWAP_FLOWS.md).
 
 ## Checks
 

@@ -84,6 +84,15 @@ describe("mail envelope v1", () => {
     },
   );
 
+  it("appends contact snapshots at byte 0x0c without changing prior wire bytes", () => {
+    expect(ENVELOPE_TYPE_BYTES.composite).toBe(0x0b);
+    expect(ENVELOPE_TYPE_BYTES.contact_snapshot).toBe(0x0c);
+    const payload = { version: 1, snapshotId: "11".repeat(32) };
+    expect(encodeEnvelope("contact_snapshot", payload).slice(0, 2)).toEqual(
+      new Uint8Array([0x01, 0x0c]),
+    );
+  });
+
   it("round-trips body plus payment, offer, invoice, and escrow as one document", () => {
     const payload = compositePayload();
     const encoded = encodeEnvelope("composite", payload);

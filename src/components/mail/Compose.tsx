@@ -30,7 +30,6 @@ import {
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
-  deriveEscrowClaimKey,
   loadEscrowState,
   markEscrowOperationOutcome,
   markEscrowOperationSubmitted,
@@ -40,6 +39,7 @@ import {
   type EscrowFundPayload,
 } from "@/lib/escrow";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
+import { ensureLocalnetEscrowTicket } from "@/app/vault/localnet-private-intents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
   deriveKeypair,
@@ -442,6 +442,7 @@ export default function Compose({
 
   function tradePayload(
     attachment: Extract<DraftAttachment, { type: "offer" | "escrow_fund" }>,
+    ticketAddress?: string,
   ): OfferPayload | EscrowFundPayload {
     if (!senderAddress) {
       throw new Error("Connect the wallet that owns this request or offer.");
@@ -467,14 +468,11 @@ export default function Compose({
     if (!legB.token.symbol) throw new Error("Want-token symbol is required.");
 
     if (attachment.type === "escrow_fund") {
-      if (!escrowAddress || !escrowEnabled || !mailSeed || !senderAddress) {
+      if (!escrowAddress || !escrowEnabled || !senderAddress) {
         throw new Error(
           disabledReason || "Escrow is unavailable on this network.",
         );
       }
-      const claimKey = deriveEscrowClaimKey(mailSeed, attachment.dealId);
-      const claimPubkey = claimKey.claimPubkey;
-      claimKey.privateKey.fill(0);
       const payload = parseEscrowFundPayload({
         dealId: attachment.dealId,
         escrowAddress,
@@ -482,7 +480,9 @@ export default function Compose({
         legA,
         legB,
         deadline: expiryFromHours(attachment.expiryHours, true),
-        claimPubkey,
+        // Preflight uses the same-width deal felt; submission replaces it with
+        // the permissionlessly deployed V2 ticket address.
+        ticket: ticketAddress ?? attachment.dealId,
         ...(attachment.note.trim() ? { note: attachment.note.trim() } : {}),
       });
       if (!payload) {
@@ -503,7 +503,7 @@ export default function Compose({
     };
   }
 
-  function buildDocument(recipientAddress: string): {
+  function buildDocument(recipientAddress: string, ticketAddress?: string): {
     type: EnvelopeType;
     payload: unknown;
     composite: CompositePayload | null;
@@ -542,7 +542,7 @@ export default function Compose({
         };
         attachments.push({ type: "payment_request", payload });
       } else {
-        const payload = tradePayload(attachment);
+        const payload = tradePayload(attachment, ticketAddress);
         if (attachment.type === "escrow_fund") {
           escrow = payload as EscrowFundPayload;
           attachments.push({ type: "escrow_fund", payload: escrow });
@@ -704,7 +704,13 @@ export default function Compose({
           "Attachments are bilateral. Address exactly one counterparty; body-only documents may have multiple recipients.",
         );
       }
-      const document = buildDocument(recipientAddresses[0]);
+      const escrowAttachment = draft.attachments.find(
+        (attachment) => attachment.type === "escrow_fund",
+      );
+      const ticketAddress = escrowAttachment
+        ? await ensureLocalnetEscrowTicket({ dealId: escrowAttachment.dealId })
+        : undefined;
+      const document = buildDocument(recipientAddresses[0], ticketAddress);
       const plaintextBytes = envelopeByteLength(
         document.type,
         document.payload,
@@ -861,13 +867,14 @@ export default function Compose({
             provider,
             buildEscrowFundActions({
               escrowAddress,
+              recoveryAddress: senderAddress,
+              ticketAddress: document.escrow.ticket!,
               dealId: document.escrow.dealId,
               token: document.escrow.legA.token.address,
               amount: document.escrow.legA.amount,
               counterToken: document.escrow.legB.token.address,
               counterAmount: document.escrow.legB.amount,
               deadline: document.escrow.deadline,
-              claimPubkey: document.escrow.claimPubkey,
             }),
             {
               policy,

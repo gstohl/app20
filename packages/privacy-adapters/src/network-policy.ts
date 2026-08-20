@@ -13,6 +13,7 @@ export type PrivacyOperation =
   | "public-send"
   | "shield"
   | "private-transfer"
+  | "private-swap"
   | "unshield"
   | "mail"
   | "mail-with-transfer";
@@ -97,7 +98,8 @@ export function evaluateNetworkPolicy(
       allowed: true,
       submittable: false,
       code: "build-only",
-      reason: "The operation may be built and reviewed but cannot be submitted.",
+      reason:
+        "The operation may be built and reviewed but cannot be submitted.",
     };
   }
 

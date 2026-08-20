@@ -1,18 +1,13 @@
-import { mailboxKeysEqual, verifyMailSenderAuth } from "./mail-auth";
+import { verifyMailSenderAuth } from "./mail-auth.js";
 import {
   conversationFieldsFromPayload,
   type MailConversationFields,
-} from "./mail-thread";
+} from "./mail-thread.js";
 
 export type SenderProof =
   | { kind: "unsigned" }
   | { kind: "invalid_signature" }
-  | { kind: "mailbox_signed"; mailboxPublicKey: string }
-  | {
-      kind: "directory_bound";
-      address: string;
-      mailboxPublicKey: string;
-    }
+  | { kind: "unbound_signature"; claimedMailboxPublicKey: string }
   | { kind: "assignment_only"; address: string };
 
 export function evaluateSenderProof(input: {
@@ -40,23 +35,9 @@ export function evaluateSenderProof(input: {
           : "",
     });
     if (!authentic) return { kind: "invalid_signature" };
-    if (
-      input.directoryMailboxKey &&
-      input.directoryAddress &&
-      mailboxKeysEqual(
-        fields.senderAuth.mailboxPublicKey,
-        input.directoryMailboxKey,
-      )
-    ) {
-      return {
-        kind: "directory_bound",
-        address: input.directoryAddress,
-        mailboxPublicKey: fields.senderAuth.mailboxPublicKey,
-      };
-    }
     return {
-      kind: "mailbox_signed",
-      mailboxPublicKey: fields.senderAuth.mailboxPublicKey,
+      kind: "unbound_signature",
+      claimedMailboxPublicKey: fields.senderAuth.mailboxPublicKey,
     };
   }
   if (input.assignedAddress) {
@@ -67,10 +48,8 @@ export function evaluateSenderProof(input: {
 
 export function senderProofLabel(proof: SenderProof): string {
   switch (proof.kind) {
-    case "directory_bound":
-      return `Mailbox key matches the public directory for ${proof.address}`;
-    case "mailbox_signed":
-      return "Signed by a mailbox key. That is not yet a wallet address.";
+    case "unbound_signature":
+      return "Valid signature from an unregistered Mail auth key. It does not prove a mailbox or wallet address.";
     case "invalid_signature":
       return "This letter claims a mailbox signature, but the signature is invalid.";
     case "assignment_only":

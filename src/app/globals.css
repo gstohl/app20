@@ -657,7 +657,8 @@ a {
 
 @media (max-width: 900px) {
   .app-shell { --app-shell-offset: 136px; }
-  .app-header { grid-template-columns: auto 1fr; gap: 8px; padding: 6px 12px; }
+  .app-header { grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 6px 12px; }
+  .app-utilities { min-width: 0; }
   .app-tabs { order: 3; grid-column: 1 / -1; overflow-x: auto; }
   .app-tabs a { flex: 1; justify-content: center; white-space: nowrap; }
   .network-status, .wallet-status { display: none; }
@@ -687,7 +688,8 @@ a {
   .lifecycle-strip li,
   .evidence-labels li { border-bottom: 1px solid var(--shell-line); }
   .app-utilities .request-link { padding: 0 9px; }
-  .app-utilities { gap: 2px; }
+  .app-utilities { min-width: 0; gap: 2px; }
+  .app-header { grid-template-columns: auto minmax(0, 1fr); }
   .app-brand { font-size: 18px; }
   .workflow-phases { grid-template-columns: 1fr; }
   .integration-checks article { grid-template-columns: 28px minmax(0, 1fr); }

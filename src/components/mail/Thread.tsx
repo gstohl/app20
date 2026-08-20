@@ -33,6 +33,7 @@ import {
   type EscrowState,
 } from "@/lib/escrow";
 import AddressBookField from "@/components/address-book/AddressBookField";
+import ContactSnapshotCard from "./ContactSnapshotCard";
 import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
@@ -43,10 +44,7 @@ import {
   conversationFieldsFromPayload,
   conversationKeyForMessage,
 } from "@/lib/mail-thread";
-import {
-  senderProofLabel,
-  type SenderProof,
-} from "@/lib/sender-proof";
+import { senderProofLabel, type SenderProof } from "@/lib/sender-proof";
 import styles from "./mail.module.css";
 
 export type LocalMailMessage = {
@@ -95,6 +93,8 @@ type ThreadProps = {
   onEscrowFill: (fund: EscrowFundPayload) => void;
   onEscrowClaim?: (fund: EscrowFundPayload) => void;
   onEscrowTimeout?: (fund: EscrowFundPayload) => void;
+  onRestoreContacts?: (payload: unknown, message: LocalMailMessage) => void;
+  contactRestorePending?: boolean;
   onReply?: (input: {
     address?: string;
     conversationId: string;
@@ -325,8 +325,8 @@ function ConversationControls({
         <span>Conversation tag {fields.conversationId.slice(0, 18)}…</span>
       ) : (
         <span>
-          This letter has no conversation tag. A reply can start one locally
-          and in the next ciphertext.
+          This letter has no conversation tag. A reply can start one locally and
+          in the next ciphertext.
         </span>
       )}
       {canContinue ? (
@@ -385,6 +385,8 @@ export default function Thread({
   onEscrowFill,
   onEscrowClaim,
   onEscrowTimeout,
+  onRestoreContacts,
+  contactRestorePending = false,
   onReply,
   onAssign,
   onProve,
@@ -494,6 +496,19 @@ export default function Thread({
           </p>
           <p className={styles.letterBody}>{message.plaintext}</p>
         </article>
+      );
+    }
+
+    if (envelope.type === "contact_snapshot") {
+      return (
+        <ContactSnapshotCard
+          busy={contactRestorePending}
+          onMerge={
+            onRestoreContacts
+              ? () => onRestoreContacts(envelope.payload, message)
+              : undefined
+          }
+        />
       );
     }
 
