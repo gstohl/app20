@@ -18,6 +18,16 @@ export default defineConfig(({ mode }) => {
     env.QUIETLINE_LOCALNET_RPC_TARGET;
   const proxy: Record<string, ProxyOptions> = {};
 
+  // Local Privy rail: run `npx wrangler dev --port 8787` with .dev.vars and
+  // set APP20_WORKER_DEV_TARGET=http://127.0.0.1:8787 so the Worker-only
+  // bootstrap/OHTTP routes exist in dev. Secrets stay in .dev.vars.
+  const workerDevTarget =
+    process.env.APP20_WORKER_DEV_TARGET ?? env.APP20_WORKER_DEV_TARGET;
+  if (workerDevTarget) {
+    proxy["/api/privacy"] = { target: workerDevTarget, changeOrigin: false };
+    proxy["/api/ohttp"] = { target: workerDevTarget, changeOrigin: false };
+  }
+
   if (e2eWalletEnabled && walletTarget && rpcTarget) {
     proxy[LOCALNET_WALLET_PATH] = {
       target: walletTarget,
