@@ -57,6 +57,54 @@
   letter-spacing: 0.04em;
 }
 
+.networkToggle {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border-right: 1px solid var(--shell-line);
+}
+
+.networkToggle button {
+  min-width: 52px;
+  border: 0;
+  padding: 0 9px;
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.networkToggle button + button {
+  border-left: 1px solid var(--shell-line);
+}
+
+.networkToggle button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.networkToggle .networkActive {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.networkToggle span[role="status"] {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 220px;
+  padding: 7px 9px;
+  color: var(--shell-text);
+  background: var(--shell-panel);
+  border: 1px solid var(--shell-line);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .walletAction {
   display: flex;
   min-width: 0;

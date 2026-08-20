@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { constants as snConstants, walletV6 } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
+import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useVaultMode, type VaultMode } from "@/app/vault/vaultMode";
 import {
@@ -59,6 +62,73 @@ export function resolveSessionDisplay(state: SessionState): SessionDisplay {
   };
 }
 
+function NetworkToggle() {
+  const mode = useVaultMode((state) => state.mode);
+  const wallet = useStoreWallet((state) => state.StarknetWalletObject);
+  const connected = useStoreWallet((state) => state.isConnected);
+  const providerIndex = useFrontendProvider(
+    (state) => state.currentFrontendProviderIndex,
+  );
+  const setProviderIndex = useFrontendProvider(
+    (state) => state.setCurrentFrontendProviderIndex,
+  );
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  if (mode === "privy") return null;
+
+  async function choose(target: 0 | 2) {
+    setNotice("");
+    if (providerIndex === target) return;
+    if (!connected || !wallet) {
+      setProviderIndex(target);
+      return;
+    }
+    setBusy(true);
+    try {
+      await walletV6.switchStarknetChain(
+        wallet,
+        target === 0
+          ? snConstants.StarknetChainId.SN_MAIN
+          : snConstants.StarknetChainId.SN_SEPOLIA,
+      );
+      // The wallet-standard change event updates chain and provider index.
+    } catch (error: unknown) {
+      setNotice(
+        error instanceof Error && error.message.trim()
+          ? "The wallet declined the network switch. Change it in Ready."
+          : "The wallet declined the network switch.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.networkToggle} aria-label="Network">
+      <button
+        type="button"
+        aria-pressed={providerIndex === 0}
+        className={providerIndex === 0 ? styles.networkActive : undefined}
+        onClick={() => void choose(0)}
+        disabled={busy}
+      >
+        MAIN
+      </button>
+      <button
+        type="button"
+        aria-pressed={providerIndex === 2}
+        className={providerIndex === 2 ? styles.networkActive : undefined}
+        onClick={() => void choose(2)}
+        disabled={busy}
+      >
+        SEPOLIA
+      </button>
+      {notice ? <span role="status">{notice}</span> : null}
+    </div>
+  );
+}
+
 export function SessionControlView({ session }: { session: SessionDisplay }) {
   const accountLabel = session.address
     ? shortSessionAddress(session.address)
@@ -87,6 +157,7 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
           <span className={styles.address}>{accountLabel}</span>
         </span>
       </div>
+      <NetworkToggle />
       <div className={styles.walletAction}>
         <SelectWallet variant="nav" />
       </div>
