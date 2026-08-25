@@ -6,6 +6,7 @@ import {
   createRouter,
   redirect,
   RouterProvider,
+  useParams,
 } from "@tanstack/react-router";
 import AppShell from "@/app/components/AppShell";
 import ReadyRailGate from "@/app/components/ReadyRailGate";
@@ -14,7 +15,8 @@ import InboxPage from "@/app/inbox/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import VaultPage from "@/app/vault/page";
-import WorkflowsPage from "@/app/workflows/page";
+import SwapPage from "@/app/swap/page";
+import PoolCreationPage from "@/app/pools/create/page";
 import { CANONICAL_ROUTES } from "@/app/routes";
 import "@/app/globals.css";
 
@@ -46,12 +48,44 @@ function ReadyPaymentPage() {
   );
 }
 
+function RoutedSwapPage() {
+  const { tokenA, tokenB } = useParams({ strict: false });
+  return <SwapPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
+}
+
+function RoutedPoolCreationPage() {
+  const { tokenA, tokenB } = useParams({ strict: false });
+  return <PoolCreationPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
+}
+
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  component: SwapPage,
+});
+
+const swapIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/swap",
   beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.vault, replace: true });
+    throw redirect({
+      to: "/swap/$tokenA/$tokenB",
+      params: { tokenA: "strk", tokenB: "usdc" },
+      replace: true,
+    });
   },
+});
+
+const swapRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/swap/$tokenA/$tokenB",
+  component: RoutedSwapPage,
+});
+
+const poolCreationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pools/create/$tokenA/$tokenB",
+  component: RoutedPoolCreationPage,
 });
 
 const vaultRoute = createRoute({
@@ -86,7 +120,11 @@ const intentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/intents",
   beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.vault, hash: "intents", replace: true });
+    throw redirect({
+      to: CANONICAL_ROUTES.vault,
+      hash: "intents",
+      replace: true,
+    });
   },
 });
 
@@ -99,7 +137,9 @@ const contactsRoute = createRoute({
 const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
-  component: WorkflowsPage,
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.vault, replace: true });
+  },
 });
 
 const payRoute = createRoute({
@@ -111,6 +151,9 @@ const payRoute = createRoute({
 const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
+    swapIndexRoute,
+    swapRoute,
+    poolCreationRoute,
     vaultRoute,
     mailRoute,
     legacyInboxRoute,
@@ -137,11 +180,13 @@ async function start() {
       const localnet = await import("@/dev/localnet-wallet");
       const wallet = await localnet.initializeLocalnetDevWallet();
       renderLocalnetTools = () => (
-        <localnet.LocalnetDevTools wallet={wallet} />
+        <localnet.LocalnetDevTools wallet={wallet} variant="banner" />
       );
     } catch (error: unknown) {
       const message =
-        error instanceof Error ? error.message : "Localnet wallet failed to start.";
+        error instanceof Error
+          ? error.message
+          : "Localnet wallet failed to start.";
       renderLocalnetTools = () => (
         <aside role="alert" className="localnet-startup-error">
           Localnet wallet startup failed: {message}

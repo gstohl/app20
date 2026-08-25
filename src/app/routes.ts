@@ -1,22 +1,22 @@
 export const CANONICAL_ROUTES = {
-  home: "/vault",
+  home: "/",
+  swap: "/swap/strk/usdc",
   vault: "/vault",
   mail: "/mail/inbox",
   intents: "/intents",
-  workflows: "/workflows",
   contacts: "/contacts",
   pay: "/pay",
 } as const;
 
 export function legacyRouteTarget(pathname: string): string | null {
   switch (pathname) {
-    case "/":
-      return CANONICAL_ROUTES.vault;
     case "/mail":
     case "/inbox":
       return CANONICAL_ROUTES.mail;
     case "/intents":
       return `${CANONICAL_ROUTES.vault}#intents`;
+    case "/workflows":
+      return CANONICAL_ROUTES.vault;
     default:
       return null;
   }

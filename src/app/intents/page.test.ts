@@ -4,7 +4,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import IntentsPage, {
-  ADDRESS_BOOK_STORAGE_PREFIX,
   REVIEW_SCENARIOS,
   buildReviewIntent,
   resolveAddressBookInput,
@@ -114,8 +113,10 @@ describe("intents dry review desk", () => {
 });
 
 describe("book-backed accounts", () => {
-  it("uses the shared address-book storage prefix and never a second one", () => {
-    expect(ADDRESS_BOOK_STORAGE_PREFIX).toBe("app20/address-book/v1/");
+  it("keeps cross-chain labels session-only and does not advertise a storage namespace", () => {
+    const markup = renderToStaticMarkup(createElement(IntentsPage));
+    expect(markup).toContain("Session labels only");
+    expect(markup).not.toContain("app20/address-book");
   });
 
   it("resolves labels case-insensitively, with or without the @ prefix", () => {
@@ -197,8 +198,10 @@ describe("book-backed accounts", () => {
     const markup = renderToStaticMarkup(createElement(IntentsPage));
     expect(markup).toContain("Destination account (NEAR)");
     expect(markup).toContain("Refund account (Starknet)");
-    expect(markup).toContain('list="intents-destination-book"');
-    expect(markup).toContain('list="intents-refund-book"');
+    expect(markup).toContain('id="intents-destination"');
+    expect(markup).toContain('id="intents-refund"');
+    expect(markup).toContain("Saved addresses for Destination account (NEAR)");
+    expect(markup).toContain("Saved addresses for Refund account (Starknet)");
     expect(markup).toContain("review-fixture.near");
   });
 });

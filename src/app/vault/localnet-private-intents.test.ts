@@ -5,6 +5,7 @@ import {
   formatLocalnetTokenAmount,
   parseLocalnetTokenAmount,
   requestLocalnetSolverQuote,
+  signLocalnetSolverQuote,
   type LocalnetMarketToken,
 } from "./localnet-private-intents";
 
@@ -115,6 +116,44 @@ describe("localnet private-intent adapter", () => {
       buyAmount: 100n,
       solverInventory: 1_000n,
     });
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects a solver signature over a different canonical payload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                signature: "0xab",
+                canonical: "different",
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    await expect(
+      signLocalnetSolverQuote("expected", {
+        domain: "app20/private-intent-quote/v1",
+        pool: "starknet:APP20_LOCALNET",
+        helper: "0x1",
+        sellToken: STRK,
+        sellAmount: 1n,
+        buyToken: ETH,
+        intentDigest: "0x2",
+        solverId: "app20-localnet-solver",
+        solverKey: "app20-localnet-solver/ecdsa-p256-v1",
+        nonce: `0x${"11".repeat(32)}`,
+        buyAmount: 1n,
+        spreadBps: 30,
+        pricingProvenance: "fixture",
+        quotedAt: 1,
+        quoteExpiresAt: 2,
+      }),
+    ).rejects.toThrow(/different quote payload/i);
     vi.unstubAllGlobals();
   });
 });

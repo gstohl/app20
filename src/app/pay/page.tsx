@@ -212,8 +212,8 @@ export default function PayPage() {
         <header className={styles.intro}>
           <p className={styles.eyebrow}>
             {hasFragment
-              ? "APP20 / PAYMENT REVIEW"
-              : "APP20 / REQUEST PRIVATE STRK"}
+              ? "APP20 / PAY / REVIEW"
+              : "APP20 / PAY / REQUEST PRIVATE STRK"}
           </p>
           <h1>
             {hasFragment

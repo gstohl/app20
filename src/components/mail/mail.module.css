@@ -217,7 +217,9 @@
 .primaryButton:disabled,
 .secondaryButton:disabled {
   cursor: not-allowed;
-  opacity: 0.45;
+  border-color: var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-inset);
 }
 
 .backupBox {
@@ -580,6 +582,22 @@
 .field textarea:focus {
   border-color: var(--shell-orange);
   box-shadow: 0 0 0 1px var(--shell-orange);
+}
+
+/* Checkboxes are inline toggles, not text fields; undo the block input look. */
+.field input[type="checkbox"] {
+  width: auto;
+  margin: 0 6px 0 0;
+  padding: 0;
+  border: 0;
+  vertical-align: -2px;
+  accent-color: var(--shell-orange);
+}
+
+.field input[type="checkbox"]:focus {
+  box-shadow: none;
+  outline: 2px solid var(--shell-orange);
+  outline-offset: 1px;
 }
 
 .field small {
@@ -1211,36 +1229,20 @@
   width: 100%;
 }
 
-.sidebarBrandRow,
 .sidebarTagline,
 .sidebarFooter {
   padding-inline: 14px;
 }
 
-.sidebarBrandRow,
-.accountHeading,
-.scanHeading,
-.readingToolbar,
-.railHeading,
-.conversationTopline,
-.conversationMeta,
-.networkRow {
-  display: flex;
-  align-items: center;
-}
-
-.sidebarBrandRow,
 .accountHeading,
 .scanHeading,
 .readingToolbar,
 .railHeading,
 .conversationTopline,
 .conversationMeta {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
-}
-
-.sidebarBrandRow .brand {
-  font-size: 18px;
 }
 
 .moduleTitle,
@@ -1249,6 +1251,10 @@
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.sidebarCloseRow {
+  display: none;
 }
 
 .sidebarClose {
@@ -1270,7 +1276,6 @@
 .unreadIndicator,
 .readIndicator,
 .sidebarFooter,
-.networkRow,
 .scanMessage {
   font-family: var(--font-mono-ui), monospace;
 }
@@ -1385,35 +1390,6 @@
   background: var(--shell-bg);
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
-}
-
-.networkRow {
-  gap: 7px;
-  padding: 8px 10px;
-  border: 0;
-  background: var(--shell-panel);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-}
-
-.networkRow small {
-  margin-left: auto;
-  color: var(--shell-muted);
-  font-size: 10px;
-}
-
-.networkDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--shell-muted);
-}
-
-.networkDotLive {
-  background: var(--shell-orange);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--shell-orange) 16%, var(--shell-bg));
 }
 
 .sidebarAccount {
@@ -1646,11 +1622,6 @@
   display: block;
   margin-top: 4px;
   overflow-wrap: anywhere;
-}
-
-.localnetSlot {
-  width: 100%;
-  font-size: 11px;
 }
 
 .sidebarScan {
@@ -2534,6 +2505,18 @@
     transform: translateX(0);
   }
 
+  .sidebarCloseRow {
+    display: flex;
+    justify-content: flex-end;
+    padding-inline: 14px;
+  }
+
+  .sidebarCloseRow {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 8px 0;
+  }
+
   .sidebarClose {
     display: block;
   }
@@ -2930,6 +2913,12 @@
   position: relative;
 }
 
+/* Reserve room at the bottom-right of the row so the absolutely positioned
+   delete control never overlaps the DRAFT read indicator. */
+.draftListItem .conversationMeta {
+  padding-right: 64px;
+}
+
 .draftDelete {
   position: absolute;
   right: 10px;
@@ -2940,6 +2929,10 @@
   font: inherit;
   font-size: 10px;
   cursor: pointer;
+}
+
+.draftDelete:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 560px) {

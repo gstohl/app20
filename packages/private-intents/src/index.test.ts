@@ -3,13 +3,19 @@ import {
   acceptQuote,
   assertInventoryCovers,
   assertPrivateSwapIntent,
+  canonicalSolverQuote,
+  createMemoryQuoteReplayStore,
   digestPrivateSwapIntent,
   fillLockedIntent,
   planRestock,
   quotePrivateSwapIntent,
   refundExpiredIntent,
+  signCanonicalQuote,
+  verifyCanonicalQuote,
   type PricingSource,
   type PrivateSwapIntentV1,
+  type QuoteAcceptance,
+  type QuoteOptions,
   type SolverQuote,
 } from "./index";
 
@@ -17,6 +23,8 @@ const USDC =
   "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8";
 const STRK =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+const HELPER =
+  "0x067c772d127482e87807deaa5b4f5014d48e54d12f190737b47fb37f6438c434";
 
 const NOW = 1_800_000_000;
 
@@ -40,6 +48,47 @@ function intent(
 function fixturePricing(buyAmount: bigint): PricingSource {
   return {
     price: async () => ({ buyAmount, provenance: "fixture:1click-dry" }),
+  };
+}
+
+async function testKeys(): Promise<CryptoKeyPair> {
+  return crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  );
+}
+
+function quoteOptions(
+  privateKey: CryptoKey,
+  overrides: Partial<QuoteOptions> = {},
+): QuoteOptions {
+  return {
+    solverId: "app20-desk",
+    solverKey: "test-solver/ecdsa-p256-v1",
+    helper: HELPER,
+    spreadBps: 30,
+    quoteTtlSeconds: 120,
+    now: NOW,
+    sign: async (canonical) => signCanonicalQuote(canonical, privateKey),
+    ...overrides,
+  };
+}
+
+function acceptance(
+  publicKey: CryptoKey,
+  quote: SolverQuote,
+  store = createMemoryQuoteReplayStore(),
+  overrides: Partial<QuoteAcceptance> = {},
+): QuoteAcceptance {
+  return {
+    helper: quote.helper,
+    consumeNonce: (nonce) => store.consume(nonce),
+    verify: async (canonical, signature, solverKey) => {
+      if (solverKey !== quote.solverKey) return false;
+      return verifyCanonicalQuote(canonical, signature, publicKey);
+    },
+    ...overrides,
   };
 }
 
@@ -76,37 +125,41 @@ describe("private swap intent", () => {
 });
 
 describe("solver quoting", () => {
-  const options = {
-    solverId: "app20-desk",
-    spreadBps: 30,
-    quoteTtlSeconds: 120,
-    now: NOW,
-  };
-
   it("quotes above the floor with the spread applied", async () => {
+    const keys = await testKeys();
     const raw = 1_000n * 10n ** 18n;
     const outcome = await quotePrivateSwapIntent(
       intent(),
       fixturePricing(raw),
-      options,
+      quoteOptions(keys.privateKey),
     );
     if (outcome.kind !== "quoted") throw new Error("expected a quote");
     expect(outcome.quote.buyAmount).toBe((raw * 9_970n) / 10_000n);
     expect(outcome.quote.buyAmount >= intent().minBuyAmount).toBe(true);
     expect(outcome.quote.pricingProvenance).toBe("fixture:1click-dry");
     expect(outcome.quote.quoteExpiresAt).toBe(NOW + 120);
+    expect(outcome.quote.signature).toMatch(/^0x[0-9a-f]+$/);
+    await expect(
+      verifyCanonicalQuote(
+        canonicalSolverQuote(outcome.quote),
+        outcome.quote.signature,
+        keys.publicKey,
+      ),
+    ).resolves.toBe(true);
   });
 
   it("declines when the spread pushes the fill under the floor", async () => {
+    const keys = await testKeys();
     const outcome = await quotePrivateSwapIntent(
       intent({ minBuyAmount: 999n * 10n ** 18n }),
       fixturePricing(1_000n * 10n ** 18n),
-      { ...options, spreadBps: 500 },
+      quoteOptions(keys.privateKey, { spreadBps: 500 }),
     );
     expect(outcome.kind).toBe("declined");
   });
 
   it("declines an expired intent without pricing it", async () => {
+    const keys = await testKeys();
     let priced = false;
     const source: PricingSource = {
       price: async () => {
@@ -115,7 +168,7 @@ describe("solver quoting", () => {
       },
     };
     const outcome = await quotePrivateSwapIntent(intent(), source, {
-      ...options,
+      ...quoteOptions(keys.privateKey),
       now: NOW + 3_600,
     });
     expect(outcome.kind).toBe("declined");
@@ -123,10 +176,11 @@ describe("solver quoting", () => {
   });
 
   it("never lets the quote outlive the intent", async () => {
+    const keys = await testKeys();
     const outcome = await quotePrivateSwapIntent(
       intent({ expiresAt: NOW + 60 }),
       fixturePricing(1_000n * 10n ** 18n),
-      options,
+      quoteOptions(keys.privateKey),
     );
     if (outcome.kind !== "quoted") throw new Error("expected a quote");
     expect(outcome.quote.quoteExpiresAt).toBe(NOW + 60);
@@ -136,41 +190,60 @@ describe("solver quoting", () => {
 async function lockedFixture(): Promise<{
   order: PrivateSwapIntentV1;
   quote: SolverQuote;
+  keys: CryptoKeyPair;
 }> {
+  const keys = await testKeys();
   const order = intent();
   const outcome = await quotePrivateSwapIntent(
     order,
     fixturePricing(1_000n * 10n ** 18n),
-    { solverId: "app20-desk", spreadBps: 30, quoteTtlSeconds: 120, now: NOW },
+    quoteOptions(keys.privateKey),
   );
   if (outcome.kind !== "quoted") throw new Error("fixture quote failed");
-  return { order, quote: outcome.quote };
+  return { order, quote: outcome.quote, keys };
 }
 
 describe("fill-or-refund lifecycle", () => {
   it("locks, fills at or above the floor, and records delivery", async () => {
-    const { order, quote } = await lockedFixture();
-    const locked = acceptQuote(order, quote, NOW + 10);
+    const { order, quote, keys } = await lockedFixture();
+    const locked = await acceptQuote(
+      order,
+      quote,
+      NOW + 10,
+      acceptance(keys.publicKey, quote),
+    );
     const filled = fillLockedIntent(order, locked, quote.buyAmount, NOW + 30);
     expect(filled.kind).toBe("filled");
   });
 
   it("rejects accepting an expired quote", async () => {
-    const { order, quote } = await lockedFixture();
-    expect(() => acceptQuote(order, quote, NOW + 121)).toThrow(/expired/i);
+    const { order, quote, keys } = await lockedFixture();
+    await expect(
+      acceptQuote(order, quote, NOW + 121, acceptance(keys.publicKey, quote)),
+    ).rejects.toThrow(/expired/i);
   });
 
   it("rejects a fill below the floor", async () => {
-    const { order, quote } = await lockedFixture();
-    const locked = acceptQuote(order, quote, NOW + 10);
+    const { order, quote, keys } = await lockedFixture();
+    const locked = await acceptQuote(
+      order,
+      quote,
+      NOW + 10,
+      acceptance(keys.publicKey, quote),
+    );
     expect(() =>
       fillLockedIntent(order, locked, order.minBuyAmount - 1n, NOW + 30),
-    ).toThrow(/below the intent floor/i);
+    ).toThrow(/below the quoted fill/i);
   });
 
   it("rejects a fill after expiry and allows the refund instead", async () => {
-    const { order, quote } = await lockedFixture();
-    const locked = acceptQuote(order, quote, NOW + 10);
+    const { order, quote, keys } = await lockedFixture();
+    const locked = await acceptQuote(
+      order,
+      quote,
+      NOW + 10,
+      acceptance(keys.publicKey, quote),
+    );
     expect(() =>
       fillLockedIntent(order, locked, quote.buyAmount, NOW + 3_600),
     ).toThrow(/expired/i);
@@ -179,8 +252,13 @@ describe("fill-or-refund lifecycle", () => {
   });
 
   it("rejects refunding before expiry and double settlement", async () => {
-    const { order, quote } = await lockedFixture();
-    const locked = acceptQuote(order, quote, NOW + 10);
+    const { order, quote, keys } = await lockedFixture();
+    const locked = await acceptQuote(
+      order,
+      quote,
+      NOW + 10,
+      acceptance(keys.publicKey, quote),
+    );
     expect(() => refundExpiredIntent(order, locked, NOW + 20)).toThrow(
       /not expired/i,
     );
@@ -191,6 +269,67 @@ describe("fill-or-refund lifecycle", () => {
     expect(() => refundExpiredIntent(order, filled, NOW + 4_000)).toThrow(
       /state filled/i,
     );
+  });
+});
+
+describe("quote acceptance binding", () => {
+  it("rejects a quote whose digest or domain does not bind the intent", async () => {
+    const { order, quote, keys } = await lockedFixture();
+    await expect(
+      acceptQuote(
+        order,
+        { ...quote, domain: "wrong-domain" } as unknown as SolverQuote,
+        NOW + 10,
+        acceptance(keys.publicKey, quote),
+      ),
+    ).rejects.toThrow(/quote domain/i);
+    await expect(
+      acceptQuote(
+        order,
+        { ...quote, intentDigest: "0xdead" },
+        NOW + 10,
+        acceptance(keys.publicKey, quote),
+      ),
+    ).rejects.toThrow(/intent digest/i);
+    await expect(
+      acceptQuote(
+        order,
+        { ...quote, solverId: "   " },
+        NOW + 10,
+        acceptance(keys.publicKey, quote),
+      ),
+    ).rejects.toThrow(/solver identity/i);
+  });
+
+  it("rejects unsigned, forged, tampered, future-dated, and replayed quotes", async () => {
+    const { order, quote, keys } = await lockedFixture();
+    const store = createMemoryQuoteReplayStore();
+    const accept = (candidate: SolverQuote, now = NOW + 10) =>
+      acceptQuote(
+        order,
+        candidate,
+        now,
+        acceptance(keys.publicKey, quote, store),
+      );
+
+    await expect(accept({ ...quote, signature: "" })).rejects.toThrow(
+      /not authentic|unusable|signature/i,
+    );
+    await expect(accept({ ...quote, signature: "0xdead" })).rejects.toThrow(
+      /not authentic/i,
+    );
+    await expect(
+      accept({ ...quote, buyAmount: quote.buyAmount + 1n }),
+    ).rejects.toThrow(/not authentic/i);
+    await expect(
+      accept({ ...quote, solverKey: "forged-solver" }),
+    ).rejects.toThrow(/not authentic/i);
+    await expect(accept(quote, quote.quotedAt - 120)).rejects.toThrow(
+      /future/i,
+    );
+
+    await expect(accept(quote)).resolves.toMatchObject({ kind: "locked" });
+    await expect(accept(quote)).rejects.toThrow(/already consumed/i);
   });
 });
 

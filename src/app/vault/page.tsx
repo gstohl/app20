@@ -28,12 +28,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 import IntentsPage from "@/app/intents/page";
+import DeskMarketBoard from "./DeskMarketBoard";
+import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 import styles from "./vault.module.css";
 
 const PrivySepoliaVault = lazy(() => import("./PrivySepoliaVault"));
-const LocalnetPrivateIntentDesk = constants.localnetWalletEnabled
-  ? lazy(() => import("./LocalnetPrivateIntentDesk"))
-  : null;
+const LocalnetPrivateIntentDesk = lazy(
+  () => import("./LocalnetPrivateIntentDesk"),
+);
 
 function shortAddress(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
@@ -54,10 +56,7 @@ function explorerTx(providerIndex: number, hash: string): string | null {
 export default function VaultPage() {
   const connected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
-  const chain = useStoreWallet((state) => state.chain);
-  const capable = useStoreWallet((state) => state.isStrk20Capable);
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
-  const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
@@ -67,6 +66,8 @@ export default function VaultPage() {
   const [sendAmount, setSendAmount] = useState("0.1");
   const [sendRecipient, setSendRecipient] = useState("");
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
+  const [deskPairId, setDeskPairId] =
+    useState<LocalnetMarketPairId>("STRK_USDC");
   const publicBalance = useQuery({
     queryKey: ["ready-public-strk", providerIndex, address],
     enabled: mode === "ready" && connected && Boolean(address),
@@ -77,8 +78,6 @@ export default function VaultPage() {
       ),
   });
 
-  const networkName = constants.Strk20Networks[providerIndex];
-  const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
   const publicStrkLabel =
     publicBalance.data === undefined
       ? publicBalance.isError
@@ -201,45 +200,40 @@ export default function VaultPage() {
 
   return (
     <main className={styles.page}>
-      <header className={styles.masthead}>
-        <div className={styles.mastheadCopy}>
-          <p className={styles.eyebrow}>APP20 / VALUE DESK</p>
-          <nav className={styles.deskTabs} aria-label="Value desk rails">
-            <Link
-              to="/vault"
-              aria-current={!onIntents && mode !== "privy" ? "page" : undefined}
-              className={
-                !onIntents && mode !== "privy" ? styles.isActive : undefined
-              }
-              onClick={() => setMode("ready")}
-            >
-              In-pool
-            </Link>
-            <Link
-              to="/vault"
-              hash="intents"
-              aria-current={onIntents ? "page" : undefined}
-              className={onIntents ? styles.isActive : undefined}
-            >
-              Cross-chain
-            </Link>
-            {privyBrowserConfigured ? (
-              <Link
-                to="/vault"
-                aria-current={
-                  mode === "privy" && !onIntents ? "page" : undefined
-                }
-                className={
-                  mode === "privy" && !onIntents ? styles.isActive : undefined
-                }
-                onClick={() => setMode("privy")}
-              >
-                Privy recovery
-              </Link>
-            ) : null}
-          </nav>
-        </div>
-      </header>
+      <nav className={styles.deskSubnav} aria-label="Value desk rails">
+        <Link
+          to="/vault"
+          activeOptions={{ exact: true, includeHash: true }}
+          aria-current={!onIntents && mode !== "privy" ? "page" : undefined}
+          className={
+            !onIntents && mode !== "privy" ? styles.isActive : undefined
+          }
+          onClick={() => setMode("ready")}
+        >
+          In-pool
+        </Link>
+        <Link
+          to="/vault"
+          hash="intents"
+          activeOptions={{ exact: true, includeHash: true }}
+          aria-current={onIntents ? "page" : undefined}
+          className={onIntents ? styles.isActive : undefined}
+        >
+          Cross-chain
+        </Link>
+        {privyBrowserConfigured ? (
+          <button
+            type="button"
+            aria-pressed={mode === "privy" && !onIntents}
+            className={
+              mode === "privy" && !onIntents ? styles.isActive : undefined
+            }
+            onClick={() => setMode("privy")}
+          >
+            Privy recovery
+          </button>
+        ) : null}
+      </nav>
 
       {onIntents ? <IntentsPage /> : null}
       {mode === "privy" && privyBrowserConfigured && !onIntents ? (
@@ -255,50 +249,6 @@ export default function VaultPage() {
         className={styles.readyDesk}
         hidden={onIntents || (mode === "privy" && privyBrowserConfigured)}
       >
-        <section
-          className={styles.session}
-          aria-labelledby="vault-session-title"
-        >
-          <div className={styles.sessionMain}>
-            <span
-              className={`${styles.beacon} ${connected ? styles.beaconLive : ""}`}
-              aria-hidden="true"
-            />
-            <div className={styles.sessionIdentity}>
-              <small>READY / WALLET STANDARD</small>
-              <strong id="vault-session-title">
-                {connected
-                  ? "Ready execution rail active"
-                  : "Ready wallet required"}
-              </strong>
-            </div>
-          </div>
-          <dl className={styles.sessionFacts}>
-            <div>
-              <dt>Connection</dt>
-              <dd>{connected ? "Connected" : "Use header control"}</dd>
-            </div>
-            <div>
-              <dt>Network</dt>
-              <dd>{networkName ?? chain ?? "Not selected"}</dd>
-            </div>
-            <div>
-              <dt>Privacy API</dt>
-              <dd>{capable ? "Available" : "Not available"}</dd>
-            </div>
-            <div>
-              <dt>Pool</dt>
-              <dd>
-                {poolAddress ? (
-                  <code title={poolAddress}>{shortAddress(poolAddress)}</code>
-                ) : (
-                  "None on this network"
-                )}
-              </dd>
-            </div>
-          </dl>
-        </section>
-
         <div className={styles.railPick} role="tablist" aria-label="Send rail">
           <button
             type="button"
@@ -442,68 +392,83 @@ export default function VaultPage() {
             aria-labelledby="vault-shielded-title"
             hidden={rail !== "private"}
           >
-            <header className={styles.panelHeading}>
-              <span>SHIELDED RAIL</span>
-              <strong id="vault-shielded-title">
-                Shield · Private transfer · Unshield
-              </strong>
-            </header>
-            <div className={styles.controlsBody}>
-              {LocalnetPrivateIntentDesk &&
-              providerIndex === constants.LOCALNET_PROVIDER_INDEX ? (
+            <div className={styles.privateWorkspace}>
+              <section className={styles.marketWorkspace}>
+                <header className={styles.marketHeader}>
+                  <div>
+                    <span>PRIVATE MARKET</span>
+                    <h2 id="vault-shielded-title">
+                      {deskPairId === "STRK_USDC"
+                        ? "STRK / USDC"
+                        : "USDC / STRK"}
+                    </h2>
+                  </div>
+                  <strong>INVENTORY FIRST</strong>
+                </header>
+
+                <DeskMarketBoard pairId={deskPairId} />
+
+                <section
+                  className={styles.railMap}
+                  aria-label="How STRK moves through the vault"
+                >
+                  <article className={styles.railStage}>
+                    <header>
+                      <h2>1 · Shield</h2>
+                      <span className={styles.stageBadge}>PUBLIC</span>
+                    </header>
+                    <p>Public deposit into the pool. Entry stays visible.</p>
+                  </article>
+                  <article className={styles.railStage}>
+                    <header>
+                      <h2>2 · Private transfer</h2>
+                      <span
+                        className={`${styles.stageBadge} ${styles.stageBadgePrivate}`}
+                      >
+                        IN-POOL
+                      </span>
+                    </header>
+                    <p>Sender, recipient, and amount stay hidden in-pool.</p>
+                  </article>
+                  <article className={styles.railStage}>
+                    <header>
+                      <h2>3 · Unshield</h2>
+                      <span className={styles.stageBadge}>PUBLIC</span>
+                    </header>
+                    <p>Public exit. Timing can be correlated with entry.</p>
+                  </article>
+                </section>
+
+                <details className={styles.fundingDetails}>
+                  <summary>Balances &amp; funding</summary>
+                  <PrivacyWalletMenu
+                    showIdentity={false}
+                    active={
+                      !onIntents &&
+                      !(mode === "privy" && privyBrowserConfigured)
+                    }
+                  />
+                </details>
+              </section>
+
+              <aside
+                className={styles.tradeTicket}
+                aria-label="Private swap ticket"
+              >
                 <Suspense
                   fallback={
-                    <p className={styles.privateIntentHint}>
-                      Loading local solver…
-                    </p>
+                    <p className={styles.privateIntentHint}>Loading desk…</p>
                   }
                 >
-                  <LocalnetPrivateIntentDesk />
+                  <LocalnetPrivateIntentDesk
+                    initialPairId={deskPairId}
+                    onPairChange={setDeskPairId}
+                  />
                 </Suspense>
-              ) : null}
-              <details className={styles.fundingDetails} open>
-                <summary>Balances &amp; funding</summary>
-                <PrivacyWalletMenu
-                  showIdentity={false}
-                  active={
-                    !onIntents && !(mode === "privy" && privyBrowserConfigured)
-                  }
-                />
-              </details>
+              </aside>
             </div>
           </section>
         </div>
-
-        <section
-          className={styles.railMap}
-          aria-label="How STRK moves through the vault"
-        >
-          <article className={styles.railStage}>
-            <header>
-              <h2>1 · Shield</h2>
-              <span className={styles.stageBadge}>PUBLIC</span>
-            </header>
-            <p>Public deposit into the pool. Entry stays visible.</p>
-          </article>
-          <article className={styles.railStage}>
-            <header>
-              <h2>2 · Private transfer</h2>
-              <span
-                className={`${styles.stageBadge} ${styles.stageBadgePrivate}`}
-              >
-                IN-POOL
-              </span>
-            </header>
-            <p>Sender, recipient, and amount stay hidden inside the pool.</p>
-          </article>
-          <article className={styles.railStage}>
-            <header>
-              <h2>3 · Unshield</h2>
-              <span className={styles.stageBadge}>PUBLIC</span>
-            </header>
-            <p>Public exit. Timing can be correlated with entry.</p>
-          </article>
-        </section>
 
         <p className={styles.disclosure}>
           APP20 hides in-pool activity, not pool usage. Shield, unshield, and

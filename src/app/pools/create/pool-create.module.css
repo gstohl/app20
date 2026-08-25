@@ -1,0 +1,577 @@
+.page {
+  width: 100%;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  padding: 18px clamp(12px, 2.4vw, 34px) 42px;
+  color: var(--shell-text);
+  background: var(--shell-bg);
+}
+
+.pageHeader,
+.pairBanner,
+.workspace,
+.invalidCard {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+}
+
+.pageHeader {
+  display: flex;
+  min-height: 68px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid var(--shell-line);
+  border-bottom: 0;
+  padding: 12px 16px;
+  background: var(--shell-panel);
+}
+
+.eyebrow,
+.headerActions a,
+.pairBanner span,
+.sectionHeader span,
+.sectionHeader > strong,
+.feeFieldset legend,
+.field > span,
+.inventoryCard > span,
+.primaryButton,
+.reviewHeader span,
+.reviewHeader > strong,
+.reviewList dt,
+.deploymentGate > span,
+.deployButton,
+.invalidCard > a {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  margin: 0 0 3px;
+  color: var(--shell-orange);
+}
+
+.pageHeader h1,
+.invalidCard h1 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.headerActions a,
+.invalidCard > a {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  text-decoration: none;
+}
+
+.headerActions a:hover,
+.invalidCard > a:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-orange);
+}
+
+.pairBanner {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid var(--shell-line);
+  padding: 10px 16px;
+  background: var(--shell-inset);
+}
+
+.pairBanner > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+}
+
+.pairBanner span {
+  color: var(--shell-orange);
+}
+
+.pairBanner strong {
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.pairBanner i {
+  color: var(--shell-muted);
+  font-style: normal;
+}
+
+.pairBanner p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.45;
+  text-align: right;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 370px);
+  align-items: start;
+  border-right: 1px solid var(--shell-line);
+  border-bottom: 1px solid var(--shell-line);
+  border-left: 1px solid var(--shell-line);
+  background: var(--shell-line);
+}
+
+.formPanel,
+.reviewPanel {
+  min-width: 0;
+  background: var(--shell-panel);
+}
+
+.formPanel {
+  display: grid;
+  border-right: 1px solid var(--shell-line);
+}
+
+.formSection {
+  display: grid;
+  gap: 16px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 18px;
+}
+
+.sectionHeader,
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sectionHeader span,
+.reviewHeader span {
+  color: var(--shell-orange);
+}
+
+.sectionHeader h2,
+.reviewHeader h2 {
+  margin: 3px 0 0;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.sectionHeader > strong,
+.reviewHeader > strong {
+  color: var(--shell-muted);
+  white-space: nowrap;
+}
+
+.feeFieldset {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.feeFieldset legend,
+.field > span,
+.inventoryCard > span {
+  margin-bottom: 7px;
+  color: var(--shell-muted);
+}
+
+.feeOptions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border: 1px solid var(--shell-line);
+}
+
+.feeOption {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.feeOption + .feeOption {
+  border-left: 1px solid var(--shell-line);
+}
+
+.feeOption input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.feeOption > span {
+  display: grid;
+  min-height: 58px;
+  align-content: center;
+  gap: 3px;
+  padding: 8px 11px;
+  background: var(--shell-inset);
+}
+
+.feeOption strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 13px;
+}
+
+.feeOption small {
+  color: var(--shell-muted);
+  font-size: 9px;
+}
+
+.feeOption input:checked + span {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.feeOption input:checked + span small {
+  color: color-mix(in srgb, var(--shell-bg) 74%, transparent);
+}
+
+.feeOption input:focus-visible + span {
+  outline: 2px solid var(--shell-text);
+  outline-offset: -3px;
+}
+
+.field,
+.inventoryCard {
+  display: grid;
+  min-width: 0;
+}
+
+.inputShell,
+.inventoryCard > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-inset);
+}
+
+.inputShell input,
+.inventoryCard input {
+  min-width: 0;
+  min-height: 48px;
+  border: 0;
+  padding: 0 12px;
+  color: var(--shell-text);
+  outline: 0;
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.inputShell strong,
+.inventoryCard > div strong {
+  display: inline-flex;
+  min-width: 88px;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--shell-line);
+  padding: 0 10px;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+}
+
+.inputShell:focus-within,
+.inventoryCard > div:focus-within {
+  border-color: var(--shell-orange);
+  box-shadow: inset 0 0 0 1px var(--shell-orange);
+}
+
+.inputShell input[aria-invalid="true"],
+.inventoryCard input[aria-invalid="true"] {
+  background: color-mix(in srgb, var(--shell-orange) 9%, transparent);
+}
+
+.field > small {
+  margin-top: 7px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.field em,
+.inventoryCard em,
+.formError {
+  margin: 6px 0 0;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-style: normal;
+}
+
+.formError {
+  border: 1px solid var(--shell-orange);
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--shell-orange) 8%, transparent);
+}
+
+.inventoryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventoryNotice {
+  display: grid;
+  gap: 4px;
+  border-left: 2px solid var(--shell-orange);
+  padding: 2px 0 2px 11px;
+}
+
+.inventoryNotice strong {
+  font-size: 11px;
+}
+
+.inventoryNotice p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.primaryButton {
+  min-height: 48px;
+  margin: 18px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 14px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+}
+
+.primaryButton:hover {
+  color: var(--shell-orange);
+  background: transparent;
+}
+
+.reviewPanel {
+  display: grid;
+  align-content: start;
+}
+
+.reviewHeader {
+  min-height: 63px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 11px 13px;
+}
+
+.reviewHeader > strong.ready {
+  color: var(--shell-live);
+}
+
+.reviewList {
+  margin: 0;
+}
+
+.reviewList > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 10px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 8px 13px;
+}
+
+.reviewList dt {
+  color: var(--shell-muted);
+}
+
+.reviewList dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.reviewList dd.blocked {
+  color: var(--shell-orange);
+}
+
+.status {
+  display: grid;
+  gap: 4px;
+  margin: 12px 13px 0;
+  border: 1px solid var(--shell-live);
+  padding: 10px;
+  background: color-mix(in srgb, var(--shell-live) 7%, var(--shell-inset));
+}
+
+.status strong {
+  color: var(--shell-live);
+  font-size: 11px;
+}
+
+.status p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.deploymentGate {
+  display: grid;
+  gap: 6px;
+  margin: 12px 13px;
+  border: 1px solid var(--shell-line);
+  padding: 11px;
+  background: var(--shell-inset);
+}
+
+.deploymentGate > span {
+  color: var(--shell-orange);
+}
+
+.deploymentGate h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.deploymentGate ul {
+  display: grid;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deploymentGate li {
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.deploymentGate li::before {
+  margin-right: 7px;
+  color: var(--shell-orange);
+  content: "□";
+}
+
+.deployButton {
+  min-height: 42px;
+  margin: 0 13px;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.deployHint {
+  margin: 8px 13px 14px;
+  color: var(--shell-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.invalidCard {
+  display: grid;
+  max-width: 620px;
+  gap: 13px;
+  border: 1px solid var(--shell-line);
+  padding: clamp(22px, 4vw, 38px);
+  background: var(--shell-panel);
+}
+
+.invalidCard p:not(.eyebrow) {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.invalidCard > a {
+  width: fit-content;
+}
+
+@media (max-width: 860px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .formPanel {
+    border-right: 0;
+  }
+
+  .reviewPanel {
+    border-top: 1px solid var(--shell-line);
+  }
+}
+
+@media (max-width: 580px) {
+  .page {
+    padding: 10px 8px 28px;
+  }
+
+  .pageHeader,
+  .pairBanner,
+  .sectionHeader,
+  .reviewHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pageHeader {
+    padding: 13px;
+  }
+
+  .headerActions {
+    width: 100%;
+  }
+
+  .headerActions a {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .pairBanner {
+    gap: 8px;
+    padding: 11px 13px;
+  }
+
+  .pairBanner p {
+    text-align: left;
+  }
+
+  .formSection {
+    gap: 14px;
+    padding: 14px 12px;
+  }
+
+  .feeOptions,
+  .inventoryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .feeOption + .feeOption {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .feeOption > span {
+    min-height: 48px;
+  }
+
+  .primaryButton {
+    margin: 14px 12px;
+  }
+}

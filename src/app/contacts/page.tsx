@@ -17,7 +17,13 @@ function shortAddress(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
-function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
+function AddressBookPanel({
+  selfAddress,
+  chainId,
+}: {
+  selfAddress: string;
+  chainId: string;
+}) {
   const [entries, setEntries] = useState<AddressBookEntry[]>([]);
   const [labelDraft, setLabelDraft] = useState("");
   const [addressDraft, setAddressDraft] = useState("");
@@ -120,22 +126,28 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
       </header>
       <div className={styles.bookBody}>
         <div className={styles.bookAdd}>
-          <input
-            aria-label="New address book label"
-            value={labelDraft}
-            onChange={(event) => setLabelDraft(event.target.value)}
-            placeholder="Label"
-            maxLength={40}
-            disabled={!scope || busy}
-          />
-          <input
-            aria-label="New address book address"
-            value={addressDraft}
-            onChange={(event) => setAddressDraft(event.target.value)}
-            placeholder="0x…"
-            spellCheck={false}
-            disabled={!scope || busy}
-          />
+          <label className={styles.bookField}>
+            <span>LABEL</span>
+            <input
+              aria-label="New address book label"
+              value={labelDraft}
+              onChange={(event) => setLabelDraft(event.target.value)}
+              placeholder="Desk name"
+              maxLength={40}
+              disabled={!scope || busy}
+            />
+          </label>
+          <label className={styles.bookField}>
+            <span>STARKNET ADDRESS</span>
+            <input
+              aria-label="New address book address"
+              value={addressDraft}
+              onChange={(event) => setAddressDraft(event.target.value)}
+              placeholder="0x…"
+              spellCheck={false}
+              disabled={!scope || busy}
+            />
+          </label>
           <button
             type="button"
             onClick={() => void addEntry()}
@@ -166,25 +178,30 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
                   <div className={styles.bookActions}>
                     <Link
                       to="/vault"
-                      onClick={() =>
+                      hash="desk"
+                      onClick={() => {
+                        if (!chainId) return;
                         storeDeskHandoff(
                           window.sessionStorage,
                           "rfq",
                           entry.address,
-                        )
-                      }
+                          { account: selfAddress, chainId },
+                        );
+                      }}
                     >
                       New RFQ
                     </Link>
                     <Link
                       to="/mail/inbox"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!chainId) return;
                         storeDeskHandoff(
                           window.sessionStorage,
                           "mail",
                           entry.address,
-                        )
-                      }
+                          { account: selfAddress, chainId },
+                        );
+                      }}
                     >
                       Encrypted Mail
                     </Link>
@@ -200,16 +217,22 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
               ))}
             </ul>
           ) : (
-            <p className={styles.bookEmpty}>
-              No saved counterparties yet. Entries stay AES-GCM encrypted under
-              a device-local key until you explicitly post an encrypted recovery
-              snapshot from Mailbox.
-            </p>
+            <div className={styles.bookEmptyBlock}>
+              <strong>No saved counterparties yet</strong>
+              <p className={styles.bookEmpty}>
+                Add a label and address above. Entries stay AES-GCM encrypted
+                under a device-local key until you explicitly post an encrypted
+                recovery snapshot from Mailbox.
+              </p>
+            </div>
           )
         ) : (
-          <p className={styles.bookEmpty}>
-            Connect a wallet to open this account's encrypted book.
-          </p>
+          <div className={styles.bookEmptyBlock}>
+            <strong>Wallet required</strong>
+            <p className={styles.bookEmpty}>
+              Connect a wallet to open this account's encrypted book.
+            </p>
+          </div>
         )}
       </div>
     </section>
@@ -218,16 +241,21 @@ function AddressBookPanel({ selfAddress }: { selfAddress: string }) {
 
 export default function ContactsPage() {
   const address = useStoreWallet((state) => state.address);
+  const chain = useStoreWallet((state) => state.chain);
   return (
     <main className={styles.page}>
       <header className={styles.masthead}>
         <div className={styles.mastheadCopy}>
-          <p className={styles.eyebrow}>
-            APP20 / PRIVATE DESK / COUNTERPARTIES
-          </p>
+          <p className={styles.eyebrow}>APP20 / COUNTERPARTIES</p>
+          <h1>Counterparties on file. Nothing leaves this device.</h1>
+          <span>
+            Label the wallets you trade with, then jump straight into an RFQ
+            or encrypted Mail. The book is AES-GCM encrypted and never posted
+            anywhere unless you snapshot it from Mailbox yourself.
+          </span>
         </div>
       </header>
-      <AddressBookPanel selfAddress={address ?? ""} />
+      <AddressBookPanel selfAddress={address ?? ""} chainId={chain ?? ""} />
       <p className={styles.disclosure}>
         Local contacts are AES-GCM encrypted under app20/address-book/v1. Code
         running in this browser profile can still read an unlocked book. For

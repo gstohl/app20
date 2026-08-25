@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { useLocalnetTools } from "@/app/localnetToolsContext";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
 import ConversationList, {
   mailboxMatchesFilter,
@@ -179,7 +178,6 @@ export default function InboxPage() {
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const renderLocalnetTools = useLocalnetTools();
   const [keypair, setKeypair] = useState<MailKeypair | null>(null);
   const [mailSeed, setMailSeed] = useState<Uint8Array | null>(null);
   const [messages, setMessages] = useState<LocalMailMessage[]>([]);
@@ -310,8 +308,10 @@ export default function InboxPage() {
         `${url.pathname}${url.search}${url.hash}`,
       );
     }
-    const recipientInput =
-      consumeDeskHandoff(window.sessionStorage, "mail") ?? queryRecipient;
+    const recipientInput = consumeDeskHandoff(window.sessionStorage, "mail", {
+      account: address,
+      chainId,
+    });
     if (!recipientInput) return;
     let recipient: string;
     try {
@@ -1839,7 +1839,7 @@ export default function InboxPage() {
       setActionState(actionKey, {
         pending: false,
         message:
-          "Fill confirmed: leg A was released to the taker; leg B awaits the maker's signed claim.",
+          "Fill confirmed: leg A was released to the taker; leg B awaits the maker's claim-ticket spend.",
       });
     } catch (error: unknown) {
       const outcome = transactionStateFromError(error);
@@ -1924,9 +1924,11 @@ export default function InboxPage() {
         operation === "claim"
           ? fund.legB.token.address
           : fund.legA.token.address;
-      const actions = (operation === "claim"
-        ? buildEscrowClaimActions
-        : buildEscrowTimeoutActions)({
+      const actions = (
+        operation === "claim"
+          ? buildEscrowClaimActions
+          : buildEscrowTimeoutActions
+      )({
         escrowAddress,
         recoveryAddress: context.address,
         ticketAddress: fund.ticket,
@@ -2409,13 +2411,7 @@ export default function InboxPage() {
           aria-modal={mobileSidebarMode && sidebarOpen ? true : undefined}
           aria-label="Mailbox sidebar"
         >
-          <header className={styles.sidebarBrandRow}>
-            <span className={styles.brand}>
-              <span className={styles.brandMark} aria-hidden="true">
-                20
-              </span>
-              <span>APP20 Mail</span>
-            </span>
+          <div className={styles.sidebarCloseRow}>
             <button
               ref={sidebarCloseRef}
               className={styles.sidebarClose}
@@ -2425,7 +2421,7 @@ export default function InboxPage() {
             >
               ×
             </button>
-          </header>
+          </div>
 
           <div className={styles.sidebarCreateActions}>
             <button
@@ -2470,25 +2466,6 @@ export default function InboxPage() {
               </button>
             ))}
           </nav>
-
-          <div className={styles.networkRow}>
-            <span
-              className={`${styles.networkDot} ${
-                helperAddress && walletAccount && isStrk20Capable
-                  ? styles.networkDotLive
-                  : ""
-              }`}
-              aria-hidden="true"
-            />
-            <span>{networkName}</span>
-            <small>
-              {helperAddress ? "MAIL RAIL READY" : "NO MAIL HELPER"}
-            </small>
-          </div>
-
-          {renderLocalnetTools ? (
-            <div className={styles.localnetSlot}>{renderLocalnetTools()}</div>
-          ) : null}
 
           <section className={styles.sidebarScan} aria-labelledby="scan-title">
             <div className={styles.scanHeading}>
@@ -2664,7 +2641,7 @@ export default function InboxPage() {
                   ? "LOCAL DRAFT / NOT ENCRYPTED AT REST"
                   : selectedMessage
                     ? "LOCAL PLAINTEXT / CARBON COPY"
-                    : "APP20 MAIL / ENCRYPTED CORRESPONDENCE"}
+                    : "APP20 / MAILBOX / ENCRYPTED CORRESPONDENCE"}
               </span>
               <strong>
                 {composerOpen
@@ -2768,7 +2745,7 @@ export default function InboxPage() {
                 aria-labelledby="mail-welcome-title"
               >
                 <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>APP20 MAIL</p>
+                  <p className={styles.eyebrow}>APP20 / MAILBOX</p>
                   <h1 id="mail-welcome-title">
                     Encrypted messages. Private value.
                   </h1>

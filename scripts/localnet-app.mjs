@@ -14,6 +14,16 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+// Node 24 strips types natively, so the solver shares one canonical-quote
+// implementation with the app instead of keeping a drift-prone copy here.
+import {
+  LOCALNET_SOLVER_ID,
+  LOCALNET_SOLVER_KEY_ID,
+  QUOTE_DOMAIN as LOCALNET_QUOTE_DOMAIN,
+  canonicalSolverQuote,
+  importQuotePrivateKey,
+  signCanonicalQuote,
+} from "../packages/private-intents/src/index.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_DIR = join(ROOT, ".quietline-localnet");
@@ -705,6 +715,25 @@ function assertLocalIntentPair(body, env, starknet) {
   };
 }
 
+
+const LOCALNET_SOLVER_PRIVATE_JWK = {
+  kty: "EC",
+  crv: "P-256",
+  x: "_PVrZccj13YPKpQkB1C9uwEGgiur1zisJ5si_91tPWg",
+  y: "PyKzfsm_Se2XRYdW3-HVvKhpEqMJAqJ4RhgIMe2Bi_k",
+  d: "QvXTD_B24e3DAh1fRCE63LaRD-8umTUk59U9vqG_Ybc",
+  ext: true,
+  key_ops: ["sign"],
+};
+let localnetSolverPrivateKey;
+
+async function signLocalnetQuoteCanonical(canonical) {
+  localnetSolverPrivateKey ??= await importQuotePrivateKey(
+    LOCALNET_SOLVER_PRIVATE_JWK,
+  );
+  return signCanonicalQuote(canonical, localnetSolverPrivateKey);
+}
+
 function priceLocalIntent(direction, sellAmount) {
   // Deterministic local RFQ fixture: 1 STRK = 2 USDC before the solver spread.
   // Raw-unit conversion is explicit so the six-decimal USDC path cannot inherit
@@ -936,13 +965,94 @@ function startApi({
         }
         jsonResponse(response, 200, {
           result: {
-            solverId: "app20-localnet-solver",
+            solverId: LOCALNET_SOLVER_ID,
             buyAmount: buyAmount.toString(),
             solverInventory: solverInventory.toString(),
             sellToken,
             buyToken,
             provenance,
           },
+        });
+        return;
+      }
+      if (url.pathname === "/private-intents/sign-quote") {
+        const { direction } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const sellAmount = positiveBaseUnits(
+          body.sellAmount,
+          "sellAmount",
+          starknet,
+        );
+        const buyAmount = positiveBaseUnits(
+          body.buyAmount,
+          "buyAmount",
+          starknet,
+        );
+        if (
+          starknet.num.toBigInt(String(body.helper)) !==
+          starknet.num.toBigInt(escrowAddress)
+        ) {
+          fail("the quote helper is not this local escrow.");
+        }
+        if (body.domain !== LOCALNET_QUOTE_DOMAIN) {
+          fail("the quote is outside the APP20 quote domain.");
+        }
+        if (body.pool !== "starknet:APP20_LOCALNET") {
+          fail("the quote is bound to a different pool.");
+        }
+        if (
+          body.solverId !== LOCALNET_SOLVER_ID ||
+          body.solverKey !== LOCALNET_SOLVER_KEY_ID
+        ) {
+          fail("the quote named an unexpected solver key.");
+        }
+        if (body.spreadBps !== 30) {
+          fail("the local solver only signs the 30 BPS desk spread.");
+        }
+        const now = Math.floor(Date.now() / 1_000);
+        if (
+          !Number.isSafeInteger(body.quotedAt) ||
+          body.quotedAt > now + 30
+        ) {
+          fail("the quote is dated in the future.");
+        }
+        const { grossBuyAmount, provenance } = priceLocalIntent(
+          direction,
+          sellAmount,
+        );
+        const afterSpread = (grossBuyAmount * 9_970n) / 10_000n;
+        if (afterSpread !== buyAmount) {
+          fail("the quote price does not match the local solver book.");
+        }
+        if (body.pricingProvenance !== provenance) {
+          fail("the quote provenance does not match the local solver book.");
+        }
+        const reconstructed = canonicalSolverQuote({
+          domain: body.domain,
+          pool: body.pool,
+          helper: String(body.helper).toLowerCase(),
+          sellToken: String(body.sellToken).toLowerCase(),
+          sellAmount,
+          buyToken: String(body.buyToken).toLowerCase(),
+          intentDigest: String(body.intentDigest).toLowerCase(),
+          solverId: body.solverId,
+          solverKey: body.solverKey,
+          nonce: String(body.nonce).toLowerCase(),
+          buyAmount,
+          spreadBps: body.spreadBps,
+          pricingProvenance: provenance,
+          quotedAt: body.quotedAt,
+          quoteExpiresAt: body.quoteExpiresAt,
+        });
+        if (body.canonical !== reconstructed) {
+          fail("the quote canonical payload does not match the solver.");
+        }
+        const signature = await signLocalnetQuoteCanonical(reconstructed);
+        jsonResponse(response, 200, {
+          result: { signature, canonical: reconstructed },
         });
         return;
       }
@@ -1004,7 +1114,7 @@ function startApi({
           starknet,
         );
         jsonResponse(response, 200, {
-          result: { ...result, solverId: "app20-localnet-solver" },
+          result: { ...result, solverId: LOCALNET_SOLVER_ID },
         });
         return;
       }

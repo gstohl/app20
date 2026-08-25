@@ -10,7 +10,7 @@ Three surfaces form one workflow:
 
 Users connect once in the header. Viewing keys and mailbox keys stay on the
 device. The STRK20 pool is reached through the official Starknet privacy path.
-Workflows, dry cross-chain review, and payment links remain secondary tools,
+Dry cross-chain review and payment links remain secondary tools,
 not separate claims in the judged trading flow.
 
 Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
@@ -25,7 +25,7 @@ yet. This is not a Mainnet value-moving release.
 | 1 | Private Desk | `/vault` | Localnet proves inventory-backed USDC↔STRK quote, lock, solver fill, claim, expiry refund, and insufficient-inventory refusal. Funding remains a distinct STRK20 rail. No production solver is deployed |
 | 2 | Mailbox | `/mail/inbox` | On-chain ciphertext for letters, legacy OTC documents, receipts, and authenticated self-addressed contact snapshots. Mail is correspondence/evidence, never settlement authority |
 | 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase |
-| 4 | Secondary tools | `/vault#intents`, `/workflows`, `/pay` | Dry cross-chain review, advisory workflows, and unsigned payment links. No live 1Click submission or TEE execution |
+| 4 | Secondary tools | `/vault#intents`, `/pay` | Dry cross-chain review and unsigned payment links. No live 1Click submission or TEE execution |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.

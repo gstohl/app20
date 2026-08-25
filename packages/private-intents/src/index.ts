@@ -10,13 +10,22 @@
  *   dry-only connector can back it in review builds.
  * - Netting reduces amount/timing correlation on the public hedge. It does
  *   not make a same-size instant restock private, and it never claims to.
+ * - Quotes are worthless until a solver key signs the canonical payload.
+ *   A digest proves consistency; only the signature proves authenticity.
  */
 
-const INTENT_DOMAIN = "app20/private-intent/v1";
-const QUOTE_DOMAIN = "app20/private-intent-quote/v1";
+export const INTENT_DOMAIN = "app20/private-intent/v1";
+export const QUOTE_DOMAIN = "app20/private-intent-quote/v1";
+export const LOCALNET_SOLVER_ID = "app20-localnet-solver";
+export const LOCALNET_SOLVER_KEY_ID = "app20-localnet-solver/ecdsa-p256-v1";
+export const QUOTE_CLOCK_SKEW_SECONDS = 30;
 
 const TOKEN_PATTERN = /^0x[0-9a-fA-F]{1,64}$/;
+const NONCE_PATTERN = /^0x[0-9a-f]{64}$/;
+const SIGNATURE_PATTERN = /^0x[0-9a-f]+$/;
 const MIN_INTENT_ID_LENGTH = 32;
+const ECDSA_PARAMS = { name: "ECDSA", namedCurve: "P-256" } as const;
+const ECDSA_SIGN = { name: "ECDSA", hash: "SHA-256" } as const;
 
 export type StarknetPool =
   | "starknet:SN_MAIN"
@@ -121,14 +130,30 @@ function canonicalIntent(intent: PrivateSwapIntentV1): string {
   });
 }
 
+function bytesToHex(bytes: Uint8Array): string {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBytes(hex: string): Uint8Array | null {
+  if (!SIGNATURE_PATTERN.test(hex) || hex.length < 4 || hex.length % 2 !== 0) {
+    return null;
+  }
+  const body = hex.slice(2);
+  const bytes = new Uint8Array(body.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    const value = Number.parseInt(body.slice(index * 2, index * 2 + 2), 16);
+    if (!Number.isFinite(value)) return null;
+    bytes[index] = value;
+  }
+  return bytes;
+}
+
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(text),
   );
-  return `0x${[...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("")}`;
+  return `0x${bytesToHex(new Uint8Array(digest))}`;
 }
 
 export async function digestPrivateSwapIntent(
@@ -153,25 +178,162 @@ export interface PricingSource {
 
 export interface SolverQuote {
   readonly domain: typeof QUOTE_DOMAIN;
+  readonly pool: StarknetPool;
+  readonly helper: string;
+  readonly sellToken: string;
+  readonly sellAmount: bigint;
+  readonly buyToken: string;
   readonly intentDigest: string;
   readonly solverId: string;
+  readonly solverKey: string;
+  readonly nonce: string;
   /** What the solver commits to deliver. Must satisfy minBuyAmount. */
   readonly buyAmount: bigint;
   readonly spreadBps: number;
   readonly pricingProvenance: string;
   readonly quotedAt: number;
   readonly quoteExpiresAt: number;
+  readonly signature: string;
 }
+
+export type UnsignedSolverQuote = Omit<SolverQuote, "signature">;
 
 export type QuoteOutcome =
   | { readonly kind: "quoted"; readonly quote: SolverQuote }
   | { readonly kind: "declined"; readonly reason: string };
 
+export interface QuoteReplayStore {
+  consume(nonce: string): boolean;
+}
+
+export function createMemoryQuoteReplayStore(): QuoteReplayStore {
+  const seen = new Set<string>();
+  return {
+    consume(nonce) {
+      if (seen.has(nonce)) return false;
+      seen.add(nonce);
+      return true;
+    },
+  };
+}
+
 export interface QuoteOptions {
   readonly solverId: string;
+  readonly solverKey: string;
+  readonly helper: string;
   readonly spreadBps: number;
   readonly quoteTtlSeconds: number;
   readonly now?: number;
+  readonly nonce?: string;
+  readonly sign: (
+    canonical: string,
+    quote: UnsignedSolverQuote,
+  ) => Promise<string>;
+}
+
+export interface QuoteAcceptance {
+  readonly helper: string;
+  readonly verify: (
+    canonical: string,
+    signature: string,
+    solverKey: string,
+  ) => Promise<boolean>;
+  readonly consumeNonce: (nonce: string) => boolean;
+}
+
+export function createQuoteNonce(): string {
+  return `0x${bytesToHex(crypto.getRandomValues(new Uint8Array(32)))}`;
+}
+
+export function canonicalSolverQuote(quote: UnsignedSolverQuote): string {
+  return JSON.stringify({
+    buyAmount: quote.buyAmount.toString(),
+    buyToken: quote.buyToken.toLowerCase(),
+    domain: quote.domain,
+    helper: quote.helper.toLowerCase(),
+    intentDigest: quote.intentDigest.toLowerCase(),
+    nonce: quote.nonce.toLowerCase(),
+    pool: quote.pool,
+    pricingProvenance: quote.pricingProvenance,
+    quoteExpiresAt: quote.quoteExpiresAt,
+    quotedAt: quote.quotedAt,
+    sellAmount: quote.sellAmount.toString(),
+    sellToken: quote.sellToken.toLowerCase(),
+    solverId: quote.solverId,
+    solverKey: quote.solverKey,
+    spreadBps: quote.spreadBps,
+  });
+}
+
+export async function importQuotePrivateKey(
+  jwk: JsonWebKey,
+): Promise<CryptoKey> {
+  return crypto.subtle.importKey("jwk", jwk, ECDSA_PARAMS, false, ["sign"]);
+}
+
+export async function importQuotePublicKey(
+  jwk: JsonWebKey,
+): Promise<CryptoKey> {
+  return crypto.subtle.importKey("jwk", jwk, ECDSA_PARAMS, true, ["verify"]);
+}
+
+export async function signCanonicalQuote(
+  canonical: string,
+  privateKey: CryptoKey,
+): Promise<string> {
+  const signature = await crypto.subtle.sign(
+    ECDSA_SIGN,
+    privateKey,
+    new TextEncoder().encode(canonical),
+  );
+  return `0x${bytesToHex(new Uint8Array(signature))}`;
+}
+
+export async function verifyCanonicalQuote(
+  canonical: string,
+  signature: string,
+  publicKey: CryptoKey,
+): Promise<boolean> {
+  const bytes = hexToBytes(signature);
+  if (!bytes) return false;
+  try {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return await crypto.subtle.verify(
+      ECDSA_SIGN,
+      publicKey,
+      copy,
+      new TextEncoder().encode(canonical),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function assertQuoteShape(quote: UnsignedSolverQuote): void {
+  if (quote.domain !== QUOTE_DOMAIN) {
+    throw new PrivateIntentError(
+      "The quote is outside the APP20 quote domain.",
+    );
+  }
+  if (!quote.solverId.trim()) {
+    throw new PrivateIntentError("The quote is missing a solver identity.");
+  }
+  if (!quote.solverKey.trim()) {
+    throw new PrivateIntentError("The quote is missing a solver key.");
+  }
+  requireToken(quote.helper, "helper");
+  requireToken(quote.sellToken, "sellToken");
+  requireToken(quote.buyToken, "buyToken");
+  requireAmount(quote.sellAmount, "sellAmount");
+  requireAmount(quote.buyAmount, "buyAmount");
+  requireUnixSeconds(quote.quotedAt, "quotedAt");
+  requireUnixSeconds(quote.quoteExpiresAt, "quoteExpiresAt");
+  if (!NONCE_PATTERN.test(quote.nonce)) {
+    throw new PrivateIntentError(
+      "The quote nonce must be 32 unpredictable bytes.",
+    );
+  }
 }
 
 export async function quotePrivateSwapIntent(
@@ -183,6 +345,10 @@ export async function quotePrivateSwapIntent(
   if (!options.solverId.trim()) {
     throw new PrivateIntentError("solverId is required.");
   }
+  if (!options.solverKey.trim()) {
+    throw new PrivateIntentError("solverKey is required.");
+  }
+  requireToken(options.helper, "helper");
   if (
     !Number.isSafeInteger(options.spreadBps) ||
     options.spreadBps < 0 ||
@@ -223,17 +389,33 @@ export async function quotePrivateSwapIntent(
     };
   }
 
-  const quote: SolverQuote = {
+  const unsigned: UnsignedSolverQuote = {
     domain: QUOTE_DOMAIN,
+    pool: intent.pool,
+    helper: options.helper.toLowerCase(),
+    sellToken: intent.sellToken.toLowerCase(),
+    sellAmount: intent.sellAmount,
+    buyToken: intent.buyToken.toLowerCase(),
     intentDigest: await digestPrivateSwapIntent(intent),
     solverId: options.solverId,
+    solverKey: options.solverKey,
+    nonce: options.nonce ?? createQuoteNonce(),
     buyAmount: afterSpread,
     spreadBps: options.spreadBps,
     pricingProvenance: priced.provenance,
     quotedAt: now,
     quoteExpiresAt: Math.min(now + options.quoteTtlSeconds, intent.expiresAt),
   };
-  return { kind: "quoted", quote };
+  assertQuoteShape(unsigned);
+  const signature = (
+    await options.sign(canonicalSolverQuote(unsigned), unsigned)
+  )
+    .trim()
+    .toLowerCase();
+  if (!SIGNATURE_PATTERN.test(signature)) {
+    throw new PrivateIntentError("The solver returned an unusable signature.");
+  }
+  return { kind: "quoted", quote: { ...unsigned, signature } };
 }
 
 /**
@@ -262,17 +444,51 @@ export type IntentState =
       readonly refundedAt: number;
     };
 
-export function acceptQuote(
+export async function acceptQuote(
   intent: PrivateSwapIntentV1,
   quote: SolverQuote,
   now: number,
-): IntentState {
+  acceptance: QuoteAcceptance,
+): Promise<IntentState> {
   assertPrivateSwapIntent(intent);
-  if (now >= quote.quoteExpiresAt) {
+  assertQuoteShape(quote);
+  if (quote.helper.toLowerCase() !== acceptance.helper.toLowerCase()) {
+    throw new PrivateIntentError("The quote is bound to a different helper.");
+  }
+  if (quote.pool !== intent.pool) {
+    throw new PrivateIntentError("The quote is bound to a different pool.");
+  }
+  if (
+    quote.sellToken.toLowerCase() !== intent.sellToken.toLowerCase() ||
+    quote.buyToken.toLowerCase() !== intent.buyToken.toLowerCase() ||
+    quote.sellAmount !== intent.sellAmount
+  ) {
+    throw new PrivateIntentError("The quote does not bind these trade terms.");
+  }
+  if (now + QUOTE_CLOCK_SKEW_SECONDS < quote.quotedAt) {
+    throw new PrivateIntentError("The quote is dated in the future.");
+  }
+  if (now >= quote.quoteExpiresAt || now >= intent.expiresAt) {
     throw new PrivateIntentError("The quote expired before acceptance.");
   }
   if (quote.buyAmount < intent.minBuyAmount) {
     throw new PrivateIntentError("The quote is below the intent floor.");
+  }
+  const digest = await digestPrivateSwapIntent(intent);
+  if (digest !== quote.intentDigest) {
+    throw new PrivateIntentError("The quote does not bind this intent digest.");
+  }
+  const canonical = canonicalSolverQuote(quote);
+  const authentic = await acceptance.verify(
+    canonical,
+    quote.signature,
+    quote.solverKey,
+  );
+  if (!authentic) {
+    throw new PrivateIntentError("The quote signature is not authentic.");
+  }
+  if (!acceptance.consumeNonce(quote.nonce)) {
+    throw new PrivateIntentError("The quote nonce was already consumed.");
   }
   return { kind: "locked", quote, lockedAt: now };
 }
@@ -293,9 +509,12 @@ export function fillLockedIntent(
       "The intent expired; only a refund is possible now.",
     );
   }
-  if (deliveredBuyAmount < intent.minBuyAmount) {
+  if (
+    deliveredBuyAmount < intent.minBuyAmount ||
+    deliveredBuyAmount < state.quote.buyAmount
+  ) {
     throw new PrivateIntentError(
-      "Delivered amount is below the intent floor; the escrow must not release.",
+      "Delivered amount is below the quoted fill; the escrow must not release.",
     );
   }
   return {

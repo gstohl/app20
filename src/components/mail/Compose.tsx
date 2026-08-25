@@ -1080,6 +1080,7 @@ export default function Compose({
       <form className={styles.form} onSubmit={handleSubmit}>
         <fieldset className={styles.composeFieldset} disabled={sendPending}>
           <AddressBookField
+            className={styles.field}
             selfAddress={senderAddress}
             inputAriaLabel="To"
             multiline

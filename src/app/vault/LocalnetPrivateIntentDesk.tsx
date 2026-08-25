@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  LOCALNET_SOLVER_ID,
+  LOCALNET_SOLVER_KEY_ID,
   acceptQuote,
   assertInventoryCovers,
+  createMemoryQuoteReplayStore,
   fillLockedIntent,
   quotePrivateSwapIntent,
   refundExpiredIntent,
@@ -11,13 +14,20 @@ import {
 } from "@app20/private-intents";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { storeDeskHandoff, consumeDeskHandoff } from "@/lib/desk-handoff";
+import { consumeDeskHandoff, storeDeskHandoff } from "@/lib/desk-handoff";
+import { verifyLocalnetSolverQuote } from "@/lib/localnet-quote-authority";
+import {
+  deskLeakChips,
+  deskVenueCopy,
+  suggestsBlockSurface,
+  type DeskSurface,
+  type DeskVenue,
+} from "@/lib/desk-disclosure";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
 import {
   assertReadyExecutionUnchanged,
   snapshotReadyExecution,
 } from "@/lib/ready-execution";
-
 import { submitActions } from "@/lib/strk20";
 import {
   addrSTRK,
@@ -27,7 +37,7 @@ import {
   myFrontendProviders,
 } from "@/utils/constants";
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { validateAndParseAddress } from "starknet";
 import {
   askLocalnetSolverToFill,
@@ -39,13 +49,24 @@ import {
   parseLocalnetTokenAmount,
   readLocalnetEscrowDeal,
   requestLocalnetSolverQuote,
+  signLocalnetSolverQuote,
   type LocalnetMarketToken,
   type LocalnetSolverQuote,
 } from "./localnet-private-intents";
 import styles from "./vault.module.css";
 
+const quoteReplayStore = createMemoryQuoteReplayStore();
+
+export type LocalnetMarketPairId = "STRK_USDC" | "USDC_STRK";
+
+export type LocalnetPrivateIntentDeskProps = Readonly<{
+  initialPairId?: LocalnetMarketPairId;
+  swapOnly?: boolean;
+  onPairChange?: (pairId: LocalnetMarketPairId) => void;
+}>;
+
 type MarketPair = {
-  id: "STRK_USDC" | "USDC_STRK";
+  id: LocalnetMarketPairId;
   label: string;
   sell: LocalnetMarketToken;
   buy: LocalnetMarketToken;
@@ -58,6 +79,7 @@ type QuotedIntent = {
   quote: SolverQuote;
   inventory: bigint;
   pair: MarketPair;
+  surface: DeskSurface;
 };
 
 type FlowPhase = "quote" | "lock" | "fill" | "claim" | "expire" | "refund";
@@ -71,7 +93,13 @@ type FlowState =
       message: string;
       transactionHashes: string[];
     }
+  | { kind: "refused"; message: string }
   | { kind: "error"; message: string };
+
+function surfaceFromHash(hash: string): DeskSurface {
+  const value = hash.replace(/^#/, "");
+  return value === "desk" || value === "block" ? "block" : "swap";
+}
 
 function currentLifecycleStep(
   quoted: QuotedIntent | null,
@@ -134,15 +162,39 @@ function errorMessage(error: unknown): string {
     : "The local private intent failed.";
 }
 
-export default function LocalnetPrivateIntentDesk() {
+function isInventoryRefusal(message: string): boolean {
+  return /inventory cannot cover|does not cover|no output|below the intent floor/i.test(
+    message,
+  );
+}
+
+function LeakChips({ venue }: { venue: DeskVenue }) {
+  return (
+    <div className={styles.deskChips} aria-label="Who learns what">
+      {deskLeakChips(venue).map((chip) => (
+        <span key={chip.id}>{chip.label}</span>
+      ))}
+    </div>
+  );
+}
+
+export default function LocalnetPrivateIntentDesk({
+  initialPairId = "STRK_USDC",
+  swapOnly = false,
+  onPairChange,
+}: LocalnetPrivateIntentDeskProps = {}) {
   const pairs = marketPairs();
-  const [pairId, setPairId] = useState<MarketPair["id"]>("STRK_USDC");
+  const [pairId, setPairId] = useState<MarketPair["id"]>(initialPairId);
   const pair = pairs[pairId];
   const connected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
+  const chain = useStoreWallet((state) => state.chain);
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
+  const hash = useLocation({ select: (location) => location.hash });
+  const navigate = useNavigate();
+  const requestedSurface = surfaceFromHash(hash);
   const [sellAmount, setSellAmount] = useState(pair.defaultSellAmount);
   const [minBuyAmount, setMinBuyAmount] = useState(pair.defaultMinBuyAmount);
   const [solverOutcome, setSolverOutcome] = useState<"fill" | "refund">("fill");
@@ -152,21 +204,48 @@ export default function LocalnetPrivateIntentDesk() {
   const working = flow.kind === "working";
   const localnetReady =
     connected && Boolean(address) && providerIndex === LOCALNET_PROVIDER_INDEX;
+  const surface = swapOnly
+    ? "swap"
+    : quoted
+      ? quoted.surface
+      : requestedSurface;
+  const venue: DeskVenue =
+    flow.kind === "refused" ? "refused" : quoted ? "inventory" : "idle";
+  const blockHint = suggestsBlockSurface({
+    sellSymbol: pair.sell.symbol,
+    sellAmount,
+  });
 
   useEffect(() => {
+    const nextPair = marketPairs()[initialPairId];
+    setPairId(initialPairId);
+    setSellAmount(nextPair.defaultSellAmount);
+    setMinBuyAmount(nextPair.defaultMinBuyAmount);
+    setQuoted(null);
+    setFlow({ kind: "idle" });
+  }, [initialPairId]);
+
+  useEffect(() => {
+    if (!address || !chain) return;
     const url = new URL(window.location.href);
-    const queryCounterparty = url.searchParams.get("counterparty");
-    if (queryCounterparty || url.searchParams.has("action")) {
+    if (
+      url.searchParams.has("counterparty") ||
+      url.searchParams.has("action") ||
+      url.searchParams.has("intent")
+    ) {
       url.searchParams.delete("counterparty");
       url.searchParams.delete("action");
+      url.searchParams.delete("intent");
       window.history.replaceState(
         window.history.state,
         "",
         `${url.pathname}${url.search}${url.hash}`,
       );
     }
-    const input =
-      consumeDeskHandoff(window.sessionStorage, "rfq") ?? queryCounterparty;
+    const input = consumeDeskHandoff(window.sessionStorage, "rfq", {
+      account: address,
+      chainId: chain,
+    });
     if (!input) {
       setCounterparty(null);
       return;
@@ -176,20 +255,42 @@ export default function LocalnetPrivateIntentDesk() {
     } catch {
       setCounterparty(null);
     }
-  }, []);
+  }, [address, chain]);
+
+  function setSurface(next: DeskSurface) {
+    if (quoted || swapOnly) return;
+    void navigate({
+      to: "/vault",
+      hash: next === "block" ? "desk" : "swap",
+    });
+  }
 
   function invalidateQuote() {
     setQuoted(null);
     setFlow({ kind: "idle" });
   }
 
+  function selectPair(nextId: LocalnetMarketPairId) {
+    const nextPair = pairs[nextId];
+    setPairId(nextId);
+    setSellAmount(nextPair.defaultSellAmount);
+    setMinBuyAmount(nextPair.defaultMinBuyAmount);
+    invalidateQuote();
+    onPairChange?.(nextId);
+  }
+
   async function buildQuote() {
     setFlow({
       kind: "working",
       phase: "quote",
-      message: "Reading local solver inventory…",
+      message: "Reading desk inventory…",
     });
     try {
+      if (!localnetReady) {
+        throw new Error(
+          "No private inventory on this network. Nothing was sent to a public book.",
+        );
+      }
       if (BigInt(escrowHelperLocalnet) === 0n) {
         throw new Error("The local escrow deployment is unavailable.");
       }
@@ -197,7 +298,10 @@ export default function LocalnetPrivateIntentDesk() {
         throw new Error("The local solver token is unavailable.");
       }
       const sell = parseLocalnetTokenAmount(sellAmount, pair.sell);
-      const floor = parseLocalnetTokenAmount(minBuyAmount, pair.buy);
+      const floor =
+        surface === "swap"
+          ? 1n
+          : parseLocalnetTokenAmount(minBuyAmount, pair.buy);
       const now = Math.floor(Date.now() / 1_000);
       const intent: PrivateSwapIntentV1 = {
         version: 1,
@@ -220,15 +324,6 @@ export default function LocalnetPrivateIntentDesk() {
               sellAmount: request.sellAmount,
               buyToken: request.buyToken,
             });
-            if (
-              sourceQuote.buyAmount <= 0n ||
-              !matchesToken(sourceQuote.sellToken, request.sellToken) ||
-              !matchesToken(sourceQuote.buyToken, request.buyToken)
-            ) {
-              throw new Error(
-                "The local solver quote changed the requested pair.",
-              );
-            }
             return {
               buyAmount: sourceQuote.buyAmount,
               provenance: sourceQuote.provenance,
@@ -236,26 +331,34 @@ export default function LocalnetPrivateIntentDesk() {
           },
         },
         {
-          solverId: "app20-localnet-solver",
+          solverId: LOCALNET_SOLVER_ID,
+          solverKey: LOCALNET_SOLVER_KEY_ID,
+          helper: escrowHelperLocalnet,
           spreadBps: 30,
           quoteTtlSeconds: 10 * 60,
           now,
+          sign: signLocalnetSolverQuote,
         },
       );
-      if (outcome.kind === "declined") {
-        throw new Error(outcome.reason);
+      if (outcome.kind !== "quoted" || !sourceQuote) {
+        throw new Error(
+          outcome.kind === "declined"
+            ? outcome.reason
+            : "The desk declined this clip.",
+        );
       }
-      if (!sourceQuote) {
-        throw new Error("The local solver returned no inventory statement.");
+      if (sourceQuote.solverId !== LOCALNET_SOLVER_ID) {
+        throw new Error("The desk quote named an unexpected solver.");
+      }
+      if (
+        !matchesToken(sourceQuote.sellToken, pair.sell.address) ||
+        !matchesToken(sourceQuote.buyToken, pair.buy.address)
+      ) {
+        throw new Error("The desk quote changed the requested pair.");
       }
       assertInventoryCovers(
-        [
-          {
-            token: intent.buyToken,
-            available: sourceQuote.solverInventory,
-          },
-        ],
-        intent.buyToken,
+        [{ token: pair.buy.address, available: sourceQuote.solverInventory }],
+        pair.buy.address,
         outcome.quote.buyAmount,
       );
       setQuoted({
@@ -263,11 +366,17 @@ export default function LocalnetPrivateIntentDesk() {
         quote: outcome.quote,
         inventory: sourceQuote.solverInventory,
         pair,
+        surface,
       });
       setFlow({ kind: "idle" });
     } catch (error: unknown) {
+      const message = errorMessage(error);
       setQuoted(null);
-      setFlow({ kind: "error", message: errorMessage(error) });
+      setFlow(
+        isInventoryRefusal(message)
+          ? { kind: "refused", message }
+          : { kind: "error", message },
+      );
     }
   }
 
@@ -284,10 +393,15 @@ export default function LocalnetPrivateIntentDesk() {
         quoted.intent.buyToken,
         quoted.quote.buyAmount,
       );
-      const locked = acceptQuote(
+      const locked = await acceptQuote(
         quoted.intent,
         quoted.quote,
         Math.floor(Date.now() / 1_000),
+        {
+          helper: escrowHelperLocalnet,
+          verify: verifyLocalnetSolverQuote,
+          consumeNonce: (nonce) => quoteReplayStore.consume(nonce),
+        },
       );
       const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
       const policy = () => {
@@ -297,7 +411,7 @@ export default function LocalnetPrivateIntentDesk() {
       setFlow({
         kind: "working",
         phase: "lock",
-        message: `Locking the private ${quoted.pair.sell.symbol} note to the intent digest…`,
+        message: `Locking the private ${quoted.pair.sell.symbol} note to the deal terms…`,
       });
       const ticketAddress = await ensureLocalnetEscrowTicket({
         dealId: quoted.intent.intentId,
@@ -329,7 +443,7 @@ export default function LocalnetPrivateIntentDesk() {
         buyAmount: quoted.quote.buyAmount,
       };
 
-      if (solverOutcome === "fill") {
+      if (solverOutcome === "fill" || quoted.surface === "swap") {
         setFlow({
           kind: "working",
           phase: "fill",
@@ -406,55 +520,118 @@ export default function LocalnetPrivateIntentDesk() {
         });
       }
     } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
+      const message = errorMessage(error);
+      setFlow(
+        isInventoryRefusal(message)
+          ? { kind: "refused", message }
+          : { kind: "error", message },
+      );
     }
   }
 
   return (
     <section
       className={styles.privateIntentDesk}
-      aria-labelledby="local-private-intent-title"
+      aria-label={swapOnly ? "Private swap" : undefined}
+      aria-labelledby={swapOnly ? undefined : "local-private-intent-title"}
     >
-      <header className={styles.privateIntentHeader}>
-        <div>
-          <span>APP20 PRIVATE DESK / LOCALNET MARKET</span>
-          <h3 id="local-private-intent-title">Private USDC ↔ STRK RFQ</h3>
-        </div>
-        <strong>INVENTORY-FIRST</strong>
-      </header>
+      {swapOnly ? null : (
+        <header className={styles.privateIntentHeader}>
+          <div>
+            <span>APP20 DESK</span>
+            <h3 id="local-private-intent-title">
+              {surface === "swap" ? "Swap" : "Block RFQ"}
+            </h3>
+          </div>
+          <strong>{surface === "swap" ? "DAY-TO-DAY" : "INVENTORY RFQ"}</strong>
+        </header>
+      )}
 
-      {counterparty ? (
+      {swapOnly ? null : (
+        <div
+          className={styles.deskModeSwitch}
+          role="tablist"
+          aria-label="Desk surface"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={surface === "swap"}
+            disabled={Boolean(quoted)}
+            onClick={() => setSurface("swap")}
+          >
+            Swap
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={surface === "block"}
+            disabled={Boolean(quoted)}
+            onClick={() => setSurface("block")}
+          >
+            Block
+          </button>
+        </div>
+      )}
+
+      {swapOnly ? null : (
+        <>
+          <LeakChips venue={venue} />
+          <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
+        </>
+      )}
+
+      {!swapOnly && blockHint && surface === "swap" && !quoted ? (
+        <p className={styles.deskHint} role="status">
+          This clip is large enough that a negotiated Block quote with a floor
+          and expiry is usually the better shape.
+          <button type="button" onClick={() => setSurface("block")}>
+            Open Block
+          </button>
+        </p>
+      ) : null}
+      {!swapOnly && !blockHint && surface === "block" && !quoted ? (
+        <p className={styles.deskHint} role="status">
+          This clip is small enough that an immediate Swap from inventory is
+          usually faster.
+          <button type="button" onClick={() => setSurface("swap")}>
+            Open Swap
+          </button>
+        </p>
+      ) : null}
+
+      {surface === "block" && counterparty ? (
         <aside className={styles.privateIntentCounterparty}>
           <div>
-            <span>SELECTED COUNTERPARTY</span>
+            <span>CORRESPONDENCE CONTACT</span>
             <code title={counterparty}>
               {counterparty.slice(0, 12)}…{counterparty.slice(-8)}
             </code>
           </div>
-          <Link
-            to="/mail/inbox"
-            onClick={() =>
-              storeDeskHandoff(window.sessionStorage, "mail", counterparty)
-            }
-          >
-            Open encrypted correspondence
-          </Link>
+          {address && chain ? (
+            <Link
+              to="/mail/inbox"
+              onClick={() =>
+                storeDeskHandoff(window.sessionStorage, "mail", counterparty, {
+                  account: address,
+                  chainId: chain,
+                })
+              }
+            >
+              Open encrypted correspondence
+            </Link>
+          ) : null}
         </aside>
       ) : null}
 
       <div className={styles.privateIntentForm}>
-        <label>
+        <label className={styles.privateIntentMarket}>
           <span>PRIVATE MARKET</span>
           <select
             aria-label="Private intent market"
             value={pairId}
             onChange={(event) => {
-              const nextId = event.target.value as MarketPair["id"];
-              const nextPair = pairs[nextId];
-              setPairId(nextId);
-              setSellAmount(nextPair.defaultSellAmount);
-              setMinBuyAmount(nextPair.defaultMinBuyAmount);
-              invalidateQuote();
+              selectPair(event.target.value as LocalnetMarketPairId);
             }}
             disabled={working}
           >
@@ -465,39 +642,90 @@ export default function LocalnetPrivateIntentDesk() {
             ))}
           </select>
         </label>
-        <label>
-          <span>SELL / {pair.sell.symbol}</span>
-          <input
-            aria-label="Private intent sell amount"
-            value={sellAmount}
-            onChange={(event) => {
-              setSellAmount(event.target.value);
-              invalidateQuote();
+
+        <div className={styles.swapAssetStack}>
+          <label className={styles.swapAssetCard}>
+            <span className={styles.swapAssetHead}>
+              <b>Sell</b>
+              <small>Private note</small>
+            </span>
+            <span className={styles.swapAssetControl}>
+              <input
+                aria-label="Private intent sell amount"
+                value={sellAmount}
+                onChange={(event) => {
+                  setSellAmount(event.target.value);
+                  invalidateQuote();
+                }}
+                inputMode="decimal"
+                disabled={working}
+              />
+              <strong>{pair.sell.symbol}</strong>
+            </span>
+          </label>
+
+          <button
+            className={styles.swapDirection}
+            type="button"
+            aria-label="Reverse swap direction"
+            title="Reverse market"
+            onClick={() => {
+              selectPair(pairId === "STRK_USDC" ? "USDC_STRK" : "STRK_USDC");
             }}
-            inputMode="decimal"
             disabled={working}
-          />
-        </label>
-        <label>
-          <span>MINIMUM RECEIVE / {pair.buy.symbol}</span>
-          <input
-            aria-label="Private intent minimum receive"
-            value={minBuyAmount}
-            onChange={(event) => {
-              setMinBuyAmount(event.target.value);
-              invalidateQuote();
-            }}
-            inputMode="decimal"
+          >
+            ⇅
+          </button>
+
+          <label className={styles.swapAssetCard}>
+            <span className={styles.swapAssetHead}>
+              <b>{surface === "block" ? "Minimum receive" : "Buy"}</b>
+              <small>
+                {quoted ? "Signed inventory quote" : "Quote required"}
+              </small>
+            </span>
+            <span className={styles.swapAssetControl}>
+              {surface === "block" ? (
+                <input
+                  aria-label="Private intent minimum receive"
+                  value={minBuyAmount}
+                  onChange={(event) => {
+                    setMinBuyAmount(event.target.value);
+                    invalidateQuote();
+                  }}
+                  inputMode="decimal"
+                  disabled={working}
+                />
+              ) : (
+                <output aria-label="Private intent quoted buy amount">
+                  {quoted
+                    ? formatLocalnetTokenAmount(
+                        quoted.quote.buyAmount,
+                        quoted.pair.buy,
+                        6,
+                      )
+                    : "—"}
+                </output>
+              )}
+              <strong>{pair.buy.symbol}</strong>
+            </span>
+          </label>
+        </div>
+
+        {quoted ? null : (
+          <button
+            className={styles.privateIntentQuoteButton}
+            type="button"
+            onClick={() => void buildQuote()}
             disabled={working}
-          />
-        </label>
-        <button
-          type="button"
-          onClick={() => void buildQuote()}
-          disabled={working}
-        >
-          {working && !quoted ? "Quoting…" : "Get private quote"}
-        </button>
+          >
+            {working
+              ? "Quoting…"
+              : surface === "swap"
+                ? "Get swap quote"
+                : "Get private quote"}
+          </button>
+        )}
       </div>
 
       {quoted ? (
@@ -531,72 +759,97 @@ export default function LocalnetPrivateIntentDesk() {
         </div>
       ) : null}
 
-      <ol
-        className={styles.privateIntentStepper}
-        aria-label="Settlement lifecycle"
-      >
-        {(solverOutcome === "fill"
-          ? ["Quote", "Lock", "Solver fill", "Claim"]
-          : ["Quote", "Lock", "Expiry", "Refund"]
-        ).map((label, index) => {
-          const current = currentLifecycleStep(quoted, flow, solverOutcome);
-          return (
-            <li
-              key={label}
-              data-state={
-                current > index
-                  ? "complete"
-                  : current === index
-                    ? "current"
-                    : "pending"
-              }
-            >
-              <span>{index + 1}</span>
-              <strong>{label}</strong>
-            </li>
-          );
-        })}
-      </ol>
+      {surface === "block" ? (
+        <ol
+          className={styles.privateIntentStepper}
+          aria-label="Settlement lifecycle"
+        >
+          {(solverOutcome === "fill"
+            ? ["Quote", "Lock", "Solver fill", "Claim"]
+            : ["Quote", "Lock", "Expiry", "Refund"]
+          ).map((label, index) => {
+            const current = currentLifecycleStep(quoted, flow, solverOutcome);
+            return (
+              <li
+                key={label}
+                data-state={
+                  current > index
+                    ? "complete"
+                    : current === index
+                      ? "current"
+                      : "pending"
+                }
+              >
+                <span>{index + 1}</span>
+                <strong>{label}</strong>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
 
-      <details className={styles.privateIntentDemoControls} open>
-        <summary>Demo controls</summary>
-        <fieldset className={styles.privateIntentOutcome} disabled={working}>
-          <legend>LOCALNET TEST OUTCOME</legend>
-          <label>
-            <input
-              type="radio"
-              name="local-private-intent-outcome"
-              value="fill"
-              checked={solverOutcome === "fill"}
-              onChange={() => setSolverOutcome("fill")}
-            />
-            Solver fills
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="local-private-intent-outcome"
-              value="refund"
-              checked={solverOutcome === "refund"}
-              onChange={() => setSolverOutcome("refund")}
-            />
-            No fill → expiry refund
-          </label>
-        </fieldset>
-      </details>
+      {surface === "block" ? (
+        <details className={styles.privateIntentDemoControls} open>
+          <summary>Demo controls</summary>
+          <fieldset className={styles.privateIntentOutcome} disabled={working}>
+            <legend>LOCALNET TEST OUTCOME</legend>
+            <label>
+              <input
+                type="radio"
+                name="local-private-intent-outcome"
+                value="fill"
+                checked={solverOutcome === "fill"}
+                onChange={() => setSolverOutcome("fill")}
+              />
+              Solver fills
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="local-private-intent-outcome"
+                value="refund"
+                checked={solverOutcome === "refund"}
+                onChange={() => setSolverOutcome("refund")}
+              />
+              No fill → expiry refund
+            </label>
+          </fieldset>
+        </details>
+      ) : null}
 
-      <button
-        className={styles.privateIntentExecute}
-        type="button"
-        disabled={!quoted || !localnetReady || working}
-        onClick={() => void executeIntent()}
-      >
-        {working ? "Executing…" : "Execute local private intent"}
-      </button>
+      {quoted ? (
+        <button
+          className={styles.privateIntentExecute}
+          type="button"
+          disabled={!localnetReady || working}
+          onClick={() => void executeIntent()}
+        >
+          {working
+            ? "Executing…"
+            : surface === "swap"
+              ? "Swap from desk inventory"
+              : "Execute local private intent"}
+        </button>
+      ) : null}
+
+      {flow.kind === "refused" ? (
+        <div className={styles.deskRefusal} role="alert">
+          <strong>No private fill</strong>
+          <p>{flow.message}</p>
+          <p>
+            Public-route swap is a separate action and is not enabled in this
+            build. Nothing was sent to a public book.
+          </p>
+          <button type="button" disabled>
+            Public-route swap unavailable
+          </button>
+        </div>
+      ) : null}
 
       {localnetReady ? null : (
         <p className={styles.privateIntentHint}>
-          Select LOCAL in the header and connect Localnet (dev) to execute.
+          Select LOCAL in the header and connect Localnet (dev) to execute from
+          desk inventory.
         </p>
       )}
       {flow.kind === "working" || flow.kind === "error" ? (
@@ -644,7 +897,7 @@ export default function LocalnetPrivateIntentDesk() {
               </dd>
             </div>
             <div>
-              <dt>INTENT DIGEST</dt>
+              <dt>QUOTE BINDING</dt>
               <dd>
                 <code title={quoted.quote.intentDigest}>
                   {quoted.quote.intentDigest.slice(0, 18)}…
@@ -668,23 +921,35 @@ export default function LocalnetPrivateIntentDesk() {
             className={styles.privateIntentLinks}
             aria-label="Desk follow-up actions"
           >
-            <Link
-              to="/mail/inbox"
-              search={{ intent: quoted.quote.intentDigest }}
-            >
-              Open encrypted correspondence
-            </Link>
+            {address && chain && counterparty ? (
+              <Link
+                to="/mail/inbox"
+                onClick={() =>
+                  storeDeskHandoff(
+                    window.sessionStorage,
+                    "mail",
+                    counterparty,
+                    {
+                      account: address,
+                      chainId: chain,
+                    },
+                  )
+                }
+              >
+                Open encrypted correspondence
+              </Link>
+            ) : (
+              <Link to="/mail/inbox">Open mailbox</Link>
+            )}
             <Link to="/contacts">Open counterparties</Link>
           </nav>
         </div>
       ) : null}
 
       <p className={styles.privateIntentDisclosure}>
-        Localnet proves both USDC↔STRK directions through lock → solver fill →
-        claim and expiry → refund against the real pool contract using mock
-        proof bytes. The fixture prices 1 STRK = 2 USDC before a 30 BPS spread.
-        APP20's solver sees the RFQ. Escrow events and OPEN payout-note amounts
-        remain public in this prototype.
+        {swapOnly
+          ? "Private inventory only. A refusal never falls through to a public venue."
+          : "Swap is an immediate inventory fill. Block is a signed request/quote/accept with your floor and expiry. Size may suggest a surface; it never picks a public venue. Localnet proves lock → solver fill → claim and expiry → refund against the real pool using mock proof bytes. Escrow events and OPEN payout-note amounts remain public."}
       </p>
     </section>
   );

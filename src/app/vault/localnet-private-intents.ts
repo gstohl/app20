@@ -1,4 +1,5 @@
 import type { WALLET_API } from "@starknet-io/types-js";
+import type { UnsignedSolverQuote } from "@app20/private-intents";
 import {
   buildEscrowClaimActions,
   buildEscrowTimeoutActions,
@@ -148,6 +149,35 @@ export async function requestLocalnetSolverQuote(input: {
     buyToken: asString(result.buyToken, "buyToken"),
     provenance: asString(result.provenance, "provenance"),
   };
+}
+
+export async function signLocalnetSolverQuote(
+  canonical: string,
+  quote: UnsignedSolverQuote,
+): Promise<string> {
+  const result = await postLocalnet("/private-intents/sign-quote", {
+    canonical,
+    domain: quote.domain,
+    pool: quote.pool,
+    helper: quote.helper,
+    sellToken: quote.sellToken,
+    sellAmount: quote.sellAmount.toString(),
+    buyToken: quote.buyToken,
+    intentDigest: quote.intentDigest,
+    solverId: quote.solverId,
+    solverKey: quote.solverKey,
+    nonce: quote.nonce,
+    buyAmount: quote.buyAmount.toString(),
+    spreadBps: quote.spreadBps,
+    pricingProvenance: quote.pricingProvenance,
+    quotedAt: quote.quotedAt,
+    quoteExpiresAt: quote.quoteExpiresAt,
+  });
+  const signature = asString(result.signature, "signature").toLowerCase();
+  if (asString(result.canonical, "canonical") !== canonical) {
+    throw new Error("The solver signed a different quote payload.");
+  }
+  return signature;
 }
 
 export async function askLocalnetSolverToFill(

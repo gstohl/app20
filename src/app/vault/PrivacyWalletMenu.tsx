@@ -480,7 +480,6 @@ export default function PrivacyWalletMenu({
 
       <AddressBookField
         className={styles.walletAmount}
-        rowClassName={styles.walletAmountInput}
         errorClassName={styles.walletErrorText}
         label="Private-transfer recipient"
         inputAriaLabel="Private transfer recipient"

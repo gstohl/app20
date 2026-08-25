@@ -1,0 +1,165 @@
+.page {
+  display: grid;
+  width: 100%;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  place-items: start center;
+  padding: clamp(28px, 7vh, 76px) 16px;
+  color: var(--shell-text);
+  background: var(--shell-bg);
+}
+
+.swapCard {
+  width: min(100%, 460px);
+}
+
+.poolBar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--shell-line);
+  border-bottom: 0;
+  padding: 9px 12px;
+  background: var(--shell-panel);
+}
+
+.poolBar > div {
+  display: grid;
+  gap: 3px;
+}
+
+.poolBar span,
+.eyebrow,
+.cardFooter {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.poolBar span,
+.eyebrow {
+  color: var(--shell-orange);
+}
+
+.poolBar strong {
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.loading {
+  min-height: 360px;
+  border: 1px solid var(--shell-line);
+  padding: 16px;
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--shell-line);
+  border-top: 0;
+  padding: 10px 12px;
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.footerLinks {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cardFooter a {
+  color: var(--shell-orange);
+  text-decoration: none;
+}
+
+.cardFooter a:hover {
+  color: var(--shell-text);
+}
+
+.notice {
+  display: grid;
+  width: min(100%, 540px);
+  gap: 12px;
+  border: 1px solid var(--shell-line);
+  padding: clamp(22px, 4vw, 36px);
+  background: var(--shell-panel);
+}
+
+.notice h1 {
+  max-width: 18ch;
+  margin: 0;
+  font-size: clamp(28px, 5vw, 46px);
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.notice > p:not(.eyebrow) {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.noticeActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.notice a {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  border: 1px solid var(--shell-line);
+  padding: 0 13px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.notice a:hover {
+  border-color: var(--shell-orange);
+}
+
+.notice .primaryLink {
+  border-color: var(--shell-orange);
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+@media (max-width: 560px) {
+  .page {
+    padding: 18px 10px;
+  }
+
+  .poolBar,
+  .cardFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .footerLinks {
+    justify-content: flex-start;
+  }
+}

@@ -62,6 +62,31 @@
   background: var(--shell-panel);
 }
 
+.mainHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+}
+
+.mainHead .blockLabel {
+  margin: 0;
+}
+
+.stamp {
+  max-width: none;
+  border: 1px solid var(--shell-orange);
+  padding: 4px 8px;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 .blockLabel {
   margin: 12px 0 0;
   color: var(--shell-orange);
@@ -116,7 +141,9 @@
 }
 
 .bookField {
+  display: grid;
   min-width: 0;
+  gap: 4px;
   border-right: 1px solid var(--shell-line);
   padding: 8px 9px 9px;
 }
@@ -131,66 +158,95 @@
   font-size: 8px;
 }
 
-.bookField input {
-  width: 100%;
-  margin-top: 5px;
+.bookRow {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  align-items: start;
+  min-width: 0;
+  gap: 6px;
+}
+
+.bookRow select,
+.bookSave select {
+  min-width: 0;
+  max-width: 150px;
+  min-height: 30px;
   border: 1px solid var(--shell-line);
-  padding: 7px 8px;
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.bookRow input,
+.bookSave input {
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
   color: var(--shell-text);
-  background: var(--shell-inset, var(--shell-bg));
+  background: var(--shell-inset);
   font-family: var(--font-mono-ui), monospace;
   font-size: 12px;
 }
 
-.bookField input:focus-visible {
-  outline: 1px solid var(--shell-orange);
-  outline-offset: 0;
-}
-
-.bookResolved {
-  margin: 5px 0 0;
-  color: var(--shell-success, #73e6a1);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  overflow-wrap: anywhere;
-}
-
-.bookResolved code {
-  font-size: 10px;
-}
-
-.bookSave {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.bookSave input {
-  flex: 1;
-  margin-top: 0;
-}
-
+.bookRow button,
 .bookSave button {
+  min-height: 30px;
   border: 1px solid var(--shell-line);
-  padding: 0 12px;
-  color: var(--shell-text);
-  background: transparent;
+  padding: 0 9px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  cursor: pointer;
 }
 
+.bookRow select:focus-visible,
+.bookRow input:focus-visible,
+.bookRow button:focus-visible,
+.bookSave input:focus-visible,
+.bookSave button:focus-visible {
+  outline: 2px solid var(--shell-orange);
+  outline-offset: -1px;
+}
+
+.bookRow button:hover:not(:disabled),
 .bookSave button:hover:not(:disabled) {
   border-color: var(--shell-orange);
-  color: var(--shell-orange);
+  color: var(--shell-text);
 }
 
-.bookSave button:disabled {
-  color: var(--shell-muted);
+.bookRow button:disabled,
+.bookSave button:disabled,
+.bookRow select:disabled {
+  opacity: 0.38;
   cursor: not-allowed;
+}
+
+.bookSave {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.bookHint {
+  display: block;
+  grid-column: 1 / -1;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .accountsNote {
@@ -521,6 +577,11 @@
   .bookField {
     border-right: 0;
     border-bottom: 1px solid var(--shell-line);
+  }
+
+  .bookRow,
+  .bookSave {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bookField:last-child {

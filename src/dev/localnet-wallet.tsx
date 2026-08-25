@@ -10,6 +10,7 @@ import {
 } from "@starknet-io/get-starknet-wallet-standard/features";
 import { useState } from "react";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import styles from "./localnet-wallet.module.css";
 
 export const LOCALNET_DEV_WALLET_SENTINEL =
   "QUIETLINE_LOCALNET_DEV_WALLET_SENTINEL_7C91E2";
@@ -309,54 +310,16 @@ export function LocalnetDevTools({
     }
   }
 
-  const sidebar = variant === "sidebar";
-  const accent = "var(--accent)";
-  const surface = sidebar ? "var(--surface-muted)" : "var(--surface-reading)";
-  const ink = "var(--text)";
-  const quiet = "var(--text-muted)";
-
   return (
     <aside
+      className={styles.banner}
       data-testid="localnet-wallet-standard"
       data-dev-wallet-symbol={LOCALNET_DEV_WALLET_SENTINEL}
-      style={{
-        background: surface,
-        border: sidebar ? "1px solid var(--border)" : 0,
-        borderBottom: sidebar ? undefined : `2px solid ${accent}`,
-        color: ink,
-        display: "grid",
-        gap: "10px",
-        padding: sidebar ? "12px" : "12px clamp(16px, 4vw, 48px)",
-        position: "relative",
-        width: "100%",
-        zIndex: 100,
-      }}
+      data-variant={variant}
     >
-      <div
-        style={{
-          alignItems: "center",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "8px 16px",
-          justifyContent: "space-between",
-        }}
-      >
-        <strong style={{ letterSpacing: "0.08em" }}>
-          LOCAL DEMO · REAL privacy_Privacy
-        </strong>
-        <span style={{ color: quiet, fontSize: "0.7rem" }}>
-          {wallet.name} · {wallet.config.proofMode}
-        </span>
-      </div>
-      <div
-        style={{
-          alignItems: "center",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "8px",
-        }}
-      >
-        <span style={{ fontSize: "0.82rem" }}>Act as:</span>
+      <strong className={styles.mark}>LOCAL DEMO</strong>
+      <div className={styles.identities}>
+        <span>Act as</span>
         {wallet.config.identities.map((identity) => (
           <button
             key={identity.id}
@@ -364,53 +327,29 @@ export function LocalnetDevTools({
             type="button"
             aria-pressed={selectedId === identity.id}
             onClick={() => selectIdentity(identity.id)}
-            style={{
-              background: selectedId === identity.id ? accent : surface,
-              border: `1px solid ${accent}`,
-              borderRadius: sidebar ? "2px" : "999px",
-              color: selectedId === identity.id ? "var(--on-accent)" : ink,
-              cursor: "pointer",
-              fontWeight: 700,
-              padding: "7px 14px",
-            }}
           >
             {identity.label}
           </button>
         ))}
-        <span style={{ color: quiet, fontFamily: "monospace", fontSize: "0.7rem" }}>
-          {shortAddress(wallet.selectedIdentity.address)}
-        </span>
-        <span style={{ color: quiet, fontSize: "0.68rem" }}>
-          {connectedAddress
-            ? "account change is live"
-            : "choose an identity, then connect Localnet (dev)"}
-        </span>
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "6px 14px",
-          fontSize: "0.75rem",
-        }}
-      >
+      <span className={styles.address}>
+        {shortAddress(wallet.selectedIdentity.address)}
+      </span>
+      <span className={styles.meta}>
+        {connectedAddress
+          ? "account change is live"
+          : "connect Localnet (dev) after choosing an identity"}
+      </span>
+      <div className={styles.copies}>
         {wallet.config.identities.map((identity) => (
           <button
             key={`copy:${identity.id}`}
             type="button"
             onClick={() => void copyAddress(identity)}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: quiet,
-              cursor: "pointer",
-              padding: 0,
-              textDecoration: "underline",
-            }}
           >
             {copied === identity.id
               ? `${identity.label} copied`
-              : `Copy ${identity.label}: ${shortAddress(identity.address)}`}
+              : `Copy ${identity.label}`}
           </button>
         ))}
         {copied === "error" ? <span>Clipboard denied.</span> : null}
@@ -419,17 +358,11 @@ export function LocalnetDevTools({
         <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
         <button
           type="button"
-          onClick={() => void navigator.clipboard.writeText(wallet.config.counterTokenAddress)}
-          style={{
-            background: "transparent",
-            border: 0,
-            color: quiet,
-            cursor: "pointer",
-            padding: 0,
-            textDecoration: "underline",
-          }}
+          onClick={() =>
+            void navigator.clipboard.writeText(wallet.config.counterTokenAddress)
+          }
         >
-          Copy escrow leg-B ETH address
+          Copy escrow leg-B
         </button>
       </div>
     </aside>

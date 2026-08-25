@@ -79,11 +79,12 @@ test("APP20 clears both USDC↔STRK directions and refunds on localnet", async (
   });
   await expect(encryptedMailLink).toHaveAttribute("href", "/mail/inbox");
   await page.getByRole("link", { name: "New RFQ" }).click();
-  await expect(page).toHaveURL(/\/vault$/);
-  await expect(page.getByText("SELECTED COUNTERPARTY")).toBeVisible();
+  await expect(page).toHaveURL(/\/vault(?:#desk)?/);
+  await expect(page.getByText("CORRESPONDENCE CONTACT")).toBeVisible();
 
   const desk = page.getByRole("region", {
-    name: "Private USDC ↔ STRK RFQ",
+    name: "Block RFQ",
+    exact: true,
   });
   const market = desk.getByLabel("Private intent market");
   const sellAmount = desk.getByLabel("Private intent sell amount");

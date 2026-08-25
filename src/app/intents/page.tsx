@@ -57,13 +57,9 @@ const DEFAULT_REFUND_ADDRESS = "0x123";
 const DESTINATION_CHAIN_ID = "near:mainnet";
 const REFUND_CHAIN_ID = "starknet:SN_MAIN";
 
-/**
- * Shared encrypted-book storage prefix from the vault slice. This page never
- * writes it: the vault module owns AES-GCM persistence under
- * `${prefix}${selfAddress}`; the stub below stays session-only so it cannot
- * corrupt that encrypted payload.
- */
-export const ADDRESS_BOOK_STORAGE_PREFIX = "app20/address-book/v1/";
+function labelPinnedEnum(value: string): string {
+  return value.replaceAll("_", " ").toLowerCase();
+}
 
 export type AddressBookEntry = Readonly<{
   label: string;
@@ -119,6 +115,7 @@ export function AddressBookField({
   placeholder?: string;
 }) {
   const [saveLabel, setSaveLabel] = useState("");
+  const [saving, setSaving] = useState(false);
   const resolved = resolveAddressBookInput(value, entries, chainId);
   const scoped = entries.filter(
     (entry) =>
@@ -138,35 +135,56 @@ export function AddressBookField({
   return (
     <div className={styles.bookField}>
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        list={`${id}-book`}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        autoCorrect="off"
-        spellCheck={false}
-      />
-      <datalist id={`${id}-book`}>
-        {scoped.map((entry) => (
-          <option key={entry.label} value={`@${entry.label}`}>
-            {`${entry.label} · ${entry.address}`}
-          </option>
-        ))}
-      </datalist>
-      {resolved.entry ? (
-        <p className={styles.bookResolved}>
-          @{resolved.entry.label} → <code>{resolved.entry.address}</code>
-        </p>
-      ) : null}
-      {canSave ? (
-        <div className={styles.bookSave}>
+      <div className={styles.bookRow} data-book-row="">
+        <select
+          aria-label={`Saved addresses for ${label}`}
+          value=""
+          onChange={(event) => {
+            const entry = scoped.find(
+              (item) => item.label === event.target.value,
+            );
+            if (entry) onChange(entry.address);
+          }}
+          disabled={scoped.length === 0}
+        >
+          <option value="">Book…</option>
+          {scoped.map((entry) => (
+            <option key={entry.label} value={entry.label}>
+              {entry.label} · {entry.address}
+            </option>
+          ))}
+        </select>
+        <input
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <button
+          type="button"
+          disabled={!canSave || saving}
+          onClick={() => setSaving(true)}
+          title={
+            resolved.entry
+              ? `Already saved as @${resolved.entry.label}`
+              : canSave
+                ? "Save this address in the session book"
+                : "Enter a valid, unsaved address first"
+          }
+        >
+          {resolved.entry ? "Saved" : "Save"}
+        </button>
+      </div>
+      {saving && canSave ? (
+        <div className={styles.bookSave} data-book-save="">
           <input
             aria-label={`Book label for ${label}`}
             value={saveLabel}
             onChange={(event) => setSaveLabel(event.target.value)}
-            placeholder="Save as label"
+            placeholder="Label, e.g. treasury"
             autoComplete="off"
             spellCheck={false}
           />
@@ -182,12 +200,29 @@ export function AddressBookField({
                 ...(chainId === undefined ? {} : { chainId }),
               });
               setSaveLabel("");
+              setSaving(false);
             }}
           >
-            Save
+            Add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSaving(false);
+              setSaveLabel("");
+            }}
+          >
+            Cancel
           </button>
         </div>
       ) : null}
+      <small className={styles.bookHint}>
+        {resolved.entry
+          ? `Book @${resolved.entry.label} · ${resolved.entry.address}`
+          : resolved.address
+            ? "Not in the session book"
+            : "Session-only labels. Encrypted wallet book stays on Counterparties."}
+      </small>
     </div>
   );
 }
@@ -707,10 +742,15 @@ export default function IntentsPage() {
       note: `${intent.maximumFee} base units`,
     },
     { label: "Slippage", value: `${intent.slippageBps} bps` },
-    { label: "Swap mode", value: dryRequest.swapType },
+    {
+      label: "Swap mode",
+      value: labelPinnedEnum(dryRequest.swapType),
+      note: dryRequest.swapType,
+    },
     {
       label: "Funding / delivery",
-      value: `${dryRequest.depositType} → ${dryRequest.recipientType}`,
+      value: `${labelPinnedEnum(dryRequest.depositType)} → ${labelPinnedEnum(dryRequest.recipientType)}`,
+      note: `${dryRequest.depositType} → ${dryRequest.recipientType}`,
     },
     {
       label: "Destination",
@@ -733,27 +773,16 @@ export default function IntentsPage() {
 
   return (
     <section className={styles.page} aria-label="Cross-chain dry review desk">
-      <header className={styles.bar}>
-        <div>
-          <p className={styles.eyebrow}>
-            APP20 / CROSS-CHAIN INTENTS — DRY REVIEW
-          </p>
-          <span className={styles.boundary}>
-            In-memory fixture replay. No deposit address, no quote HTTP, no
-            wallet signature, no submit — a provider would learn route, amount,
-            destination, refund, and timing once live.
-          </span>
-        </div>
-        <strong className="review-only-stamp">
-          REVIEW ONLY · CANNOT SUBMIT
-        </strong>
-      </header>
-
       <div className={styles.grid}>
         <section className={styles.main} aria-labelledby="intents-desk-title">
-          <h2 className={styles.blockLabel} id="intents-desk-title">
-            Reviewed terms — fixture route
-          </h2>
+          <div className={styles.mainHead}>
+            <h2 className={styles.blockLabel} id="intents-desk-title">
+              Reviewed terms — fixture route
+            </h2>
+            <strong className={`review-only-stamp ${styles.stamp}`}>
+              REVIEW ONLY · CANNOT SUBMIT
+            </strong>
+          </div>
           <dl className={styles.terms}>
             {terms.map((term) => (
               <div key={term.label}>
@@ -790,9 +819,8 @@ export default function IntentsPage() {
             />
           </div>
           <p className={styles.accountsNote}>
-            Labels resolve from the APP20 address book; saves here stay in this
-            session. A malformed address fails closed at the canonical-intent
-            check — nothing is sent either way.
+            Session labels only. A malformed address fails closed before any
+            transport call.
           </p>
 
           <h2 className={styles.blockLabel}>Fixture scenario</h2>

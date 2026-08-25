@@ -1,0 +1,112 @@
+.banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  gap: 8px 14px;
+  padding: 6px 16px;
+  color: var(--shell-text);
+  background: var(--shell-panel);
+  position: relative;
+  z-index: 100;
+}
+
+.mark {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.identities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.identities > span {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.identities button {
+  min-height: 24px;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.identities button:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.identities button[aria-pressed="true"] {
+  border-color: var(--shell-orange);
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.address,
+.meta,
+.copies,
+.copies button,
+.copies span {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copies {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-left: auto;
+}
+
+.copies button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.copies button:hover {
+  color: var(--shell-text);
+}
+
+@media (max-width: 900px) {
+  .banner {
+    min-height: 0;
+    padding: 8px 12px;
+  }
+
+  .copies {
+    margin-left: 0;
+  }
+}

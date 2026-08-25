@@ -9,6 +9,7 @@ import {
   saveAddressBookEntry,
   type AddressBookEntry,
 } from "@/lib/address-book";
+import defaultStyles from "./AddressBookField.module.css";
 
 function shortAddress(value: string): string {
   return value.length > 14 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
@@ -141,6 +142,12 @@ export default function AddressBookField({
     }
   }
 
+  const fieldClassName = className ?? defaultStyles.field;
+  const bookRowClassName = rowClassName ?? defaultStyles.row;
+  const saveRowClassName = rowClassName ?? defaultStyles.saveRow;
+  const resolvedHintClassName = hintClassName ?? defaultStyles.hint;
+  const resolvedErrorClassName = errorClassName ?? defaultStyles.error;
+
   const hint = resolved?.entry
     ? `Book: ${resolved.entry.label} · ${shortAddress(resolved.address)}`
     : resolved
@@ -152,9 +159,9 @@ export default function AddressBookField({
           : "Connect a wallet to use the address book.";
 
   return (
-    <div className={className} data-address-book-field="">
+    <div className={fieldClassName} data-address-book-field="">
       {label ? <span>{label}</span> : null}
-      <div className={rowClassName} data-book-row="">
+      <div className={bookRowClassName} data-book-row="">
         <select
           aria-label={`Saved addresses for ${inputAriaLabel}`}
           value=""
@@ -234,7 +241,7 @@ export default function AddressBookField({
         )}
       </div>
       {saving ? (
-        <div className={rowClassName} data-book-save="">
+        <div className={saveRowClassName} data-book-save="">
           <input
             aria-label={`Address book label for ${inputAriaLabel}`}
             value={labelDraft}
@@ -263,11 +270,11 @@ export default function AddressBookField({
         </div>
       ) : null}
       {bookError ? (
-        <small className={errorClassName} role="alert">
+        <small className={resolvedErrorClassName} role="alert">
           {bookError}
         </small>
       ) : (
-        <small className={hintClassName}>
+        <small className={resolvedHintClassName}>
           {hintSlot ?? hint}
         </small>
       )}
