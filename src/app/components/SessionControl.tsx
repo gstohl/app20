@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useActiveStarknetSession } from "@/app/active-session";
 import { constants as snConstants, walletV6 } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -186,20 +187,23 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
 }
 
 export default function SessionControl() {
-  const readyConnected = useStoreWallet((state) => state.isConnected);
-  const readyAddress = useStoreWallet((state) => state.address);
-  const readyChain = useStoreWallet((state) => state.chain);
-  const mode = useVaultMode((state) => state.mode);
-  const privyConnected = useVaultMode((state) => state.privyConnected);
-  const privyAddress = useVaultMode((state) => state.privyAddress);
-  const session = resolveSessionDisplay({
-    mode,
-    readyConnected,
-    readyAddress,
-    readyChain,
-    privyConnected,
-    privyAddress,
-  });
+  const active = useActiveStarknetSession();
+  const network = active.network
+    ? active.network === "localnet"
+      ? "LOCALNET (DEV)"
+      : active.network.toUpperCase()
+    : "OFFLINE";
+  const session: SessionDisplay = {
+    connected: active.connected,
+    address: active.account ?? "",
+    network,
+    rail:
+      active.rail === "privy"
+        ? "PRIVY"
+        : active.network === "localnet"
+          ? "DEV WALLET"
+          : "READY",
+  };
 
   return <SessionControlView session={session} />;
 }

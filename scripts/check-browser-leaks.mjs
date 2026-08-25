@@ -28,6 +28,12 @@ const forbiddenMarkers = [
   "POLICY_ENCLAVE_PRIVATE_KEY",
   "TEE_POLICY_SIGNING_KEY",
   "PHALA_API_KEY",
+  "VITE_E2E_WALLET",
+  "VITE_LOCALNET_WALLET_URL",
+  "VITE_LOCALNET_RPC_URL",
+  "VITE_LOCALNET_POOL_ADDRESS",
+  "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
+  "/__quietline_localnet_wallet",
   "@privy-io/node",
   "src/proxy/server",
 ];
@@ -70,7 +76,9 @@ async function filesUnder(directory) {
 async function main() {
   const metadata = await stat(outputDirectory).catch(() => undefined);
   if (!metadata?.isDirectory()) {
-    throw new Error(`Browser output directory does not exist: ${outputDirectory}`);
+    throw new Error(
+      `Browser output directory does not exist: ${outputDirectory}`,
+    );
   }
 
   const files = await filesUnder(outputDirectory);
@@ -86,7 +94,10 @@ async function main() {
   const additionalCanaries = (process.env.APP20_PRIVATE_CANARIES ?? "")
     .split("\n")
     .filter((value) => value.length >= 8)
-    .map((value, index) => ({ name: `APP20_PRIVATE_CANARIES[${index}]`, value }));
+    .map((value, index) => ({
+      name: `APP20_PRIVATE_CANARIES[${index}]`,
+      value,
+    }));
 
   for (const file of files) {
     const content = await readFile(file);
@@ -105,13 +116,17 @@ async function main() {
         const sensitiveServiceHost = /prover|discovery|indexer/i.test(
           url.hostname,
         );
-        const credentialedRpcHost =
-          /^starknet-.*\.g\.alchemy\.com$/i.test(url.hostname);
+        const credentialedRpcHost = /^starknet-.*\.g\.alchemy\.com$/i.test(
+          url.hostname,
+        );
         if (
           (sensitiveServiceHost && !url.hostname.endsWith(".invalid")) ||
           credentialedRpcHost
         ) {
-          findings.push({ file, marker: "a private-service or credentialed RPC origin" });
+          findings.push({
+            file,
+            marker: "a private-service or credentialed RPC origin",
+          });
         }
       } catch {
         // Ignore a non-URL string fragment; fixed marker and canary checks remain.

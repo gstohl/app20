@@ -14,8 +14,6 @@ export function evaluateSenderProof(input: {
   type: string;
   payload: unknown;
   assignedAddress?: string;
-  directoryMailboxKey?: Uint8Array | null;
-  directoryAddress?: string;
 }): SenderProof {
   const fields: MailConversationFields = conversationFieldsFromPayload(
     input.type,

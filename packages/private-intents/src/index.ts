@@ -14,13 +14,14 @@
  *   A digest proves consistency; only the signature proves authenticity.
  */
 
+import { canonicalizeStarknetFelt, starknetFeltEquals } from "@app20/domain";
+
 export const INTENT_DOMAIN = "app20/private-intent/v1";
 export const QUOTE_DOMAIN = "app20/private-intent-quote/v1";
 export const LOCALNET_SOLVER_ID = "app20-localnet-solver";
 export const LOCALNET_SOLVER_KEY_ID = "app20-localnet-solver/ecdsa-p256-v1";
 export const QUOTE_CLOCK_SKEW_SECONDS = 30;
 
-const TOKEN_PATTERN = /^0x[0-9a-fA-F]{1,64}$/;
 const NONCE_PATTERN = /^0x[0-9a-f]{64}$/;
 const SIGNATURE_PATTERN = /^0x[0-9a-f]+$/;
 const MIN_INTENT_ID_LENGTH = 32;
@@ -55,12 +56,15 @@ export class PrivateIntentError extends Error {
 }
 
 function requireToken(value: string, label: string): string {
-  if (!TOKEN_PATTERN.test(value) || BigInt(value) === 0n) {
+  try {
+    const token = canonicalizeStarknetFelt(value);
+    if (token === "0x0") throw new Error();
+    return token;
+  } catch {
     throw new PrivateIntentError(
       `${label} must be a non-zero Starknet token address.`,
     );
   }
-  return value.toLowerCase();
 }
 
 function requireAmount(value: bigint, label: string): bigint {
@@ -121,9 +125,9 @@ function canonicalIntent(intent: PrivateSwapIntentV1): string {
     version: intent.version,
     intentId: intent.intentId,
     pool: intent.pool,
-    sellToken: intent.sellToken.toLowerCase(),
+    sellToken: requireToken(intent.sellToken, "sellToken"),
     sellAmount: intent.sellAmount.toString(),
-    buyToken: intent.buyToken.toLowerCase(),
+    buyToken: requireToken(intent.buyToken, "buyToken"),
     minBuyAmount: intent.minBuyAmount.toString(),
     expiresAt: intent.expiresAt,
     createdAt: intent.createdAt,
@@ -248,9 +252,9 @@ export function createQuoteNonce(): string {
 export function canonicalSolverQuote(quote: UnsignedSolverQuote): string {
   return JSON.stringify({
     buyAmount: quote.buyAmount.toString(),
-    buyToken: quote.buyToken.toLowerCase(),
+    buyToken: requireToken(quote.buyToken, "buyToken"),
     domain: quote.domain,
-    helper: quote.helper.toLowerCase(),
+    helper: requireToken(quote.helper, "helper"),
     intentDigest: quote.intentDigest.toLowerCase(),
     nonce: quote.nonce.toLowerCase(),
     pool: quote.pool,
@@ -258,7 +262,7 @@ export function canonicalSolverQuote(quote: UnsignedSolverQuote): string {
     quoteExpiresAt: quote.quoteExpiresAt,
     quotedAt: quote.quotedAt,
     sellAmount: quote.sellAmount.toString(),
-    sellToken: quote.sellToken.toLowerCase(),
+    sellToken: requireToken(quote.sellToken, "sellToken"),
     solverId: quote.solverId,
     solverKey: quote.solverKey,
     spreadBps: quote.spreadBps,
@@ -392,10 +396,10 @@ export async function quotePrivateSwapIntent(
   const unsigned: UnsignedSolverQuote = {
     domain: QUOTE_DOMAIN,
     pool: intent.pool,
-    helper: options.helper.toLowerCase(),
-    sellToken: intent.sellToken.toLowerCase(),
+    helper: requireToken(options.helper, "helper"),
+    sellToken: requireToken(intent.sellToken, "sellToken"),
     sellAmount: intent.sellAmount,
-    buyToken: intent.buyToken.toLowerCase(),
+    buyToken: requireToken(intent.buyToken, "buyToken"),
     intentDigest: await digestPrivateSwapIntent(intent),
     solverId: options.solverId,
     solverKey: options.solverKey,
@@ -452,15 +456,15 @@ export async function acceptQuote(
 ): Promise<IntentState> {
   assertPrivateSwapIntent(intent);
   assertQuoteShape(quote);
-  if (quote.helper.toLowerCase() !== acceptance.helper.toLowerCase()) {
+  if (!starknetFeltEquals(quote.helper, acceptance.helper)) {
     throw new PrivateIntentError("The quote is bound to a different helper.");
   }
   if (quote.pool !== intent.pool) {
     throw new PrivateIntentError("The quote is bound to a different pool.");
   }
   if (
-    quote.sellToken.toLowerCase() !== intent.sellToken.toLowerCase() ||
-    quote.buyToken.toLowerCase() !== intent.buyToken.toLowerCase() ||
+    !starknetFeltEquals(quote.sellToken, intent.sellToken) ||
+    !starknetFeltEquals(quote.buyToken, intent.buyToken) ||
     quote.sellAmount !== intent.sellAmount
   ) {
     throw new PrivateIntentError("The quote does not bind these trade terms.");
@@ -552,9 +556,9 @@ export function assertInventoryCovers(
   buyToken: string,
   buyAmount: bigint,
 ): void {
-  const token = buyToken.toLowerCase();
-  const position = inventory.find(
-    (entry) => entry.token.toLowerCase() === token,
+  const token = requireToken(buyToken, "buyToken");
+  const position = inventory.find((entry) =>
+    starknetFeltEquals(entry.token, token),
   );
   const available = position?.available ?? 0n;
   if (available < buyAmount) {
@@ -603,8 +607,8 @@ export function planRestock(
 
   const exposure = new Map<string, bigint>();
   for (const fill of fills) {
-    const bought = fill.buyToken.toLowerCase();
-    const sold = fill.sellToken.toLowerCase();
+    const bought = requireToken(fill.buyToken, "buyToken");
+    const sold = requireToken(fill.sellToken, "sellToken");
     // We delivered buyToken from inventory (owed back) and received sellToken.
     exposure.set(bought, (exposure.get(bought) ?? 0n) + fill.buyAmount);
     exposure.set(sold, (exposure.get(sold) ?? 0n) - fill.sellAmount);

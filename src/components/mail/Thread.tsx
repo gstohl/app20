@@ -363,7 +363,7 @@ function ConversationControls({
       ) : null}
       {assigned && onProve ? (
         <button type="button" onClick={() => onProve(message.id, assigned)}>
-          Check directory for this address
+          Inspect unbound auth claim
         </button>
       ) : null}
     </div>

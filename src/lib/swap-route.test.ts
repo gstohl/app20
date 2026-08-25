@@ -7,32 +7,34 @@ import {
   swapRoutePath,
 } from "./swap-route";
 
-describe("swap route pairs", () => {
-  it("defaults to the STRK/USDC pool route", () => {
-    expect(DEFAULT_SWAP_ROUTE).toBe("/swap/strk/usdc");
+describe("swap routes", () => {
+  it("normalizes bounded token route segments", () => {
+    expect(normalizeSwapToken(" STRK ")).toBe("strk");
+    expect(normalizeSwapToken("0x53C")).toBe("0x53c");
+    expect(normalizeSwapToken("strk/eth")).toBeNull();
   });
 
-  it("resolves both supported pool directions", () => {
-    expect(resolveSwapRoutePair("STRK", "usdc")).toEqual({
-      tokenA: "strk",
-      tokenB: "usdc",
-      pairId: "STRK_USDC",
+  it("fails closed for unreviewed and canonical duplicate assets", () => {
+    expect(resolveSwapRoutePair("sepolia", "eth", "usdc")).toMatchObject({
+      kind: "unverified",
     });
-    expect(resolveSwapRoutePair("usdc", "STRK")?.pairId).toBe("USDC_STRK");
-  });
-
-  it("keeps valid unknown pairs so the UI can show a no-pool state", () => {
-    expect(resolveSwapRoutePair("eth", "usdc")).toEqual({
-      tokenA: "eth",
-      tokenB: "usdc",
-      pairId: null,
+    expect(
+      resolveSwapRoutePair(
+        "mainnet",
+        "strk",
+        "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+      ),
+    ).toMatchObject({
+      kind: "duplicate",
     });
-    expect(poolCreationPath("eth", "usdc")).toBe("/pools/create/eth/usdc");
+    expect(resolveSwapRoutePair("sepolia", "strk/eth", "usdc")).toMatchObject({
+      kind: "invalid",
+    });
   });
 
-  it("rejects unsafe path segments and falls back safely", () => {
-    expect(normalizeSwapToken("../strk")).toBeNull();
-    expect(resolveSwapRoutePair("strk/eth", "usdc")).toBeNull();
-    expect(swapRoutePath("strk/eth", "usdc")).toBe(DEFAULT_SWAP_ROUTE);
+  it("builds canonical routed paths without consuming relationship data", () => {
+    expect(swapRoutePath("USDC", "STRK")).toBe("/swap/usdc/strk");
+    expect(poolCreationPath("ETH", "USDC")).toBe("/pools/create/eth/usdc");
+    expect(swapRoutePath("bad/path", "usdc")).toBe(DEFAULT_SWAP_ROUTE);
   });
 });

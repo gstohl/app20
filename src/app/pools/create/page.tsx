@@ -1,17 +1,20 @@
 "use client";
 
+import { useActiveStarknetSession } from "@/app/active-session";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
-import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
-  POOL_FEE_TIERS,
+  digestPoolCreationReview,
   validatePoolCreationDraft,
   type PoolCreationReview,
-  type PoolFeeBps,
 } from "@/lib/pool-creation";
-import { resolveSwapRoutePair } from "@/lib/swap-route";
-import { Strk20Networks } from "@/utils/constants";
+import { buildPoolReadiness } from "@/lib/pool-readiness";
+import {
+  APP20_TOKEN_REGISTRY_REVISION,
+  networkForProviderIndex,
+  resolveCanonicalPair,
+} from "@/lib/token-registry";
 import { Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import styles from "./pool-create.module.css";
 
 export type PoolCreationPageProps = Readonly<{
@@ -19,100 +22,176 @@ export type PoolCreationPageProps = Readonly<{
   tokenB: string;
 }>;
 
-const FEE_TIER_COPY: Readonly<
-  Record<PoolFeeBps, Readonly<{ label: string; detail: string }>>
-> = {
-  5: { label: "0.05%", detail: "Tight pair" },
-  30: { label: "0.30%", detail: "Standard" },
-  100: { label: "1.00%", detail: "Wide pair" },
-};
+type PreparedDraft = Readonly<{
+  key: string;
+  review: PoolCreationReview;
+  checksum: string;
+}>;
 
-function tokenLabel(value: string): string {
-  return value.startsWith("0x") && value.length > 18
-    ? `${value.slice(0, 10)}…${value.slice(-6)}`
-    : value.toUpperCase();
-}
-
-function formatReviewAmount(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 6,
-  }).format(value);
+function shortFelt(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
 export default function PoolCreationPage({
   tokenA,
   tokenB,
 }: PoolCreationPageProps) {
-  const pair = resolveSwapRoutePair(tokenA, tokenB);
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
-  const connected = useStoreWallet((state) => state.isConnected);
-  const [feeBps, setFeeBps] = useState<PoolFeeBps>(30);
-  const [initialPrice, setInitialPrice] = useState("");
-  const [tokenAInventory, setTokenAInventory] = useState("");
-  const [tokenBInventory, setTokenBInventory] = useState("");
+  const session = useActiveStarknetSession();
+  const selectedNetwork = networkForProviderIndex(providerIndex);
+  const proposalNetwork = session.network ?? selectedNetwork;
+  const pairResolution = proposalNetwork
+    ? resolveCanonicalPair(proposalNetwork, tokenA, tokenB)
+    : null;
+  const pair = pairResolution?.ok ? pairResolution.pair : null;
+  const [proposedAmountA, setProposedAmountA] = useState("");
+  const [proposedAmountB, setProposedAmountB] = useState("");
+  const [referencePrice, setReferencePrice] = useState("");
   const [showErrors, setShowErrors] = useState(false);
-  const [prepared, setPrepared] = useState<PoolCreationReview | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepared, setPrepared] = useState<PreparedDraft | null>(null);
+  const generation = useRef(0);
 
-  if (!pair) {
-    return (
-      <main className={styles.page}>
-        <section className={styles.invalidCard} role="alert">
-          <p className={styles.eyebrow}>APP20 / CREATE POOL</p>
-          <h1>Invalid token pair</h1>
-          <p>The route contains a token identifier APP20 will not accept.</p>
-          <Link
-            to="/swap/$tokenA/$tokenB"
-            params={{ tokenA: "strk", tokenB: "usdc" }}
-          >
-            Open STRK / USDC
-          </Link>
-        </section>
-      </main>
-    );
-  }
+  const validation = pair
+    ? validatePoolCreationDraft({
+        account: session.account ?? "",
+        chainId: session.chainId ?? "",
+        registryRevision: APP20_TOKEN_REGISTRY_REVISION,
+        tokenA: pair.tokenA,
+        tokenB: pair.tokenB,
+        proposedAmountA,
+        proposedAmountB,
+        referencePrice,
+      })
+    : null;
+  const contextKey = JSON.stringify([
+    proposalNetwork,
+    pair?.tokenA.address ?? tokenA,
+    pair?.tokenB.address ?? tokenB,
+    session.account,
+    session.chainId,
+    session.compatible,
+    APP20_TOKEN_REGISTRY_REVISION,
+  ]);
+  const draftKey = JSON.stringify([
+    contextKey,
+    proposedAmountA,
+    proposedAmountB,
+    referencePrice,
+  ]);
+  const currentPrepared = prepared?.key === draftKey ? prepared : null;
+  const previousContextKey = useRef(contextKey);
 
-  const labelA = tokenLabel(pair.tokenA);
-  const labelB = tokenLabel(pair.tokenB);
-  const validation = validatePoolCreationDraft({
-    tokenA: pair.tokenA,
-    tokenB: pair.tokenB,
-    feeBps,
-    initialPrice,
-    tokenAInventory,
-    tokenBInventory,
+  useEffect(() => {
+    if (previousContextKey.current === contextKey) return;
+    previousContextKey.current = contextKey;
+    generation.current += 1;
+    setPrepared(null);
+    setPreparing(false);
+    setShowErrors(false);
+  }, [contextKey]);
+
+  const readiness = buildPoolReadiness({
+    correctNetwork: session.compatible
+      ? {
+          status: pair && session.network === pair.network ? "pass" : "block",
+          freshness: "current",
+          evidence:
+            pair && session.network === pair.network
+              ? `${pair.network.toUpperCase()} session matches the proposal.`
+              : "The active session does not match the proposal network.",
+        }
+      : {
+          status: session.connected ? "block" : "unknown",
+          freshness: "current",
+          evidence: session.reason,
+        },
+    ownerAccount: session.account
+      ? {
+          status: "pass",
+          freshness: "current",
+          evidence: `Active ${session.rail.toUpperCase()} account ${shortFelt(session.account)}.`,
+        }
+      : {
+          status: "unknown",
+          freshness: "current",
+          evidence: "Connect the proposal owner in the header.",
+        },
+    allowedContracts: pair
+      ? {
+          status: "pass",
+          freshness: "current",
+          evidence: `Both contracts are reviewed in ${APP20_TOKEN_REGISTRY_REVISION}.`,
+        }
+      : {
+          status: "block",
+          freshness: "current",
+          evidence:
+            "The requested pair is not in the active network allowlist.",
+        },
   });
 
   function invalidateReview() {
+    generation.current += 1;
     setPrepared(null);
     setShowErrors(false);
   }
 
-  function submitDraft(event: FormEvent<HTMLFormElement>) {
+  async function submitDraft(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setShowErrors(true);
-    if (!validation.ok) {
-      setPrepared(null);
+    if (!validation?.ok) {
+      invalidateReview();
+      setShowErrors(true);
       return;
     }
-    setPrepared(validation.review);
+    const requestGeneration = ++generation.current;
+    setPreparing(true);
+    try {
+      const checksum = await digestPoolCreationReview(validation.review);
+      if (requestGeneration !== generation.current) return;
+      setPrepared({ key: draftKey, review: validation.review, checksum });
+    } finally {
+      if (requestGeneration === generation.current) setPreparing(false);
+    }
+  }
+
+  if (!pair) {
+    const reason = pairResolution?.ok
+      ? "The pair is unavailable."
+      : (pairResolution?.message ?? "No supported network is selected.");
+    return (
+      <main className={styles.page}>
+        <section className={styles.invalidCard} role="alert">
+          <p className={styles.eyebrow}>APP20 / POOL PROPOSAL</p>
+          <h1>Asset not reviewed</h1>
+          <p>{reason}</p>
+          <p>
+            APP20 cannot prepare or deploy a proposal for unverified token
+            metadata. No transaction or quote was created.
+          </p>
+          <Link to="/">Back to Swap</Link>
+        </section>
+      </main>
+    );
   }
 
   return (
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <p className={styles.eyebrow}>APP20 / PRIVATE POOLS</p>
-          <h1>Create pool</h1>
+          <p className={styles.eyebrow}>APP20 / POOL PROPOSAL</p>
+          <h1>Prepare draft</h1>
         </div>
         <nav
           className={styles.headerActions}
-          aria-label="Pool creation navigation"
+          aria-label="Pool proposal navigation"
         >
           <Link
             to="/swap/$tokenA/$tokenB"
-            params={{ tokenA: pair.tokenA, tokenB: pair.tokenB }}
+            params={{ tokenA: pair.tokenA.key, tokenB: pair.tokenB.key }}
           >
             ← Back to pair
           </Link>
@@ -122,274 +201,226 @@ export default function PoolCreationPage({
 
       <div className={styles.pairBanner}>
         <div>
-          <span>PAIR</span>
-          <strong>{labelA}</strong>
+          <span>REVIEWED PAIR</span>
+          <strong>{pair.tokenA.symbol}</strong>
           <i>/</i>
-          <strong>{labelB}</strong>
+          <strong>{pair.tokenB.symbol}</strong>
         </div>
         <p>
-          Configure the pool draft and initial private inventory. Nothing is
-          deployed or transferred from this screen.
+          This is a session-only proposal review. It does not create a pool,
+          fund inventory, or authorize deployment.
         </p>
       </div>
 
       <div className={styles.workspace}>
         <form
           className={styles.formPanel}
-          aria-labelledby="pool-configuration-title"
-          onSubmit={submitDraft}
+          aria-labelledby="pool-proposal-title"
+          onSubmit={(event) => void submitDraft(event)}
         >
           <section className={styles.formSection}>
             <header className={styles.sectionHeader}>
               <div>
-                <span>01 / MARKET</span>
-                <h2 id="pool-configuration-title">Pool configuration</h2>
+                <span>01 / CANONICAL ASSETS</span>
+                <h2 id="pool-proposal-title">Reviewed proposal scope</h2>
               </div>
-              <strong>PRIVATE INVENTORY</strong>
+              <strong>{pair.network.toUpperCase()}</strong>
             </header>
-
-            {showErrors && validation.errors.pair ? (
-              <p className={styles.formError} role="alert">
-                {validation.errors.pair}
-              </p>
-            ) : null}
-
-            <fieldset className={styles.feeFieldset}>
-              <legend>Fee tier</legend>
-              <div className={styles.feeOptions}>
-                {POOL_FEE_TIERS.map((tier) => (
-                  <label key={tier} className={styles.feeOption}>
-                    <input
-                      type="radio"
-                      name="fee-tier"
-                      value={tier}
-                      checked={feeBps === tier}
-                      onChange={() => {
-                        setFeeBps(tier);
-                        invalidateReview();
-                      }}
-                    />
-                    <span>
-                      <strong>{FEE_TIER_COPY[tier].label}</strong>
-                      <small>{FEE_TIER_COPY[tier].detail}</small>
-                    </span>
-                  </label>
-                ))}
+            <dl className={styles.canonicalGrid}>
+              {[pair.tokenA, pair.tokenB].map((token) => (
+                <div key={token.address}>
+                  <dt>{token.symbol}</dt>
+                  <dd>{shortFelt(token.address)}</dd>
+                  <small>{token.decimals} decimals · allowlisted</small>
+                </div>
+              ))}
+              <div>
+                <dt>Active owner</dt>
+                <dd>
+                  {session.account ? shortFelt(session.account) : "Unknown"}
+                </dd>
+                <small>{session.reason}</small>
               </div>
-            </fieldset>
+              <div>
+                <dt>Chain</dt>
+                <dd>
+                  {session.chainId ? shortFelt(session.chainId) : "Unknown"}
+                </dd>
+                <small>{APP20_TOKEN_REGISTRY_REVISION}</small>
+              </div>
+            </dl>
+          </section>
 
+          <section className={styles.formSection}>
+            <header className={styles.sectionHeader}>
+              <div>
+                <span>02 / NEUTRAL DRAFT</span>
+                <h2>Exact proposed amounts</h2>
+              </div>
+              <strong>NO VALUE MOVEMENT</strong>
+            </header>
+            <div className={styles.inventoryGrid}>
+              <label className={styles.inventoryCard}>
+                <span>Proposed amount A</span>
+                <div>
+                  <input
+                    aria-label={`${pair.tokenA.symbol} proposed amount`}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={proposedAmountA}
+                    aria-invalid={
+                      showErrors && Boolean(validation?.errors.proposedAmountA)
+                    }
+                    onChange={(event) => {
+                      setProposedAmountA(event.target.value);
+                      invalidateReview();
+                    }}
+                    placeholder="0.00"
+                  />
+                  <strong>{pair.tokenA.symbol}</strong>
+                </div>
+                {showErrors && validation?.errors.proposedAmountA ? (
+                  <em>{validation.errors.proposedAmountA}</em>
+                ) : null}
+              </label>
+              <label className={styles.inventoryCard}>
+                <span>Proposed amount B</span>
+                <div>
+                  <input
+                    aria-label={`${pair.tokenB.symbol} proposed amount`}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={proposedAmountB}
+                    aria-invalid={
+                      showErrors && Boolean(validation?.errors.proposedAmountB)
+                    }
+                    onChange={(event) => {
+                      setProposedAmountB(event.target.value);
+                      invalidateReview();
+                    }}
+                    placeholder="0.00"
+                  />
+                  <strong>{pair.tokenB.symbol}</strong>
+                </div>
+                {showErrors && validation?.errors.proposedAmountB ? (
+                  <em>{validation.errors.proposedAmountB}</em>
+                ) : null}
+              </label>
+            </div>
             <label className={styles.field}>
-              <span>Initial reference price</span>
+              <span>Non-executable reference price</span>
               <div className={styles.inputShell}>
                 <input
+                  aria-label={`Non-executable reference price in ${pair.tokenB.symbol} per ${pair.tokenA.symbol}`}
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
-                  value={initialPrice}
-                  aria-label={`Initial price in ${labelB} per ${labelA}`}
+                  value={referencePrice}
                   aria-invalid={
-                    showErrors && Boolean(validation.errors.initialPrice)
+                    showErrors && Boolean(validation?.errors.referencePrice)
                   }
                   onChange={(event) => {
-                    setInitialPrice(event.target.value);
+                    setReferencePrice(event.target.value);
                     invalidateReview();
                   }}
                   placeholder="0.00"
                 />
                 <strong>
-                  {labelB} / {labelA}
+                  {pair.tokenB.symbol} / {pair.tokenA.symbol}
                 </strong>
               </div>
               <small>
-                Draft reference only. Executable prices still require signed
-                APP20 quotes.
+                Identifier context only. This is not an APP20 quote or an
+                executable market price.
               </small>
-              {showErrors && validation.errors.initialPrice ? (
-                <em>{validation.errors.initialPrice}</em>
+              {showErrors && validation?.errors.referencePrice ? (
+                <em>{validation.errors.referencePrice}</em>
               ) : null}
             </label>
-          </section>
-
-          <section className={styles.formSection}>
-            <header className={styles.sectionHeader}>
-              <div>
-                <span>02 / INVENTORY</span>
-                <h2>Starting liquidity</h2>
-              </div>
-              <strong>NOT YET FUNDED</strong>
-            </header>
-
-            <div className={styles.inventoryGrid}>
-              <label className={styles.inventoryCard}>
-                <span>Token A inventory</span>
-                <div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={tokenAInventory}
-                    aria-label={`${labelA} starting inventory`}
-                    aria-invalid={
-                      showErrors && Boolean(validation.errors.tokenAInventory)
-                    }
-                    onChange={(event) => {
-                      setTokenAInventory(event.target.value);
-                      invalidateReview();
-                    }}
-                    placeholder="0.00"
-                  />
-                  <strong>{labelA}</strong>
-                </div>
-                {showErrors && validation.errors.tokenAInventory ? (
-                  <em>{validation.errors.tokenAInventory}</em>
-                ) : null}
-              </label>
-
-              <label className={styles.inventoryCard}>
-                <span>Token B inventory</span>
-                <div>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    autoComplete="off"
-                    value={tokenBInventory}
-                    aria-label={`${labelB} starting inventory`}
-                    aria-invalid={
-                      showErrors && Boolean(validation.errors.tokenBInventory)
-                    }
-                    onChange={(event) => {
-                      setTokenBInventory(event.target.value);
-                      invalidateReview();
-                    }}
-                    placeholder="0.00"
-                  />
-                  <strong>{labelB}</strong>
-                </div>
-                {showErrors && validation.errors.tokenBInventory ? (
-                  <em>{validation.errors.tokenBInventory}</em>
-                ) : null}
-              </label>
-            </div>
-
-            <div className={styles.inventoryNotice}>
-              <strong>Inventory is not transferred during preparation.</strong>
-              <p>
-                Funding and shielding remain separate, explicit wallet actions
-                after a reviewed pool deployment exists.
+            {showErrors && validation && !validation.ok ? (
+              <p className={styles.formError} role="alert">
+                Resolve the blocked proposal fields and active-session evidence.
               </p>
-            </div>
+            ) : null}
           </section>
 
-          <button type="submit" className={styles.primaryButton}>
-            Prepare pool creation
+          <button
+            type="submit"
+            className={styles.primaryButton}
+            disabled={preparing}
+          >
+            {preparing ? "Preparing review…" : "Prepare draft review"}
           </button>
         </form>
 
-        <aside className={styles.reviewPanel} aria-label="Pool creation review">
+        <aside className={styles.reviewPanel} aria-label="Pool proposal review">
           <header className={styles.reviewHeader}>
             <div>
-              <span>CREATION REVIEW</span>
-              <h2>{prepared ? "Review ready" : "Draft summary"}</h2>
+              <span>SESSION REVIEW</span>
+              <h2>{currentPrepared ? "Draft prepared" : "Readiness"}</h2>
             </div>
-            <strong className={prepared ? styles.ready : undefined}>
-              {prepared ? "PREPARED" : "DRAFT"}
+            <strong className={currentPrepared ? styles.ready : undefined}>
+              {currentPrepared ? "DRAFT PREPARED" : "NOT PREPARED"}
             </strong>
           </header>
 
-          <dl className={styles.reviewList}>
-            <div>
-              <dt>Pair</dt>
-              <dd>
-                {labelA} / {labelB}
-              </dd>
-            </div>
-            <div>
-              <dt>Pool type</dt>
-              <dd>Private inventory</dd>
-            </div>
-            <div>
-              <dt>Fee tier</dt>
-              <dd>{FEE_TIER_COPY[feeBps].label}</dd>
-            </div>
-            <div>
-              <dt>Initial price</dt>
-              <dd>
-                {prepared
-                  ? `${formatReviewAmount(prepared.initialPrice)} ${labelB}`
-                  : initialPrice || "Required"}
-              </dd>
-            </div>
-            <div>
-              <dt>{labelA} inventory</dt>
-              <dd>
-                {prepared
-                  ? formatReviewAmount(prepared.tokenAInventory)
-                  : tokenAInventory || "Required"}
-              </dd>
-            </div>
-            <div>
-              <dt>{labelB} inventory</dt>
-              <dd>
-                {prepared
-                  ? formatReviewAmount(prepared.tokenBInventory)
-                  : tokenBInventory || "Required"}
-              </dd>
-            </div>
-            <div>
-              <dt>Reference value</dt>
-              <dd>
-                {prepared
-                  ? `${formatReviewAmount(prepared.totalReferenceValueInTokenB)} ${labelB}`
-                  : "Calculated on review"}
-              </dd>
-            </div>
-            <div>
-              <dt>Network</dt>
-              <dd>{Strk20Networks[providerIndex] ?? "Unknown"}</dd>
-            </div>
-            <div>
-              <dt>Owner wallet</dt>
-              <dd>{connected ? "Connected" : "Connect in header"}</dd>
-            </div>
-            <div>
-              <dt>Pool factory</dt>
-              <dd className={styles.blocked}>Not configured</dd>
-            </div>
-          </dl>
-
-          {prepared ? (
-            <div className={styles.status} role="status">
-              <strong>Creation review prepared</strong>
+          {currentPrepared ? (
+            <section className={styles.checksum} role="status">
+              <span>REVIEW CHECKSUM</span>
+              <code>{currentPrepared.checksum}</code>
               <p>
-                The draft is valid. No transaction was submitted and no value
-                moved.
+                Deterministic identifier only—not a signature, approval, pool
+                ID, transaction, or deployment authorization.
               </p>
-            </div>
+              <dl>
+                <div>
+                  <dt>{pair.tokenA.symbol} base units</dt>
+                  <dd>{currentPrepared.review.proposedAmountABaseUnits}</dd>
+                </div>
+                <div>
+                  <dt>{pair.tokenB.symbol} base units</dt>
+                  <dd>{currentPrepared.review.proposedAmountBBaseUnits}</dd>
+                </div>
+              </dl>
+            </section>
           ) : null}
 
-          <section className={styles.deploymentGate}>
-            <span>DEPLOYMENT GATE</span>
-            <h3>Contract integration required</h3>
-            <ul>
-              <li>Reviewed factory address</li>
-              <li>Reviewed factory ABI and calldata</li>
-              <li>Independent contract approval</li>
-              <li>Explicit wallet confirmation</li>
-            </ul>
+          <section className={styles.readinessSection}>
+            <span>DEPLOYMENT READINESS</span>
+            <div className={styles.readinessList}>
+              {Object.values(readiness.checks).map((check) => (
+                <article key={check.key}>
+                  <i
+                    className={
+                      check.status === "pass"
+                        ? styles.checkPass
+                        : check.status === "block"
+                          ? styles.checkBlock
+                          : styles.checkUnknown
+                    }
+                  >
+                    {check.status}
+                  </i>
+                  <div>
+                    <strong>{check.label}</strong>
+                    <p>{check.evidence}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
           </section>
 
           <button
             type="button"
             className={styles.deployButton}
             disabled
-            title="A reviewed pool factory is not configured"
+            title="No reviewed factory, ABI, calldata, or deployment approval exists"
           >
-            Deploy pool unavailable
+            Deployment unavailable
           </button>
-          <p className={styles.deployHint}>
-            APP20 will not fabricate a deployment transaction without a reviewed
-            factory contract.
-          </p>
+          <p className={styles.deployHint}>{readiness.deployment.evidence}</p>
         </aside>
       </div>
     </main>

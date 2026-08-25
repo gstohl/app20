@@ -2293,48 +2293,27 @@ export default function InboxPage() {
     }
   }
 
-  async function proveAssignedAddress(
-    messageId: string,
-    assignedAddress: string,
-  ) {
-    if (!helperAddress) {
-      setStorageNotice({
-        kind: "error",
-        message: "Directory proof needs the mail helper on this network.",
-      });
-      return;
-    }
+  function proveAssignedAddress(messageId: string, assignedAddress: string) {
     const message = messages.find((item) => item.id === messageId);
     if (!message) return;
-    try {
-      const directoryKey = await lookupMailKey(helperAddress, assignedAddress);
-      const proof = evaluateSenderProof({
-        type: message.envelope.type,
-        payload:
-          message.envelope.type === "unsupported"
-            ? null
-            : message.envelope.payload,
-        assignedAddress,
-        directoryAddress: assignedAddress,
-        directoryMailboxKey: directoryKey,
-      });
-      setProofs((current) => ({ ...current, [messageId]: proof }));
-      let proofMessage =
-        "This letter has no usable auth signature, so the assignment stays a local label.";
-      if (proof.kind === "unbound_signature") {
-        proofMessage =
-          "The Mail auth signature is valid, but that auth key is not registered by the mailbox directory. It cannot prove this mailbox or wallet address.";
-      } else if (proof.kind === "invalid_signature") {
-        proofMessage = "The claimed Mail auth signature is invalid.";
-      }
-      setStorageNotice({ kind: "error", message: proofMessage });
-    } catch (error: unknown) {
-      setStorageNotice({
-        kind: "error",
-        message:
-          error instanceof Error ? error.message : "Directory lookup failed.",
-      });
+    const proof = evaluateSenderProof({
+      type: message.envelope.type,
+      payload:
+        message.envelope.type === "unsupported"
+          ? null
+          : message.envelope.payload,
+      assignedAddress,
+    });
+    setProofs((current) => ({ ...current, [messageId]: proof }));
+    let proofMessage =
+      "This letter has no usable auth signature, so the assignment stays a local label.";
+    if (proof.kind === "unbound_signature") {
+      proofMessage =
+        "The Mail auth signature is valid, but the claim is not bound to this mailbox or wallet address.";
+    } else if (proof.kind === "invalid_signature") {
+      proofMessage = "The claimed Mail auth signature is invalid.";
     }
+    setStorageNotice({ kind: "error", message: proofMessage });
   }
 
   function closeDetail() {

@@ -26,3 +26,6 @@ restock → fills net per token; residuals ≥ minBatch round up to a
   package never claims otherwise.
 - **Signed quotes.** `acceptQuote` fail-closes without a solver ECDSA P-256
   signature over the canonical quote. A digest is consistency, not authenticity.
+- **Canonical Starknet contracts.** Intent, quote, helper, and inventory token
+  comparisons use the shared bounded-felt canonicalizer, so case and leading-zero
+  aliases cannot create distinct economic terms.

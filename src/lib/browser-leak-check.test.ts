@@ -37,10 +37,15 @@ describe("browser leak release check", () => {
   it("rejects any configured RPC origin or authorization without printing it", () => {
     const rpc = "https://rpc.vendor.invalid/PRIVATE_RPC_CANARY";
     const authorization = "Bearer PRIVATE_AUTHORIZATION_CANARY";
-    const result = run(outputDirectory(`const a=${JSON.stringify(rpc)};const b=${JSON.stringify(authorization)}`), {
-      STARKNET_MAINNET_RPC_URL: rpc,
-      STARKNET_MAINNET_AUTHORIZATION: authorization,
-    });
+    const result = run(
+      outputDirectory(
+        `const a=${JSON.stringify(rpc)};const b=${JSON.stringify(authorization)}`,
+      ),
+      {
+        STARKNET_MAINNET_RPC_URL: rpc,
+        STARKNET_MAINNET_AUTHORIZATION: authorization,
+      },
+    );
     const output = `${result.stdout}${result.stderr}`;
 
     expect(result.status).toBe(1);
@@ -52,9 +57,12 @@ describe("browser leak release check", () => {
 
   it("rejects an APP20 release canary without printing it", () => {
     const canary = "APP20_PRIVATE_RELEASE_CANARY";
-    const result = run(outputDirectory(`const leaked=${JSON.stringify(canary)}`), {
-      APP20_PRIVATE_CANARIES: canary,
-    });
+    const result = run(
+      outputDirectory(`const leaked=${JSON.stringify(canary)}`),
+      {
+        APP20_PRIVATE_CANARIES: canary,
+      },
+    );
     const output = `${result.stdout}${result.stderr}`;
     expect(result.status).toBe(1);
     expect(output).toContain("APP20_PRIVATE_CANARIES[0]");
@@ -65,5 +73,20 @@ describe("browser leak release check", () => {
     const result = run(outputDirectory("const leaked = 'PROVER_UPSTREAM_URL'"));
     expect(result.status).toBe(1);
     expect(`${result.stdout}${result.stderr}`).toContain("PROVER_UPSTREAM_URL");
+  });
+
+  it.each([
+    "VITE_E2E_WALLET",
+    "VITE_LOCALNET_WALLET_URL",
+    "VITE_LOCALNET_RPC_URL",
+    "VITE_LOCALNET_POOL_ADDRESS",
+    "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
+    "/__quietline_localnet_wallet",
+  ])("rejects localnet-only production marker %s", (marker) => {
+    const result = run(
+      outputDirectory(`const leaked = ${JSON.stringify(marker)}`),
+    );
+    expect(result.status).toBe(1);
+    expect(`${result.stdout}${result.stderr}`).toContain(marker);
   });
 });

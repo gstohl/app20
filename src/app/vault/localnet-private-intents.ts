@@ -1,3 +1,8 @@
+import {
+  canonicalizeStarknetFelt,
+  formatTokenAmount as formatCanonicalTokenAmount,
+  parseTokenAmount as parseCanonicalTokenAmount,
+} from "@app20/domain";
 import type { WALLET_API } from "@starknet-io/types-js";
 import type { UnsignedSolverQuote } from "@app20/private-intents";
 import {
@@ -6,7 +11,11 @@ import {
 } from "@/lib/escrow-actions";
 
 const API_BASE =
-  import.meta.env.VITE_LOCALNET_WALLET_URL ?? "/__quietline_localnet_wallet";
+  import.meta.env.VITE_E2E_WALLET === true
+    ? import.meta.env.VITE_LOCALNET_WALLET_URL
+    : import.meta.env.MODE === "test"
+      ? "http://app20.test"
+      : "";
 
 export type LocalnetSolverQuote = {
   solverId: string;
@@ -31,34 +40,27 @@ export type LocalnetMarketToken = {
   decimals: 6 | 18;
 };
 
-const DECIMAL_AMOUNT = /^(\d+)(?:\.(\d+))?$/;
-const ESCROW_AMOUNT_LIMIT = 2n ** 128n;
-
 export function parseLocalnetTokenAmount(
   value: string,
   token: LocalnetMarketToken,
 ): bigint {
-  const match = DECIMAL_AMOUNT.exec(value.trim());
-  if (!match) {
+  try {
+    return parseCanonicalTokenAmount(value, token);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Invalid amount.";
+    if (/at most \d+ decimal places/i.test(message)) {
+      throw new Error(
+        `${token.symbol} supports at most ${token.decimals} decimal places.`,
+      );
+    }
+    if (/greater than zero/i.test(message)) {
+      throw new Error(`${token.symbol} amount must be greater than zero.`);
+    }
+    if (/u128/i.test(message)) {
+      throw new Error(`${token.symbol} amount does not fit the escrow.`);
+    }
     throw new Error(`Enter a positive decimal ${token.symbol} amount.`);
   }
-  const fraction = match[2] ?? "";
-  if (fraction.length > token.decimals) {
-    throw new Error(
-      `${token.symbol} supports at most ${token.decimals} decimal places.`,
-    );
-  }
-  const scale = 10n ** BigInt(token.decimals);
-  const amount =
-    BigInt(match[1]) * scale +
-    BigInt(fraction.padEnd(token.decimals, "0") || "0");
-  if (amount <= 0n) {
-    throw new Error(`${token.symbol} amount must be greater than zero.`);
-  }
-  if (amount >= ESCROW_AMOUNT_LIMIT) {
-    throw new Error(`${token.symbol} amount does not fit the escrow.`);
-  }
-  return amount;
 }
 
 export function formatLocalnetTokenAmount(
@@ -66,15 +68,13 @@ export function formatLocalnetTokenAmount(
   token: LocalnetMarketToken,
   maxFraction: number = token.decimals,
 ): string {
-  if (amount < 0n) throw new Error("Token amount cannot be negative.");
-  const scale = 10n ** BigInt(token.decimals);
-  const whole = amount / scale;
-  const fraction = (amount % scale)
-    .toString()
-    .padStart(token.decimals, "0")
-    .slice(0, Math.max(0, Math.min(maxFraction, token.decimals)))
-    .replace(/0+$/, "");
-  return fraction ? `${whole}.${fraction}` : whole.toString();
+  const canonical = formatCanonicalTokenAmount(amount, token);
+  const [whole, fraction = ""] = canonical.split(".");
+  const bounded = fraction.slice(
+    0,
+    Math.max(0, Math.min(maxFraction, token.decimals)),
+  );
+  return bounded ? `${whole}.${bounded}` : (whole as string);
 }
 
 type ApiResult = Record<string, unknown>;
@@ -93,6 +93,17 @@ function asString(value: unknown, label: string): string {
   return value;
 }
 
+function asCanonicalAddress(value: unknown, label: string): string {
+  const text = asString(value, label);
+  try {
+    const address = canonicalizeStarknetFelt(text);
+    if (address === "0x0") throw new Error();
+    return address;
+  } catch {
+    throw new Error(`The local solver returned an invalid ${label}.`);
+  }
+}
+
 function asPositiveBigInt(value: unknown, label: string): bigint {
   const text = asString(value, label);
   if (!/^(?:0|[1-9]\d*)$/.test(text)) {
@@ -106,6 +117,9 @@ function asPositiveBigInt(value: unknown, label: string): bigint {
 }
 
 async function postLocalnet(path: string, body: object): Promise<ApiResult> {
+  if (!API_BASE) {
+    throw new Error("The build has no localnet wallet API.");
+  }
   const response = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -145,8 +159,8 @@ export async function requestLocalnetSolverQuote(input: {
       result.solverInventory,
       "solverInventory",
     ),
-    sellToken: asString(result.sellToken, "sellToken"),
-    buyToken: asString(result.buyToken, "buyToken"),
+    sellToken: asCanonicalAddress(result.sellToken, "sellToken"),
+    buyToken: asCanonicalAddress(result.buyToken, "buyToken"),
     provenance: asString(result.provenance, "provenance"),
   };
 }

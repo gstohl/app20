@@ -35,8 +35,7 @@ describe("sender proof states", () => {
     const stillUnbound = evaluateSenderProof({
       type: "text",
       payload: { ...subject, senderAuth: auth },
-      directoryAddress: "0xa11ce",
-      directoryMailboxKey: mailbox.publicKey,
+      assignedAddress: "0xa11ce",
     });
     expect(stillUnbound).toMatchObject({
       kind: "unbound_signature",

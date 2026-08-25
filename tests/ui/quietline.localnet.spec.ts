@@ -207,7 +207,14 @@ function formatDisplayedStrk(amount: bigint): string {
   return fraction ? `${whole}.${fraction} STRK` : `${whole} STRK`;
 }
 
-async function shieldedBalanceLabel(walletRegion: Locator) {
+async function shieldedBalanceLabel(page: Page, walletRegion: Locator) {
+  const summary = page
+    .locator("summary")
+    .filter({ hasText: "Balances & funding" });
+  const details = summary.locator("xpath=..");
+  if ((await details.getAttribute("open")) === null) {
+    await summary.click();
+  }
   const label = walletRegion.getByText(/^\d+(?:\.\d+)? STRK$/, {
     exact: true,
   });
@@ -372,6 +379,10 @@ test("all Quietline localnet journeys", async ({
   await test.step("2. shield STRK and observe truthful progress", async () => {
     await switchIdentity(page, config, "alice");
     await page.getByRole("link", { name: "Desk", exact: true }).click();
+    await page
+      .locator("summary")
+      .filter({ hasText: "Balances & funding" })
+      .click();
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
@@ -383,7 +394,7 @@ test("all Quietline localnet journeys", async ({
       }),
     ).toBeVisible();
     const aliceBefore = parseDisplayedStrk(
-      await shieldedBalanceLabel(walletRegion),
+      await shieldedBalanceLabel(page, walletRegion),
     );
     const aliceAfter = formatDisplayedStrk(aliceBefore + 100000000000000000n);
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
@@ -414,7 +425,7 @@ test("all Quietline localnet journeys", async ({
     await switchIdentity(page, config, "bob");
     await page.getByRole("link", { name: "Desk", exact: true }).click();
     const bobBefore = parseDisplayedStrk(
-      await shieldedBalanceLabel(walletRegion),
+      await shieldedBalanceLabel(page, walletRegion),
     );
     const bobAfter = formatDisplayedStrk(bobBefore + STRK_SCALE);
     await amountInput.fill("1");

@@ -13,6 +13,9 @@
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@app20/domain": "0.1.0"
+  },
   "devDependencies": {
     "typescript": "5.9.3",
     "vitest": "4.1.10"

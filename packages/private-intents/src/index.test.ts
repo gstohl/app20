@@ -1,3 +1,4 @@
+import { canonicalizeStarknetFelt } from "@app20/domain";
 import { describe, expect, it } from "vitest";
 import {
   acceptQuote,
@@ -99,6 +100,18 @@ describe("private swap intent", () => {
     const second = await digestPrivateSwapIntent(intent());
     expect(first).toBe(second);
     expect(first).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+
+  it("canonicalizes leading-zero felt variants and rejects equivalent pairs", async () => {
+    const leadingZeroUsdc = `0x000${USDC.slice(2)}`;
+    expect(
+      await digestPrivateSwapIntent(intent({ sellToken: leadingZeroUsdc })),
+    ).toBe(await digestPrivateSwapIntent(intent()));
+    expect(() =>
+      assertPrivateSwapIntent(
+        intent({ sellToken: leadingZeroUsdc, buyToken: USDC }),
+      ),
+    ).toThrow(/must differ/);
   });
 
   it("changes the digest when any economic field changes", async () => {
@@ -368,7 +381,9 @@ describe("restock netting", () => {
       ],
       { denomination: 100n, minBatch: 100n },
     );
-    expect(plan.orders).toEqual([{ token: STRK.toLowerCase(), amount: 700n }]);
+    expect(plan.orders).toEqual([
+      { token: canonicalizeStarknetFelt(STRK), amount: 700n },
+    ]);
   });
 
   it("defers residuals below the batch floor instead of leaking them", () => {
@@ -377,6 +392,8 @@ describe("restock netting", () => {
       { denomination: 100n, minBatch: 100n },
     );
     expect(plan.orders).toEqual([]);
-    expect(plan.deferred).toEqual([{ token: STRK.toLowerCase(), amount: 40n }]);
+    expect(plan.deferred).toEqual([
+      { token: canonicalizeStarknetFelt(STRK), amount: 40n },
+    ]);
   });
 });

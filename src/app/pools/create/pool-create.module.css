@@ -129,7 +129,7 @@
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 370px);
-  align-items: start;
+  align-items: stretch;
   border-right: 1px solid var(--shell-line);
   border-bottom: 1px solid var(--shell-line);
   border-left: 1px solid var(--shell-line);
@@ -144,6 +144,7 @@
 
 .formPanel {
   display: grid;
+  align-content: start;
   border-right: 1px solid var(--shell-line);
 }
 
@@ -178,6 +179,56 @@
 .reviewHeader > strong {
   color: var(--shell-muted);
   white-space: nowrap;
+}
+
+.canonicalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--shell-line);
+}
+
+.canonicalGrid > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 11px;
+}
+
+.canonicalGrid > div:nth-child(even) {
+  border-left: 1px solid var(--shell-line);
+}
+
+.canonicalGrid > div:nth-child(n + 3) {
+  border-top: 1px solid var(--shell-line);
+}
+
+.canonicalGrid dt,
+.canonicalGrid dd {
+  margin: 0;
+}
+
+.canonicalGrid dt,
+.checksum > span,
+.readinessSection > span {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.canonicalGrid dd {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+}
+
+.canonicalGrid small {
+  color: var(--shell-muted);
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .feeFieldset {
@@ -360,9 +411,14 @@
   cursor: pointer;
 }
 
-.primaryButton:hover {
+.primaryButton:hover:not(:disabled) {
   color: var(--shell-orange);
   background: transparent;
+}
+
+.primaryButton:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .reviewPanel {
@@ -428,6 +484,114 @@
   color: var(--shell-muted);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.checksum,
+.readinessSection {
+  display: grid;
+  gap: 8px;
+  margin: 12px 13px 0;
+  border: 1px solid var(--shell-line);
+  padding: 11px;
+  background: var(--shell-inset);
+}
+
+.checksum {
+  border-color: var(--shell-live);
+}
+
+.checksum code {
+  overflow-wrap: anywhere;
+  color: var(--shell-live);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.checksum p,
+.readinessList p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.checksum dl {
+  display: grid;
+  gap: 5px;
+  margin: 2px 0 0;
+}
+
+.checksum dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.checksum dt,
+.checksum dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+}
+
+.checksum dt {
+  color: var(--shell-muted);
+}
+
+.checksum dd {
+  text-align: right;
+}
+
+.readinessList {
+  display: grid;
+  border: 1px solid var(--shell-line);
+}
+
+.readinessList article {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 9px;
+  padding: 8px;
+}
+
+.readinessList article + article {
+  border-top: 1px solid var(--shell-line);
+}
+
+.readinessList article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.readinessList article strong {
+  font-size: 10px;
+}
+
+.readinessList i {
+  align-self: start;
+  border: 1px solid currentColor;
+  padding: 2px 4px;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.checkPass {
+  color: var(--shell-live);
+}
+
+.checkBlock {
+  color: var(--shell-orange);
+}
+
+.checkUnknown {
+  color: var(--shell-muted);
 }
 
 .deploymentGate {
@@ -558,8 +722,19 @@
   }
 
   .feeOptions,
-  .inventoryGrid {
+  .inventoryGrid,
+  .canonicalGrid {
     grid-template-columns: 1fr;
+  }
+
+  .canonicalGrid > div:nth-child(even),
+  .canonicalGrid > div:nth-child(n + 3) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .canonicalGrid > div:first-child {
+    border-top: 0;
   }
 
   .feeOption + .feeOption {

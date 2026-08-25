@@ -1,3 +1,93 @@
+const STARKNET_FELT_LIMIT = 2n ** 251n;
+const STARKNET_U128_LIMIT = 2n ** 128n;
+const MAX_FELT_INPUT_LENGTH = 78;
+const STARKNET_FELT_PATTERN = /^(?:0[xX][0-9a-fA-F]+|[0-9]+)$/;
+const TOKEN_DECIMAL_PATTERN = /^(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))$/;
+
+export type StarknetAssetMetadata = Readonly<{
+  address: string;
+  symbol: string;
+  decimals: number;
+}>;
+
+export function canonicalizeStarknetFelt(value: string): string {
+  const trimmed = value.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > MAX_FELT_INPUT_LENGTH ||
+    !STARKNET_FELT_PATTERN.test(trimmed)
+  ) {
+    throw new Error("Value must be a bounded Starknet felt.");
+  }
+  try {
+    const felt = BigInt(trimmed);
+    if (felt < 0n || felt >= STARKNET_FELT_LIMIT) throw new Error();
+    return `0x${felt.toString(16)}`;
+  } catch {
+    throw new Error("Value must be a bounded Starknet felt.");
+  }
+}
+
+export function starknetFeltEquals(left: string, right: string): boolean {
+  try {
+    return canonicalizeStarknetFelt(left) === canonicalizeStarknetFelt(right);
+  } catch {
+    return false;
+  }
+}
+
+export function parseTokenAmount(
+  value: string,
+  token: Pick<StarknetAssetMetadata, "decimals">,
+): bigint {
+  if (
+    !Number.isInteger(token.decimals) ||
+    token.decimals < 0 ||
+    token.decimals > 255
+  ) {
+    throw new Error("Token decimals must be an integer between 0 and 255.");
+  }
+  const match = TOKEN_DECIMAL_PATTERN.exec(value.trim());
+  if (!match) throw new Error("Enter an unsigned plain-decimal amount.");
+  const whole = (match[1] ?? "0").replace(/^0+/, "") || "0";
+  const fraction = match[2] ?? match[3] ?? "";
+  if (fraction.length > token.decimals) {
+    throw new Error(
+      `Amount supports at most ${token.decimals} decimal places.`,
+    );
+  }
+  const atomicText =
+    `${whole}${fraction.padEnd(token.decimals, "0")}`.replace(/^0+/, "") || "0";
+  const atomic = BigInt(atomicText);
+  if (atomic <= 0n) throw new Error("Amount must be greater than zero.");
+  if (atomic >= STARKNET_U128_LIMIT) {
+    throw new Error("Amount does not fit the u128 bound.");
+  }
+  return atomic;
+}
+
+export function formatTokenAmount(
+  value: bigint,
+  token: Pick<StarknetAssetMetadata, "decimals">,
+): string {
+  if (value < 0n) throw new Error("Token amount cannot be negative.");
+  if (
+    !Number.isInteger(token.decimals) ||
+    token.decimals < 0 ||
+    token.decimals > 255
+  ) {
+    throw new Error("Token decimals must be an integer between 0 and 255.");
+  }
+  if (token.decimals === 0) return value.toString();
+  const scale = 10n ** BigInt(token.decimals);
+  const whole = value / scale;
+  const fraction = (value % scale)
+    .toString()
+    .padStart(token.decimals, "0")
+    .replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 export const APP20_INTENT_DOMAIN = "app20/intent/v1" as const;
 
 export type AccountRef = {

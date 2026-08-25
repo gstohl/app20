@@ -14,6 +14,7 @@ import {
 } from "@app20/private-intents";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { feltEquals } from "@/lib/addresses";
 import { consumeDeskHandoff, storeDeskHandoff } from "@/lib/desk-handoff";
 import { verifyLocalnetSolverQuote } from "@/lib/localnet-quote-authority";
 import {
@@ -24,6 +25,7 @@ import {
   type DeskVenue,
 } from "@/lib/desk-disclosure";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
+import { configuredMarketPair } from "@/lib/token-registry";
 import {
   assertReadyExecutionUnchanged,
   snapshotReadyExecution,
@@ -118,24 +120,25 @@ function currentLifecycleStep(
 }
 
 function matchesToken(left: string, right: string): boolean {
-  try {
-    return BigInt(left) === BigInt(right);
-  } catch {
-    return false;
-  }
+  return feltEquals(left, right);
 }
 
 function marketPairs(): Record<MarketPair["id"], MarketPair> {
-  const strk: LocalnetMarketToken = {
-    symbol: "STRK",
-    address: addrSTRK,
-    decimals: 18,
-  };
-  const usdc: LocalnetMarketToken = {
-    symbol: "USDC",
-    address: localnetUsdcToken,
-    decimals: 6,
-  };
+  const configured = configuredMarketPair("localnet");
+  const strk: LocalnetMarketToken = configured.ok
+    ? configured.pair.tokenA
+    : {
+        symbol: "STRK",
+        address: addrSTRK,
+        decimals: 18,
+      };
+  const usdc: LocalnetMarketToken = configured.ok
+    ? configured.pair.tokenB
+    : {
+        symbol: "USDC",
+        address: localnetUsdcToken,
+        decimals: 6,
+      };
   return {
     STRK_USDC: {
       id: "STRK_USDC",
@@ -290,6 +293,19 @@ export default function LocalnetPrivateIntentDesk({
         throw new Error(
           "No private inventory on this network. Nothing was sent to a public book.",
         );
+      }
+      const configured = configuredMarketPair("localnet");
+      if (!configured.ok) {
+        throw new Error("The reviewed localnet market is not configured.");
+      }
+      const forward =
+        matchesToken(pair.sell.address, configured.pair.tokenA.address) &&
+        matchesToken(pair.buy.address, configured.pair.tokenB.address);
+      const reverse =
+        matchesToken(pair.sell.address, configured.pair.tokenB.address) &&
+        matchesToken(pair.buy.address, configured.pair.tokenA.address);
+      if (!forward && !reverse) {
+        throw new Error("The selected pair is not a reviewed localnet market.");
       }
       if (BigInt(escrowHelperLocalnet) === 0n) {
         throw new Error("The local escrow deployment is unavailable.");

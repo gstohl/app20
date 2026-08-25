@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { useActiveStarknetSession } from "@/app/active-session";
 import { storeDeskHandoff } from "@/lib/desk-handoff";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
@@ -20,9 +20,11 @@ function shortAddress(value: string): string {
 function AddressBookPanel({
   selfAddress,
   chainId,
+  handoffsEnabled,
 }: {
   selfAddress: string;
   chainId: string;
+  handoffsEnabled: boolean;
 }) {
   const [entries, setEntries] = useState<AddressBookEntry[]>([]);
   const [labelDraft, setLabelDraft] = useState("");
@@ -176,35 +178,45 @@ function AddressBookPanel({
                     {shortAddress(entry.address)}
                   </code>
                   <div className={styles.bookActions}>
-                    <Link
-                      to="/vault"
-                      hash="desk"
-                      onClick={() => {
-                        if (!chainId) return;
-                        storeDeskHandoff(
-                          window.sessionStorage,
-                          "rfq",
-                          entry.address,
-                          { account: selfAddress, chainId },
-                        );
-                      }}
-                    >
-                      New RFQ
-                    </Link>
-                    <Link
-                      to="/mail/inbox"
-                      onClick={() => {
-                        if (!chainId) return;
-                        storeDeskHandoff(
-                          window.sessionStorage,
-                          "mail",
-                          entry.address,
-                          { account: selfAddress, chainId },
-                        );
-                      }}
-                    >
-                      Encrypted Mail
-                    </Link>
+                    {handoffsEnabled ? (
+                      <>
+                        <Link
+                          to="/vault"
+                          hash="desk"
+                          onClick={() => {
+                            storeDeskHandoff(
+                              window.sessionStorage,
+                              "rfq",
+                              entry.address,
+                              { account: selfAddress, chainId },
+                            );
+                          }}
+                        >
+                          New RFQ
+                        </Link>
+                        <Link
+                          to="/mail/inbox"
+                          onClick={() => {
+                            storeDeskHandoff(
+                              window.sessionStorage,
+                              "mail",
+                              entry.address,
+                              { account: selfAddress, chainId },
+                            );
+                          }}
+                        >
+                          Encrypted Mail
+                        </Link>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        title="RFQ and Mail handoffs require the active Ready account and network"
+                      >
+                        Handoffs unavailable
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => void remove(entry.label)}
@@ -240,8 +252,11 @@ function AddressBookPanel({
 }
 
 export default function ContactsPage() {
-  const address = useStoreWallet((state) => state.address);
-  const chain = useStoreWallet((state) => state.chain);
+  const session = useActiveStarknetSession();
+  const address = session.account ?? "";
+  const chain = session.chainId ?? "";
+  const handoffsEnabled =
+    session.rail === "ready" && session.compatible && Boolean(address && chain);
   return (
     <main className={styles.page}>
       <header className={styles.masthead}>
@@ -249,13 +264,17 @@ export default function ContactsPage() {
           <p className={styles.eyebrow}>APP20 / COUNTERPARTIES</p>
           <h1>Counterparties on file. Nothing leaves this device.</h1>
           <span>
-            Label the wallets you trade with, then jump straight into an RFQ
-            or encrypted Mail. The book is AES-GCM encrypted and never posted
+            Label the wallets you trade with, then jump straight into an RFQ or
+            encrypted Mail. The book is AES-GCM encrypted and never posted
             anywhere unless you snapshot it from Mailbox yourself.
           </span>
         </div>
       </header>
-      <AddressBookPanel selfAddress={address ?? ""} chainId={chain ?? ""} />
+      <AddressBookPanel
+        selfAddress={address}
+        chainId={chain}
+        handoffsEnabled={handoffsEnabled}
+      />
       <p className={styles.disclosure}>
         Local contacts are AES-GCM encrypted under app20/address-book/v1. Code
         running in this browser profile can still read an unlocked book. For
