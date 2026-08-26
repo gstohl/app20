@@ -30,7 +30,7 @@ cleanup() {
 on_error() {
 	local status=$?
 	trap - ERR
-	printf 'Quietline real-pool setup failed during "%s" (exit %s).\n' \
+	printf 'APP20 real-pool setup failed during "%s" (exit %s).\n' \
 		"${CURRENT_STEP}" "${status}" >&2
 	exit "${status}"
 }
@@ -46,7 +46,7 @@ step() {
 }
 
 fail() {
-	printf 'Quietline real-pool setup error: %s\n' "$1" >&2
+	printf 'APP20 real-pool setup error: %s\n' "$1" >&2
 	exit 1
 }
 
@@ -276,7 +276,7 @@ if [[ "${MODE}" == "--check" ]]; then
 	exit 0
 fi
 
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/quietline-pool-setup.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/app20-pool-setup.XXXXXX")"
 TARGET="$(platform_target)"
 
 step "cloning pinned starknet-privacy source" ensure_vendor_clone

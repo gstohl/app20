@@ -53,9 +53,14 @@ export class RelayGateDurableObject {
 
   async fetch(request: Request): Promise<Response> {
     await this.ready;
-    const url = new URL(request.url);
-    if (request.method === "POST" && url.pathname === "/acquire") return this.exclusive(() => this.acquire(request));
-    if (request.method === "POST" && url.pathname === "/release") return this.exclusive(() => this.release(request));
+    let pathname: string;
+    try {
+      pathname = new URL(request.url).pathname;
+    } catch {
+      return Response.json({ error: "Invalid request URL." }, { status: 400 });
+    }
+    if (request.method === "POST" && pathname === "/acquire") return this.exclusive(() => this.acquire(request));
+    if (request.method === "POST" && pathname === "/release") return this.exclusive(() => this.release(request));
     return Response.json({ error: "Not found." }, { status: 404, headers: { "cache-control": "no-store" } });
   }
 

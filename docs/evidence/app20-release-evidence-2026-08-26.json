@@ -1,0 +1,160 @@
+{
+  "domain": "app20/release-evidence/v1",
+  "version": 1,
+  "capturedAt": "2026-08-26T08:16:43Z",
+  "source": {
+    "branch": "main",
+    "baseHead": "565b034ac4c9841d0373bb15fe28b40310864cef",
+    "checkpointReference": "git commit containing this evidence",
+    "immutable": true,
+    "validationTiming": "exact candidate tree validated before commit",
+    "note": "The containing commit freezes the tested source. This self-reported evidence is not an independent audit or production release attestation."
+  },
+  "scope": {
+    "status": "localnet-demo-only",
+    "mainnetValueMovementAuthorized": false,
+    "deploymentAuthorized": false,
+    "commitOrPushAuthorized": true,
+    "liveCrossChainFundingAuthorized": false,
+    "productionAgentValueAuthority": false,
+    "commitPushAuthorization": "Direct user instruction on 2026-08-26, limited to this APP20 source checkpoint."
+  },
+  "validation": [
+    {
+      "command": "npm run test:all",
+      "result": "pass",
+      "evidence": "67 application files / 495 tests passed; every package and relay suite passed"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "evidence": "root and workspace typechecks passed; Vite production build passed; browser leak scan checked 302 files"
+    },
+    {
+      "command": "npm run test:ui",
+      "result": "pass",
+      "evidence": "4/4 localnet Playwright journeys passed, including selected-maker SIGKILL and WAL recovery"
+    },
+    {
+      "command": "lens_diagnostics mode=full severity=error refreshRunners=cached",
+      "result": "pass",
+      "evidence": "no error findings across 336 files; fresh gitleaks, opengrep, knip, jscpd, and madge runners completed"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass",
+      "evidence": "no whitespace errors"
+    },
+    {
+      "command": "git diff --cached --name-only",
+      "result": "pass",
+      "evidence": "zero staged files at validation capture; files were staged only after gates passed"
+    }
+  ],
+  "contracts": {
+    "App20Mail": {
+      "sourcePresent": true,
+      "mainnetAddress": "0x0",
+      "sepoliaAddress": "0x0",
+      "reviewStatus": "team-owned helper; no current independent audit or live deployment evidence"
+    },
+    "App20Escrow": {
+      "sourcePresent": true,
+      "mainnetAddress": "0x0",
+      "sepoliaAddress": "0x0",
+      "reviewStatus": "localnet-only development contract; quote-bound successor and independent audit are required"
+    },
+    "ClaimTicket": {
+      "sourcePresent": true,
+      "mainnetAddress": "0x0",
+      "sepoliaAddress": "0x0",
+      "reviewStatus": "localnet-only V2 claim-ticket design; undeployed and unaudited"
+    },
+    "AtomicCrossing": {
+      "sourcePresent": false,
+      "mainnetAddress": "0x0",
+      "sepoliaAddress": "0x0",
+      "reviewStatus": "not implemented; operational netting is not atomic crossing"
+    },
+    "RecurringOrMilestoneEscrow": {
+      "sourcePresent": false,
+      "mainnetAddress": "0x0",
+      "sepoliaAddress": "0x0",
+      "reviewStatus": "not implemented; requires separate specification and audit"
+    }
+  },
+  "gates": [
+    {
+      "id": "P0",
+      "name": "baseline validation",
+      "passed": true,
+      "reason": "the commit containing this evidence freezes the fully validated candidate tree; independent release review remains separate"
+    },
+    {
+      "id": "P1",
+      "name": "pure app-code models",
+      "passed": true,
+      "reason": "strict schemas and focused tests exist for preflight, receipts, RFQ, reservations, negotiation, channels, operations, and integrations"
+    },
+    {
+      "id": "P2-localnet",
+      "name": "production-shaped localnet demonstration",
+      "passed": true,
+      "reason": "two isolated maker processes, durable WAL recovery, complete RFQ digest binding, settlement, refusal, and refund journeys passed"
+    },
+    {
+      "id": "P2-transport",
+      "name": "production transport and custody",
+      "passed": false,
+      "reason": "real RFC 9180 HPKE, split relay delivery, HSM custody, replicated reservations, and production reconciliation are absent"
+    },
+    {
+      "id": "P3",
+      "name": "adversarial localnet release gate",
+      "passed": false,
+      "reason": "internal adversarial tests passed, but durable shared replay/equivocation/idempotency, real transport, and external review are absent"
+    },
+    {
+      "id": "P4",
+      "name": "independent review",
+      "passed": false,
+      "reason": "no accepted independent Cairo, transport, maker-service, browser, or operations audit"
+    },
+    {
+      "id": "P5",
+      "name": "Sepolia soak",
+      "passed": false,
+      "reason": "no reviewed nonzero helper deployment, two independent Sepolia makers, or one-week reconciliation record"
+    },
+    {
+      "id": "P6",
+      "name": "tiny approved Mainnet evidence",
+      "passed": false,
+      "reason": "no explicit approval, deployed audited escrow, reviewed live maker network, hard caps, or verified RFQ lifecycle"
+    },
+    {
+      "id": "hackathon",
+      "name": "STRK20 submission evidence",
+      "passed": false,
+      "reason": "strk20.json has no transaction hashes, contract addresses, demo URL, or demo video"
+    }
+  ],
+  "versionDrift": [
+    "Repository currently uses starknet 10.5.0 while the approved plan described 10.4.0; manual Ready compatibility remains open.",
+    "get-starknet discovery and wallet-standard remain pinned at reviewed 6.0.3 although upstream next moved to 6.0.4 and 6.0.5.",
+    "The upstream sub_account_anonymizer path disappeared and shadow_account_anonymizer appeared; no capability is inferred from the rename."
+  ],
+  "releaseDecision": {
+    "releaseReady": false,
+    "allowedSurface": "build-gated localnet demonstration and dry review only",
+    "nextRequiredEvidence": [
+      "CI and independent reviewer acceptance of the pushed source checkpoint",
+      "real maker-specific HPKE and durable replay",
+      "configured-chain receipt verification",
+      "replicated reservation and reconciliation evidence",
+      "independent Cairo and protocol/transport review",
+      "manual Ready compatibility and Sepolia soak",
+      "explicit approval before any deployment or Mainnet value movement"
+    ]
+  }
+}

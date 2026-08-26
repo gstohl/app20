@@ -1,33 +1,36 @@
 import { expect, test, type Page } from "@playwright/test";
+import {
+  connectLocalnetWallet,
+  expectNoHorizontalOverflow,
+  readStorageSnapshot,
+  selectLocalNetwork,
+} from "./support/localnet";
 
 const STRK_ADDRESS =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
 async function connectLocalnet(page: Page) {
-  const localToggle = page.getByRole("button", { name: "LOCAL", exact: true });
-  await localToggle.click();
-  await expect(localToggle).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
-  await dialog.getByRole("button", { name: /Localnet \(dev\)/ }).click();
-  await expect(page.getByTitle("Disconnect")).toBeVisible();
+  await selectLocalNetwork(page);
+  await connectLocalnetWallet(page);
 }
 
-async function storageSnapshot(page: Page) {
-  return page.evaluate(() => ({
-    local: Object.fromEntries(
-      Array.from({ length: localStorage.length }, (_, index) => {
-        const key = localStorage.key(index) as string;
-        return [key, localStorage.getItem(key)];
-      }),
-    ),
-    session: Object.fromEntries(
-      Array.from({ length: sessionStorage.length }, (_, index) => {
-        const key = sessionStorage.key(index) as string;
-        return [key, sessionStorage.getItem(key)];
-      }),
-    ),
-  }));
+async function gotoRoute(page: Page, route: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await page.goto(route, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(
+        () => (document.body.textContent?.trim().length ?? 0) > 0,
+        undefined,
+        { timeout: 5_000 },
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      await page.waitForTimeout(250);
+    }
+  }
+  throw lastError;
 }
 
 test("enforces reviewed routes and prepares only a session-bound pool draft", async ({
@@ -44,7 +47,7 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
     });
   });
 
-  await page.goto("/");
+  await gotoRoute(page, "/");
   await connectLocalnet(page);
   await expect(page.getByLabel("APP20 swap")).toBeVisible();
   await expect(page.getByText("STRK / USDC", { exact: true })).toBeVisible();
@@ -85,7 +88,7 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
     Math.abs(chartGeometry.clientAspect - chartGeometry.viewBoxAspect),
   ).toBeLessThan(0.01);
 
-  await page.goto("/swap/eth/usdc");
+  await gotoRoute(page, "/swap/eth/usdc");
   await expect(
     page.getByRole("heading", { name: "Asset not reviewed" }),
   ).toBeVisible();
@@ -94,19 +97,19 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
     page.getByRole("link", { name: /prepare proposal/i }),
   ).toHaveCount(0);
 
-  await page.goto(`/swap/strk/0x000${STRK_ADDRESS.slice(2)}`);
+  await gotoRoute(page, `/swap/strk/0x000${STRK_ADDRESS.slice(2)}`);
   await expect(
     page.getByRole("heading", { name: "Choose different assets" }),
   ).toBeVisible();
 
-  await page.goto("/pools/create/eth/usdc");
+  await gotoRoute(page, "/pools/create/eth/usdc");
   await expect(
     page.getByRole("heading", { name: "Asset not reviewed" }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /prepare/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /deploy/i })).toHaveCount(0);
 
-  await page.goto("/pools/create/strk/usdc");
+  await gotoRoute(page, "/pools/create/strk/usdc");
   await connectLocalnet(page);
   await expect(
     page.getByRole("heading", { name: "Prepare draft" }),
@@ -123,7 +126,7 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
   await page
     .getByLabel("Non-executable reference price in USDC per STRK")
     .fill("0.4");
-  const storageBefore = await storageSnapshot(page);
+  const storageBefore = await readStorageSnapshot(page);
   const proposalUrl = page.url();
   await page.getByRole("button", { name: "Prepare draft review" }).click();
   await expect(page.getByText("DRAFT PREPARED", { exact: true })).toBeVisible();
@@ -151,7 +154,7 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
   ]) {
     await expect(page.getByText(label, { exact: true })).toBeVisible();
   }
-  expect(await storageSnapshot(page)).toEqual(storageBefore);
+  expect(await readStorageSnapshot(page)).toEqual(storageBefore);
   expect(page.url()).toBe(proposalUrl);
 
   await page.getByLabel("STRK proposed amount").fill("3");
@@ -173,11 +176,5 @@ test("enforces reviewed routes and prepares only a session-bound pool draft", as
   await expect(page.locator("code", { hasText: /^sha256:/ })).toHaveCount(0);
 
   await page.setViewportSize({ width: 430, height: 932 });
-  expect(
-    await page.evaluate(
-      () =>
-        document.documentElement.scrollWidth -
-        document.documentElement.clientWidth,
-    ),
-  ).toBe(0);
+  await expectNoHorizontalOverflow(page);
 });

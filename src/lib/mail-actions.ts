@@ -3,7 +3,7 @@ import type { EncryptedMailRecord } from "./mail";
 import {
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
-  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+  APP20_HELPER_FUNDING_BASE_UNITS,
   buildMailInvokeActions,
   buildMemoTransferActions,
 } from "./strk20";
@@ -77,7 +77,7 @@ export function buildMailActions({
       helperAddress,
       tokenAddress,
       recoveryAddress: senderAddress,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       record,
     });
   }
@@ -87,7 +87,7 @@ export function buildMailActions({
     recoveryAddress: senderAddress,
     recipient: recipientAddress,
     amount: attachmentAmount,
-    helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+    helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
     record,
   });
 }

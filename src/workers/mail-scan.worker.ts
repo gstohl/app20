@@ -13,6 +13,8 @@ type ScanResponse =
   | { ok: true; decrypted: DecryptedMail[] }
   | { ok: false; message: string };
 
+// SAFETY: Vite loads this module only as a dedicated Web Worker; the narrowed
+// surface lists the two worker-global methods used below.
 const workerScope = globalThis as unknown as {
   addEventListener(
     type: "message",

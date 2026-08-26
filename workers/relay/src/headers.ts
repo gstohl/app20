@@ -5,7 +5,15 @@ export interface SpaSecurityConfig {
 
 function reviewedOrigins(values: readonly string[]): string[] {
   return values.map((value) => {
-    const url = new URL(value);
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch (error) {
+      throw new Error(
+        "SPA security origins must be valid reviewed HTTPS origins.",
+        { cause: error },
+      );
+    }
     if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash || value.includes("*")) {
       throw new Error("SPA security origins must be reviewed HTTPS origins without wildcards.");
     }

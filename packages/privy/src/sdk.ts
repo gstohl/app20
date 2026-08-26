@@ -2,10 +2,13 @@ import type { RpcProvider } from "starknet";
 import { PrivacySdkMissingError } from "./errors.js";
 import type { OhttpTransportOption } from "./ohttp.js";
 
+/** Opaque transfer runtime returned by the optional official SDK. */
+export type PrivacySdkTransfers = object;
+
 /** Minimal runtime surface used from the optional official privacy SDK. */
 export interface PrivacySdkModule {
   Open?: symbol;
-  createPrivateTransfers(params: Record<string, unknown>): unknown;
+  createPrivateTransfers(params: Record<string, unknown>): PrivacySdkTransfers;
   ProvingServiceProofProvider?: new (
     url: string,
     chainId: string,
@@ -64,6 +67,7 @@ function missingSdk(error: unknown, installHint: string): never {
 export async function loadPrivacySdk(): Promise<PrivacySdkModule> {
   if (cachedSdk) return cachedSdk;
   try {
+    // SAFETY: this adapter validates and uses only the reviewed SDK surface above.
     cachedSdk = (await import(
       "@starkware-libs/starknet-privacy-sdk"
     )) as unknown as PrivacySdkModule;
@@ -80,6 +84,7 @@ export async function loadPrivacySdk(): Promise<PrivacySdkModule> {
 export async function loadPrivacySdkTesting(): Promise<PrivacySdkTestingModule> {
   if (cachedTestingSdk) return cachedTestingSdk;
   try {
+    // SAFETY: this development-only adapter uses only the constructors declared above.
     cachedTestingSdk = (await import(
       "@starkware-libs/starknet-privacy-sdk/testing"
     )) as unknown as PrivacySdkTestingModule;
@@ -95,6 +100,7 @@ export async function loadPrivacySdkTesting(): Promise<PrivacySdkTestingModule> 
 export async function loadPrivacyPoolAbi(): Promise<PrivacySdkAbiModule> {
   if (cachedAbi) return cachedAbi;
   try {
+    // SAFETY: the imported ABI remains opaque until Starknet Contract validates it.
     cachedAbi = (await import(
       "@starkware-libs/starknet-privacy-sdk/abi"
     )) as unknown as PrivacySdkAbiModule;

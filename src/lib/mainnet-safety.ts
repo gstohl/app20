@@ -160,7 +160,7 @@ export function formatMainnetPreflight(
       : `${formatStrkAmount(preflight.requiredPublicBalance)} STRK (${preflight.requiredPublicBalance} base units)`;
 
   return [
-    "QUIETLINE MAINNET REAL-FUNDS PREFLIGHT",
+    "APP20 MAINNET REAL-FUNDS PREFLIGHT",
     "",
     `Network: Starknet Mainnet (SN_MAIN)`,
     `Action: ${preflight.action}`,

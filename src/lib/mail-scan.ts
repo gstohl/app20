@@ -1,7 +1,7 @@
 import { canonicalizeStarknetAddress } from "./addresses";
 import { MAX_CT_FELTS, type EncryptedMailRecord } from "./mail";
 
-export const MAIL_SCAN_CURSOR_PREFIX = "quietline/mail-scan/v1";
+export const MAIL_SCAN_CURSOR_PREFIX = "app20/mail-scan/v1";
 export const MAIL_SCAN_CHUNK_SIZE = 128;
 export const MAIL_SCAN_MAX_PAGES = 4;
 export const MAIL_SCAN_MAX_MESSAGES = 2_048;
@@ -249,7 +249,7 @@ export function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
       !Number.isSafeInteger(ciphertextLength) ||
       ciphertextLength < 0 ||
       ciphertextLength > MAX_CT_FELTS ||
-      // QuietlineMail appends action_id after the counted ciphertext felts.
+      // App20Mail appends action_id after the counted ciphertext felts.
       event.data.length !== 7 + ciphertextLength ||
       !Number.isInteger(viewTag) ||
       viewTag < 0 ||

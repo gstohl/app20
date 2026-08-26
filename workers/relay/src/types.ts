@@ -18,9 +18,11 @@ export interface DurableObjectStubLike {
   fetch(request: Request | string, init?: RequestInit): Promise<Response>;
 }
 
+export type DurableObjectIdLike = string | { toString(): string };
+
 export interface DurableObjectNamespaceLike {
-  idFromName(name: string): unknown;
-  get(id: unknown): DurableObjectStubLike;
+  idFromName(name: string): DurableObjectIdLike;
+  get(id: DurableObjectIdLike): DurableObjectStubLike;
 }
 
 export interface AssetBindingLike {

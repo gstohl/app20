@@ -1,13 +1,15 @@
 # @app20/private-intents
 
-Taker intents over STRK20 notes, solver quotes, and a fill-or-refund
-lifecycle. APP20 is the first solver; NEAR 1Click is its liquidity warehouse,
-never the user's counterparty.
+Taker intents over STRK20 notes, sealed invited-maker quotes, and a
+fill-or-refund lifecycle. APP20 is the private venue and verifier, not the
+user's counterparty. Any future NEAR 1Click use remains a separate liquidity
+warehouse behind the dry-only boundary.
 
 ```text
-intent  → quote (injected pricing + spread, signed over terms + digest)
-        → accept verifies the solver signature, then locks the sell note
-        → fill delivers ≥ quoted buyAmount before expiry
+intent  → invited makers reserve inventory and return scoped offers
+        → verify every signature; select best amount deterministically
+        → accept consumes one quote nonce, then locks the sell note
+        → selected maker delivers ≥ quoted buyAmount before expiry
         → otherwise refund after expiry
 restock → fills net per token; residuals ≥ minBatch round up to a
           standard denomination; smaller residuals wait
@@ -19,13 +21,60 @@ restock → fills net per token; residuals ≥ minBatch round up to a
   authority. This package builds and validates, fail-closed.
 - **No live 1Click.** `PricingSource` is injected; review builds back it with
   the dry-only connector fixture.
-- **Inventory-first.** `assertInventoryCovers` encodes the rule: fill from
-  pre-positioned notes, restock later. Never take a note and hedge after.
+- **Inventory-first.** A signed quote carries an opaque, expiring reservation
+  identifier—not the maker's balance. Fill from pre-positioned notes and
+  restock later; never take a note and hedge after.
 - **Honest netting.** `planRestock` reduces amount/timing correlation on the
   public hedge. A same-size instant restock is still correlatable, and this
   package never claims otherwise.
-- **Signed quotes.** `acceptQuote` fail-closes without a solver ECDSA P-256
-  signature over the canonical quote. A digest is consistency, not authenticity.
+- **Signed sealed quotes.** `selectBestSolverQuote` verifies every invited
+  maker before deterministic ranking. `acceptQuote` consumes only the selected
+  nonce. A digest is consistency, not authenticity; a checksum is never
+  authorization.
 - **Canonical Starknet contracts.** Intent, quote, helper, and inventory token
   comparisons use the shared bounded-felt canonicalizer, so case and leading-zero
   aliases cannot create distinct economic terms.
+
+## Protocol foundations
+
+`protocol.ts` freezes the first app-code schemas without claiming production
+infrastructure:
+
+- `PrivateRfqV1` binds exact u256 base units, floor, deadlines, registry,
+  directory epoch, and configured settlement helper. The RFQ has no public-book
+  representation and does not reveal the invited-maker set to each recipient.
+- Signed maker-directory epochs are deterministically ordered, predecessor-bound,
+  validity-bounded, and verified against the authority key valid at the signed
+  `issuedAt` time. Quote and transport keys retain historical validity windows
+  and explicit revocation times; public JWKs reject private `d` material.
+- `EncryptedRfqEnvelopeV1` fixes maker-specific RFC 9180 HPKE suite metadata,
+  authenticated-header digest, replay nonce, expiry, and reviewed padding
+  buckets. This package validates envelope structure and replay state; it does
+  **not** perform HPKE encryption/decryption or claim relay-metadata unlinkability.
+- `MakerReservationV1` provides monotonic fencing and legal reserve → select →
+  begin-fill → consume/release/expire/quarantine transitions. The pure model is
+  not storage; `@app20/maker-node` supplies the localnet fsynced hash-chain WAL.
+  Envelope replay storage remains process-local until authenticated transport
+  is integrated into the maker service.
+
+Directory signatures authenticate canonical epochs. RFQ/receipt/reservation
+digests only bind supplied bytes and never authorize value or prove chain truth.
+
+## Operations policy
+
+`operations.ts` adds production-shaped but non-custodial controls:
+
+- predecessor-ready risk manifests with independent Risk and Operations approvals;
+- short-lived exceptions requiring two distinct Risk approvers plus
+  Security/Compliance;
+- fail-closed per-trade, gross, net, daily, reconciliation, and outstanding
+  escrow checks;
+- finalized, consented, independent-fill netting before any public restock;
+- minimum dwell, standard-denomination rounding, approved-venue enforcement,
+  and explicit public-correlation warnings;
+- pause and drain-only controls that never disable claims or refunds;
+- browser-safe capacity bands and utilization without raw inventory balances.
+
+This is operational netting, not atomic two-taker crossing, a proof of reserves,
+or proof that maker notes cannot be spent elsewhere. Atomic crossing needs a
+separately designed and audited contract.

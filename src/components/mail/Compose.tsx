@@ -62,7 +62,7 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
-  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+  APP20_HELPER_FUNDING_BASE_UNITS,
   strk20ErrorMessage,
   submitActions,
   submitMail,
@@ -954,7 +954,7 @@ export default function Compose({
               amount: document.payment.transfer.amount,
               record,
               actionId: mailActionId,
-              helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+              helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
               policy,
             },
             options,
@@ -968,7 +968,7 @@ export default function Compose({
               tokenAddress: addrSTRK,
               record,
               actionId: mailActionId,
-              helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+              helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
               policy,
             },
             options,

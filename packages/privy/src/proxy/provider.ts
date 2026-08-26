@@ -52,14 +52,25 @@ export class ProverProxyClientError extends Error {
   }
 }
 
-function normalizeBlockId(blockIdentifier: unknown): unknown {
-  if (
-    typeof blockIdentifier === "number" ||
+type NormalizedBlockId = { block_number: number };
+
+function normalizeBlockId(blockIdentifier: unknown): NormalizedBlockId {
+  const blockNumber =
     typeof blockIdentifier === "bigint"
+      ? blockIdentifier <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? Number(blockIdentifier)
+        : Number.NaN
+      : blockIdentifier;
+  if (
+    typeof blockNumber !== "number" ||
+    !Number.isSafeInteger(blockNumber) ||
+    blockNumber < 0
   ) {
-    return { block_number: Number(blockIdentifier) };
+    throw new ProverProxyClientError(
+      "A non-negative safe-integer proving block number is required by the proxy.",
+    );
   }
-  return blockIdentifier;
+  return { block_number: blockNumber };
 }
 
 function transient(error: unknown): boolean {

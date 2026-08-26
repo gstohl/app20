@@ -42,11 +42,11 @@ function base64UrlToBytes(value: string): Uint8Array {
 
 function fragmentForTuple(tuple: unknown): string {
   const payload = new TextEncoder().encode(JSON.stringify(tuple));
-  const domain = new TextEncoder().encode("quietline/payment-link/v2\0");
+  const domain = new TextEncoder().encode("app20/payment-link/v2\0");
   const checksumInput = new Uint8Array(domain.length + payload.length);
   checksumInput.set(domain);
   checksumInput.set(payload, domain.length);
-  return `#qlp2.${bytesToBase64Url(payload)}.${bytesToBase64Url(
+  return `#app20p2.${bytesToBase64Url(payload)}.${bytesToBase64Url(
     sha256(checksumInput),
   )}`;
 }
@@ -142,7 +142,7 @@ describe("payment links", () => {
   it("round-trips a canonical STRK request in a URL-safe fragment", () => {
     const fragment = encodePaymentLinkFragment(request);
 
-    expect(fragment).toMatch(/^#qlp2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
+    expect(fragment).toMatch(/^#app20p2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     expect(fragment).not.toContain("?");
     expect(decodePaymentLinkFragment(fragment)).toEqual(request);
   });
@@ -176,7 +176,7 @@ describe("payment links", () => {
   it("builds /pay with no query-string payload", () => {
     const link = createPaymentLink(
       request,
-      "https://quietline.example/current?logged=value#old",
+      "https://app20.example/current?logged=value#old",
     );
     const url = new URL(link);
 
@@ -203,7 +203,7 @@ describe("payment links", () => {
       /malformed|truncated|integrity/i,
     );
     expect(() =>
-      decodePaymentLinkFragment(fragment.replace("#qlp2.", "#qlp1.")),
+      decodePaymentLinkFragment(fragment.replace("#app20p2.", "#app20p1.")),
     ).toThrow(/unsupported.*version/i);
   });
 

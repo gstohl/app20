@@ -11,6 +11,7 @@ import {
   planRestock,
   quotePrivateSwapIntent,
   refundExpiredIntent,
+  selectBestSolverQuote,
   signCanonicalQuote,
   verifyCanonicalQuote,
   type PricingSource,
@@ -71,6 +72,8 @@ function quoteOptions(
     spreadBps: 30,
     quoteTtlSeconds: 120,
     now: NOW,
+    reservationId: `0x${"a1".repeat(32)}`,
+    reservationExpiresAt: NOW + 180,
     sign: async (canonical) => signCanonicalQuote(canonical, privateKey),
     ...overrides,
   };
@@ -151,6 +154,8 @@ describe("solver quoting", () => {
     expect(outcome.quote.buyAmount >= intent().minBuyAmount).toBe(true);
     expect(outcome.quote.pricingProvenance).toBe("fixture:1click-dry");
     expect(outcome.quote.quoteExpiresAt).toBe(NOW + 120);
+    expect(outcome.quote.reservationId).toBe(`0x${"a1".repeat(32)}`);
+    expect(outcome.quote.reservationExpiresAt).toBe(NOW + 180);
     expect(outcome.quote.signature).toMatch(/^0x[0-9a-f]+$/);
     await expect(
       verifyCanonicalQuote(
@@ -188,15 +193,45 @@ describe("solver quoting", () => {
     expect(priced).toBe(false);
   });
 
-  it("never lets the quote outlive the intent", async () => {
+  it("never lets the quote outlive the intent or inventory reservation", async () => {
     const keys = await testKeys();
-    const outcome = await quotePrivateSwapIntent(
+    const intentBound = await quotePrivateSwapIntent(
       intent({ expiresAt: NOW + 60 }),
       fixturePricing(1_000n * 10n ** 18n),
       quoteOptions(keys.privateKey),
     );
-    if (outcome.kind !== "quoted") throw new Error("expected a quote");
-    expect(outcome.quote.quoteExpiresAt).toBe(NOW + 60);
+    if (intentBound.kind !== "quoted") throw new Error("expected a quote");
+    expect(intentBound.quote.quoteExpiresAt).toBe(NOW + 60);
+
+    const reservationBound = await quotePrivateSwapIntent(
+      intent(),
+      fixturePricing(1_000n * 10n ** 18n),
+      quoteOptions(keys.privateKey, { reservationExpiresAt: NOW + 45 }),
+    );
+    if (reservationBound.kind !== "quoted") {
+      throw new Error("expected a reservation-bound quote");
+    }
+    expect(reservationBound.quote.quoteExpiresAt).toBe(NOW + 45);
+  });
+
+  it("declines an expired inventory reservation before pricing", async () => {
+    const keys = await testKeys();
+    let priced = false;
+    const outcome = await quotePrivateSwapIntent(
+      intent(),
+      {
+        price: async () => {
+          priced = true;
+          return { buyAmount: 1n, provenance: "should-not-run" };
+        },
+      },
+      quoteOptions(keys.privateKey, { reservationExpiresAt: NOW }),
+    );
+    expect(outcome).toEqual({
+      kind: "declined",
+      reason: "The inventory reservation expired.",
+    });
+    expect(priced).toBe(false);
   });
 });
 
@@ -343,6 +378,106 @@ describe("quote acceptance binding", () => {
 
     await expect(accept(quote)).resolves.toMatchObject({ kind: "locked" });
     await expect(accept(quote)).rejects.toThrow(/already consumed/i);
+  });
+});
+
+describe("sealed maker selection", () => {
+  it("verifies every quote and chooses best amount with a deterministic tie-break", async () => {
+    const order = intent();
+    const firstKeys = await testKeys();
+    const secondKeys = await testKeys();
+    const first = await quotePrivateSwapIntent(
+      order,
+      fixturePricing(1_000n * 10n ** 18n),
+      quoteOptions(firstKeys.privateKey, {
+        solverId: "maker-z",
+        solverKey: "maker-z/p256",
+        spreadBps: 30,
+        nonce: `0x${"11".repeat(32)}`,
+        reservationId: `0x${"21".repeat(32)}`,
+      }),
+    );
+    const second = await quotePrivateSwapIntent(
+      order,
+      fixturePricing(1_000n * 10n ** 18n),
+      quoteOptions(secondKeys.privateKey, {
+        solverId: "maker-a",
+        solverKey: "maker-a/p256",
+        spreadBps: 20,
+        nonce: `0x${"12".repeat(32)}`,
+        reservationId: `0x${"22".repeat(32)}`,
+      }),
+    );
+    if (first.kind !== "quoted" || second.kind !== "quoted") {
+      throw new Error("expected two private quotes");
+    }
+    const keys = new Map([
+      ["maker-z/p256", firstKeys.publicKey],
+      ["maker-a/p256", secondKeys.publicKey],
+    ]);
+    const verification = {
+      helper: HELPER,
+      verify: async (
+        canonical: string,
+        signature: string,
+        solverKey: string,
+      ) => {
+        const key = keys.get(solverKey);
+        return key ? verifyCanonicalQuote(canonical, signature, key) : false;
+      },
+    };
+
+    await expect(
+      selectBestSolverQuote(
+        order,
+        [first.quote, second.quote],
+        NOW + 10,
+        verification,
+      ),
+    ).resolves.toBe(second.quote);
+
+    const equalSecond = {
+      ...second.quote,
+      buyAmount: first.quote.buyAmount,
+      spreadBps: first.quote.spreadBps,
+    };
+    const equalCanonical = canonicalSolverQuote(equalSecond);
+    const signedEqualSecond = {
+      ...equalSecond,
+      signature: await signCanonicalQuote(
+        equalCanonical,
+        secondKeys.privateKey,
+      ),
+    };
+    await expect(
+      selectBestSolverQuote(
+        order,
+        [first.quote, signedEqualSecond],
+        NOW + 10,
+        verification,
+      ),
+    ).resolves.toBe(signedEqualSecond);
+  });
+
+  it("fails closed when any invited maker quote is forged or duplicated", async () => {
+    const { order, quote, keys } = await lockedFixture();
+    const verification = acceptance(keys.publicKey, quote);
+    await expect(
+      selectBestSolverQuote(
+        order,
+        [quote, { ...quote, solverId: "forged", signature: "0xdead" }],
+        NOW + 10,
+        verification,
+      ),
+    ).rejects.toThrow(/not authentic/i);
+    await expect(
+      selectBestSolverQuote(
+        order,
+        [quote, { ...quote, reservationId: `0x${"ff".repeat(32)}` }],
+        NOW + 10,
+        verification,
+      ),
+    ).rejects.toThrow(/more than one quote/i);
   });
 });
 

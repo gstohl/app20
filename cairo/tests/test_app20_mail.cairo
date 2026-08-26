@@ -1,8 +1,7 @@
-use quietline_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
-use quietline_mail::{
-    IQuietlineMailDispatcher, IQuietlineMailDispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS,
+use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use app20_mail::{
+    App20Mail, IApp20MailDispatcher, IApp20MailDispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS,
     OpenNoteDeposit,
-    QuietlineMail,
 };
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait,
@@ -14,10 +13,10 @@ fn contract_address(value: felt252) -> ContractAddress {
     value.try_into().unwrap()
 }
 
-fn deploy_helper(pool: ContractAddress) -> (ContractAddress, IQuietlineMailDispatcher) {
-    let contract = declare("QuietlineMail").unwrap().contract_class();
+fn deploy_helper(pool: ContractAddress) -> (ContractAddress, IApp20MailDispatcher) {
+    let contract = declare("App20Mail").unwrap().contract_class();
     let (address, _) = contract.deploy(@array![pool.into()]).unwrap();
-    (address, IQuietlineMailDispatcher { contract_address: address })
+    (address, IApp20MailDispatcher { contract_address: address })
 }
 
 fn deploy_token(
@@ -32,7 +31,7 @@ fn deploy_token(
 
 fn invoke(
     helper_address: ContractAddress,
-    helper: IQuietlineMailDispatcher,
+    helper: IApp20MailDispatcher,
     pool: ContractAddress,
     token: ContractAddress,
     note_id: felt252,
@@ -105,8 +104,8 @@ fn post_emits_event_with_exact_payload() {
             @array![
                 (
                     helper_address,
-                    QuietlineMail::Event::MessagePosted(
-                        QuietlineMail::MessagePosted {
+                    App20Mail::Event::MessagePosted(
+                        App20Mail::MessagePosted {
                             index: 0,
                             eph_pk: (0x111, 0x222),
                             view_tag: 0x7a,

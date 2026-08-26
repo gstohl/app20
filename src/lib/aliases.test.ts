@@ -25,7 +25,7 @@ describe("local contact aliases", () => {
     const storage = new MemoryStorage();
     saveAlias(storage, "0xself", "0x000AbC", "  Alice  ", 123);
 
-    expect(aliasStorageKey("0xself")).toBe("quietline/aliases/v1/0xself");
+    expect(aliasStorageKey("0xself")).toBe("app20/aliases/v1/0xself");
     expect(loadAliases(storage, "0xself")).toEqual([
       { address: "0xabc", label: "Alice", addedAt: 123 },
     ]);

@@ -38,7 +38,7 @@ describe("publicRecipientCount", () => {
         viewTag: MULTI_RECIPIENT_VIEW_TAG,
         nonce: ["0x3", "0x4"],
         ciphertextFelts: packBytesToFelts(
-          new Uint8Array([0x51, 0x4c, 0x4d, 0x01, 0x42]),
+          new Uint8Array([0x41, 0x32, 0x30, 0x01, 0x42]),
         ),
       }),
     ).toBe(1);

@@ -1,14 +1,13 @@
 "use client";
 
 import {
-  LOCALNET_SOLVER_ID,
-  LOCALNET_SOLVER_KEY_ID,
   acceptQuote,
-  assertInventoryCovers,
   createMemoryQuoteReplayStore,
+  digestPrivateSwapIntent,
   fillLockedIntent,
   quotePrivateSwapIntent,
   refundExpiredIntent,
+  selectBestSolverQuote,
   type PrivateSwapIntentV1,
   type SolverQuote,
 } from "@app20/private-intents";
@@ -25,6 +24,10 @@ import {
   type DeskVenue,
 } from "@/lib/desk-disclosure";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
+import {
+  canProceedFromPrivacyPreflight,
+  evaluatePrivacyPreflight,
+} from "@/lib/privacy-preflight";
 import { configuredMarketPair } from "@/lib/token-registry";
 import {
   assertReadyExecutionUnchanged,
@@ -38,7 +41,7 @@ import {
   localnetUsdcToken,
   myFrontendProviders,
 } from "@/utils/constants";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { validateAndParseAddress } from "starknet";
 import {
@@ -50,10 +53,12 @@ import {
   formatLocalnetTokenAmount,
   parseLocalnetTokenAmount,
   readLocalnetEscrowDeal,
-  requestLocalnetSolverQuote,
+  releaseLocalnetSolverQuote,
+  requestLocalnetSolverQuotes,
+  selectLocalnetSolverQuote,
   signLocalnetSolverQuote,
   type LocalnetMarketToken,
-  type LocalnetSolverQuote,
+  type LocalnetSolverOffer,
 } from "./localnet-private-intents";
 import styles from "./vault.module.css";
 
@@ -79,7 +84,7 @@ type MarketPair = {
 type QuotedIntent = {
   intent: PrivateSwapIntentV1;
   quote: SolverQuote;
-  inventory: bigint;
+  quoteCount: number;
   pair: MarketPair;
   surface: DeskSurface;
 };
@@ -166,7 +171,7 @@ function errorMessage(error: unknown): string {
 }
 
 function isInventoryRefusal(message: string): boolean {
-  return /inventory cannot cover|does not cover|no output|below the intent floor/i.test(
+  return /inventory (?:cannot|can) cover|does not cover|no output|below the intent floor/i.test(
     message,
   );
 }
@@ -204,7 +209,62 @@ export default function LocalnetPrivateIntentDesk({
   const [quoted, setQuoted] = useState<QuotedIntent | null>(null);
   const [flow, setFlow] = useState<FlowState>({ kind: "idle" });
   const [counterparty, setCounterparty] = useState<string | null>(null);
+  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [preflightObservedAt] = useState(() => Math.floor(Date.now() / 1_000));
   const working = flow.kind === "working";
+  const privacyPreflight = useMemo(() => {
+    try {
+      const amount = parseLocalnetTokenAmount(sellAmount, pair.sell);
+      const stamp = {
+        observedAt: preflightObservedAt,
+        validUntil: preflightObservedAt + 24 * 60 * 60,
+      };
+      return evaluatePrivacyPreflight({
+        amount,
+        asset: pair.sell.symbol,
+        network: "starknet:APP20_LOCALNET",
+        now: preflightObservedAt,
+        denominationAlternatives: {
+          ...stamp,
+          provenance: "app20-client-denomination-policy:v1",
+          amounts: [amount / 2n, amount * 2n].filter(
+            (alternative) => alternative > 0n,
+          ),
+        },
+        invitedMakerDisclosure: {
+          ...stamp,
+          provenance: "app20-localnet-maker-directory:v1",
+          makerCount: 2,
+          disclosedFields: ["pair", "side", "exact size", "floor", "expiry"],
+        },
+        publicSettlementLeakage: {
+          ...stamp,
+          provenance: "app20-escrow-disclosure:v1",
+          publicFields: [
+            "pair",
+            "amount",
+            "deadline",
+            "lifecycle timing",
+            "helper activity",
+          ],
+        },
+      });
+    } catch {
+      return null;
+    }
+  }, [pair, preflightObservedAt, sellAmount]);
+  const privacyReady =
+    privacyPreflight !== null &&
+    canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed);
+
+  useEffect(() => {
+    if (!quoted) return;
+    return () => {
+      void releaseLocalnetSolverQuote(quoted.quote.reservationId).catch(
+        () => undefined,
+      );
+    };
+  }, [quoted]);
   const localnetReady =
     connected && Boolean(address) && providerIndex === LOCALNET_PROVIDER_INDEX;
   const surface = swapOnly
@@ -226,6 +286,7 @@ export default function LocalnetPrivateIntentDesk({
     setMinBuyAmount(nextPair.defaultMinBuyAmount);
     setQuoted(null);
     setFlow({ kind: "idle" });
+    setPrivacyConfirmed(false);
   }, [initialPairId]);
 
   useEffect(() => {
@@ -262,6 +323,7 @@ export default function LocalnetPrivateIntentDesk({
 
   function setSurface(next: DeskSurface) {
     if (quoted || swapOnly) return;
+    setPrivacyConfirmed(false);
     void navigate({
       to: "/vault",
       hash: next === "block" ? "desk" : "swap",
@@ -271,6 +333,7 @@ export default function LocalnetPrivateIntentDesk({
   function invalidateQuote() {
     setQuoted(null);
     setFlow({ kind: "idle" });
+    setPrivacyConfirmed(false);
   }
 
   function selectPair(nextId: LocalnetMarketPairId) {
@@ -283,15 +346,21 @@ export default function LocalnetPrivateIntentDesk({
   }
 
   async function buildQuote() {
+    let offers: LocalnetSolverOffer[] = [];
     setFlow({
       kind: "working",
       phase: "quote",
-      message: "Reading desk inventory…",
+      message: "Requesting sealed quotes from invited makers…",
     });
     try {
+      if (!privacyPreflight || !privacyReady) {
+        throw new Error(
+          "Review the privacy preflight and acknowledge the known disclosures before requesting quotes.",
+        );
+      }
       if (!localnetReady) {
         throw new Error(
-          "No private inventory on this network. Nothing was sent to a public book.",
+          "No private inventory on this network. The RFQ was not published or routed elsewhere.",
         );
       }
       const configured = configuredMarketPair("localnet");
@@ -311,7 +380,7 @@ export default function LocalnetPrivateIntentDesk({
         throw new Error("The local escrow deployment is unavailable.");
       }
       if (BigInt(localnetUsdcToken) === 0n) {
-        throw new Error("The local solver token is unavailable.");
+        throw new Error("The local private-market token is unavailable.");
       }
       const sell = parseLocalnetTokenAmount(sellAmount, pair.sell);
       const floor =
@@ -330,62 +399,75 @@ export default function LocalnetPrivateIntentDesk({
         createdAt: now,
         expiresAt: now + 20 * 60,
       };
-      let sourceQuote: LocalnetSolverQuote | undefined;
-      const outcome = await quotePrivateSwapIntent(
-        intent,
-        {
-          price: async (request) => {
-            sourceQuote = await requestLocalnetSolverQuote({
-              sellToken: request.sellToken,
-              sellAmount: request.sellAmount,
-              buyToken: request.buyToken,
-            });
-            return {
-              buyAmount: sourceQuote.buyAmount,
-              provenance: sourceQuote.provenance,
-            };
+      const intentDigest = await digestPrivateSwapIntent(intent);
+      offers = await requestLocalnetSolverQuotes({
+        intentDigest,
+        createdAt: intent.createdAt,
+        expiresAt: intent.expiresAt,
+        sellToken: intent.sellToken,
+        sellAmount: intent.sellAmount,
+        buyToken: intent.buyToken,
+        minBuyAmount: intent.minBuyAmount,
+      });
+      const signedQuotes: SolverQuote[] = [];
+      for (const offer of offers) {
+        if (
+          !matchesToken(offer.sellToken, pair.sell.address) ||
+          !matchesToken(offer.buyToken, pair.buy.address)
+        ) {
+          throw new Error("A private maker changed the requested pair.");
+        }
+        const outcome = await quotePrivateSwapIntent(
+          intent,
+          {
+            price: async () => ({
+              buyAmount: offer.grossBuyAmount,
+              provenance: offer.provenance,
+            }),
           },
-        },
-        {
-          solverId: LOCALNET_SOLVER_ID,
-          solverKey: LOCALNET_SOLVER_KEY_ID,
-          helper: escrowHelperLocalnet,
-          spreadBps: 30,
-          quoteTtlSeconds: 10 * 60,
-          now,
-          sign: signLocalnetSolverQuote,
-        },
-      );
-      if (outcome.kind !== "quoted" || !sourceQuote) {
-        throw new Error(
-          outcome.kind === "declined"
-            ? outcome.reason
-            : "The desk declined this clip.",
+          {
+            solverId: offer.solverId,
+            solverKey: offer.solverKey,
+            helper: escrowHelperLocalnet,
+            spreadBps: offer.spreadBps,
+            quoteTtlSeconds: 10 * 60,
+            now,
+            nonce: offer.nonce,
+            reservationId: offer.reservationId,
+            reservationExpiresAt: offer.reservationExpiresAt,
+            sign: signLocalnetSolverQuote,
+          },
         );
+        if (outcome.kind !== "quoted") {
+          throw new Error(outcome.reason);
+        }
+        signedQuotes.push(outcome.quote);
       }
-      if (sourceQuote.solverId !== LOCALNET_SOLVER_ID) {
-        throw new Error("The desk quote named an unexpected solver.");
-      }
-      if (
-        !matchesToken(sourceQuote.sellToken, pair.sell.address) ||
-        !matchesToken(sourceQuote.buyToken, pair.buy.address)
-      ) {
-        throw new Error("The desk quote changed the requested pair.");
-      }
-      assertInventoryCovers(
-        [{ token: pair.buy.address, available: sourceQuote.solverInventory }],
-        pair.buy.address,
-        outcome.quote.buyAmount,
+      const selectedQuote = await selectBestSolverQuote(
+        intent,
+        signedQuotes,
+        now,
+        {
+          helper: escrowHelperLocalnet,
+          verify: verifyLocalnetSolverQuote,
+        },
       );
+      await selectLocalnetSolverQuote({
+        intentDigest,
+        selectedReservationId: selectedQuote.reservationId,
+      });
       setQuoted({
         intent,
-        quote: outcome.quote,
-        inventory: sourceQuote.solverInventory,
+        quote: selectedQuote,
+        quoteCount: signedQuotes.length,
         pair,
         surface,
       });
       setFlow({ kind: "idle" });
     } catch (error: unknown) {
+      await Promise.allSettled(
+        offers.map((offer) => releaseLocalnetSolverQuote(offer.reservationId)),
+      );
       const message = errorMessage(error);
       setQuoted(null);
       setFlow(
@@ -404,11 +486,6 @@ export default function LocalnetPrivateIntentDesk({
       if (started.providerIndex !== LOCALNET_PROVIDER_INDEX) {
         throw new Error("Select LOCAL and connect Localnet (dev) first.");
       }
-      assertInventoryCovers(
-        [{ token: quoted.intent.buyToken, available: quoted.inventory }],
-        quoted.intent.buyToken,
-        quoted.quote.buyAmount,
-      );
       const locked = await acceptQuote(
         quoted.intent,
         quoted.quote,
@@ -453,6 +530,9 @@ export default function LocalnetPrivateIntentDesk({
 
       const terms = {
         dealId: quoted.intent.intentId,
+        intentDigest: quoted.quote.intentDigest,
+        solverId: quoted.quote.solverId,
+        reservationId: quoted.quote.reservationId,
         sellToken: quoted.intent.sellToken,
         sellAmount: quoted.intent.sellAmount,
         buyToken: quoted.intent.buyToken,
@@ -463,7 +543,7 @@ export default function LocalnetPrivateIntentDesk({
         setFlow({
           kind: "working",
           phase: "fill",
-          message: `APP20 solver is filling from pre-positioned ${quoted.pair.buy.symbol} notes…`,
+          message: `The selected maker is filling from reserved ${quoted.pair.buy.symbol} notes…`,
         });
         transactionHashes.push(await askLocalnetSolverToFill(terms));
         await readLocalnetEscrowDeal(quoted.intent.intentId);
@@ -476,7 +556,7 @@ export default function LocalnetPrivateIntentDesk({
         setFlow({
           kind: "working",
           phase: "claim",
-          message: `Claiming the solver's ${quoted.pair.buy.symbol} leg into an OPEN private note…`,
+          message: `Claiming the selected maker's ${quoted.pair.buy.symbol} leg into an OPEN private note…`,
         });
         const claimed = await submitActions(
           started.account,
@@ -496,14 +576,14 @@ export default function LocalnetPrivateIntentDesk({
         setFlow({
           kind: "success",
           outcome: "settled",
-          message: "Private intent settled through the local solver.",
+          message: "Private intent settled through the selected maker.",
           transactionHashes,
         });
       } else {
         setFlow({
           kind: "working",
           phase: "expire",
-          message: "Advancing localnet past expiry without a solver fill…",
+          message: "Advancing localnet past expiry without a maker fill…",
         });
         await expireLocalnetPrivateIntent(terms);
         await readLocalnetEscrowDeal(quoted.intent.intentId);
@@ -608,7 +688,7 @@ export default function LocalnetPrivateIntentDesk({
       ) : null}
       {!swapOnly && !blockHint && surface === "block" && !quoted ? (
         <p className={styles.deskHint} role="status">
-          This clip is small enough that an immediate Swap from inventory is
+          This clip is small enough that an immediate sealed Swap quote is
           usually faster.
           <button type="button" onClick={() => setSurface("swap")}>
             Open Swap
@@ -697,7 +777,7 @@ export default function LocalnetPrivateIntentDesk({
             <span className={styles.swapAssetHead}>
               <b>{surface === "block" ? "Minimum receive" : "Buy"}</b>
               <small>
-                {quoted ? "Signed inventory quote" : "Quote required"}
+                {quoted ? "Selected signed quote" : "Quote required"}
               </small>
             </span>
             <span className={styles.swapAssetControl}>
@@ -729,23 +809,64 @@ export default function LocalnetPrivateIntentDesk({
         </div>
 
         {quoted ? null : (
-          <button
-            className={styles.privateIntentQuoteButton}
-            type="button"
-            onClick={() => void buildQuote()}
-            disabled={working}
-          >
-            {working
-              ? "Quoting…"
-              : surface === "swap"
-                ? "Get swap quote"
-                : "Get private quote"}
-          </button>
+          <>
+            <aside
+              className={styles.privacyPreflight}
+              aria-label="Privacy preflight"
+            >
+              <strong>PRIVACY PREFLIGHT</strong>
+              <p>
+                Check amount fingerprinting, denominations, note maturity,
+                timing, maker disclosure, and first-version settlement leakage.
+              </p>
+              {privacyPreflight ? (
+                <ul>
+                  {privacyPreflight.findings.map((finding) => (
+                    <li key={finding.id}>
+                      <strong>{finding.level.toUpperCase()}</strong>{" "}
+                      {finding.message}{" "}
+                      <small>
+                        Source: {finding.provenance}; freshness:{" "}
+                        {finding.freshness}
+                      </small>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p role="status">
+                  <strong>UNAVAILABLE</strong> Enter a valid exact sell amount
+                  to build the preflight.
+                </p>
+              )}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={privacyConfirmed}
+                  disabled={!privacyPreflight || working}
+                  onChange={(event) =>
+                    setPrivacyConfirmed(event.target.checked)
+                  }
+                />
+                I understand the warnings and known public settlement leakage.
+              </label>
+            </aside>
+            <button
+              className={styles.privateIntentQuoteButton}
+              type="button"
+              onClick={() => void buildQuote()}
+              disabled={working || !privacyReady}
+            >
+              {working ? "Requesting…" : "Request sealed quotes"}
+            </button>
+          </>
         )}
       </div>
 
       {quoted ? (
-        <div className={styles.privateIntentQuote} aria-label="Solver quote">
+        <div
+          className={styles.privateIntentQuote}
+          aria-label="Selected private maker quote"
+        >
           <div>
             <span>APP20 DELIVERS</span>
             <strong>
@@ -758,10 +879,10 @@ export default function LocalnetPrivateIntentDesk({
             </strong>
           </div>
           <div>
-            <span>SOLVER INVENTORY</span>
+            <span>PRIVATE RESPONSES</span>
             <strong>
-              {formatLocalnetTokenAmount(quoted.inventory, quoted.pair.buy, 4)}{" "}
-              {quoted.pair.buy.symbol}
+              {quoted.quoteCount} VERIFIED{" "}
+              {quoted.quoteCount === 1 ? "QUOTE" : "QUOTES"}
             </strong>
           </div>
           <div>
@@ -843,8 +964,8 @@ export default function LocalnetPrivateIntentDesk({
           {working
             ? "Executing…"
             : surface === "swap"
-              ? "Swap from desk inventory"
-              : "Execute local private intent"}
+              ? "Accept selected private quote"
+              : "Execute selected private quote"}
         </button>
       ) : null}
 
@@ -854,7 +975,7 @@ export default function LocalnetPrivateIntentDesk({
           <p>{flow.message}</p>
           <p>
             Public-route swap is a separate action and is not enabled in this
-            build. Nothing was sent to a public book.
+            build. The RFQ was not published or routed elsewhere.
           </p>
           <button type="button" disabled>
             Public-route swap unavailable
@@ -864,8 +985,8 @@ export default function LocalnetPrivateIntentDesk({
 
       {localnetReady ? null : (
         <p className={styles.privateIntentHint}>
-          Select LOCAL in the header and connect Localnet (dev) to execute from
-          desk inventory.
+          Select LOCAL in the header and connect Localnet (dev) to request and
+          settle private maker quotes.
         </p>
       )}
       {flow.kind === "working" || flow.kind === "error" ? (
@@ -964,8 +1085,8 @@ export default function LocalnetPrivateIntentDesk({
 
       <p className={styles.privateIntentDisclosure}>
         {swapOnly
-          ? "Private inventory only. A refusal never falls through to a public venue."
-          : "Swap is an immediate inventory fill. Block is a signed request/quote/accept with your floor and expiry. Size may suggest a surface; it never picks a public venue. Localnet proves lock → solver fill → claim and expiry → refund against the real pool using mock proof bytes. Escrow events and OPEN payout-note amounts remain public."}
+          ? "Sealed invited-maker quotes only. A refusal never falls through to a public venue."
+          : "Swap and Block solicit signed quotes from invited makers without publishing an order book. Invited makers learn the exact pair, side, size, floor, and expiry; uninvited parties do not receive the RFQ. Localnet proves selection → lock → maker fill → claim and expiry → refund against the real pool using mock proof bytes. Escrow events and OPEN payout-note amounts remain public."}
       </p>
     </section>
   );

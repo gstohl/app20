@@ -263,7 +263,7 @@ describe("OTC local state", () => {
     );
 
     expect(otcStorageKey("SN_SEPOLIA", "0xB0B")).toBe(
-      "quietline/otc/v1/SN_SEPOLIA/0xB0B",
+      "app20/otc/v1/SN_SEPOLIA/0xB0B",
     );
     expect(
       loadOtcState(storage, "SN_SEPOLIA", "0xB0B").deals[dealId],

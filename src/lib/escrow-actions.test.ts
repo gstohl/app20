@@ -16,7 +16,7 @@ const tokenA = "0xaaa";
 const tokenB = "0xbbb";
 const recoveryAddress = "0xa11ce";
 
-describe("QuietlineEscrow V2 STRK20 action batches", () => {
+describe("App20Escrow V2 STRK20 action batches", () => {
   it("locks leg A, opens the ticket note, and flattens Fund exactly", () => {
     expect(
       buildEscrowFundActions({

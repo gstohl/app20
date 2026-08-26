@@ -32,8 +32,17 @@ export interface PrivyWalletDirectory {
 }
 
 function required(value: string | undefined): string {
-  if (!value) throw new RelayHttpError(500, "Bootstrap configuration is invalid.");
+  if (!value)
+    throw new RelayHttpError(500, "Bootstrap configuration is invalid.");
   return value;
+}
+
+function requestOrigin(request: Request): string {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    throw new RelayHttpError(400, "Invalid request URL.");
+  }
 }
 
 function bearer(request: Request): string {
@@ -61,7 +70,9 @@ export async function bootstrapQuotaSubject(
   return `bootstrap-${btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`;
 }
 
-export function createPrivyWalletDirectory(env: RelayEnv): PrivyWalletDirectory {
+export function createPrivyWalletDirectory(
+  env: RelayEnv,
+): PrivyWalletDirectory {
   const client = new PrivyClient({
     appId: required(env.PRIVY_APP_ID),
     appSecret: required(env.PRIVY_APP_SECRET),
@@ -93,8 +104,11 @@ export function createPrivyWalletDirectory(env: RelayEnv): PrivyWalletDirectory 
           const appSignerCount = quorum?.authorization_keys.length ?? 0;
           const userIncluded = userIds.includes(claims.user_id);
           const browserSignable = userIncluded && threshold === 1;
-          const displayName = (wallet as unknown as { display_name?: string })
-            .display_name;
+          const candidateDisplayName = Reflect.get(wallet, "display_name");
+          const displayName =
+            typeof candidateDisplayName === "string"
+              ? candidateDisplayName
+              : undefined;
           const kind = userIncluded
             ? threshold > 1
               ? "multisig"
@@ -146,13 +160,15 @@ export async function handlePrivacyBootstrap(
     ReturnType<PrivyWalletDirectory["authenticateAndList"]>
   >;
   try {
-    authenticated = await selectedDirectory.authenticateAndList(bearer(request));
+    authenticated = await selectedDirectory.authenticateAndList(
+      bearer(request),
+    );
   } catch (error) {
     if (error instanceof RelayHttpError) throw error;
     throw new RelayHttpError(401, "Unauthorized.");
   }
 
-  const origin = new URL(request.url).origin;
+  const origin = requestOrigin(request);
   return Response.json(
     {
       network: "sepolia",

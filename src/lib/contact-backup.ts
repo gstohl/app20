@@ -15,7 +15,7 @@ const SNAPSHOT_ID_BYTES = 32;
 const MAILBOX_KEY_HEX = /^[0-9a-f]{64}$/i;
 const DIGEST_HEX = /^[0-9a-f]{64}$/i;
 const textEncoder = new TextEncoder();
-const KEY_DOMAIN = "quietline/address-book-backup/v1";
+const KEY_DOMAIN = "app20/address-book-backup/v1";
 
 export type ContactSnapshotV1 = {
   version: 1;

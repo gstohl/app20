@@ -2,7 +2,7 @@ import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
 import { sanitizeUntrustedText } from "./text";
 import { addrSTRK } from "./tokens";
 
-export const OTC_STORAGE_PREFIX = "quietline/otc/v1";
+export const OTC_STORAGE_PREFIX = "app20/otc/v1";
 export const ONE_SIDED_WARNING = "one_sided_v1" as const;
 
 export type TokenRef = {

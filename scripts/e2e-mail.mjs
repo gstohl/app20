@@ -14,7 +14,7 @@ import {
 } from "starknet";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const RPC_URL = process.env.QUIETLINE_DEVNET_RPC ?? "http://127.0.0.1:5050/rpc";
+const RPC_URL = process.env.APP20_DEVNET_RPC ?? "http://127.0.0.1:5050/rpc";
 const STRK =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const DUST = 1_000_000_000_000_000n; // 0.001 STRK
@@ -158,7 +158,7 @@ async function main() {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = json.parse(
     readFileSync(
-      join(artifactRoot, "quietline_mail_QuietlineMail.contract_class.json"),
+      join(artifactRoot, "app20_mail_App20Mail.contract_class.json"),
       "utf8",
     ),
   );
@@ -166,7 +166,7 @@ async function main() {
     readFileSync(
       join(
         artifactRoot,
-        "quietline_mail_QuietlineMail.compiled_contract_class.json",
+        "app20_mail_App20Mail.compiled_contract_class.json",
       ),
       "utf8",
     ),
@@ -218,7 +218,7 @@ async function main() {
 
   const record = await encryptMail(
     publicKeyFromFelts(registeredKey),
-    "hello from quietline",
+    "hello from APP20",
   );
 
   const dustTransfer = await pool.execute(
@@ -307,7 +307,7 @@ async function main() {
   const decrypted = await scanAndDecrypt(recipient.privateKey, [eventRecord]);
   check(decrypted.length === 1, "Recipient did not discover exactly one message.");
   check(
-    decrypted[0].plaintext === "hello from quietline",
+    decrypted[0].plaintext === "hello from APP20",
     "Recipient recovered the wrong plaintext.",
   );
   check(
@@ -336,16 +336,16 @@ async function main() {
   });
   check(BigInt(count[0]) === 1n, "Helper message count is not one.");
 
-  console.log("Quietline devnet e2e passed.");
+  console.log("APP20 devnet e2e passed.");
   console.log(`  helper: ${helperAddress}`);
   console.log(`  MessagePosted tx: ${posted.transaction_hash}`);
-  console.log("  decrypted: hello from quietline");
+  console.log("  decrypted: hello from APP20");
   console.log("  wrong-key messages: 0");
   console.log("  dust echo: 0.001 STRK approved, returned, and pulled back");
 }
 
 main().catch((error) => {
-  console.error("Quietline devnet e2e failed:");
+  console.error("APP20 devnet e2e failed:");
   console.error(error instanceof Error ? error.stack ?? error.message : error);
   process.exitCode = 1;
 });

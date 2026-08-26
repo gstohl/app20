@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-// This package intentionally lives outside Quietline's root npm workspace.
+// This package intentionally lives outside APP20's root npm workspace.
 const sdkTestingSpecifier = [
 	"@starkware-libs/starknet-privacy-sdk",
 	"testing",
@@ -177,7 +177,7 @@ test(
 				"Bob's withdrawn note must be spent",
 			);
 
-			console.log("Quietline real-pool lifecycle passed:");
+			console.log("APP20 real-pool lifecycle passed:");
 			console.log(`  privacy_Privacy: ${env.privacy.address}`);
 			console.log(`  class hash: ${poolClassHash}`);
 			console.log(`  screening key: ${TEST_ONLY_SCREENING_KEY} (TEST ONLY)`);

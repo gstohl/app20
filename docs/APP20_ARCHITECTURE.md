@@ -221,21 +221,28 @@ services/policy-enclave      Future separate attested deployable service
 
 The `@app20/privy` package is the product wrapper. The viewing-key typed-data domain remains `strk20-privy`. STRK20 protocol names, pool methods, and Starknet constants must not be mechanically renamed.
 
-## Compatibility freeze
+## APP20 namespace freeze
 
-Never rename or silently migrate:
+The pre-release APP20 reset intentionally changed the previous contract names,
+storage keys, cryptographic labels, environment variables, runtime paths, and
+artifact names. No silent migration is provided. From this reset onward, never
+rename or silently migrate:
 
-- `quietline/*` storage keys;
-- Quietline cryptographic labels and envelope versions;
-- `qlp2` payment-link format;
-- Quietline contract names, ABI, calldata, storage, class hashes, or deployed addresses;
+- `app20/*` storage keys;
+- APP20 cryptographic labels and envelope versions;
+- `app20p2` payment-link format;
+- APP20 contract names, ABI, calldata, storage, class hashes, or deployed addresses;
 - STRK20 viewing-key typed-data domain;
 - Ready/Argent class hash, constructor, or account derivation;
 - existing chain/address normalization.
 
-New workflow records use `app20/.../v1` and reference legacy records rather than rewriting them.
+New workflow records use `app20/.../v1`. Pre-reset records, ciphertext, payment
+links, and contract artifacts are not accepted as APP20 records.
 
-Changing from an old origin to `app20.gstohl.com` (or any later domain you actually register) does not move origin-scoped browser storage or wallet permissions. A deployed migration needs user-mediated export/restore or a separately reviewed strict-origin transfer. Do not retire an old origin until users can recover mailbox and shielded state on the new one.
+Changing origins does not move origin-scoped browser storage or wallet
+permissions. A deployed migration needs user-mediated export/restore or a
+separately reviewed strict-origin transfer. Do not retire an active origin until
+users can recover mailbox and shielded state on the new one.
 
 ## Delivery phases
 
@@ -250,7 +257,7 @@ Changing from an old origin to `app20.gstohl.com` (or any later domain you actua
 
 ## Release gates
 
-- Mail storage, crypto, Cairo, and payment-link vectors remain byte-for-byte compatible.
+- Post-reset APP20 storage, crypto, Cairo, and payment-link vectors remain byte-for-byte stable.
 - No Node/proxy entry point enters the browser bundle.
 - No secret, private origin, witness, viewing key, note, mail plaintext, raw signature, or recipient leaks through logs/assets.
 - Dry Intents mode rejects every funding target and cannot submit.

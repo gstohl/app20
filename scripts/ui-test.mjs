@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import process from "node:process";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const VITE_PORT = Number(process.env.QUIETLINE_LOCALNET_VITE_PORT ?? 5173);
+const VITE_PORT = Number(process.env.APP20_LOCALNET_VITE_PORT ?? 5173);
 const APP_URL = `http://127.0.0.1:${VITE_PORT}`;
-const CONFIG_URL = `${APP_URL}/__quietline_localnet_wallet/config`;
+const CONFIG_URL = `${APP_URL}/__app20_localnet_wallet/config`;
 const LOCALNET_SCRIPT = resolve(ROOT, "scripts/localnet-app.mjs");
 const PLAYWRIGHT_CLI = resolve(ROOT, "node_modules/playwright/cli.js");
 
@@ -27,7 +27,7 @@ async function waitForLocalnet(processHandle) {
   while (Date.now() < deadline) {
     if (processHandle.exitCode !== null) {
       throw new Error(
-        `Quietline localnet exited before the UI suite (code ${processHandle.exitCode}).`,
+        `APP20 localnet exited before the UI suite (code ${processHandle.exitCode}).`,
       );
     }
     try {
@@ -44,7 +44,7 @@ async function waitForLocalnet(processHandle) {
   }
 
   throw new Error(
-    `Quietline localnet was not ready in six minutes: ${lastError}`,
+    `APP20 localnet was not ready in six minutes: ${lastError}`,
   );
 }
 

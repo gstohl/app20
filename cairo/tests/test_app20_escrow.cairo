@@ -1,13 +1,13 @@
-use quietline_mail::OpenNoteDeposit;
-use quietline_mail::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
-use quietline_mail::escrow::{
-    DealStatus, EscrowOperation, FillParams, FundParams, IQuietlineEscrowDispatcher,
-    IQuietlineEscrowDispatcherTrait,
+use app20_mail::OpenNoteDeposit;
+use app20_mail::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
+use app20_mail::escrow::{
+    DealStatus, EscrowOperation, FillParams, FundParams, IApp20EscrowDispatcher,
+    IApp20EscrowDispatcherTrait,
 };
-use quietline_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use snforge_std::{
-    CheatSpan, ContractClassTrait, DeclareResultTrait, cheat_block_timestamp,
-    cheat_caller_address, declare,
+    CheatSpan, ContractClassTrait, DeclareResultTrait, cheat_block_timestamp, cheat_caller_address,
+    declare,
 };
 use starknet::{ClassHash, ContractAddress};
 
@@ -26,12 +26,12 @@ fn ticket_class_hash() -> ClassHash {
     *declare("ClaimTicket").unwrap().contract_class().class_hash
 }
 
-fn deploy_escrow(pool: ContractAddress) -> (ContractAddress, IQuietlineEscrowDispatcher) {
-    let contract = declare("QuietlineEscrow").unwrap().contract_class();
+fn deploy_escrow(pool: ContractAddress) -> (ContractAddress, IApp20EscrowDispatcher) {
+    let contract = declare("App20Escrow").unwrap().contract_class();
     let mut calldata = array![pool.into()];
     ticket_class_hash().serialize(ref calldata);
     let (contract_address, _) = contract.deploy(@calldata).unwrap();
-    (contract_address, IQuietlineEscrowDispatcher { contract_address })
+    (contract_address, IApp20EscrowDispatcher { contract_address })
 }
 
 fn deploy_token(
@@ -47,7 +47,7 @@ fn deploy_token(
 fn fixture() -> (
     ContractAddress,
     ContractAddress,
-    IQuietlineEscrowDispatcher,
+    IApp20EscrowDispatcher,
     ContractAddress,
     IMockErc20Dispatcher,
     ContractAddress,
@@ -74,7 +74,7 @@ fn transfer_token(
 fn invoke(
     pool: ContractAddress,
     escrow_address: ContractAddress,
-    escrow: IQuietlineEscrowDispatcher,
+    escrow: IApp20EscrowDispatcher,
     at: u64,
     operation: EscrowOperation,
     deal_id: felt252,
@@ -86,9 +86,7 @@ fn invoke(
 }
 
 fn ensure(
-    escrow_address: ContractAddress,
-    escrow: IQuietlineEscrowDispatcher,
-    deal_id: felt252,
+    escrow_address: ContractAddress, escrow: IApp20EscrowDispatcher, deal_id: felt252,
 ) -> ContractAddress {
     let ticket = escrow.ensure_ticket(deal_id);
     assert(ticket == escrow.ensure_ticket(deal_id), 'ensure not idempotent');
@@ -102,7 +100,7 @@ fn ensure(
 fn fund(
     pool: ContractAddress,
     escrow_address: ContractAddress,
-    escrow: IQuietlineEscrowDispatcher,
+    escrow: IApp20EscrowDispatcher,
     token_a_address: ContractAddress,
     token_a: IMockErc20Dispatcher,
     token_b_address: ContractAddress,
@@ -135,9 +133,7 @@ fn fund(
     deposit
 }
 
-fn pull_ticket(
-    pool: ContractAddress, escrow_address: ContractAddress, deposit: OpenNoteDeposit,
-) {
+fn pull_ticket(pool: ContractAddress, escrow_address: ContractAddress, deposit: OpenNoteDeposit) {
     let ticket = IClaimTicketDispatcher { contract_address: deposit.token };
     cheat_caller_address(deposit.token, pool, CheatSpan::TargetCalls(1));
     assert(ticket.transfer_from(escrow_address, pool, 1), 'ticket pull failed');
@@ -154,7 +150,7 @@ fn return_ticket(
 fn fill(
     pool: ContractAddress,
     escrow_address: ContractAddress,
-    escrow: IQuietlineEscrowDispatcher,
+    escrow: IApp20EscrowDispatcher,
     token_b_address: ContractAddress,
     token_b: IMockErc20Dispatcher,
     deal_id: felt252,
@@ -174,9 +170,7 @@ fn fill(
     *deposits.at(0)
 }
 
-fn pull_payout(
-    pool: ContractAddress, escrow_address: ContractAddress, deposit: OpenNoteDeposit,
-) {
+fn pull_payout(pool: ContractAddress, escrow_address: ContractAddress, deposit: OpenNoteDeposit) {
     let token = IMockErc20Dispatcher { contract_address: deposit.token };
     cheat_caller_address(deposit.token, pool, CheatSpan::TargetCalls(1));
     assert(token.transfer_from(escrow_address, pool, deposit.amount.into()), 'pull failed');
@@ -187,7 +181,13 @@ fn fund_mints_supply_one_ticket_and_ensure_is_idempotent() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let deposit = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     let ticket = IClaimTicketDispatcher { contract_address: deposit.token };
@@ -202,7 +202,13 @@ fn happy_path_consumes_ticket_and_conserves_both_legs() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket_deposit = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket_deposit);
@@ -214,9 +220,7 @@ fn happy_path_consumes_ticket_and_conserves_both_legs() {
     pull_payout(pool, escrow_address, taker_payout);
 
     return_ticket(pool, escrow_address, ticket_deposit.token);
-    let maker = invoke(
-        pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xC1A1,
-    );
+    let maker = invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xC1A1);
     let payout = *maker.at(0);
     assert(payout.token == token_b_address, 'wrong maker token');
     assert(payout.amount == LEG_B_AMOUNT, 'wrong maker amount');
@@ -234,7 +238,13 @@ fn timeout_consumes_ticket_and_refunds_exact_leg_a() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
@@ -256,13 +266,17 @@ fn claim_without_ticket_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    let payout = fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    let payout = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
     pull_payout(pool, escrow_address, payout);
     invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xBAD);
 }
@@ -273,13 +287,17 @@ fn copied_payout_calldata_without_ticket_cannot_steal() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    let payout = fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    let payout = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
     pull_payout(pool, escrow_address, payout);
     invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xA77AC);
 }
@@ -290,7 +308,13 @@ fn wrong_deals_ticket_does_not_authorize_timeout() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket_1 = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket_1);
@@ -299,9 +323,7 @@ fn wrong_deals_ticket_does_not_authorize_timeout() {
     );
     pull_ticket(pool, escrow_address, ticket_2);
     return_ticket(pool, escrow_address, ticket_1.token);
-    invoke(
-        pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_2, 0xBAD,
-    );
+    invoke(pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_2, 0xBAD);
 }
 
 #[test]
@@ -310,18 +332,20 @@ fn ticket_cannot_replay_after_settlement() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    let payout = fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    let payout = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
     pull_payout(pool, escrow_address, payout);
     return_ticket(pool, escrow_address, ticket.token);
-    let payout = invoke(
-        pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xA,
-    );
+    let payout = invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xA);
     pull_payout(pool, escrow_address, *payout.at(0));
     invoke(pool, escrow_address, escrow, 31, EscrowOperation::Claim, DEAL_1, 0xB);
 }
@@ -331,7 +355,13 @@ fn concurrent_deal_ticket_and_value_isolation() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket_1 = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket_1);
@@ -356,14 +386,18 @@ fn timeout_before_deadline_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
     return_ticket(pool, escrow_address, ticket.token);
-    invoke(
-        pool, escrow_address, escrow, DEADLINE - 1, EscrowOperation::Timeout, DEAL_1, 0x1,
-    );
+    invoke(pool, escrow_address, escrow, DEADLINE - 1, EscrowOperation::Timeout, DEAL_1, 0x1);
 }
 
 #[test]
@@ -372,13 +406,17 @@ fn short_fill_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT - 1,
-    );
+    fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT - 1);
 }
 
 #[test]
@@ -387,7 +425,13 @@ fn ticket_transfer_rejects_public_caller() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     let dispatcher = IClaimTicketDispatcher { contract_address: ticket.token };
@@ -400,7 +444,13 @@ fn wrong_token_fill_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
@@ -421,7 +471,13 @@ fn fill_at_or_after_deadline_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
@@ -443,17 +499,19 @@ fn double_fill_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    let payout = fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    let payout = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
     pull_payout(pool, escrow_address, payout);
-    fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
 }
 
 #[test]
@@ -462,16 +520,18 @@ fn timeout_after_fill_reverts() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
-        pool, escrow_address, escrow, token_a_address, token_a, token_b_address, DEAL_1,
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    let payout = fill(
-        pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT,
-    );
+    let payout = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
     pull_payout(pool, escrow_address, payout);
     return_ticket(pool, escrow_address, ticket.token);
-    invoke(
-        pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_1, 0x1,
-    );
+    invoke(pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_1, 0x1);
 }

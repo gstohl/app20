@@ -6,7 +6,7 @@ import {
 } from "@starknet-io/get-starknet-wallet-standard/features";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  QuietlineLocalnetWallet,
+  App20LocalnetWallet,
   registerLocalnetWalletStandard,
   type LocalnetWalletConfig,
 } from "./localnet-wallet";
@@ -14,7 +14,7 @@ import {
 const config: LocalnetWalletConfig = {
   walletName: "Localnet (dev)",
   chainId: "0x51554945544c494e455f4c4f43414c",
-  rpcUrl: "/__quietline_localnet_rpc",
+  rpcUrl: "/__app20_localnet_rpc",
   poolAddress: "0x100",
   helperAddress: "0x200",
   escrowAddress: "0x250",
@@ -50,7 +50,7 @@ afterEach(() => {
   });
 });
 
-describe("Quietline localnet Wallet Standard wallet", () => {
+describe("APP20 localnet Wallet Standard wallet", () => {
   it("is discovered, connects through standard:connect, and switches Alice/Bob", async () => {
     const fakeWindow = new EventTarget() as unknown as Window;
     Object.defineProperty(globalThis, "window", {
@@ -62,7 +62,7 @@ describe("Quietline localnet Wallet Standard wallet", () => {
       if (path === "/balances") return [{ token: "0x300", balance: "0x7" }];
       return { transaction_hash: "0xabc" };
     });
-    const wallet = new QuietlineLocalnetWallet(
+    const wallet = new App20LocalnetWallet(
       config,
       new MemoryStorage(),
       apiRequest,
@@ -101,7 +101,7 @@ describe("Quietline localnet Wallet Standard wallet", () => {
       if (path === "/balances") return [{ token: "0x300", balance: "0x7" }];
       return { transaction_hash: "0xabc" };
     });
-    const wallet = new QuietlineLocalnetWallet(
+    const wallet = new App20LocalnetWallet(
       config,
       new MemoryStorage(),
       apiRequest,

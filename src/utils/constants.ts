@@ -85,7 +85,7 @@ export function strk20PoolForProviderIndex(
   return null;
 }
 
-// QuietlineMail helper — 0x0 until Phase 2 deploy.
+// App20Mail helper — 0x0 until Phase 2 deploy.
 export const mailHelperSepolia =
   import.meta.env.VITE_MAIL_HELPER_SEPOLIA ?? "0x0";
 export const mailHelperMainnet =
@@ -94,7 +94,7 @@ export const mailHelperLocalnet = localnetWalletEnabled
   ? (import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0")
   : "0x0";
 
-// QuietlineEscrow remains 0x0 unless a reviewed deployment is configured.
+// App20Escrow remains 0x0 unless a reviewed deployment is configured.
 // It is intentionally excluded from the mainnet scoring path.
 export const escrowHelperSepolia =
   import.meta.env.VITE_ESCROW_HELPER_SEPOLIA ?? "0x0";

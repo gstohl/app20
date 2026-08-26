@@ -3,19 +3,19 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 import { devStarknetRelay } from "./scripts/dev-starknet-relay.mjs";
 
-const LOCALNET_WALLET_PATH = "/__quietline_localnet_wallet";
-const LOCALNET_RPC_PATH = "/__quietline_localnet_rpc";
+const LOCALNET_WALLET_PATH = "/__app20_localnet_wallet";
+const LOCALNET_RPC_PATH = "/__app20_localnet_rpc";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const e2eWalletEnabled =
     (process.env.VITE_E2E_WALLET ?? env.VITE_E2E_WALLET) === "true";
   const walletTarget =
-    process.env.QUIETLINE_LOCALNET_BACKEND_TARGET ??
-    env.QUIETLINE_LOCALNET_BACKEND_TARGET;
+    process.env.APP20_LOCALNET_BACKEND_TARGET ??
+    env.APP20_LOCALNET_BACKEND_TARGET;
   const rpcTarget =
-    process.env.QUIETLINE_LOCALNET_RPC_TARGET ??
-    env.QUIETLINE_LOCALNET_RPC_TARGET;
+    process.env.APP20_LOCALNET_RPC_TARGET ??
+    env.APP20_LOCALNET_RPC_TARGET;
   const proxy: Record<string, ProxyOptions> = {};
 
   // Local Privy rail: run `npx wrangler dev --port 8787` with .dev.vars and

@@ -23,7 +23,7 @@ Copy these. Do not substitute Sepolia values from `.env.example` or the starter 
 | Wallet | Ready on **Mainnet** | plan §0, README |
 | Day-0 token | **STRK** | plan §0 |
 
-Day-0 still withholds the mainnet **discovery/indexer URL** and **proving service URL**. Do not guess them. Quietline’s user path is Ready + Wallet API (`WalletAccountV6` / `strk20InvokeTransaction`). Ready hosts proving and note discovery. The dapp never needs those unpublished endpoints.
+Day-0 still withholds the mainnet **discovery/indexer URL** and **proving service URL**. Do not guess them. APP20’s user path is Ready + Wallet API (`WalletAccountV6` / `strk20InvokeTransaction`). Ready hosts proving and note discovery. The dapp never needs those unpublished endpoints.
 
 ---
 
@@ -36,7 +36,7 @@ Do this before any mainnet declare, deploy, or shield.
 1. Install Ready from <https://www.ready.co/> if the extension is missing.
 2. Open the Ready popup → network switcher → **Starknet Mainnet** (`SN_MAIN`).
 3. Confirm the account you will score with is the one shown.
-4. Create a **second account** (Bob) in a second browser profile, using the same wallet. Do not reuse Alice’s profile. Mail seeds live in `localStorage` under `quietline/mailseed/v1/<chainId>/<address>` (`src/components/mail/Onboard.tsx`).
+4. Create a **second account** (Bob) in a second browser profile, using the same wallet. Do not reuse Alice’s profile. Mail seeds live in `localStorage` under `app20/mailseed/v1/<chainId>/<address>` (`src/components/mail/Onboard.tsx`).
 5. Optional sanity check against the wallet test dapp: <https://starknet-wallet-account.vercel.app/>
 
 ### 1.1a Which wallet — check this before spending anything
@@ -49,7 +49,7 @@ Connect Ready and read the capability diagnostic before spending. Never weaken o
 
 ### 1.2 How much real STRK to hold
 
-Day-0: start with an amount you would not mind losing. Three successful pool-touching transactions satisfy eligibility, but every operation also pays the live pool fee. Quietline defaults value inputs to **0.1 STRK** and never converts through a JavaScript float.
+Day-0: start with an amount you would not mind losing. Three successful pool-touching transactions satisfy eligibility, but every operation also pays the live pool fee. APP20 defaults value inputs to **0.1 STRK** and never converts through a JavaScript float.
 
 | Action | Amount the app actually submits | File |
 | --- | --- | --- |
@@ -128,7 +128,7 @@ Record the reviewed HTTPS origin for the GitHub Website field and `strk20.json`.
 
 ---
 
-## 2. Deploy `QuietlineMail` to `SN_MAIN`
+## 2. Deploy `App20Mail` to `SN_MAIN`
 
 Constructor takes **one** argument: the live pool.
 
@@ -150,8 +150,8 @@ snforge test
 
 Artifacts (same names `scripts/e2e-mail.mjs` loads):
 
-- Sierra: `cairo/target/dev/quietline_mail_QuietlineMail.contract_class.json`
-- CASM: `cairo/target/dev/quietline_mail_QuietlineMail.compiled_contract_class.json`
+- Sierra: `cairo/target/dev/app20_mail_App20Mail.contract_class.json`
+- CASM: `cairo/target/dev/app20_mail_App20Mail.compiled_contract_class.json`
 
 This repo has **no** `snfoundry.toml`. Pass `--url` / `--account` on the CLI. Use Day-0 `https://rpc.starknet.lava.build` for sncast so you do not put the Alchemy key on the command line.
 
@@ -162,19 +162,19 @@ Use a **separate funded Starknet account** you control. This is a public declare
 Create the account once if you do not have one:
 
 ```bash
-sncast account create --name quietline-deployer --network mainnet
+sncast account create --name app20-deployer --network mainnet
 # fund the printed address with a few public STRK from Ready
-sncast account deploy --name quietline-deployer --network mainnet --url https://rpc.starknet.lava.build
+sncast account deploy --name app20-deployer --network mainnet --url https://rpc.starknet.lava.build
 ```
 
 Then from the repo root:
 
 ```bash
 # fee estimate only — no transaction
-npm run deploy:helper:mainnet -- --account quietline-deployer
+npm run deploy:helper:mainnet -- --account app20-deployer
 
 # real mainnet declare + deploy
-I_UNDERSTAND_MAINNET=1 npm run deploy:helper:mainnet -- --account quietline-deployer --broadcast
+I_UNDERSTAND_MAINNET=1 npm run deploy:helper:mainnet -- --account app20-deployer --broadcast
 ```
 
 The script rebuilds Cairo, locks constructor calldata to the mainnet pool, writes `VITE_MAIL_HELPER_MAINNET` into `.env.local`, and never deploys escrow. Restart `npm run dev` after it prints the helper address.
@@ -184,7 +184,7 @@ Manual equivalent, if you prefer raw sncast from `cairo/`:
 ```bash
 sncast --account <DEPLOYER_ACCOUNT> \
   --url https://rpc.starknet.lava.build \
-  declare --contract-name QuietlineMail
+  declare --contract-name App20Mail
 ```
 
 1. Record:
@@ -207,7 +207,7 @@ sncast --account <DEPLOYER_ACCOUNT> \
    - Voyager deploy link: `https://voyager.online/tx/<deploy_hash>`
    - Voyager contract: `https://voyager.online/contract/<helper_address>`
 
-If your sncast version names flags differently, run `sncast declare --help` and `sncast deploy --help`. Do not change the constructor calldata. Contract name is `QuietlineMail` (`cairo/src/lib.cairo`, `scripts/e2e-mail.mjs`).
+If your sncast version names flags differently, run `sncast declare --help` and `sncast deploy --help`. Do not change the constructor calldata. Contract name is `App20Mail` (`cairo/src/lib.cairo`, `scripts/e2e-mail.mjs`).
 
 Logical mirror of `scripts/e2e-mail.mjs` (do **not** point that script at mainnet; it talks to Devnet and a mock pool caller):
 
@@ -240,7 +240,7 @@ VITE_MAIL_HELPER_MAINNET=<deployed_helper_address>
 
 1. Cloudflare production env: set the same `VITE_MAIL_HELPER_MAINNET`. Leave Sepolia at `0x0` unless you also deployed there.
 2. Redeploy (`npm run deploy:cf` or trigger the Pages build).
-3. Hard-refresh the live site. Inbox header should show **MAINNET** after Ready connects on `SN_MAIN`. Register/send must no longer say “No QuietlineMail helper is configured”.
+3. Hard-refresh the live site. Inbox header should show **MAINNET** after Ready connects on `SN_MAIN`. Register/send must no longer say “No App20Mail helper is configured”.
 4. Append the helper address to `strk20.json` `contracts` (full file in §5). Commit after the three scoring txs exist, or commit the contract address now and the hashes later — scraper reads whatever is on `main`.
 
 ---
@@ -269,13 +269,13 @@ For every scoring tx, write down:
 
 | Record | Where |
 | --- | --- |
-| Transaction hash | Ready receipt or Quietline result card |
+| Transaction hash | Ready receipt or APP20 result card |
 | Voyager | `https://voyager.online/tx/<hash>` (app builds this when `providerIndex === 0`) |
 | Finality / execution | `ACCEPTED_ON_L2` + `SUCCEEDED` |
 | What it proves | see each step below |
 | Pool event present | Voyager event list on the **pool** contract, not “from address = Alice” |
 
-Quietline waits up to **20 minutes** for confirmation (`STRK20_WAIT_TIMEOUT_MS` in `src/lib/strk20.ts`). If the UI times out, keep the hash and finish confirmation on Voyager. Do not resubmit blindly.
+APP20 waits up to **20 minutes** for confirmation (`STRK20_WAIT_TIMEOUT_MS` in `src/lib/strk20.ts`). If the UI times out, keep the hash and finish confirmation on Voyager. Do not resubmit blindly.
 
 ### 3.1 Recommended order (do not skip the wait)
 
@@ -325,10 +325,10 @@ Do **not** compose shield + send in one wallet batch to skip the wait. That publ
 
 ### 3.4 (b) Mail send / memo-carrying private transfer (`privacy_invoke`)
 
-This is the **pool-touching** Quietline action. Ready builds `strk20InvokeTransaction` from `buildMailActions` (`src/lib/mail-actions.ts`):
+This is the **pool-touching** APP20 action. Ready builds `strk20InvokeTransaction` from `buildMailActions` (`src/lib/mail-actions.ts`):
 
 1. optional private `transfer` of attached STRK to Bob,
-2. fixed `withdraw` of **7 STRK base units** to `QuietlineMail`, funding it inside this same atomic batch,
+2. fixed `withdraw` of **7 STRK base units** to `App20Mail`, funding it inside this same atomic batch,
 3. `transfer` `amount: "OPEN"` back to Alice (recovery slot filled by the helper),
 4. `invoke` to the helper with calldata:
 
@@ -342,7 +342,7 @@ nonce_0, nonce_1,
 ct_len, ...ct            ← max 140 felts (cairo/src/lib.cairo MAX_CT_FELTS)
 ```
 
-The pool calls `QuietlineMail.privacy_invoke`. The helper returns the 7 base units into the OPEN recovery note and emits `MessagePosted` with **no wallet address**. Voyager sender is the relayer. The fixed helper address, 7-base-unit withdrawal, ciphertext size, and timing remain public.
+The pool calls `App20Mail.privacy_invoke`. The helper returns the 7 base units into the OPEN recovery note and emits `MessagePosted` with **no wallet address**. Voyager sender is the relayer. The fixed helper address, 7-base-unit withdrawal, ciphertext size, and timing remain public.
 
 **Clicks (Alice’s browser profile):**
 
@@ -362,7 +362,7 @@ The pool calls `QuietlineMail.privacy_invoke`. The helper returns the 7 base uni
 
 - Hash: `0x…`
 - Voyager: `https://voyager.online/tx/0x…`
-- Proves: a successful mainnet pool tx whose last external call is `privacy_invoke` on QuietlineMail. Ciphertext + timing are public. Sender, recipient, and body are not. Relayer is `tx.sender`.
+- Proves: a successful mainnet pool tx whose last external call is `privacy_invoke` on App20Mail. Ciphertext + timing are public. Sender, recipient, and body are not. Relayer is `tx.sender`.
 
 On Voyager, also open the **helper** contract events and confirm a `MessagePosted` on this hash. Scoring still requires a **pool** event on the same tx.
 
@@ -405,8 +405,8 @@ Mail keys are **app x25519 keys**, not the STRK20 viewing key `k`. The dapp must
 
 | Role | Browser | Ready account | localStorage seed |
 | --- | --- | --- | --- |
-| Alice | Profile A (e.g. Chrome “Alice”) | Alice on `SN_MAIN` | `quietline/mailseed/v1/<SN_MAIN felt>/<alice>` |
-| Bob | Profile B or a second browser | Bob on `SN_MAIN` | `quietline/mailseed/v1/<SN_MAIN felt>/<bob>` |
+| Alice | Profile A (e.g. Chrome “Alice”) | Alice on `SN_MAIN` | `app20/mailseed/v1/<SN_MAIN felt>/<alice>` |
+| Bob | Profile B or a second browser | Bob on `SN_MAIN` | `app20/mailseed/v1/<SN_MAIN felt>/<bob>` |
 
 Do not share profiles, do not export `localStorage` to a server, do not paste a viewing key anywhere.
 
@@ -417,7 +417,7 @@ On **each** profile, against the live helper:
 1. Ready = Mainnet, connect that profile’s account.
 2. Open `/inbox`.
 3. Card **01 Set up a mailbox key** → **Load device key & register**.
-4. First time only: a backup hex phrase appears (“shown once”). Copy it offline. Anyone with it can decrypt mail to that key. Quietline does not upload it.
+4. First time only: a backup hex phrase appears (“shown once”). Copy it offline. Anyone with it can decrypt mail to that key. APP20 does not upload it.
 5. Approve the public `register_pubkey` tx in Ready.
 6. Wait for “Device mail key registered and ready for local scans.”
 7. Write down the registration hash (debug only).
@@ -466,7 +466,7 @@ Replace placeholders after the txs confirm. Do not commit fake hashes.
     "0xUNSHIELD_OR_SECOND_PRIVATE_TX_HASH"
   ],
   "contracts": [
-    "0xQUIETLINE_MAIL_SN_MAIN"
+    "0xAPP20_MAIL_SN_MAIN"
   ],
   "demo_video": "https://PLACEHOLDER_3_MINUTE_WALKTHROUGH",
   "demo_url": "https://YOUR_CLOUDFLARE_ORIGIN"
@@ -478,7 +478,7 @@ Field rules:
 | Field | What belongs | What does not |
 | --- | --- | --- |
 | `transactions` | three **successful** `SN_MAIN` hashes that each carry a **pool** event: shield, `privacy_invoke` send (or memo-transfer), unshield or second private action | `register_pubkey`, declare, deploy, failed/reverted, Sepolia, helper-only events |
-| `contracts` | deployed `QuietlineMail` address on `SN_MAIN` | pool address (already canonical), Sepolia helper, class hash |
+| `contracts` | deployed `App20Mail` address on `SN_MAIN` | pool address (already canonical), Sepolia helper, class hash |
 | `demo_video` | public URL of the ≤3 minute walkthrough. Use a placeholder string until the file is uploaded | a local path |
 | `demo_url` | exact Cloudflare origin already set as GitHub **Website** | a preview deployment, a login-walled URL, `localhost` |
 
@@ -501,7 +501,7 @@ Commit on `main`. Scraper cadence is ~30 minutes.
 | Do not | Why |
 | --- | --- |
 | Put a viewing key `k`, spending key, or seed in the dapp, URL, issue, or video | Plan §0 / §10. Discovery that needs `k` stays in Ready or a local user-held scan. |
-| Ask Ready to export `k` “so we can scan like the SDK” | Wrong route. Quietline scans `MessagePosted` with the **mail** x25519 key only. |
+| Ask Ready to export `k` “so we can scan like the SDK” | Wrong route. APP20 scans `MessagePosted` with the **mail** x25519 key only. |
 | Bundle shield + send in one correlated step | Public `Deposit` then sits next to the transfer it funded. Wait ~10 blocks. |
 | Treat a screening decline as an app bug or retry loop | Protocol state since v0.14.3. Surface it and stop. Self-hosted proving would not bypass it either. |
 | Guess mainnet discovery / proving URLs | Day-0: two values still missing; a wrong prover looks like your bug. Wallet API does not need them. |
@@ -515,7 +515,7 @@ Commit on `main`. Scraper cadence is ~30 minutes.
 ### 6.3 Rollback if a tx reverts
 
 - **Approve succeeded, deposit reverted (often screening):** public allowance may remain. Do not keep clicking Shield. Read the Ready / UI message. `strk20ErrorMessage` maps screening-like errors to: “The deposit was declined by STRK20 protocol screening. No privacy action was submitted.” That hash is **not** a scoring hash.
-- **Private send / unshield reverted after Ready signed:** the wallet may have reserved or invalidated a note. **Do not reuse note ids.** Quietline already passes `"${openNoteIds[0]}"` as a literal for the wallet to fill. Let Ready pick a new open note on the next attempt. Do not paste an old note id into calldata.
+- **Private send / unshield reverted after Ready signed:** the wallet may have reserved or invalidated a note. **Do not reuse note ids.** APP20 already passes `"${openNoteIds[0]}"` as a literal for the wallet to fill. Let Ready pick a new open note on the next attempt. Do not paste an old note id into calldata.
 - **Helper `privacy_invoke` reverted `CT_TOO_LARGE`:** message packed above 140 felts. Shorten the body. Same note-id rule if the pool already consumed an input note (full-tx revert should roll the pool side back; still do not hand-reuse ids).
 - **Helper `BAD_POOL`:** you called the helper directly instead of through Ready’s pool invoke. Stop. Use **Encrypt & send** or the home STRK20 tabs only.
 - **UI timeout, Voyager later `SUCCEEDED`:** keep that hash. Do not send a duplicate.
@@ -530,12 +530,12 @@ Atomicity: one `strk20InvokeTransaction` is one pool transaction. If the helper 
 
 Film the **live** `demo_url` + two Ready profiles. Speak the honest table; do not claim mixer-level privacy.
 
-Quietline encrypts **what was said** and omits direct sender/recipient addresses from the helper event. Relationship anonymity still depends on STRK20, relayer behavior, anonymity-set size, RPC lookups, and timing; it is not guaranteed.
+APP20 encrypts **what was said** and omits direct sender/recipient addresses from the helper event. Relationship anonymity still depends on STRK20, relayer behavior, anonymity-set size, RPC lookups, and timing; it is not guaranteed.
 
 | Time | Shot | On screen | Say this |
 | --- | --- | --- | --- |
 | 0:00–0:30 | Title + limits | README / inbox privacy strip: Hidden = body + recipient link; Visible = helper activity, ciphertext, timing | “Encrypted on-chain mail. The helper event omits direct wallet addresses, but observers still see pool/helper use and timing. Two-person demos are timing-correlatable.” |
-| 0:30–1:00 | Connect | Wallet network = Mainnet. Quietline chip **MAINNET**. Wallet rail showing **0.1 STRK** and exact base units | “Wallet on SN_MAIN. Shield is a public deposit. We already waited ten blocks after shielding so this send is not glued to the deposit.” |
+| 0:30–1:00 | Connect | Wallet network = Mainnet. APP20 chip **MAINNET**. Wallet rail showing **0.1 STRK** and exact base units | “Wallet on SN_MAIN. Shield is a public deposit. We already waited ten blocks after shielding so this send is not glued to the deposit.” |
 | 1:00–1:30 | Public directory | Alice inbox card 01, then cut to Bob inbox card 01. Show `register_pubkey` as a **normal** account tx if you still have the receipt | “Mail keys are device x25519 keys in this browser profile. This public directory is not a viewing key. The dapp never touches `k`.” |
 | 1:30–2:00 | Encrypt & send | Alice compose: Bob’s address, short memo, no huge attachment. Ready privacy popup. Receipt hash | “One `privacy_invoke` through the pool. Wallet substitutes `${poolAddress}` and the open note. Pool is `msg.sender` on the helper.” |
 | 2:00–2:30 | Voyager honesty | `https://voyager.online/tx/<send_hash>`: relayer sender, huge nonce, Alice absent. Helper `MessagePosted` has no addresses. Pool event exists | “Eligibility is the pool event, not `tx.sender`. Alice is absent from the helper event, but timing and surrounding public actions can still suggest relationships.” |
@@ -574,7 +574,7 @@ Fill while you work. Do not commit this table if it contains seeds.
 ## Done when
 
 - [ ] Ready on `SN_MAIN`; credentialed RPC exists only as a Worker secret; `app20.gstohl.com` loads `/vault` and `/mail/inbox`
-- [ ] `QuietlineMail` on `SN_MAIN` with constructor pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`
+- [ ] `App20Mail` on `SN_MAIN` with constructor pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`
 - [ ] `VITE_MAIL_HELPER_MAINNET` set and site redeployed
 - [ ] Both identities `register_pubkey`’d in separate browser profiles
 - [ ] Three successful pool-event txs recorded, after the ~10-block maturity wait between shield and send

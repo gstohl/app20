@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -17,31 +18,40 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // Node 24 strips types natively, so the solver shares one canonical-quote
 // implementation with the app instead of keeping a drift-prone copy here.
 import {
+  LOCALNET_SECONDARY_SOLVER_ID,
+  PRIVATE_RFQ_DOMAIN,
+  LOCALNET_SECONDARY_SOLVER_KEY_ID,
   LOCALNET_SOLVER_ID,
   LOCALNET_SOLVER_KEY_ID,
-  QUOTE_DOMAIN as LOCALNET_QUOTE_DOMAIN,
-  canonicalSolverQuote,
-  importQuotePrivateKey,
-  signCanonicalQuote,
+  digestPrivateRfq,
 } from "../packages/private-intents/src/index.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const RUNTIME_DIR = join(ROOT, ".quietline-localnet");
+const RUNTIME_DIR = join(ROOT, ".app20-localnet");
 const STATE_FILE = join(RUNTIME_DIR, "state.json");
 const LOCK_FILE = join(RUNTIME_DIR, "start.lock");
 const GENERATED_ENV_FILE = join(ROOT, ".env.localnet.local");
 const API_HOST = "127.0.0.1";
-const API_PORT = Number(process.env.QUIETLINE_LOCALNET_API_PORT ?? 5051);
-const VITE_PORT = Number(process.env.QUIETLINE_LOCALNET_VITE_PORT ?? 5173);
+const API_PORT = Number(process.env.APP20_LOCALNET_API_PORT ?? 5051);
+const VITE_PORT = Number(process.env.APP20_LOCALNET_VITE_PORT ?? 5173);
 const APP_URL = `http://127.0.0.1:${VITE_PORT}`;
 const BACKEND_TARGET = `http://${API_HOST}:${API_PORT}`;
-const WALLET_PROXY_PATH = "/__quietline_localnet_wallet";
-const RPC_PROXY_PATH = "/__quietline_localnet_rpc";
+const WALLET_PROXY_PATH = "/__app20_localnet_wallet";
+const RPC_PROXY_PATH = "/__app20_localnet_rpc";
 const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
 const MAX_REQUEST_BYTES = 1_000_000;
+const LOCALNET_QUOTE_RESERVATION_SECONDS = 10 * 60;
+const MAKER_RUNTIME_DIR = join(RUNTIME_DIR, "makers");
+const MAKER_NODE_SCRIPT = join(ROOT, "scripts", "localnet-maker-node.mjs");
+const MAKER_NODE_PORT_A = Number(
+  process.env.APP20_LOCALNET_MAKER_A_PORT ?? 5052,
+);
+const MAKER_NODE_PORT_B = Number(
+  process.env.APP20_LOCALNET_MAKER_B_PORT ?? 5053,
+);
 
 function fail(message) {
-  throw new Error(`Quietline localnet: ${message}`);
+  throw new Error(`APP20 localnet: ${message}`);
 }
 
 function isProcessAlive(pid) {
@@ -84,11 +94,11 @@ async function stopExisting() {
 
   if (!pid || !isProcessAlive(pid)) {
     removeRuntimeFiles();
-    console.log("Quietline localnet is already stopped.");
+    console.log("APP20 localnet is already stopped.");
     return;
   }
 
-  console.log(`Stopping Quietline localnet (pid ${pid})…`);
+  console.log(`Stopping APP20 localnet (pid ${pid})…`);
   process.kill(pid, "SIGTERM");
   if (!(await waitForExit(pid, 20_000))) {
     fail(
@@ -96,7 +106,7 @@ async function stopExisting() {
     );
   }
   removeRuntimeFiles();
-  console.log("Quietline localnet stopped.");
+  console.log("APP20 localnet stopped.");
 }
 
 if (process.argv.includes("--stop")) {
@@ -105,10 +115,10 @@ if (process.argv.includes("--stop")) {
 }
 
 if (!Number.isInteger(API_PORT) || API_PORT <= 0 || API_PORT > 65_535) {
-  fail("QUIETLINE_LOCALNET_API_PORT must be a valid TCP port.");
+  fail("APP20_LOCALNET_API_PORT must be a valid TCP port.");
 }
 if (!Number.isInteger(VITE_PORT) || VITE_PORT <= 0 || VITE_PORT > 65_535) {
-  fail("QUIETLINE_LOCALNET_VITE_PORT must be a valid TCP port.");
+  fail("APP20_LOCALNET_VITE_PORT must be a valid TCP port.");
 }
 
 const priorState = readJsonFile(STATE_FILE);
@@ -117,7 +127,7 @@ if (priorState?.pid && isProcessAlive(Number(priorState.pid))) {
     const response = await fetch(`${BACKEND_TARGET}/health`);
     if (response.ok) {
       console.log(
-        `Quietline localnet is already running at ${priorState.appUrl ?? APP_URL}.`,
+        `APP20 localnet is already running at ${priorState.appUrl ?? APP_URL}.`,
       );
       process.exit(0);
     }
@@ -130,6 +140,7 @@ if (priorState?.pid && isProcessAlive(Number(priorState.pid))) {
 }
 
 mkdirSync(RUNTIME_DIR, { recursive: true });
+rmSync(MAKER_RUNTIME_DIR, { recursive: true, force: true });
 rmSync(STATE_FILE, { force: true });
 rmSync(GENERATED_ENV_FILE, { force: true });
 const priorLock = readJsonFile(LOCK_FILE);
@@ -155,6 +166,7 @@ let currentStage = "prerequisite check";
 let devnet;
 let apiServer;
 let viteProcess;
+const makerProcesses = new Map();
 let shuttingDown = false;
 let operationTail = Promise.resolve();
 const operationLog = [];
@@ -193,10 +205,220 @@ function serializeOperation(label, identity, operation) {
   return run;
 }
 
+const MAKER_DEFINITIONS = Object.freeze([
+  {
+    solverId: LOCALNET_SOLVER_ID,
+    solverKey: LOCALNET_SOLVER_KEY_ID,
+    spreadBps: 30,
+    port: MAKER_NODE_PORT_A,
+    accountIndex: 2,
+    extraAccountIndex: 0,
+    quoteKeyPath: join(
+      ROOT,
+      "scripts",
+      "fixtures",
+      "localnet-maker-a.private.json",
+    ),
+  },
+  {
+    solverId: LOCALNET_SECONDARY_SOLVER_ID,
+    solverKey: LOCALNET_SECONDARY_SOLVER_KEY_ID,
+    spreadBps: 20,
+    port: MAKER_NODE_PORT_B,
+    accountIndex: 3,
+    extraAccountIndex: 1,
+    quoteKeyPath: join(
+      ROOT,
+      "scripts",
+      "fixtures",
+      "localnet-maker-b.private.json",
+    ),
+  },
+]);
+let makerClients = [];
+let makerRestartContext = null;
+
+function assertMakerPorts() {
+  const ports = MAKER_DEFINITIONS.map((definition) => definition.port);
+  if (
+    ports.some(
+      (port) => !Number.isSafeInteger(port) || port <= 0 || port > 65_535,
+    ) ||
+    new Set(ports).size !== ports.length ||
+    ports.includes(API_PORT) ||
+    ports.includes(VITE_PORT)
+  ) {
+    fail(
+      "maker-node ports must be distinct valid ports outside the API/Vite ports.",
+    );
+  }
+}
+
+async function waitForMakerHealth(client, child) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (child.exitCode !== null) {
+      fail(`${client.solverId} stopped before becoming healthy.`);
+    }
+    try {
+      const response = await fetch(`${client.endpoint}/health`);
+      if (response.ok) return;
+    } catch {
+      // Keep polling until the bounded startup deadline.
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  fail(`${client.solverId} did not become healthy within 60 seconds.`);
+}
+
+async function launchMakerNode(definition, context, authToken) {
+  const makerDir = join(MAKER_RUNTIME_DIR, definition.solverId);
+  mkdirSync(makerDir, { recursive: true, mode: 0o700 });
+  const configPath = join(makerDir, "startup.private.json");
+  const settlementAccount =
+    context.extraAccounts[definition.extraAccountIndex]?.address;
+  if (!settlementAccount) {
+    fail(`${definition.solverId} has no independent devnet custody account.`);
+  }
+  writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        makerId: definition.solverId,
+        solverKey: definition.solverKey,
+        spreadBps: definition.spreadBps,
+        reservationTtlSeconds: LOCALNET_QUOTE_RESERVATION_SECONDS,
+        port: definition.port,
+        authToken,
+        accountIndex: definition.accountIndex,
+        settlementAccount,
+        passphrase: `app20-localnet-${definition.solverId}-v1`,
+        rpcUrl: context.rpcUrl,
+        poolAddress: context.poolAddress,
+        escrowAddress: context.escrowAddress,
+        strkToken: context.strkToken,
+        usdcToken: context.usdcToken,
+        seedStrk: (5n * 10n ** 18n).toString(),
+        seedUsdc: (10_000n * 10n ** 6n).toString(),
+        walPath: join(makerDir, "reservations.wal"),
+        quoteKeyPath: definition.quoteKeyPath,
+      },
+      null,
+      2,
+    )}\n`,
+    { mode: 0o600 },
+  );
+  const endpoint = `http://127.0.0.1:${definition.port}`;
+  const client = {
+    ...definition,
+    authToken,
+    endpoint,
+    settlementAccount,
+  };
+  const child = spawn(process.execPath, [MAKER_NODE_SCRIPT, configPath], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: "inherit",
+  });
+  makerProcesses.set(definition.solverId, child);
+  let ready = false;
+  child.once("exit", (code, signal) => {
+    makerProcesses.delete(definition.solverId);
+    if (!ready || shuttingDown || !makerRestartContext) return;
+    console.error(
+      `${definition.solverId} stopped unexpectedly (${signal ? `signal ${signal}` : `exit ${code}`}); restarting from its WAL.`,
+    );
+    setTimeout(() => {
+      void launchMakerNode(definition, makerRestartContext, authToken)
+        .then((replacement) => {
+          makerClients = makerClients.map((candidate) =>
+            candidate.solverId === replacement.solverId
+              ? replacement
+              : candidate,
+          );
+        })
+        .catch((error) => {
+          console.error(
+            `${definition.solverId} restart failed: ${String(error)}`,
+          );
+          void shutdown(1);
+        });
+    }, 250);
+  });
+  await waitForMakerHealth(client, child);
+  ready = true;
+  return client;
+}
+
+async function startMakerNodes(context) {
+  assertMakerPorts();
+  makerRestartContext = context;
+  makerClients = await Promise.all(
+    MAKER_DEFINITIONS.map((definition) =>
+      launchMakerNode(definition, context, randomBytes(32).toString("hex")),
+    ),
+  );
+  return makerClients;
+}
+
+async function stopMakerNodes() {
+  const children = [...makerProcesses.values()];
+  for (const child of children) {
+    if (child.exitCode === null) child.kill("SIGTERM");
+  }
+  await Promise.all(
+    children.map(
+      (child) =>
+        new Promise((resolveExit) => {
+          if (child.exitCode === null) child.once("exit", resolveExit);
+          else resolveExit();
+        }),
+    ),
+  );
+  makerProcesses.clear();
+  makerClients = [];
+  makerRestartContext = null;
+}
+
+async function makerRequest(client, pathname, body) {
+  const response = await fetch(`${client.endpoint}${pathname}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${client.authToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (!response.ok || payload.error) {
+    throw new Error(
+      `${client.solverId}: ${payload.error ?? `HTTP ${response.status}`}`,
+    );
+  }
+  return payload.result;
+}
+
+async function fundMakerPublicUsdc(env, token, accounts, starknet) {
+  const amount = 10_000n * 10n ** 6n;
+  for (const account of accounts) {
+    const value = starknet.cairo.uint256(amount);
+    const submitted = await env.admin.execute({
+      contractAddress: token,
+      entrypoint: "transfer",
+      calldata: [account.address, value.low, value.high],
+    });
+    await waitForSuccess(
+      env.node,
+      submitted.transaction_hash,
+      `public USDC funding for maker ${account.address}`,
+    );
+  }
+}
+
 async function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log("\nStopping Quietline localnet…");
+  console.log("\nStopping APP20 localnet…");
 
   if (viteProcess?.pid && viteProcess.exitCode === null) {
     viteProcess.kill("SIGTERM");
@@ -209,6 +431,7 @@ async function shutdown(exitCode = 0) {
   if (apiServer) {
     await new Promise((resolveClose) => apiServer.close(() => resolveClose()));
   }
+  await stopMakerNodes();
   if (devnet) {
     try {
       await devnet.cleanup();
@@ -247,7 +470,7 @@ function runPrerequisites() {
   });
   if (!/^scarb 2\.18\./m.test(version)) {
     fail(
-      `QuietlineMail requires Scarb 2.18.x; ${scarb} reported ${version.split("\n")[0]}.`,
+      `App20Mail requires Scarb 2.18.x; ${scarb} reported ${version.split("\n")[0]}.`,
     );
   }
   execFileSync(scarb, ["build"], {
@@ -312,7 +535,7 @@ async function deployHelper(env, starknet) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "quietline_mail_QuietlineMail.contract_class.json"),
+      join(artifactRoot, "app20_mail_App20Mail.contract_class.json"),
       "utf8",
     ),
   );
@@ -320,7 +543,7 @@ async function deployHelper(env, starknet) {
     readFileSync(
       join(
         artifactRoot,
-        "quietline_mail_QuietlineMail.compiled_contract_class.json",
+        "app20_mail_App20Mail.compiled_contract_class.json",
       ),
       "utf8",
     ),
@@ -330,7 +553,7 @@ async function deployHelper(env, starknet) {
   await waitForSuccess(
     env.node,
     declaration.transaction_hash,
-    "QuietlineMail declaration",
+    "App20Mail declaration",
   );
   const deployment = await env.admin.deployContract({
     classHash: declaration.class_hash,
@@ -339,10 +562,10 @@ async function deployHelper(env, starknet) {
   await waitForSuccess(
     env.node,
     deployment.transaction_hash,
-    "QuietlineMail deployment",
+    "App20Mail deployment",
   );
   const helperAddress = deployment.contract_address ?? deployment.address;
-  if (!helperAddress) fail("QuietlineMail deployment returned no address.");
+  if (!helperAddress) fail("App20Mail deployment returned no address.");
   return {
     address: helperAddress,
     declareTransactionHash: declaration.transaction_hash,
@@ -354,7 +577,7 @@ async function deployLocalUsdc(env, starknet, recipient) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "quietline_mail_MockErc20.contract_class.json"),
+      join(artifactRoot, "app20_mail_MockErc20.contract_class.json"),
       "utf8",
     ),
   );
@@ -362,7 +585,7 @@ async function deployLocalUsdc(env, starknet, recipient) {
     readFileSync(
       join(
         artifactRoot,
-        "quietline_mail_MockErc20.compiled_contract_class.json",
+        "app20_mail_MockErc20.compiled_contract_class.json",
       ),
       "utf8",
     ),
@@ -396,7 +619,7 @@ async function deployEscrow(env, starknet) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const ticketSierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "quietline_mail_ClaimTicket.contract_class.json"),
+      join(artifactRoot, "app20_mail_ClaimTicket.contract_class.json"),
       "utf8",
     ),
   );
@@ -404,7 +627,7 @@ async function deployEscrow(env, starknet) {
     readFileSync(
       join(
         artifactRoot,
-        "quietline_mail_ClaimTicket.compiled_contract_class.json",
+        "app20_mail_ClaimTicket.compiled_contract_class.json",
       ),
       "utf8",
     ),
@@ -421,7 +644,7 @@ async function deployEscrow(env, starknet) {
 
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "quietline_mail_QuietlineEscrow.contract_class.json"),
+      join(artifactRoot, "app20_mail_App20Escrow.contract_class.json"),
       "utf8",
     ),
   );
@@ -429,7 +652,7 @@ async function deployEscrow(env, starknet) {
     readFileSync(
       join(
         artifactRoot,
-        "quietline_mail_QuietlineEscrow.compiled_contract_class.json",
+        "app20_mail_App20Escrow.compiled_contract_class.json",
       ),
       "utf8",
     ),
@@ -438,7 +661,7 @@ async function deployEscrow(env, starknet) {
   await waitForSuccess(
     env.node,
     declaration.transaction_hash,
-    "QuietlineEscrow declaration",
+    "App20Escrow declaration",
   );
   const deployment = await env.admin.deployContract({
     classHash: declaration.class_hash,
@@ -447,10 +670,10 @@ async function deployEscrow(env, starknet) {
   await waitForSuccess(
     env.node,
     deployment.transaction_hash,
-    "QuietlineEscrow deployment",
+    "App20Escrow deployment",
   );
   const address = deployment.contract_address ?? deployment.address;
-  if (!address) fail("QuietlineEscrow deployment returned no address.");
+  if (!address) fail("App20Escrow deployment returned no address.");
   return {
     address,
     ticketClassHash: ticketDeclaration.class_hash,
@@ -531,7 +754,6 @@ function toCoreCallAndProof(prepared) {
   };
 }
 
-
 function normalizeIdentity(value, identities) {
   if (value !== "alice" && value !== "bob") {
     fail("wallet request identity must be alice or bob.");
@@ -560,9 +782,13 @@ function assertActions(value) {
       transfer: ["type", "token", "amount", "recipient"],
       invoke: ["type", "contract", "calldata"],
     }[action.type];
-    const unexpected = Object.keys(action).filter((key) => !allowed.includes(key));
+    const unexpected = Object.keys(action).filter(
+      (key) => !allowed.includes(key),
+    );
     if (unexpected.length) {
-      fail(`non-standard ${action.type} action properties: ${unexpected.join(", ")}.`);
+      fail(
+        `non-standard ${action.type} action properties: ${unexpected.join(", ")}.`,
+      );
     }
   }
   return value;
@@ -632,14 +858,10 @@ async function approveDeposits(identity, actions, env, starknet) {
 }
 
 async function seedEscrowPrivateBalances(identities, env, starknet) {
-  // Local demo only: Alice starts with STRK and APP20's Bob solver starts with
-  // six-decimal USDC inventory. The first STRK→USDC fill gives the solver STRK
-  // inventory, which then supports the reverse USDC→STRK market. Bob's legacy
-  // ETH fixture remains independently seeded for existing Mail OTC coverage.
-  // All seed deposits remain public on devnet.
+  // Alice and Bob remain user/demo identities. Independent maker processes seed
+  // their own USDC and STRK notes after receiving public localnet fixtures.
   for (const [identity, token, amount] of [
     [identities.alice, env.strk, 10n * 10n ** 18n],
-    [identities.bob, env.usdc, 10_000n * 10n ** 6n],
     [identities.bob, env.eth, 10n * 10n ** 18n],
   ]) {
     const actions = [
@@ -715,51 +937,7 @@ function assertLocalIntentPair(body, env, starknet) {
   };
 }
 
-
-const LOCALNET_SOLVER_PRIVATE_JWK = {
-  kty: "EC",
-  crv: "P-256",
-  x: "_PVrZccj13YPKpQkB1C9uwEGgiur1zisJ5si_91tPWg",
-  y: "PyKzfsm_Se2XRYdW3-HVvKhpEqMJAqJ4RhgIMe2Bi_k",
-  d: "QvXTD_B24e3DAh1fRCE63LaRD-8umTUk59U9vqG_Ybc",
-  ext: true,
-  key_ops: ["sign"],
-};
-let localnetSolverPrivateKey;
-
-async function signLocalnetQuoteCanonical(canonical) {
-  localnetSolverPrivateKey ??= await importQuotePrivateKey(
-    LOCALNET_SOLVER_PRIVATE_JWK,
-  );
-  return signCanonicalQuote(canonical, localnetSolverPrivateKey);
-}
-
-function priceLocalIntent(direction, sellAmount) {
-  // Deterministic local RFQ fixture: 1 STRK = 2 USDC before the solver spread.
-  // Raw-unit conversion is explicit so the six-decimal USDC path cannot inherit
-  // STRK's 18-decimal assumptions.
-  const strkScale = 10n ** 18n;
-  const usdcScale = 10n ** 6n;
-  const grossBuyAmount =
-    direction === "STRK_USDC"
-      ? (sellAmount * 2n * usdcScale) / strkScale
-      : (sellAmount * strkScale) / (2n * usdcScale);
-  if (grossBuyAmount <= 0n) fail("the local solver quote rounds to zero.");
-  return {
-    grossBuyAmount,
-    provenance: "localnet:fixed-2-usdc-per-strk",
-  };
-}
-
-async function executePrivacyActions(
-  identity,
-  actions,
-  label,
-  env,
-  escrowAddress,
-  runtime,
-  starknet,
-) {
+async function executePrivacyActions(identity, actions, label, env, starknet) {
   return serializeOperation(label, identity.id, async () => {
     await approveDeposits(identity, actions, env, starknet);
     const prepared = await identity.prover.prove(actions);
@@ -878,15 +1056,26 @@ async function readRequestBody(request) {
   }
 }
 
+function canonicalHex32(value, label) {
+  if (typeof value !== "string" || !/^0x[0-9a-f]{64}$/i.test(value)) {
+    fail(`${label} must be a canonical 32-byte hex value.`);
+  }
+  return value.toLowerCase();
+}
+
 function startApi({
   config,
   identities,
   env,
   helperAddress,
   escrowAddress,
-  runtime,
   starknet,
+  makerClients,
 }) {
+  const reservationOwners = new Map();
+  const makerById = new Map(
+    makerClients.map((client) => [client.solverId, client]),
+  );
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", BACKEND_TARGET);
@@ -899,6 +1088,13 @@ function startApi({
             poolAddress: env.privacy.address,
             helperAddress,
             escrowAddress,
+            makers: makerClients.map((maker) => ({
+              makerId: maker.solverId,
+              settlementAccount: maker.settlementAccount,
+              processAlive:
+                makerProcesses.get(maker.solverId)?.exitCode === null,
+              processPid: makerProcesses.get(maker.solverId)?.pid,
+            })),
             operations: operationLog,
           },
         });
@@ -939,8 +1135,22 @@ function startApi({
         });
         return;
       }
-      if (url.pathname === "/private-intents/quote") {
-        const { sellToken, buyToken, direction } = assertLocalIntentPair(
+      if (url.pathname === "/private-intents/quotes") {
+        const now = Math.floor(Date.now() / 1_000);
+        const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        if (
+          !Number.isSafeInteger(body.createdAt) ||
+          body.createdAt > now + 30 ||
+          body.createdAt < now - 5 * 60
+        ) {
+          fail(
+            "the private RFQ creation time is missing or outside clock skew.",
+          );
+        }
+        if (!Number.isSafeInteger(body.expiresAt) || body.expiresAt <= now) {
+          fail("the private RFQ expiry is missing or already elapsed.");
+        }
+        const { sellToken, buyToken } = assertLocalIntentPair(
           body,
           env,
           starknet,
@@ -950,110 +1160,149 @@ function startApi({
           "sellAmount",
           starknet,
         );
-        const { grossBuyAmount: buyAmount, provenance } = priceLocalIntent(
-          direction,
-          sellAmount,
+        const minBuyAmount = positiveBaseUnits(
+          body.minBuyAmount,
+          "minBuyAmount",
+          starknet,
         );
-        const balanceRows = await serializeOperation(
-          "quote private-intent inventory",
-          identities.bob.id,
-          () => privateBalances(identities.bob, [buyToken], starknet),
+        const rfq = {
+          version: 1,
+          domain: PRIVATE_RFQ_DOMAIN,
+          rfqId: intentDigest,
+          intentDigest,
+          chainId: "starknet:APP20_LOCALNET",
+          registryRevision: "app20/token-registry/2026-08-25",
+          directoryEpoch: 0,
+          settlementHelper: escrowAddress,
+          sellToken,
+          sellAmountBaseUnits: sellAmount,
+          buyToken,
+          minBuyAmountBaseUnits: minBuyAmount,
+          createdAt: body.createdAt,
+          responseDeadline: Math.min(body.expiresAt, body.createdAt + 10 * 60),
+          expiresAt: body.expiresAt,
+        };
+        const rfqDigest = await digestPrivateRfq(rfq);
+        const wireRfq = {
+          ...rfq,
+          sellAmountBaseUnits: rfq.sellAmountBaseUnits.toString(),
+          minBuyAmountBaseUnits: rfq.minBuyAmountBaseUnits.toString(),
+        };
+        const outcomes = await Promise.allSettled(
+          makerClients.map((client) =>
+            makerRequest(client, "/v1/reservations", {
+              rfq: wireRfq,
+              rfqDigest,
+              intentDigest,
+              expiresAt: body.expiresAt,
+              sellToken,
+              sellAmount: sellAmount.toString(),
+              buyToken,
+              minBuyAmount: minBuyAmount.toString(),
+            }),
+          ),
         );
-        const solverInventory = BigInt(balanceRows[0]?.balance ?? "0x0");
-        if (solverInventory < buyAmount) {
-          fail("the local solver inventory cannot cover this quote.");
+        const offers = [];
+        outcomes.forEach((outcome, index) => {
+          if (outcome.status === "rejected") {
+            console.warn(
+              `Invited maker ${makerClients[index].solverId} declined: ${String(outcome.reason)}`,
+            );
+            return;
+          }
+          const offer = outcome.value.offer;
+          reservationOwners.set(offer.reservationId, {
+            client: makerClients[index],
+            intentDigest,
+            selected: false,
+          });
+          offers.push(offer);
+        });
+        if (offers.length === 0) {
+          fail("No private maker inventory can cover this RFQ.");
         }
+        jsonResponse(response, 200, { result: { offers } });
+        return;
+      }
+      if (url.pathname === "/private-intents/select-quote") {
+        const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        const selectedReservationId = canonicalHex32(
+          body.selectedReservationId,
+          "selectedReservationId",
+        );
+        const selected = reservationOwners.get(selectedReservationId);
+        if (!selected || selected.intentDigest !== intentDigest) {
+          fail(
+            "the selected quote belongs to a different or missing private RFQ.",
+          );
+        }
+        await makerRequest(selected.client, "/v1/select", {
+          reservationId: selectedReservationId,
+          intentDigest,
+        });
+        selected.selected = true;
+        const releases = [];
+        for (const [reservationId, owner] of reservationOwners) {
+          if (
+            owner.intentDigest === intentDigest &&
+            reservationId !== selectedReservationId
+          ) {
+            releases.push(
+              makerRequest(owner.client, "/v1/release", {
+                reservationId,
+                reason: "losing quote released after client selection",
+              }),
+            );
+            reservationOwners.delete(reservationId);
+          }
+        }
+        await Promise.allSettled(releases);
         jsonResponse(response, 200, {
           result: {
-            solverId: LOCALNET_SOLVER_ID,
-            buyAmount: buyAmount.toString(),
-            solverInventory: solverInventory.toString(),
-            sellToken,
-            buyToken,
-            provenance,
+            selectedReservationId,
+            solverId: selected.client.solverId,
           },
         });
         return;
       }
+      if (url.pathname === "/private-intents/release-quote") {
+        const reservationId = canonicalHex32(
+          body.reservationId,
+          "reservationId",
+        );
+        const owner = reservationOwners.get(reservationId);
+        let released = false;
+        if (owner) {
+          const result = await makerRequest(owner.client, "/v1/release", {
+            reservationId,
+            reason: "client released quote",
+          });
+          released = result.released;
+        }
+        if (released) reservationOwners.delete(reservationId);
+        jsonResponse(response, 200, { result: { released } });
+        return;
+      }
       if (url.pathname === "/private-intents/sign-quote") {
-        const { direction } = assertLocalIntentPair(
-          body,
-          env,
-          starknet,
+        assertLocalIntentPair(body, env, starknet);
+        positiveBaseUnits(body.sellAmount, "sellAmount", starknet);
+        positiveBaseUnits(body.buyAmount, "buyAmount", starknet);
+        const reservationId = canonicalHex32(
+          body.reservationId,
+          "reservationId",
         );
-        const sellAmount = positiveBaseUnits(
-          body.sellAmount,
-          "sellAmount",
-          starknet,
-        );
-        const buyAmount = positiveBaseUnits(
-          body.buyAmount,
-          "buyAmount",
-          starknet,
-        );
+        const owner = reservationOwners.get(reservationId);
+        const maker = makerById.get(body.solverId);
         if (
-          starknet.num.toBigInt(String(body.helper)) !==
-          starknet.num.toBigInt(escrowAddress)
+          !owner ||
+          !maker ||
+          owner.client.solverId !== maker.solverId ||
+          maker.solverKey !== body.solverKey
         ) {
-          fail("the quote helper is not this local escrow.");
+          fail("the quote named an unexpected maker reservation or key.");
         }
-        if (body.domain !== LOCALNET_QUOTE_DOMAIN) {
-          fail("the quote is outside the APP20 quote domain.");
-        }
-        if (body.pool !== "starknet:APP20_LOCALNET") {
-          fail("the quote is bound to a different pool.");
-        }
-        if (
-          body.solverId !== LOCALNET_SOLVER_ID ||
-          body.solverKey !== LOCALNET_SOLVER_KEY_ID
-        ) {
-          fail("the quote named an unexpected solver key.");
-        }
-        if (body.spreadBps !== 30) {
-          fail("the local solver only signs the 30 BPS desk spread.");
-        }
-        const now = Math.floor(Date.now() / 1_000);
-        if (
-          !Number.isSafeInteger(body.quotedAt) ||
-          body.quotedAt > now + 30
-        ) {
-          fail("the quote is dated in the future.");
-        }
-        const { grossBuyAmount, provenance } = priceLocalIntent(
-          direction,
-          sellAmount,
-        );
-        const afterSpread = (grossBuyAmount * 9_970n) / 10_000n;
-        if (afterSpread !== buyAmount) {
-          fail("the quote price does not match the local solver book.");
-        }
-        if (body.pricingProvenance !== provenance) {
-          fail("the quote provenance does not match the local solver book.");
-        }
-        const reconstructed = canonicalSolverQuote({
-          domain: body.domain,
-          pool: body.pool,
-          helper: String(body.helper).toLowerCase(),
-          sellToken: String(body.sellToken).toLowerCase(),
-          sellAmount,
-          buyToken: String(body.buyToken).toLowerCase(),
-          intentDigest: String(body.intentDigest).toLowerCase(),
-          solverId: body.solverId,
-          solverKey: body.solverKey,
-          nonce: String(body.nonce).toLowerCase(),
-          buyAmount,
-          spreadBps: body.spreadBps,
-          pricingProvenance: provenance,
-          quotedAt: body.quotedAt,
-          quoteExpiresAt: body.quoteExpiresAt,
-        });
-        if (body.canonical !== reconstructed) {
-          fail("the quote canonical payload does not match the solver.");
-        }
-        const signature = await signLocalnetQuoteCanonical(reconstructed);
-        jsonResponse(response, 200, {
-          result: { signature, canonical: reconstructed },
-        });
+        const result = await makerRequest(maker, "/v1/sign", body);
+        jsonResponse(response, 200, { result });
         return;
       }
       if (url.pathname === "/private-intents/solve") {
@@ -1072,6 +1321,19 @@ function startApi({
           "buyAmount",
           starknet,
         );
+        const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        const reservationId = canonicalHex32(
+          body.reservationId,
+          "reservationId",
+        );
+        const owner = reservationOwners.get(reservationId);
+        if (
+          !owner?.selected ||
+          owner.intentDigest !== intentDigest ||
+          owner.client.solverId !== body.solverId
+        ) {
+          fail("the selected private quote does not authorize this fill.");
+        }
         const dealId = feltInput(body.dealId, "dealId", starknet);
         const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
         assertFundedIntentDeal(
@@ -1079,42 +1341,21 @@ function startApi({
           { sellToken, sellAmount, buyToken, buyAmount },
           starknet,
         );
-        const actions = [
-          {
-            type: "withdraw",
-            token: buyToken,
-            amount: starknet.num.toHex(buyAmount),
-            recipient: escrowAddress,
-          },
-          {
-            type: "transfer",
-            token: sellToken,
-            amount: "OPEN",
-            recipient: identities.bob.account.address,
-          },
-          {
-            type: "invoke",
-            contract: escrowAddress,
-            calldata: [
-              "0x1",
-              buyToken,
-              dealId,
-              "${poolAddress}",
-              "${openNoteIds[0]}",
-            ],
-          },
-        ];
-        const result = await executePrivacyActions(
-          identities.bob,
-          actions,
-          "APP20 solver fills private intent",
-          env,
-          escrowAddress,
-          runtime,
-          starknet,
-        );
+        const filled = await makerRequest(owner.client, "/v1/fill", {
+          reservationId,
+          intentDigest,
+          dealId,
+          sellToken,
+          sellAmount: sellAmount.toString(),
+          buyToken,
+          buyAmount: buyAmount.toString(),
+        });
+        reservationOwners.delete(reservationId);
         jsonResponse(response, 200, {
-          result: { ...result, solverId: LOCALNET_SOLVER_ID },
+          result: {
+            transaction_hash: filled.transactionHash,
+            solverId: owner.client.solverId,
+          },
         });
         return;
       }
@@ -1134,6 +1375,19 @@ function startApi({
           "buyAmount",
           starknet,
         );
+        const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        const reservationId = canonicalHex32(
+          body.reservationId,
+          "reservationId",
+        );
+        const owner = reservationOwners.get(reservationId);
+        if (
+          !owner?.selected ||
+          owner.intentDigest !== intentDigest ||
+          owner.client.solverId !== body.solverId
+        ) {
+          fail("the selected private quote does not match this expiry path.");
+        }
         const dealId = feltInput(body.dealId, "dealId", starknet);
         const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
         assertFundedIntentDeal(
@@ -1141,6 +1395,14 @@ function startApi({
           { sellToken, sellAmount, buyToken, buyAmount },
           starknet,
         );
+        const released = await makerRequest(owner.client, "/v1/release", {
+          reservationId,
+          reason: "user chose the explicit no-fill expiry path",
+        });
+        if (!released.released) {
+          fail("the selected maker reservation could not be released.");
+        }
+        reservationOwners.delete(reservationId);
         const timestamp = deal.deadline + 1;
         const setTimeResponse = await fetch(devnet.url, {
           method: "POST",
@@ -1187,8 +1449,6 @@ function startApi({
           actions,
           "compile, mock-prove, and submit privacy actions",
           env,
-          escrowAddress,
-          runtime,
           starknet,
         );
         jsonResponse(response, 200, { result });
@@ -1236,8 +1496,8 @@ function writeGeneratedEnv({
     `VITE_ESCROW_HELPER_LOCALNET=${escrowAddress}`,
     `VITE_LOCALNET_POOL_ADDRESS=${poolAddress}`,
     `VITE_LOCALNET_USDC_TOKEN_ADDRESS=${usdcTokenAddress}`,
-    `QUIETLINE_LOCALNET_BACKEND_TARGET=${BACKEND_TARGET}`,
-    `QUIETLINE_LOCALNET_RPC_TARGET=${rpcTarget}`,
+    `APP20_LOCALNET_BACKEND_TARGET=${BACKEND_TARGET}`,
+    `APP20_LOCALNET_RPC_TARGET=${rpcTarget}`,
     "",
   ].join("\n");
   writeFileSync(GENERATED_ENV_FILE, contents, { mode: 0o600 });
@@ -1290,13 +1550,13 @@ try {
 
   currentStage = "real privacy_Privacy deployment";
   console.log("\n==> booting native devnet and deploying real privacy_Privacy");
-  devnet = new runtime.testing.Devnet();
+  devnet = new runtime.testing.Devnet({ userAccounts: 4 });
   const { env } = await runtime.testing.createDevnetTestEnv(devnet);
   const poolClassHash = await env.node.getClassHashAt(env.privacy.address);
 
-  currentStage = "Quietline helpers deployment";
+  currentStage = "APP20 helpers deployment";
   console.log(
-    "\n==> deploying QuietlineMail and QuietlineEscrow against the real pool",
+    "\n==> deploying App20Mail and App20Escrow against the real pool",
   );
   const helper = await deployHelper(env, runtime.starknet);
   const escrow = await deployEscrow(env, runtime.starknet);
@@ -1307,7 +1567,7 @@ try {
       label: "Alice",
       ...makePrivacyRuntime(
         env.alice,
-        "quietline-localnet-alice-v1",
+        "app20-localnet-alice-v1",
         env,
         runtime,
       ),
@@ -1315,24 +1575,33 @@ try {
     bob: {
       id: "bob",
       label: "Bob",
-      ...makePrivacyRuntime(env.bob, "quietline-localnet-bob-v1", env, runtime),
+      ...makePrivacyRuntime(env.bob, "app20-localnet-bob-v1", env, runtime),
     },
   };
 
   currentStage = "local USDC deployment";
   console.log("\n==> deploying six-decimal local USDC inventory token");
-  const usdc = await deployLocalUsdc(
-    env,
-    runtime.starknet,
-    identities.bob.account.address,
-  );
+  const usdc = await deployLocalUsdc(env, runtime.starknet, env.admin.address);
   env.usdc = usdc.address;
+  if (env.extraAccounts.length !== 2) {
+    fail("localnet requires exactly two independent maker custody accounts.");
+  }
+  await fundMakerPublicUsdc(env, env.usdc, env.extraAccounts, runtime.starknet);
 
-  currentStage = "local escrow balance seed";
-  console.log(
-    "\n==> seeding Alice STRK and APP20 solver USDC private balances",
-  );
+  currentStage = "local user balance seed";
+  console.log("\n==> seeding Alice STRK and Bob Mail fixture balances");
   await seedEscrowPrivateBalances(identities, env, runtime.starknet);
+
+  currentStage = "independent maker-node startup";
+  console.log("\n==> starting independent WAL-backed maker custody processes");
+  const makers = await startMakerNodes({
+    rpcUrl: devnet.url,
+    poolAddress: env.privacy.address,
+    escrowAddress: escrow.address,
+    strkToken: env.strk,
+    usdcToken: env.usdc,
+    extraAccounts: env.extraAccounts,
+  });
 
   const config = {
     walletName: "Localnet (dev)",
@@ -1350,6 +1619,12 @@ try {
     ],
     marketPairs: ["STRK_USDC", "USDC_STRK"],
     proofMode: "upstream devnet mock proof · no STARK bytes",
+    makers: makers.map((maker) => ({
+      makerId: maker.solverId,
+      solverKey: maker.solverKey,
+      settlementAccount: maker.settlementAccount,
+      custody: "independent localnet process · WAL-backed reservations",
+    })),
     identities: Object.values(identities).map((identity) => ({
       id: identity.id,
       label: identity.label,
@@ -1364,8 +1639,8 @@ try {
     env,
     helperAddress: helper.address,
     escrowAddress: escrow.address,
-    runtime,
     starknet: runtime.starknet,
+    makerClients: makers,
   });
   writeGeneratedEnv({
     rpcTarget: devnet.url,
@@ -1386,8 +1661,8 @@ try {
     VITE_ESCROW_HELPER_LOCALNET: escrow.address,
     VITE_LOCALNET_POOL_ADDRESS: env.privacy.address,
     VITE_LOCALNET_USDC_TOKEN_ADDRESS: env.usdc,
-    QUIETLINE_LOCALNET_BACKEND_TARGET: BACKEND_TARGET,
-    QUIETLINE_LOCALNET_RPC_TARGET: devnet.url,
+    APP20_LOCALNET_BACKEND_TARGET: BACKEND_TARGET,
+    APP20_LOCALNET_RPC_TARGET: devnet.url,
   };
   viteProcess = spawn(
     join(ROOT, "node_modules", ".bin", "vite"),
@@ -1438,23 +1713,34 @@ try {
     usdcDeployTransactionHash: usdc.deployTransactionHash,
     aliceAddress: identities.alice.account.address,
     bobAddress: identities.bob.account.address,
+    makers: makers.map((maker) => ({
+      makerId: maker.solverId,
+      settlementAccount: maker.settlementAccount,
+      pid: makerProcesses.get(maker.solverId)?.pid,
+      walPath: join(MAKER_RUNTIME_DIR, maker.solverId, "reservations.wal"),
+    })),
   };
   writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, {
     mode: 0o600,
   });
   rmSync(LOCK_FILE, { force: true });
 
-  console.log("\nQuietline local demo is ready:");
+  console.log("\nAPP20 local demo is ready:");
   console.log(`  App:                ${APP_URL}`);
   console.log(`  Inbox:              ${APP_URL}/inbox`);
   console.log(`  privacy_Privacy:    ${env.privacy.address}`);
   console.log(`  pool class hash:    ${poolClassHash}`);
-  console.log(`  QuietlineMail:      ${helper.address}`);
-  console.log(`  QuietlineEscrow:    ${escrow.address}`);
+  console.log(`  App20Mail:      ${helper.address}`);
+  console.log(`  App20Escrow:    ${escrow.address}`);
   console.log(`  Market token USDC:  ${env.usdc}`);
   console.log("  Private market:     USDC ↔ STRK · 1 STRK = 2 USDC fixture");
   console.log(`  Alice:              ${identities.alice.account.address}`);
   console.log(`  Bob:                ${identities.bob.account.address}`);
+  for (const maker of makers) {
+    console.log(
+      `  ${maker.solverId}: ${maker.settlementAccount} · WAL-backed process`,
+    );
+  }
   console.log(
     "  Wallet discovery:   Localnet (dev) registered via Wallet Standard",
   );
@@ -1464,7 +1750,7 @@ try {
   console.log("  Stop:               npm run localnet:stop");
 } catch (error) {
   console.error(
-    `\nQuietline localnet failed during ${currentStage}: ${
+    `\nAPP20 localnet failed during ${currentStage}: ${
       error instanceof Error ? (error.stack ?? error.message) : String(error)
     }`,
   );

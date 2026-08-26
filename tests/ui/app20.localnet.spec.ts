@@ -7,31 +7,21 @@ import {
 } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  BASE_URL,
+  connectLocalnetWallet,
+  expectNoHorizontalOverflow,
+  localnetIdentity,
+  readLocalnetConfig,
+  readStorageSnapshot,
+  selectLocalNetwork,
+  type LocalnetConfig,
+  type LocalnetIdentityId,
+} from "./support/localnet";
 
-const BASE_URL = process.env.QUIETLINE_TEST_BASE_URL ?? "http://127.0.0.1:5173";
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
-
-type LocalnetIdentity = {
-  id: "alice" | "bob";
-  label: string;
-  address: string;
-};
-
-type LocalnetConfig = {
-  walletName: string;
-  helperAddress: string;
-  escrowAddress: string;
-  counterTokenAddress: string;
-  identities: LocalnetIdentity[];
-};
-
-function identity(config: LocalnetConfig, id: LocalnetIdentity["id"]) {
-  const value = config.identities.find((candidate) => candidate.id === id);
-  if (!value) throw new Error(`Localnet identity ${id} is missing.`);
-  return value;
-}
 
 async function screenshot(page: Page, name: string, testInfo: TestInfo) {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
@@ -40,36 +30,12 @@ async function screenshot(page: Page, name: string, testInfo: TestInfo) {
   await testInfo.attach(name, { path, contentType: "image/png" });
 }
 
-async function connectLocalnet(page: Page, auditFocus = false) {
-  const trigger = page.getByRole("button", { name: "Connect wallet" });
-  if ((await trigger.count()) === 0) {
-    await expect(page.getByTitle("Disconnect")).toBeVisible();
-    return;
-  }
-  await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
-  await expect(dialog).toBeVisible();
-  const localnetOption = dialog.getByRole("button", {
-    name: /Localnet \(dev\)/,
-  });
-  await expect(localnetOption).toBeFocused();
-  if (auditFocus) {
-    await page.keyboard.press("Escape");
-    await expect(dialog).toHaveCount(0);
-    await expect(trigger).toBeFocused();
-    await trigger.click();
-    await expect(dialog).toBeVisible();
-  }
-  await dialog.getByRole("button", { name: /Localnet \(dev\)/ }).click();
-  await expect(page.getByTitle("Disconnect")).toBeVisible();
-}
-
 async function switchIdentity(
   page: Page,
   config: LocalnetConfig,
-  id: LocalnetIdentity["id"],
+  id: LocalnetIdentityId,
 ) {
-  const target = identity(config, id);
+  const target = localnetIdentity(config, id);
   const selector = page.locator(`[data-localnet-identity="${id}"]`);
   if ((await selector.getAttribute("aria-pressed")) !== "true") {
     await selector.click();
@@ -78,7 +44,7 @@ async function switchIdentity(
   if (
     (await page.getByRole("button", { name: "Connect wallet" }).count()) > 0
   ) {
-    await connectLocalnet(page);
+    await connectLocalnetWallet(page);
   }
   const session = page.getByRole("region", { name: "Wallet session" });
   await expect(session.locator("[title]").first()).toHaveAttribute(
@@ -228,17 +194,14 @@ test("creates a standalone payment link without an on-chain action", async ({
   request,
 }, testInfo) => {
   test.setTimeout(3 * 60_000);
-  const configResponse = await request.get(
-    `${BASE_URL}/__quietline_localnet_wallet/config`,
-  );
-  expect(configResponse.ok()).toBeTruthy();
-  const config = (await configResponse.json()).result as LocalnetConfig;
-  const alice = identity(config, "alice");
+  const config = await readLocalnetConfig(request);
+  const alice = localnetIdentity(config, "alice");
   const requestedUrls: string[] = [];
   page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
 
   await page.goto("/mail/inbox");
-  await connectLocalnet(page);
+  await selectLocalNetwork(page);
+  await connectLocalnetWallet(page);
   await page.getByRole("link", { name: "Pay", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
@@ -253,18 +216,18 @@ test("creates a standalone payment link without an on-chain action", async ({
   ).toBeVisible();
   const linkCode = page
     .locator("code")
-    .filter({ hasText: `${BASE_URL}/pay#qlp2.` });
+    .filter({ hasText: `${BASE_URL}/pay#app20p2.` });
   const paymentLink = (await linkCode.innerText()).trim();
-  expect(paymentLink.startsWith(`${BASE_URL}/pay#qlp2.`)).toBeTruthy();
+  expect(paymentLink.startsWith(`${BASE_URL}/pay#app20p2.`)).toBeTruthy();
   await expect(
     page.locator('[aria-label="QR code for this payment link"]'),
   ).toBeVisible();
   expect(
     requestedUrls.some((url) =>
-      url.includes("/__quietline_localnet_wallet/privacy"),
+      url.includes("/__app20_localnet_wallet/privacy"),
     ),
   ).toBeFalsy();
-  expect(requestedUrls.some((url) => url.includes("#qlp2."))).toBeFalsy();
+  expect(requestedUrls.some((url) => url.includes("#app20p2."))).toBeFalsy();
   await screenshot(page, "standalone-payment-link-create", testInfo);
 
   const fresh = await browser.newContext({
@@ -280,25 +243,20 @@ test("creates a standalone payment link without an on-chain action", async ({
   ).toBeVisible();
   await expect(review.getByText(alice.address, { exact: true })).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
-  expect(reviewRequests.some((url) => url.includes("#qlp2."))).toBeFalsy();
+  expect(reviewRequests.some((url) => url.includes("#app20p2."))).toBeFalsy();
   await screenshot(review, "standalone-payment-link-review", testInfo);
   await fresh.close();
 });
 
-test("all Quietline localnet journeys", async ({
+test("all APP20 localnet journeys", async ({
   page,
   browser,
   request,
 }, testInfo) => {
   test.setTimeout(15 * 60_000);
-  const configResponse = await request.get(
-    `${BASE_URL}/__quietline_localnet_wallet/config`,
-  );
-  expect(configResponse.ok()).toBeTruthy();
-  const config = (await configResponse.json()).result as LocalnetConfig;
-  expect(config.walletName).toBe("Localnet (dev)");
-  const alice = identity(config, "alice");
-  const bob = identity(config, "bob");
+  const config = await readLocalnetConfig(request);
+  const alice = localnetIdentity(config, "alice");
+  const bob = localnetIdentity(config, "bob");
   const compositeBody =
     "Composite production test: payment, invoice, and offer in one private document.";
   const escrowBody = "Escrow browser lifecycle";
@@ -307,7 +265,7 @@ test("all Quietline localnet journeys", async ({
 
   await test.step("1. connect and onboard Alice and Bob", async () => {
     await page.goto("/mail/inbox");
-    await connectLocalnet(page, true);
+    await connectLocalnetWallet(page, { auditFocusReturn: true });
     await switchIdentity(page, config, "alice");
     const aliceBackup = await registerNewKey(
       page,
@@ -565,11 +523,11 @@ test("all Quietline localnet journeys", async ({
       viewport: { width: 1_440, height: 900 },
     });
     await unrelated.addInitScript(() => {
-      localStorage.setItem("quietline/localnet-wallet/identity/v1", "bob");
+      localStorage.setItem("app20/localnet-wallet/identity/v1", "bob");
     });
     const wrongKeyPage = await unrelated.newPage();
     await wrongKeyPage.goto("/mail/inbox");
-    await connectLocalnet(wrongKeyPage);
+    await connectLocalnetWallet(wrongKeyPage);
     await switchIdentity(wrongKeyPage, config, "bob");
     await wrongKeyPage
       .getByRole("button", { name: "Compose", exact: true })
@@ -609,15 +567,12 @@ test("all Quietline localnet journeys", async ({
       }),
     ).toBeVisible({ timeout: 180_000 });
     await expect(accept).toHaveCount(0);
-    const otcStorage = await page.evaluate(
-      (address) =>
-        Object.entries(localStorage).find(
-          ([key]) =>
-            key.startsWith("quietline/otc/v1/") &&
-            key.toLowerCase().includes(address.slice(2).toLowerCase()),
-        )?.[1],
-      bob.address,
-    );
+    const { local } = await readStorageSnapshot(page);
+    const otcStorage = Object.entries(local).find(
+      ([key]) =>
+        key.startsWith("app20/otc/v1/") &&
+        key.toLowerCase().includes(bob.address.slice(2).toLowerCase()),
+    )?.[1];
     expect(otcStorage).toContain('"status":"closed"');
     expect(otcStorage).toContain('"settlementVerified":true');
     await screenshot(page, "12-offer-accepted-once", testInfo);
@@ -627,9 +582,9 @@ test("all Quietline localnet journeys", async ({
     await page.getByRole("button", { name: "Share payment link" }).click();
     const linkCode = page
       .locator("code")
-      .filter({ hasText: `${BASE_URL}/pay#qlp2.` });
+      .filter({ hasText: `${BASE_URL}/pay#app20p2.` });
     const paymentLink = (await linkCode.innerText()).trim();
-    expect(paymentLink.startsWith(`${BASE_URL}/pay#qlp2.`)).toBeTruthy();
+    expect(paymentLink.startsWith(`${BASE_URL}/pay#app20p2.`)).toBeTruthy();
     await screenshot(page, "13-invoice-share-link", testInfo);
 
     const fresh = await browser.newContext({
@@ -637,7 +592,7 @@ test("all Quietline localnet journeys", async ({
       viewport: { width: 1_440, height: 900 },
     });
     await fresh.addInitScript(() => {
-      localStorage.setItem("quietline/localnet-wallet/identity/v1", "bob");
+      localStorage.setItem("app20/localnet-wallet/identity/v1", "bob");
     });
     const payPage = await fresh.newPage();
     const requestedUrls: string[] = [];
@@ -663,12 +618,12 @@ test("all Quietline localnet journeys", async ({
     expect(requestedUrls.some((url) => url.includes("#"))).toBeFalsy();
     expect(
       requestedUrls.some((url) =>
-        url.includes("/__quietline_localnet_wallet/privacy"),
+        url.includes("/__app20_localnet_wallet/privacy"),
       ),
     ).toBeFalsy();
     await screenshot(payPage, "14-fresh-payment-review", testInfo);
 
-    await connectLocalnet(payPage);
+    await connectLocalnetWallet(payPage);
     await payPage
       .getByRole("button", { name: "Continue to inbox to review & pay" })
       .click();
@@ -693,7 +648,7 @@ test("all Quietline localnet journeys", async ({
     await expect(pay).toHaveCount(0);
     expect(
       requestedUrls.filter((url) =>
-        url.includes("/__quietline_localnet_wallet/privacy"),
+        url.includes("/__app20_localnet_wallet/privacy"),
       ),
     ).toHaveLength(1);
     await screenshot(payPage, "16-invoice-paid", testInfo);
@@ -890,16 +845,7 @@ test("all Quietline localnet journeys", async ({
         await expect(menu).toHaveAttribute("aria-expanded", "false");
         await expect(menu).toBeFocused();
       }
-      const metrics = await page.evaluate(() => ({
-        documentWidth: document.documentElement.scrollWidth,
-        documentClientWidth: document.documentElement.clientWidth,
-        bodyWidth: document.body.scrollWidth,
-        bodyClientWidth: document.body.clientWidth,
-      }));
-      expect(metrics.documentWidth).toBeLessThanOrEqual(
-        metrics.documentClientWidth,
-      );
-      expect(metrics.bodyWidth).toBeLessThanOrEqual(metrics.bodyClientWidth);
+      await expectNoHorizontalOverflow(page);
       await screenshot(page, `28-responsive-${width}`, testInfo);
     }
     const unnamedIconButtons = await page
@@ -928,22 +874,21 @@ test("all Quietline localnet journeys", async ({
       })
       .click();
     await expect(page.getByText(/Forgot this device: removed/)).toBeVisible();
-    const remaining = await page.evaluate(() => {
-      const sensitivePrefixes = [
-        "quietline/mailseed/v1",
-        "quietline/drafts/v1",
-        "quietline/sent/v1",
-        "quietline/aliases/v1",
-        "quietline/otc/v1",
-        "quietline/escrow/v1",
-        "quietline/mail-scan/v1",
-      ];
-      return Object.keys(localStorage).filter((key) =>
-        sensitivePrefixes.some(
-          (prefix) => key === prefix || key.startsWith(`${prefix}/`),
-        ),
-      );
-    });
+    const sensitivePrefixes = [
+      "app20/mailseed/v1",
+      "app20/drafts/v1",
+      "app20/sent/v1",
+      "app20/aliases/v1",
+      "app20/otc/v1",
+      "app20/escrow/v1",
+      "app20/mail-scan/v1",
+    ];
+    const { local } = await readStorageSnapshot(page);
+    const remaining = Object.keys(local).filter((key) =>
+      sensitivePrefixes.some(
+        (prefix) => key === prefix || key.startsWith(`${prefix}/`),
+      ),
+    );
     expect(remaining).toEqual([]);
     await expect(page.locator("html")).toHaveAttribute(
       "data-theme",

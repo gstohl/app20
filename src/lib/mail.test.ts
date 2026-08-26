@@ -109,23 +109,20 @@ describe("mail key derivation", () => {
 describe("encrypted mail", () => {
   it("encrypts and decrypts a recipient roundtrip", async () => {
     const recipient = deriveKeypair(seed(11));
-    const record = await encryptMail(
-      recipient.publicKey,
-      "hello from quietline",
-    );
+    const record = await encryptMail(recipient.publicKey, "hello from app20");
 
     const messages = await scanAndDecrypt(recipient.privateKey, [record]);
     expect(messages).toHaveLength(1);
     expect(messages[0].index).toBe(0);
-    expect(messages[0].plaintext).toBe("hello from quietline");
+    expect(messages[0].plaintext).toBe("hello from app20");
     expect(messages[0].envelope).toMatchObject({
       version: 0,
       type: "text",
-      payload: { body: "hello from quietline" },
+      payload: { body: "hello from app20" },
     });
   });
 
-  it("decodes a locked legacy single-recipient record", async () => {
+  it("rejects a locked pre-reset single-recipient record", async () => {
     const privateKey = bytesFromHex(
       "79814066f2e5266469807eaebd6c4a1ba2f2c452259afc2fd3398424c810008f",
     );
@@ -143,12 +140,8 @@ describe("encrypted mail", () => {
       ],
     };
 
-    expect(
-      new TextDecoder().decode(await decryptMail(privateKey, record)),
-    ).toBe("legacy fixture: hello from quietline");
-    await expect(scanAndDecrypt(privateKey, [record])).resolves.toMatchObject([
-      { plaintext: "legacy fixture: hello from quietline" },
-    ]);
+    await expect(decryptMail(privateKey, record)).rejects.toThrow();
+    await expect(scanAndDecrypt(privateKey, [record])).resolves.toEqual([]);
   });
 
   it("rejects a wrong key", async () => {
@@ -262,7 +255,7 @@ describe("multi-recipient encrypted mail", () => {
       const wireBytes = unpackFeltsToBytes(record.ciphertextFelts);
 
       if (recipientCount === 1) {
-        // The one-recipient API remains the exact legacy ciphertext shape.
+        // The one-recipient API retains the compact ciphertext shape.
         expect(wireBytes).toHaveLength(
           new TextEncoder().encode(plaintext).length + 16,
         );
@@ -270,9 +263,9 @@ describe("multi-recipient encrypted mail", () => {
         expect(record.viewTag).toBe(MULTI_RECIPIENT_VIEW_TAG);
         expect(wireBytes.slice(0, MULTI_HEADER_BYTES)).toEqual(
           new Uint8Array([
-            0x51,
-            0x4c,
-            0x4d,
+            0x41,
+            0x32,
+            0x30,
             MULTI_RECIPIENT_VERSION,
             recipientCount,
           ]),

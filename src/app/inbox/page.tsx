@@ -128,7 +128,7 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
-  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+  APP20_HELPER_FUNDING_BASE_UNITS,
   strk20ErrorMessage,
   submitActions,
   transactionHashFromError,
@@ -1154,7 +1154,7 @@ export default function InboxPage() {
       await authorizeValueAction(
         context,
         "Back up contacts to encrypted Mail",
-        QUIETLINE_HELPER_FUNDING_BASE_UNITS.toString(),
+        APP20_HELPER_FUNDING_BASE_UNITS.toString(),
       );
       setActionState(actionKey, {
         pending: true,
@@ -1173,7 +1173,7 @@ export default function InboxPage() {
         helperAddress: context.helperAddress,
         recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
-        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         policy: context.policy,
         record,
       });
@@ -1390,7 +1390,7 @@ export default function InboxPage() {
       helperAddress: context.helperAddress,
       recoveryAddress: context.address,
       tokenAddress: constants.addrSTRK,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       policy: context.policy,
       record,
     });
@@ -1453,7 +1453,7 @@ export default function InboxPage() {
           tokenAddress: constants.addrSTRK,
           offer,
           record,
-          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           policy: context.policy,
           actionId: computeActionId("otc-accept-attempt", attemptId),
         },
@@ -1557,7 +1557,7 @@ export default function InboxPage() {
         helperAddress: context.helperAddress,
         recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
-        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         policy: context.policy,
         record,
       });
@@ -1686,7 +1686,7 @@ export default function InboxPage() {
           recipient: payableRequest.requester,
           amount: payableRequest.amount,
           record,
-          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           policy: context.policy,
           actionId: computeActionId("payment-attempt", attemptId),
         },

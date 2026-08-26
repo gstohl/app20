@@ -21,7 +21,7 @@ const MULTI_FIXED_BYTES = MULTI_HEADER_BYTES + NONCE_BYTES + AES_TAG_BYTES;
 
 /**
  * Multi-recipient ciphertexts use outer view_tag 0xff as a scan marker. Because
- * legacy one-byte tags can also equal 0xff, scanners inspect the QLM marker and
+ * legacy one-byte tags can also equal 0xff, scanners inspect the A20 marker and
  * retain an authenticated legacy fallback rather than dropping old records.
  */
 export const MULTI_RECIPIENT_VIEW_TAG = 0xff;
@@ -83,19 +83,15 @@ export function projectEncryptedMailSize(
 
 const EMPTY_BYTES = new Uint8Array();
 const textEncoder = new TextEncoder();
-const MULTI_RECIPIENT_MARKER = textEncoder.encode("QLM");
+const MULTI_RECIPIENT_MARKER = textEncoder.encode("A20");
 
-const PRIVATE_KEY_INFO = textEncoder.encode("quietline/x25519/private/v1");
+const PRIVATE_KEY_INFO = textEncoder.encode("app20/x25519/private/v1");
 const MAIL_KEY_INFO = textEncoder.encode("key");
 const VIEW_TAG_INFO = textEncoder.encode("tag");
-const AAD_DOMAIN = textEncoder.encode("quietline/mail/aes-gcm/v1");
-const MULTI_WRAP_KEY_INFO = textEncoder.encode(
-  "quietline/mail/multi/v1/wrap-key",
-);
-const MULTI_SLOT_TAG_INFO = textEncoder.encode(
-  "quietline/mail/multi/v1/slot-tag",
-);
-const MULTI_AAD_DOMAIN = textEncoder.encode("quietline/mail/multi/aes-gcm");
+const AAD_DOMAIN = textEncoder.encode("app20/mail/aes-gcm/v1");
+const MULTI_WRAP_KEY_INFO = textEncoder.encode("app20/mail/multi/v1/wrap-key");
+const MULTI_SLOT_TAG_INFO = textEncoder.encode("app20/mail/multi/v1/slot-tag");
+const MULTI_AAD_DOMAIN = textEncoder.encode("app20/mail/multi/aes-gcm");
 const MULTI_SLOT_AAD_LABEL = textEncoder.encode("slot");
 const MULTI_BODY_AAD_LABEL = textEncoder.encode("body");
 
@@ -456,7 +452,7 @@ function hasMultiRecipientMarker(bytes: Uint8Array): boolean {
 
 /**
  * Multi-recipient v1 wire bytes inside the existing packed ct field:
- *   ["QLM" (3)][version=0x01 (1)][slot count (1)]
+ *   ["A20" (3)][version=0x01 (1)][slot count (1)]
  *   [sorted slots: tag (16) || AES-GCM-wrapped 32-byte DEK (48)]...
  *   [body nonce (12)][AES-GCM body ciphertext || tag (plaintext + 16)]
  *
@@ -576,7 +572,7 @@ export async function encryptMail(
 /**
  * Encrypts one record for one or more public keys. A one-key call deliberately
  * delegates to encryptMail so the deployed single-recipient wire format stays
- * byte-compatible; calls with two or more keys use the hybrid QLM format.
+ * byte-compatible; calls with two or more keys use the hybrid A20 format.
  */
 export async function encryptMailForRecipients(
   recipientPublicKeys: readonly Uint8Array[],
@@ -778,7 +774,7 @@ export async function decryptMail(
         possibleMultiCiphertext,
       );
     } catch (multiRecipientError) {
-      // A deployed legacy tag can be 0xff and its random ciphertext can begin QLM.
+      // A deployed legacy tag can be 0xff and its random ciphertext can begin A20.
       // Authenticated legacy fallback preserves every such historical record.
       try {
         return await decryptLegacyMail(

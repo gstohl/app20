@@ -1297,6 +1297,56 @@
   gap: 5px;
 }
 
+.privacyPreflight {
+  border: 1px dashed var(--shell-line);
+  padding: 10px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  font-size: 11px;
+}
+
+.privacyPreflight > strong {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.privacyPreflight ul {
+  display: grid;
+  gap: 6px;
+  margin: 9px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.privacyPreflight li {
+  border-top: 1px solid var(--shell-line);
+  padding-top: 6px;
+}
+
+.privacyPreflight li > strong {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.privacyPreflight small {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.privateIntentForm .privacyPreflight > label {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 7px;
+  border-top: 1px solid var(--shell-line);
+  padding-top: 8px;
+  color: var(--shell-text);
+}
+
 .privateIntentMarket select {
   width: 100%;
   min-height: 36px;

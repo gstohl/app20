@@ -85,18 +85,24 @@ const POOL_VIEW_METHODS = [
   "get_proof_validity_blocks",
 ] as const;
 
-function plainPoolView(
-  contract: object,
+function plainPoolView<TContract extends object>(
+  contract: TContract,
 ): Record<string, (...args: unknown[]) => unknown> {
+  // SAFETY: typedv2 constructs this object from the reviewed pool ABI; each
+  // selected member is still checked as callable before invocation.
+  const methods = contract as unknown as Record<
+    string,
+    ((...args: unknown[]) => unknown) | undefined
+  >;
   return Object.fromEntries(
     POOL_VIEW_METHODS.map((name) => [
       name,
       (...args: unknown[]) => {
-        const method = Reflect.get(contract, name);
+        const method = methods[name];
         if (typeof method !== "function") {
           throw new ConfigError(`Privacy pool ABI is missing ${name}().`);
         }
-        return Reflect.apply(method, contract, args);
+        return method.apply(contract, args);
       },
     ]),
   );

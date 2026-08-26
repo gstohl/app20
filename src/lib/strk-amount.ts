@@ -1,7 +1,7 @@
 export const STRK_DECIMALS = 18;
 export const STRK_SCALE = 10n ** BigInt(STRK_DECIMALS);
 export const DEFAULT_STRK_AMOUNT = "0.1";
-export const STRK_AMOUNT_STORAGE_PREFIX = "quietline/value-amount/v1";
+export const STRK_AMOUNT_STORAGE_PREFIX = "app20/value-amount/v1";
 
 const DECIMAL_AMOUNT = /^(\d+)(?:\.(\d+))?$/;
 

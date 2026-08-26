@@ -16,7 +16,7 @@ flowchart LR
 
   subgraph Starknet["Starknet / Cairo"]
     Pool[STRK20 pool]
-    Mail[QuietlineMail]
+    Mail[App20Mail]
     Avnu[AVNU / Ekubo]
     Inb[InboundAnonymizer]
     Out[OutboundAnonymizer]
@@ -58,7 +58,7 @@ sequenceDiagram
 
   U->>V: Private USDC → private STRK
   V->>P: privacy_invoke swap helper
-  P->>A: settle on public book
+  P->>A: settle on separately confirmed public venue
   Note over A: PUBLIC liquidity and price
   P-->>U: new STRK note
   Note over P,U: PRIVATE pair, size, account
@@ -68,7 +68,7 @@ sequenceDiagram
 
 ## 2. Hide the wallet, buy depth — USDC door
 
-Privacy-bridge is **USDC + CCTP only**. NEAR is the public book.
+Privacy-bridge is **USDC + CCTP only**. NEAR remains a separate public execution rail.
 
 ```mermaid
 flowchart TB

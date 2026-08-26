@@ -1,7 +1,7 @@
 const root = document.documentElement;
 let preference = "system";
 try {
-  const stored = localStorage.getItem("quietline/theme");
+  const stored = localStorage.getItem("app20/theme");
   if (stored === "light" || stored === "dark" || stored === "system") {
     preference = stored;
   }

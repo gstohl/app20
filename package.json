@@ -18,7 +18,7 @@
     "devnet": "bash scripts/devnet.sh",
     "devnet:stop": "bash scripts/devnet.sh stop",
     "test": "vitest run src",
-    "test:packages": "npm test --workspace @app20/domain && npm test --workspace @app20/near-intents && npm test --workspace @app20/policy-client && npm test --workspace @app20/privacy-adapters && npm test --workspace @app20/private-intents && npm test --workspace @app20/privy && npm test --workspace @app20/relay",
+    "test:packages": "npm test --workspace @app20/domain && npm test --workspace @app20/maker-node && npm test --workspace @app20/near-intents && npm test --workspace @app20/policy-client && npm test --workspace @app20/privacy-adapters && npm test --workspace @app20/private-intents && npm test --workspace @app20/privy && npm test --workspace @app20/relay",
     "test:all": "npm test && npm run test:packages",
     "check:browser-leaks": "node scripts/check-browser-leaks.mjs dist",
     "test:ui": "node scripts/ui-test.mjs",
@@ -26,7 +26,7 @@
     "pool:setup": "bash scripts/pool-harness-setup.sh",
     "test:e2e:pool": "bash scripts/pool-harness-setup.sh --check && PATH=\"$PWD/vendor/bin:$PATH\" npm --prefix pool-harness test",
     "typecheck": "tsc --noEmit",
-    "typecheck:packages": "npm run typecheck --workspace @app20/domain && npm run typecheck --workspace @app20/near-intents && npm run typecheck --workspace @app20/policy-client && npm run typecheck --workspace @app20/privacy-adapters && npm run typecheck --workspace @app20/private-intents && npm run typecheck --workspace @app20/privy && npm run typecheck --workspace @app20/relay",
+    "typecheck:packages": "npm run typecheck --workspace @app20/domain && npm run typecheck --workspace @app20/maker-node && npm run typecheck --workspace @app20/near-intents && npm run typecheck --workspace @app20/policy-client && npm run typecheck --workspace @app20/privacy-adapters && npm run typecheck --workspace @app20/private-intents && npm run typecheck --workspace @app20/privy && npm run typecheck --workspace @app20/relay",
     "deploy:helper:mainnet": "bash scripts/deploy-mail-mainnet.sh"
   },
   "dependencies": {

@@ -4,7 +4,7 @@ import {
 } from "./addresses";
 import { sanitizeUntrustedText } from "./text";
 
-export const ALIAS_STORAGE_PREFIX = "quietline/aliases/v1";
+export const ALIAS_STORAGE_PREFIX = "app20/aliases/v1";
 
 export type AliasRecord = {
   address: string;

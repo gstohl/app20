@@ -10,8 +10,8 @@ export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
 export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
 export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
-/** Reviewed amount atomically withdrawn to QuietlineMail and returned to the OPEN note. */
-export const QUIETLINE_HELPER_FUNDING_BASE_UNITS = 7n;
+/** Reviewed amount atomically withdrawn to App20Mail and returned to the OPEN note. */
+export const APP20_HELPER_FUNDING_BASE_UNITS = 7n;
 
 export type MailInvokeBatchInput = {
   helperAddress: string;
@@ -31,7 +31,7 @@ export type MailInvokeBatchInput = {
  * the final duplicate-submission authority.
  */
 export function computeActionId(kind: string, id: string): string {
-  return num.toHex(hash.starknetKeccak(`quietline/action/v1/${kind}/${id}`));
+  return num.toHex(hash.starknetKeccak(`app20/action/v1/${kind}/${id}`));
 }
 
 export type MemoTransferBatchInput = MailInvokeBatchInput & {

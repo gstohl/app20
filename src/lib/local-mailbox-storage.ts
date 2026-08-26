@@ -6,7 +6,7 @@ import { OTC_STORAGE_PREFIX } from "./otc";
 import { MAIL_ASSIGNMENT_STORAGE_PREFIX } from "./mail-assignments";
 import { SENT_MAIL_STORAGE_PREFIX } from "./sent-mail";
 
-export const MAIL_SEED_STORAGE_PREFIX = "quietline/mailseed/v1";
+export const MAIL_SEED_STORAGE_PREFIX = "app20/mailseed/v1";
 
 export const LOCAL_MAILBOX_STORAGE_PREFIXES = [
   MAIL_SEED_STORAGE_PREFIX,

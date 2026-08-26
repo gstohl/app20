@@ -17,17 +17,24 @@ const API_BASE =
       ? "http://app20.test"
       : "";
 
-export type LocalnetSolverQuote = {
+export type LocalnetSolverOffer = {
   solverId: string;
-  buyAmount: bigint;
-  solverInventory: bigint;
+  solverKey: string;
+  grossBuyAmount: bigint;
   sellToken: string;
   buyToken: string;
+  spreadBps: number;
   provenance: string;
+  nonce: string;
+  reservationId: string;
+  reservationExpiresAt: number;
 };
 
 export type LocalnetIntentTerms = {
   dealId: string;
+  intentDigest: string;
+  solverId: string;
+  reservationId: string;
   sellToken: string;
   sellAmount: bigint;
   buyToken: string;
@@ -116,7 +123,24 @@ function asPositiveBigInt(value: unknown, label: string): bigint {
   return parsed;
 }
 
-async function postLocalnet(path: string, body: object): Promise<ApiResult> {
+function asSafeInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) <= 0) {
+    throw new Error(`The local solver returned an invalid ${label}.`);
+  }
+  return Number(value);
+}
+
+function asOfferList(value: unknown): ApiResult[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("No private maker returned a quote.");
+  }
+  return value.map((offer) => asRecord(offer));
+}
+
+async function postLocalnet<TBody extends object>(
+  path: string,
+  body: TBody,
+): Promise<ApiResult> {
   if (!API_BASE) {
     throw new Error("The build has no localnet wallet API.");
   }
@@ -142,27 +166,39 @@ async function postLocalnet(path: string, body: object): Promise<ApiResult> {
   return asRecord(envelope.result);
 }
 
-export async function requestLocalnetSolverQuote(input: {
+export async function requestLocalnetSolverQuotes(input: {
+  intentDigest: string;
+  createdAt: number;
+  expiresAt: number;
   sellToken: string;
   sellAmount: bigint;
   buyToken: string;
-}): Promise<LocalnetSolverQuote> {
-  const result = await postLocalnet("/private-intents/quote", {
+  minBuyAmount: bigint;
+}): Promise<LocalnetSolverOffer[]> {
+  const result = await postLocalnet("/private-intents/quotes", {
+    intentDigest: input.intentDigest,
+    createdAt: input.createdAt,
+    expiresAt: input.expiresAt,
     sellToken: input.sellToken,
     sellAmount: input.sellAmount.toString(),
     buyToken: input.buyToken,
+    minBuyAmount: input.minBuyAmount.toString(),
   });
-  return {
-    solverId: asString(result.solverId, "solverId"),
-    buyAmount: asPositiveBigInt(result.buyAmount, "buyAmount"),
-    solverInventory: asPositiveBigInt(
-      result.solverInventory,
-      "solverInventory",
+  return asOfferList(result.offers).map((offer) => ({
+    solverId: asString(offer.solverId, "solverId"),
+    solverKey: asString(offer.solverKey, "solverKey"),
+    grossBuyAmount: asPositiveBigInt(offer.grossBuyAmount, "grossBuyAmount"),
+    sellToken: asCanonicalAddress(offer.sellToken, "sellToken"),
+    buyToken: asCanonicalAddress(offer.buyToken, "buyToken"),
+    spreadBps: asSafeInteger(offer.spreadBps, "spreadBps"),
+    provenance: asString(offer.provenance, "provenance"),
+    nonce: asString(offer.nonce, "nonce"),
+    reservationId: asString(offer.reservationId, "reservationId"),
+    reservationExpiresAt: asSafeInteger(
+      offer.reservationExpiresAt,
+      "reservationExpiresAt",
     ),
-    sellToken: asCanonicalAddress(result.sellToken, "sellToken"),
-    buyToken: asCanonicalAddress(result.buyToken, "buyToken"),
-    provenance: asString(result.provenance, "provenance"),
-  };
+  }));
 }
 
 export async function signLocalnetSolverQuote(
@@ -181,6 +217,8 @@ export async function signLocalnetSolverQuote(
     solverId: quote.solverId,
     solverKey: quote.solverKey,
     nonce: quote.nonce,
+    reservationId: quote.reservationId,
+    reservationExpiresAt: quote.reservationExpiresAt,
     buyAmount: quote.buyAmount.toString(),
     spreadBps: quote.spreadBps,
     pricingProvenance: quote.pricingProvenance,
@@ -194,11 +232,27 @@ export async function signLocalnetSolverQuote(
   return signature;
 }
 
+export async function selectLocalnetSolverQuote(input: {
+  intentDigest: string;
+  selectedReservationId: string;
+}): Promise<void> {
+  await postLocalnet("/private-intents/select-quote", input);
+}
+
+export async function releaseLocalnetSolverQuote(
+  reservationId: string,
+): Promise<void> {
+  await postLocalnet("/private-intents/release-quote", { reservationId });
+}
+
 export async function askLocalnetSolverToFill(
   terms: LocalnetIntentTerms,
 ): Promise<string> {
   const result = await postLocalnet("/private-intents/solve", {
     dealId: terms.dealId,
+    intentDigest: terms.intentDigest,
+    solverId: terms.solverId,
+    reservationId: terms.reservationId,
     sellToken: terms.sellToken,
     sellAmount: terms.sellAmount.toString(),
     buyToken: terms.buyToken,
@@ -212,6 +266,9 @@ export async function expireLocalnetPrivateIntent(
 ): Promise<number> {
   const result = await postLocalnet("/private-intents/expire", {
     dealId: terms.dealId,
+    intentDigest: terms.intentDigest,
+    solverId: terms.solverId,
+    reservationId: terms.reservationId,
     sellToken: terms.sellToken,
     sellAmount: terms.sellAmount.toString(),
     buyToken: terms.buyToken,

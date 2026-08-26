@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { LOCALNET_SOLVER_KEY_ID } from "@app20/private-intents";
+import {
+  LOCALNET_SECONDARY_SOLVER_KEY_ID,
+  LOCALNET_SOLVER_KEY_ID,
+} from "@app20/private-intents";
 import {
   LOCALNET_SOLVER_PUBLIC_JWK,
+  LOCALNET_SOLVER_PUBLIC_JWKS,
   verifyLocalnetSolverQuote,
 } from "./localnet-quote-authority";
 
 const CANONICAL_FIXTURE = '{"buyAmount":"1"}';
 const SIGNATURE_FIXTURE =
   "0x1a475e032e08c7f71ff6c2c7692d473025fd7bd35b1b4478b1b3d87caa4456ad2da3931a4b36bd3ffa327b8331916710a56c372dd565f2db9327df8c82c10eb4";
+const SECONDARY_SIGNATURE_FIXTURE =
+  "0xa5290939dcf47ef6141d44f3fc62fd699e5a85a2c544c664d739bc7617dd769a8b5d050740c50346a626d314c7c6b64007b1dee29eb89f1a7128ec7764986d53";
 
 describe("localnet quote authority", () => {
   it("verifies the pinned solver fixture and rejects a forged key id", async () => {
@@ -21,10 +27,20 @@ describe("localnet quote authority", () => {
     await expect(
       verifyLocalnetSolverQuote(
         CANONICAL_FIXTURE,
+        SECONDARY_SIGNATURE_FIXTURE,
+        LOCALNET_SECONDARY_SOLVER_KEY_ID,
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      verifyLocalnetSolverQuote(
+        CANONICAL_FIXTURE,
         SIGNATURE_FIXTURE,
         "forged-solver",
       ),
     ).resolves.toBe(false);
     expect(LOCALNET_SOLVER_PUBLIC_JWK.d).toBeUndefined();
+    expect(
+      LOCALNET_SOLVER_PUBLIC_JWKS[LOCALNET_SECONDARY_SOLVER_KEY_ID]?.d,
+    ).toBeUndefined();
   });
 });

@@ -16,7 +16,7 @@ import {
 } from "./otc";
 
 export const PAYMENT_LINK_PATH = "/pay";
-export const PAYMENT_LINK_VERSION = "qlp2" as const;
+export const PAYMENT_LINK_VERSION = "app20p2" as const;
 export const MAX_PAYMENT_LINK_FRAGMENT_LENGTH = 2_048;
 export const DEFAULT_PAYMENT_LINK_EXPIRY_HOURS = "72";
 export const MAX_PAYMENT_LINK_EXPIRY_HOURS = 24 * 365;
@@ -37,7 +37,7 @@ export type PaymentLinkRequestOptions = {
 const MAX_PAYMENT_LINK_PAYLOAD_BYTES = 1_450;
 const MAX_UINT256 = 2n ** 256n - 1n;
 const MAX_DATE_SECONDS = 8_640_000_000_000;
-const CHECKSUM_DOMAIN = new TextEncoder().encode("quietline/payment-link/v2\0");
+const CHECKSUM_DOMAIN = new TextEncoder().encode("app20/payment-link/v2\0");
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const textEncoder = new TextEncoder();
 const fatalTextDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -216,6 +216,14 @@ function requestTuple(request: PaymentRequestPayload): EncodedPaymentRequest {
 
 function serializeRequest(request: PaymentRequestPayload): Uint8Array {
   return textEncoder.encode(JSON.stringify(requestTuple(request)));
+}
+
+export function digestPaymentLinkRequest(
+  request: PaymentRequestPayload,
+): string {
+  return `sha256:${Array.from(checksum(serializeRequest(request)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
 }
 
 /** Build one canonical, unsigned STRK request from user-entered link fields. */

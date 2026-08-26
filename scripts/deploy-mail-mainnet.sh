@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Declare and deploy QuietlineMail to Starknet mainnet.
+# Declare and deploy App20Mail to Starknet mainnet.
 # Default is a dry run. Real txs require --broadcast and I_UNDERSTAND_MAINNET=1.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAIRO="$ROOT/cairo"
 POOL="0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a"
-RPC="${QUIETLINE_MAINNET_RPC:-https://rpc.starknet.lava.build}"
-ACCOUNT="${SNCAST_ACCOUNT:-quietline-deployer}"
-CONTRACT_NAME="QuietlineMail"
+RPC="${APP20_MAINNET_RPC:-https://rpc.starknet.lava.build}"
+ACCOUNT="${SNCAST_ACCOUNT:-app20-deployer}"
+CONTRACT_NAME="App20Mail"
 BROADCAST=0
 RUN_TESTS=0
 
 usage() {
   cat <<EOF
-Deploy QuietlineMail to SN_MAIN.
+Deploy App20Mail to SN_MAIN.
 
 Usage:
   npm run deploy:helper:mainnet -- [options]
@@ -28,10 +28,10 @@ Options:
 
 Environment:
   I_UNDERSTAND_MAINNET=1   required with --broadcast
-  QUIETLINE_MAINNET_RPC    RPC URL (default: $RPC)
+  APP20_MAINNET_RPC    RPC URL (default: $RPC)
   SNCAST_ACCOUNT           account name override
 
-This never deploys QuietlineEscrow. Constructor calldata is locked to the
+This never deploys App20Escrow. Constructor calldata is locked to the
 canonical mainnet STRK20 pool and cannot be changed from the CLI.
 EOF
 }
@@ -128,7 +128,7 @@ need sncast
 need scarb
 need python3
 
-echo "QuietlineMail mainnet deploy"
+echo "App20Mail mainnet deploy"
 echo "  network     SN_MAIN"
 echo "  pool        $POOL"
 echo "  rpc         $RPC"
@@ -151,8 +151,8 @@ if [[ $RUN_TESTS -eq 1 ]]; then
   (cd "$CAIRO" && snforge test)
 fi
 
-SIERRA="$CAIRO/target/dev/quietline_mail_QuietlineMail.contract_class.json"
-CASM="$CAIRO/target/dev/quietline_mail_QuietlineMail.compiled_contract_class.json"
+SIERRA="$CAIRO/target/dev/app20_mail_App20Mail.contract_class.json"
+CASM="$CAIRO/target/dev/app20_mail_App20Mail.compiled_contract_class.json"
 [[ -f "$SIERRA" && -f "$CASM" ]] || {
   echo "Missing built artifacts:" >&2
   echo "  $SIERRA" >&2
@@ -225,7 +225,7 @@ write_env_helper "$helper"
 
 cat <<EOF
 
-Deployed QuietlineMail
+Deployed App20Mail
   class hash     $class_hash
   declare tx     ${declare_hash:-unknown}
   helper         $helper

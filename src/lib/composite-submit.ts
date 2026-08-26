@@ -5,7 +5,7 @@ export type CompositeSubmissionStep =
   | {
       kind: "fund_escrow";
       label: "funding escrow";
-      /** Deal id is rejected by QuietlineEscrow if Fund is replayed. */
+      /** Deal id is rejected by App20Escrow if Fund is replayed. */
       idempotencyKey: string;
     }
   | {

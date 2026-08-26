@@ -63,7 +63,7 @@ describe("device-private drafts", () => {
   it("ignores malformed local records instead of inventing a draft", () => {
     const storage = new MemoryStorage();
     storage.setItem(
-      "quietline/drafts/v1/SN_SEPOLIA/0xa11ce",
+      "app20/drafts/v1/SN_SEPOLIA/0xa11ce",
       JSON.stringify([{ version: 1, id: "not-a-draft" }]),
     );
     expect(loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")).toEqual([]);

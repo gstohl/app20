@@ -13,9 +13,9 @@ import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import styles from "./localnet-wallet.module.css";
 
 export const LOCALNET_DEV_WALLET_SENTINEL =
-  "QUIETLINE_LOCALNET_DEV_WALLET_SENTINEL_7C91E2";
+  "APP20_LOCALNET_DEV_WALLET_SENTINEL_7C91E2";
 
-const SELECTED_IDENTITY_KEY = "quietline/localnet-wallet/identity/v1";
+const SELECTED_IDENTITY_KEY = "app20/localnet-wallet/identity/v1";
 const WALLET_ICON =
   "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9IiMxMTE4MjciLz48cGF0aCBkPSJNMTcgMzJoMzBNMzIgMTd2MzAiIHN0cm9rZT0iIzdkZDNmYyIgc3Ryb2tlLXdpZHRoPSI3IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSI3IiBmaWxsPSIjZjhmYWZjIi8+PC9zdmc+" as const;
 
@@ -62,7 +62,7 @@ function requireIdentity(
 }
 
 /** Wallet Standard implementation used only by the gated localnet build. */
-export class QuietlineLocalnetWallet implements WalletWithStarknetFeatures {
+export class App20LocalnetWallet implements WalletWithStarknetFeatures {
   readonly version = "1.0.0" as const;
   readonly name: string;
   readonly icon = WALLET_ICON;
@@ -117,7 +117,7 @@ export class QuietlineLocalnetWallet implements WalletWithStarknetFeatures {
         on,
       },
       [StarknetWalletApi]: {
-        id: "quietline-localnet-dev",
+        id: "app20-localnet-dev",
         version: "1.0.0" as const,
         walletVersion: "0.1.0-dev",
         request,
@@ -261,7 +261,7 @@ async function readApiResponse(
   return payload.result;
 }
 
-export async function initializeLocalnetDevWallet(): Promise<QuietlineLocalnetWallet> {
+export async function initializeLocalnetDevWallet(): Promise<App20LocalnetWallet> {
   const baseUrl = import.meta.env.VITE_LOCALNET_WALLET_URL;
   if (!baseUrl) {
     throw new Error(
@@ -271,7 +271,7 @@ export async function initializeLocalnetDevWallet(): Promise<QuietlineLocalnetWa
   const apiRequest: ApiRequest = (path, init) =>
     readApiResponse(baseUrl, path, init);
   const config = (await apiRequest("/config")) as LocalnetWalletConfig;
-  const wallet = new QuietlineLocalnetWallet(
+  const wallet = new App20LocalnetWallet(
     config,
     window.localStorage,
     apiRequest,
@@ -288,7 +288,7 @@ export function LocalnetDevTools({
   wallet,
   variant = "sidebar",
 }: {
-  wallet: QuietlineLocalnetWallet;
+  wallet: App20LocalnetWallet;
   variant?: "banner" | "sidebar";
 }) {
   const [selectedId, setSelectedId] = useState(wallet.selectedIdentity.id);

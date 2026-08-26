@@ -2,8 +2,8 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-const AUTH_PRIVATE_INFO = new TextEncoder().encode("quietline/ed25519/auth/v1");
-const AUTH_DOMAIN = "quietline/mail-auth/v1";
+const AUTH_PRIVATE_INFO = new TextEncoder().encode("app20/ed25519/auth/v1");
+const AUTH_DOMAIN = "app20/mail-auth/v1";
 const HEX32 = /^[0-9a-f]{64}$/i;
 const HEX64 = /^[0-9a-f]{128}$/i;
 

@@ -45,7 +45,7 @@ pub struct Deal {
 }
 
 #[starknet::interface]
-pub trait IQuietlineEscrow<TState> {
+pub trait IApp20Escrow<TState> {
     fn privacy_invoke(
         ref self: TState,
         operation: EscrowOperation,
@@ -59,7 +59,7 @@ pub trait IQuietlineEscrow<TState> {
 }
 
 #[starknet::contract]
-pub mod QuietlineEscrow {
+pub mod App20Escrow {
     use core::num::traits::Zero;
     use starknet::storage::{
         Map, StoragePathEntry, StoragePointerReadAccess, StoragePointerWriteAccess,
@@ -69,11 +69,10 @@ pub mod QuietlineEscrow {
         ClassHash, ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address,
         get_contract_address,
     };
-    use crate::{IErc20Dispatcher, IErc20DispatcherTrait};
     use crate::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
+    use crate::{IErc20Dispatcher, IErc20DispatcherTrait};
     use super::{
-        Deal, DealStatus, EscrowOperation, FillParams, FundParams, IQuietlineEscrow,
-        OpenNoteDeposit,
+        Deal, DealStatus, EscrowOperation, FillParams, FundParams, IApp20Escrow, OpenNoteDeposit,
     };
 
     mod errors {
@@ -160,7 +159,7 @@ pub mod QuietlineEscrow {
     }
 
     #[abi(embed_v0)]
-    impl QuietlineEscrowImpl of IQuietlineEscrow<ContractState> {
+    impl App20EscrowImpl of IApp20Escrow<ContractState> {
         fn privacy_invoke(
             ref self: ContractState,
             operation: EscrowOperation,
@@ -312,9 +311,7 @@ pub mod QuietlineEscrow {
                     leg_b_amount: received,
                 },
             );
-        array![
-            OpenNoteDeposit { note_id, token: deal.leg_a_token, amount: deal.leg_a_amount },
-        ]
+        array![OpenNoteDeposit { note_id, token: deal.leg_a_token, amount: deal.leg_a_amount }]
             .span()
     }
 
@@ -330,10 +327,7 @@ pub mod QuietlineEscrow {
     }
 
     fn claim(
-        ref self: ContractState,
-        deal_id: felt252,
-        note_id: felt252,
-        pool: ContractAddress,
+        ref self: ContractState, deal_id: felt252, note_id: felt252, pool: ContractAddress,
     ) -> Span<OpenNoteDeposit> {
         let mut deal = self.deals.entry(deal_id).read();
         assert(deal.status == DealStatus::Filled, errors::BAD_STATE);
@@ -350,23 +344,13 @@ pub mod QuietlineEscrow {
         self.deals.entry(deal_id).write(deal);
 
         assert(token.approve(pool, deal.leg_b_amount.into()), errors::APPROVE_FAILED);
-        self
-            .emit(
-                DealClaimed {
-                    deal_id, token: deal.leg_b_token, amount: deal.leg_b_amount,
-                },
-            );
-        array![
-            OpenNoteDeposit { note_id, token: deal.leg_b_token, amount: deal.leg_b_amount },
-        ]
+        self.emit(DealClaimed { deal_id, token: deal.leg_b_token, amount: deal.leg_b_amount });
+        array![OpenNoteDeposit { note_id, token: deal.leg_b_token, amount: deal.leg_b_amount }]
             .span()
     }
 
     fn timeout(
-        ref self: ContractState,
-        deal_id: felt252,
-        note_id: felt252,
-        pool: ContractAddress,
+        ref self: ContractState, deal_id: felt252, note_id: felt252, pool: ContractAddress,
     ) -> Span<OpenNoteDeposit> {
         let mut deal = self.deals.entry(deal_id).read();
         assert(deal.status == DealStatus::Funded, errors::BAD_STATE);
@@ -384,15 +368,8 @@ pub mod QuietlineEscrow {
         self.deals.entry(deal_id).write(deal);
 
         assert(token.approve(pool, deal.leg_a_amount.into()), errors::APPROVE_FAILED);
-        self
-            .emit(
-                DealTimedOut {
-                    deal_id, token: deal.leg_a_token, amount: deal.leg_a_amount,
-                },
-            );
-        array![
-            OpenNoteDeposit { note_id, token: deal.leg_a_token, amount: deal.leg_a_amount },
-        ]
+        self.emit(DealTimedOut { deal_id, token: deal.leg_a_token, amount: deal.leg_a_amount });
+        array![OpenNoteDeposit { note_id, token: deal.leg_a_token, amount: deal.leg_a_amount }]
             .span()
     }
 }

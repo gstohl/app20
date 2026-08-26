@@ -18,7 +18,7 @@ pub trait IErc20<TState> {
 }
 
 #[starknet::interface]
-pub trait IQuietlineMail<TState> {
+pub trait IApp20Mail<TState> {
     fn privacy_invoke(
         ref self: TState,
         token: ContractAddress,
@@ -36,7 +36,7 @@ pub trait IQuietlineMail<TState> {
 }
 
 #[starknet::contract]
-pub mod QuietlineMail {
+pub mod App20Mail {
     use starknet::storage::{
         Map, StoragePathEntry, StoragePointerReadAccess, StoragePointerWriteAccess,
     };
@@ -84,7 +84,7 @@ pub mod QuietlineMail {
     }
 
     #[abi(embed_v0)]
-    impl QuietlineMailImpl of super::IQuietlineMail<ContractState> {
+    impl App20MailImpl of super::IApp20Mail<ContractState> {
         fn privacy_invoke(
             ref self: ContractState,
             token: ContractAddress,

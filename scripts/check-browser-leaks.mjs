@@ -33,7 +33,7 @@ const forbiddenMarkers = [
   "VITE_LOCALNET_RPC_URL",
   "VITE_LOCALNET_POOL_ADDRESS",
   "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
-  "/__quietline_localnet_wallet",
+  "/__app20_localnet_wallet",
   "@privy-io/node",
   "src/proxy/server",
 ];

@@ -11,7 +11,11 @@ const baseEnv = {
 
 test("session cookie is opaque, pseudonymous, short-lived, and strictly scoped", async () => {
   const identifier = "did:privy:wallet-plaintext-identifier-canary";
-  const cookie = await issueOhttpSession(identifier, baseEnv, 1_700_000_000_000);
+  const cookie = await issueOhttpSession(
+    identifier,
+    baseEnv,
+    1_700_000_000_000,
+  );
   assert.equal(cookie.includes(identifier), false);
   assert.match(cookie, /^app20_ohttp_session=[A-Za-z0-9_.%-]+;/);
   assert.match(cookie, /HttpOnly/);
@@ -22,7 +26,12 @@ test("session cookie is opaque, pseudonymous, short-lived, and strictly scoped",
 });
 
 test("production session secret must be at least 32 UTF-8 bytes", async () => {
-  await assert.rejects(() => issueOhttpSession("authenticated", { ...baseEnv, OHTTP_SESSION_SECRET: "too-short" }));
+  await assert.rejects(() =>
+    issueOhttpSession("authenticated", {
+      ...baseEnv,
+      OHTTP_SESSION_SECRET: "too-short",
+    }),
+  );
 });
 
 test("abort scope enforces timeout and parent disconnect", async () => {
@@ -47,7 +56,18 @@ test("SPA headers deny framing/sniffing/referrers and use reviewed Privy origins
   assert.equal(headers.get("x-content-type-options"), "nosniff");
   assert.equal(headers.get("x-frame-options"), "DENY");
   assert.match(headers.get("permissions-policy") ?? "", /camera=\(\)/);
-  assert.match(headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
-  assert.match(headers.get("content-security-policy") ?? "", /https:\/\/auth-frame\.example\.invalid/);
-  assert.throws(() => spaSecurityHeaders({ privyFrameOrigins: ["https://*.example.invalid"], privyConnectOrigins: [] }));
+  assert.match(
+    headers.get("content-security-policy") ?? "",
+    /frame-ancestors 'none'/,
+  );
+  assert.match(
+    headers.get("content-security-policy") ?? "",
+    /https:\/\/auth-frame\.example\.invalid/,
+  );
+  assert.throws(() =>
+    spaSecurityHeaders({
+      privyFrameOrigins: ["https://*.example.invalid"],
+      privyConnectOrigins: [],
+    }),
+  );
 });

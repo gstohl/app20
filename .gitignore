@@ -11,7 +11,7 @@ out/
 dist/
 build/
 .e2e-build/
-.quietline-localnet/
+.app20-localnet/
 playwright-report/
 test-results/
 ui-artifacts/

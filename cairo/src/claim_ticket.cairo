@@ -75,10 +75,7 @@ pub mod ClaimTicket {
 
     #[constructor]
     fn constructor(
-        ref self: ContractState,
-        escrow: ContractAddress,
-        pool: ContractAddress,
-        deal_id: felt252,
+        ref self: ContractState, escrow: ContractAddress, pool: ContractAddress, deal_id: felt252,
     ) {
         assert(escrow.is_non_zero(), errors::ZERO_ADDRESS);
         assert(pool.is_non_zero(), errors::ZERO_ADDRESS);
@@ -90,11 +87,11 @@ pub mod ClaimTicket {
     #[abi(embed_v0)]
     impl ClaimTicketImpl of super::IClaimTicket<ContractState> {
         fn name(self: @ContractState) -> ByteArray {
-            "Quietline Claim Ticket"
+            "APP20 Claim Ticket"
         }
 
         fn symbol(self: @ContractState) -> ByteArray {
-            "QLCT"
+            "A20CT"
         }
 
         fn decimals(self: @ContractState) -> u8 {
@@ -177,16 +174,11 @@ pub mod ClaimTicket {
 
     fn assert_authorized(self: @ContractState) {
         let caller = get_caller_address();
-        assert(
-            caller == self.escrow.read() || caller == self.pool.read(), errors::NOT_AUTHORIZED,
-        );
+        assert(caller == self.escrow.read() || caller == self.pool.read(), errors::NOT_AUTHORIZED);
     }
 
     fn transfer_balance(
-        ref self: ContractState,
-        sender: ContractAddress,
-        recipient: ContractAddress,
-        amount: u256,
+        ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
     ) {
         assert(amount == 1, errors::BAD_AMOUNT);
         self.balances.entry(sender).write(self.balances.entry(sender).read() - amount);

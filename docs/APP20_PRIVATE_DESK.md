@@ -9,18 +9,38 @@ APP20 joins three existing surfaces into one professional workflow:
 ## Desk lifecycle
 
 ```text
-Counterparty → Quote → Lock → Solver fill → Claim → Receipt
-                           ↘ Expiry → Refund
+Counterparty → Privacy preflight + confirm → Sealed maker requests
+             → Verify all → Select one → Lock
+                                      ↘ Maker fill → Claim → Receipt
+                                      ↘ Expiry → Refund
 ```
 
-The localnet market uses a deterministic price fixture and pre-positioned
-solver notes against the real pool contract with mock proof bytes. Cairo and
-pool state are authoritative. A Mail letter, local lifecycle state, or quote
-response cannot prove settlement.
+Before sending exact terms, the Desk reports evidence-labelled amount
+fingerprinting, denomination, note-maturity, timing, invited-maker, and public
+settlement findings. Missing evidence is shown as unavailable, no synthetic
+privacy score is invented, and known maker/public disclosures require explicit
+confirmation.
+
+The localnet market uses a deterministic price fixture and two P-256 makers
+with separate child processes, devnet settlement accounts, quote keys,
+private-note inventories, auth scopes, and `0600` reservation WALs. A quote is
+signed only after its reservation snapshot is fsynced. Both signatures are
+verified before deterministic best-amount selection; losing reservations are
+released durably. The selected maker persists `begin-fill` before wallet
+execution, preventing concurrent double fill. The Playwright journey SIGKILLs
+that process after selection, verifies automatic WAL recovery, and then settles
+against the real pool with mock proof bytes.
+
+Exact maker balances and private keys are never returned to the browser, and no
+order book is published. Devnet still exposes deterministic predeployed keys,
+loopback maker HTTP is not HPKE yet, and a single-host PID lock is not a
+replicated production database. Cairo and finalized pool state remain
+authoritative. A Mail letter, local lifecycle state, quote, WAL entry, or digest
+cannot prove settlement.
 
 ## Localnet claim authorization
 
-QuietlineEscrow V2 authorizes claim or timeout with a deal-unique, supply-one
+App20Escrow V2 authorizes claim or timeout with a deal-unique, supply-one
 ERC-20 ticket held as a private note. Funding mints that ticket into an OPEN
 note; payout atomically withdraws and burns it before creating the OPEN payout
 note. The Mail seed cannot derive or spend the ticket. Ticket and deal contract

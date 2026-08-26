@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTAINER_NAME="${QUIETLINE_DEVNET_CONTAINER:-quietline-devnet}"
-IMAGE="${QUIETLINE_DEVNET_IMAGE:-docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf}"
-PORT="${QUIETLINE_DEVNET_PORT:-5050}"
+CONTAINER_NAME="${APP20_DEVNET_CONTAINER:-app20-devnet}"
+IMAGE="${APP20_DEVNET_IMAGE:-docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf}"
+PORT="${APP20_DEVNET_PORT:-5050}"
 RPC_URL="http://127.0.0.1:${PORT}"
 
 rpc_ready() {
@@ -17,9 +17,9 @@ stop_devnet() {
   if docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
     docker stop --time 10 "${CONTAINER_NAME}" >/dev/null || true
     docker rm "${CONTAINER_NAME}" >/dev/null || true
-    echo "Quietline devnet stopped."
+    echo "APP20 devnet stopped."
   else
-    echo "Quietline devnet is not running."
+    echo "APP20 devnet is not running."
   fi
 }
 
@@ -52,7 +52,7 @@ docker run --detach \
 
 for _attempt in $(seq 1 60); do
   if rpc_ready 2>/dev/null; then
-    echo "Quietline devnet ready at ${RPC_URL}."
+    echo "APP20 devnet ready at ${RPC_URL}."
     exit 0
   fi
   if ! docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then

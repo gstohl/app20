@@ -7,7 +7,7 @@ import {
   buildMemoTransferActions,
   buildOtcAcceptActions,
   computeActionId,
-  QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+  APP20_HELPER_FUNDING_BASE_UNITS,
   Strk20RevertedError,
   Strk20SubmissionCallbackError,
   Strk20WaitTimeoutError,
@@ -134,7 +134,7 @@ describe("mail STRK20 actions", () => {
       amount: "1000",
       record,
       actionId,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
     });
 
     const invoke = actions.at(-1);
@@ -165,7 +165,7 @@ describe("mail STRK20 actions", () => {
       recoveryAddress: "0xb0b",
       record,
       offer,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       actionId: computeActionId("otc-accept-attempt", `0x${"aa".repeat(32)}`),
     });
 
@@ -202,7 +202,7 @@ describe("mail STRK20 actions", () => {
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
         record,
-        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         actionId: computeActionId("otc-accept-attempt", `0x${"bb".repeat(32)}`),
         offer: {
           ...offer,
@@ -248,7 +248,7 @@ describe("mail STRK20 actions", () => {
         policy,
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
-        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         record,
       }),
     ).rejects.toThrow("blocked by network policy");
@@ -280,7 +280,7 @@ describe("mail STRK20 actions", () => {
       helperAddress: "0x123",
       recoveryAddress: "0xb0b",
       tokenAddress: addrSTRK,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       record,
     });
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -315,7 +315,7 @@ describe("mail STRK20 actions", () => {
       recoveryAddress: "0xb0b",
       offer,
       record,
-      helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       actionId: computeActionId("otc-accept-attempt", `0x${"cc".repeat(32)}`),
     });
     expect(invoke).toHaveBeenCalledTimes(2);
@@ -358,7 +358,7 @@ describe("mail STRK20 actions", () => {
         policy: () => undefined,
         helperAddress: "0x123",
         recoveryAddress: "0xb0b",
-        helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         record,
       }),
     ).rejects.toBeInstanceOf(Strk20RevertedError);
@@ -383,7 +383,7 @@ describe("mail STRK20 actions", () => {
           policy: () => undefined,
           helperAddress: "0x123",
           recoveryAddress: "0xb0b",
-          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           record,
         },
         { timeoutMs: 5, onSubmitted: submitted },
@@ -414,7 +414,7 @@ describe("mail STRK20 actions", () => {
           policy: () => undefined,
           helperAddress: "0x123",
           recoveryAddress: "0xb0b",
-          helperFundingAmount: QUIETLINE_HELPER_FUNDING_BASE_UNITS,
+          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           record,
         },
         {

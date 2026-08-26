@@ -11,9 +11,9 @@ import {
 } from "./otc";
 import { sanitizeUntrustedText } from "./text";
 
-export const ESCROW_STORAGE_PREFIX = "quietline/escrow/v1";
-export const ESCROW_CLAIM_KEY_LABEL = "quietline/escrow-claim/v1";
-export const ESCROW_CLAIM_TAG = "QUIETLINE_ESCROW_CLAIM_V1";
+export const ESCROW_STORAGE_PREFIX = "app20/escrow/v1";
+export const ESCROW_CLAIM_KEY_LABEL = "app20/escrow-claim/v1";
+export const ESCROW_CLAIM_TAG = "APP20_ESCROW_CLAIM_V1";
 export const ESCROW_CLAIM_OPERATION = "CLAIM";
 export const ESCROW_TIMEOUT_OPERATION = "TIMEOUT";
 
@@ -343,7 +343,7 @@ function counterBytes(counter: number): Uint8Array {
  * Derives the per-deal Stark claim key from the mailbox seed.
  *
  * Frozen v1 encoding: HKDF-SHA256 IKM is the raw 32-byte mail seed, salt is
- * UTF-8 `quietline/escrow-claim/v1`, and info is deal_id as 32-byte big-endian
+ * UTF-8 `app20/escrow-claim/v1`, and info is deal_id as 32-byte big-endian
  * followed by a u32 big-endian attempt counter (present from attempt zero).
  * The 32-byte OKM has only its four excess high bits cleared, producing a
  * uniform 252-bit candidate. Zero and candidates >= the Stark scalar order are
@@ -385,7 +385,7 @@ export function deriveEscrowClaimKey(
 
 export type EscrowPayoutOperation = "claim" | "timeout";
 
-/** Mirrors QuietlineEscrow.compute_claim_message exactly. */
+/** Mirrors App20Escrow.compute_claim_message exactly. */
 export function computeEscrowClaimMessage(
   escrowAddress: string,
   dealId: string,

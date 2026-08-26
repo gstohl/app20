@@ -32,8 +32,8 @@ const BUILD_DIR = join(ROOT, ".e2e-build", "real-pool-mail");
 const SHIELD_AMOUNT = 100n;
 const RECOVERY_DUST = 7n;
 const UNRELATED_HELPER_BALANCE = 11n;
-const PLAINTEXT = "hello through Quietline's real pool";
-const PASSPHRASE = "quietline-real-pool-mail-e2e";
+const PLAINTEXT = "hello through APP20's real pool";
+const PASSPHRASE = "app20-real-pool-mail-e2e";
 const TX_TIMEOUT = 600_000;
 
 function localExecutable(name) {
@@ -41,7 +41,7 @@ function localExecutable(name) {
 	return existsSync(local) ? local : name;
 }
 
-function buildQuietlineArtifacts() {
+function buildApp20Artifacts() {
 	execFileSync(localExecutable("scarb"), ["build"], {
 		cwd: join(ROOT, "cairo"),
 		stdio: "inherit",
@@ -280,10 +280,10 @@ async function prepare(prover, actions) {
 }
 
 test(
-	"real privacy pool: Quietline production mail batch, recovery note, and action-id nullifier",
+	"real privacy pool: APP20 production mail batch, recovery note, and action-id nullifier",
 	{ timeout: TX_TIMEOUT },
 	async () => {
-		buildQuietlineArtifacts();
+		buildApp20Artifacts();
 		const mail = await import(
 			pathToFileURL(join(BUILD_DIR, "mail.js")).href
 		);
@@ -301,7 +301,7 @@ test(
 				readFileSync(
 					join(
 						artifactRoot,
-						"quietline_mail_QuietlineMail.contract_class.json",
+						"app20_mail_App20Mail.contract_class.json",
 					),
 					"utf8",
 				),
@@ -310,7 +310,7 @@ test(
 				readFileSync(
 					join(
 						artifactRoot,
-						"quietline_mail_QuietlineMail.compiled_contract_class.json",
+						"app20_mail_App20Mail.compiled_contract_class.json",
 					),
 					"utf8",
 				),
@@ -321,7 +321,7 @@ test(
 			await waitForSuccess(
 				env.node,
 				declaration.transaction_hash,
-				"QuietlineMail declaration",
+				"App20Mail declaration",
 			);
 
 			const deployment = await env.admin.deployContract({
@@ -332,11 +332,11 @@ test(
 			await waitForSuccess(
 				env.node,
 				deployment.transaction_hash,
-				"QuietlineMail deployment",
+				"App20Mail deployment",
 			);
 			const helperAddress =
 				deployment.contract_address ?? deployment.address;
-			assert.ok(helperAddress, "QuietlineMail deployment must return an address");
+			assert.ok(helperAddress, "App20Mail deployment must return an address");
 			assert.equal(
 				feltEqual(helperAddress, env.privacy.address),
 				false,
@@ -381,7 +381,7 @@ test(
 			assert.deepEqual(
 				registeredBobKey.map(BigInt),
 				bobPubkey.map(BigInt),
-				"Bob's mail public key must round-trip through QuietlineMail",
+				"Bob's mail public key must round-trip through App20Mail",
 			);
 
 			const { prover, transfers: aliceTransfers } = makeAlicePrivacy(env);
@@ -487,7 +487,7 @@ test(
 			assert.equal(
 				feltEqual(firstEvents[0].from_address, helperAddress),
 				true,
-				"MessagePosted must come from the deployed QuietlineMail helper",
+				"MessagePosted must come from the deployed App20Mail helper",
 			);
 			assert.equal(
 				feltEqual(firstEvents[0].transaction_hash, firstMail.transactionHash),
@@ -550,7 +550,7 @@ test(
 			assert.match(
 				revertReason(replay.receipt),
 				/ACTION_ID_USED/,
-				"replay must revert at QuietlineMail's action-id nullifier",
+				"replay must revert at App20Mail's action-id nullifier",
 			);
 			const countAfterReplay = await env.node.callContract({
 				contractAddress: helperAddress,
@@ -608,9 +608,9 @@ test(
 				[BigInt(actionId), 0n, 0n],
 			);
 
-			console.log("Quietline real-pool mail flow passed:");
+			console.log("APP20 real-pool mail flow passed:");
 			console.log(`  privacy_Privacy: ${env.privacy.address}`);
-			console.log(`  QuietlineMail: ${helperAddress}`);
+			console.log(`  App20Mail: ${helperAddress}`);
 			console.log(`  action id: ${actionId}`);
 			for (const [label, transactionHash] of Object.entries(txHashes)) {
 				console.log(`  ${label}: ${transactionHash}`);

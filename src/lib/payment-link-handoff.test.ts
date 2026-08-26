@@ -45,7 +45,7 @@ describe("payment-link mailbox handoff", () => {
     const chainId = "SN_SEPOLIA";
     const payer = "0xb0b";
 
-    const link = createPaymentLink(request, "https://quietline.example/");
+    const link = createPaymentLink(request, "https://app20.example/");
     const reviewed = decodePaymentLinkFragment(new URL(link).hash);
 
     // /pay only stages the reviewed request. Opening the link creates no local

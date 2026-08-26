@@ -20,10 +20,14 @@ export const INTENT_DOMAIN = "app20/private-intent/v1";
 export const QUOTE_DOMAIN = "app20/private-intent-quote/v1";
 export const LOCALNET_SOLVER_ID = "app20-localnet-solver";
 export const LOCALNET_SOLVER_KEY_ID = "app20-localnet-solver/ecdsa-p256-v1";
+export const LOCALNET_SECONDARY_SOLVER_ID = "app20-localnet-solver-b";
+export const LOCALNET_SECONDARY_SOLVER_KEY_ID =
+  "app20-localnet-solver-b/ecdsa-p256-v1";
 export const QUOTE_CLOCK_SKEW_SECONDS = 30;
 
 const NONCE_PATTERN = /^0x[0-9a-f]{64}$/;
 const SIGNATURE_PATTERN = /^0x[0-9a-f]+$/;
+const MAX_U256 = (1n << 256n) - 1n;
 const MIN_INTENT_ID_LENGTH = 32;
 const ECDSA_PARAMS = { name: "ECDSA", namedCurve: "P-256" } as const;
 const ECDSA_SIGN = { name: "ECDSA", hash: "SHA-256" } as const;
@@ -68,8 +72,8 @@ function requireToken(value: string, label: string): string {
 }
 
 function requireAmount(value: bigint, label: string): bigint {
-  if (value <= 0n) {
-    throw new PrivateIntentError(`${label} must be greater than zero.`);
+  if (value <= 0n || value > MAX_U256) {
+    throw new PrivateIntentError(`${label} must be a positive u256 value.`);
   }
   return value;
 }
@@ -191,6 +195,9 @@ export interface SolverQuote {
   readonly solverId: string;
   readonly solverKey: string;
   readonly nonce: string;
+  /** Opaque server-side inventory reservation. Never disclose raw inventory. */
+  readonly reservationId: string;
+  readonly reservationExpiresAt: number;
   /** What the solver commits to deliver. Must satisfy minBuyAmount. */
   readonly buyAmount: bigint;
   readonly spreadBps: number;
@@ -229,19 +236,24 @@ export interface QuoteOptions {
   readonly quoteTtlSeconds: number;
   readonly now?: number;
   readonly nonce?: string;
+  readonly reservationId: string;
+  readonly reservationExpiresAt: number;
   readonly sign: (
     canonical: string,
     quote: UnsignedSolverQuote,
   ) => Promise<string>;
 }
 
-export interface QuoteAcceptance {
+export interface QuoteVerification {
   readonly helper: string;
   readonly verify: (
     canonical: string,
     signature: string,
     solverKey: string,
   ) => Promise<boolean>;
+}
+
+export interface QuoteAcceptance extends QuoteVerification {
   readonly consumeNonce: (nonce: string) => boolean;
 }
 
@@ -258,6 +270,8 @@ export function canonicalSolverQuote(quote: UnsignedSolverQuote): string {
     intentDigest: quote.intentDigest.toLowerCase(),
     nonce: quote.nonce.toLowerCase(),
     pool: quote.pool,
+    reservationExpiresAt: quote.reservationExpiresAt,
+    reservationId: quote.reservationId.toLowerCase(),
     pricingProvenance: quote.pricingProvenance,
     quoteExpiresAt: quote.quoteExpiresAt,
     quotedAt: quote.quotedAt,
@@ -338,6 +352,21 @@ function assertQuoteShape(quote: UnsignedSolverQuote): void {
       "The quote nonce must be 32 unpredictable bytes.",
     );
   }
+  if (!NONCE_PATTERN.test(quote.reservationId)) {
+    throw new PrivateIntentError(
+      "The quote reservation must be a 32-byte opaque identifier.",
+    );
+  }
+  requireUnixSeconds(quote.reservationExpiresAt, "reservationExpiresAt");
+  if (
+    quote.quoteExpiresAt <= quote.quotedAt ||
+    quote.reservationExpiresAt <= quote.quotedAt ||
+    quote.quoteExpiresAt > quote.reservationExpiresAt
+  ) {
+    throw new PrivateIntentError(
+      "The quote expiry must be after quoting and within its reservation.",
+    );
+  }
 }
 
 export async function quotePrivateSwapIntent(
@@ -369,6 +398,15 @@ export async function quotePrivateSwapIntent(
   const now = options.now ?? Math.floor(Date.now() / 1_000);
   if (now >= intent.expiresAt) {
     return { kind: "declined", reason: "The intent already expired." };
+  }
+  if (!NONCE_PATTERN.test(options.reservationId)) {
+    throw new PrivateIntentError(
+      "reservationId must be a 32-byte opaque identifier.",
+    );
+  }
+  requireUnixSeconds(options.reservationExpiresAt, "reservationExpiresAt");
+  if (now >= options.reservationExpiresAt) {
+    return { kind: "declined", reason: "The inventory reservation expired." };
   }
 
   const priced = await pricing.price({
@@ -404,11 +442,17 @@ export async function quotePrivateSwapIntent(
     solverId: options.solverId,
     solverKey: options.solverKey,
     nonce: options.nonce ?? createQuoteNonce(),
+    reservationId: options.reservationId.toLowerCase(),
+    reservationExpiresAt: options.reservationExpiresAt,
     buyAmount: afterSpread,
     spreadBps: options.spreadBps,
     pricingProvenance: priced.provenance,
     quotedAt: now,
-    quoteExpiresAt: Math.min(now + options.quoteTtlSeconds, intent.expiresAt),
+    quoteExpiresAt: Math.min(
+      now + options.quoteTtlSeconds,
+      intent.expiresAt,
+      options.reservationExpiresAt,
+    ),
   };
   assertQuoteShape(unsigned);
   const signature = (
@@ -448,15 +492,15 @@ export type IntentState =
       readonly refundedAt: number;
     };
 
-export async function acceptQuote(
+export async function verifySolverQuote(
   intent: PrivateSwapIntentV1,
   quote: SolverQuote,
   now: number,
-  acceptance: QuoteAcceptance,
-): Promise<IntentState> {
+  verification: QuoteVerification,
+): Promise<void> {
   assertPrivateSwapIntent(intent);
   assertQuoteShape(quote);
-  if (!starknetFeltEquals(quote.helper, acceptance.helper)) {
+  if (!starknetFeltEquals(quote.helper, verification.helper)) {
     throw new PrivateIntentError("The quote is bound to a different helper.");
   }
   if (quote.pool !== intent.pool) {
@@ -472,7 +516,11 @@ export async function acceptQuote(
   if (now + QUOTE_CLOCK_SKEW_SECONDS < quote.quotedAt) {
     throw new PrivateIntentError("The quote is dated in the future.");
   }
-  if (now >= quote.quoteExpiresAt || now >= intent.expiresAt) {
+  if (
+    now >= quote.quoteExpiresAt ||
+    now >= quote.reservationExpiresAt ||
+    now >= intent.expiresAt
+  ) {
     throw new PrivateIntentError("The quote expired before acceptance.");
   }
   if (quote.buyAmount < intent.minBuyAmount) {
@@ -483,7 +531,7 @@ export async function acceptQuote(
     throw new PrivateIntentError("The quote does not bind this intent digest.");
   }
   const canonical = canonicalSolverQuote(quote);
-  const authentic = await acceptance.verify(
+  const authentic = await verification.verify(
     canonical,
     quote.signature,
     quote.solverKey,
@@ -491,6 +539,52 @@ export async function acceptQuote(
   if (!authentic) {
     throw new PrivateIntentError("The quote signature is not authentic.");
   }
+}
+
+/**
+ * Verifies every invited maker quote before selecting the best executable
+ * amount. There is no public book: quotes remain request-scoped and the
+ * deterministic tie-break prevents UI or arrival-order manipulation.
+ */
+export async function selectBestSolverQuote(
+  intent: PrivateSwapIntentV1,
+  quotes: readonly SolverQuote[],
+  now: number,
+  verification: QuoteVerification,
+): Promise<SolverQuote> {
+  if (quotes.length === 0) {
+    throw new PrivateIntentError("No private maker returned a quote.");
+  }
+  const solverIds = new Set<string>();
+  for (const quote of quotes) {
+    if (solverIds.has(quote.solverId)) {
+      throw new PrivateIntentError(
+        "A private maker returned more than one quote for this request.",
+      );
+    }
+    solverIds.add(quote.solverId);
+    await verifySolverQuote(intent, quote, now, verification);
+  }
+  return [...quotes].sort((left, right) => {
+    if (left.buyAmount !== right.buyAmount) {
+      return left.buyAmount > right.buyAmount ? -1 : 1;
+    }
+    if (left.quoteExpiresAt !== right.quoteExpiresAt) {
+      return left.quoteExpiresAt > right.quoteExpiresAt ? -1 : 1;
+    }
+    const solverOrder = left.solverId.localeCompare(right.solverId);
+    if (solverOrder !== 0) return solverOrder;
+    return left.reservationId.localeCompare(right.reservationId);
+  })[0] as SolverQuote;
+}
+
+export async function acceptQuote(
+  intent: PrivateSwapIntentV1,
+  quote: SolverQuote,
+  now: number,
+  acceptance: QuoteAcceptance,
+): Promise<IntentState> {
+  await verifySolverQuote(intent, quote, now, acceptance);
   if (!acceptance.consumeNonce(quote.nonce)) {
     throw new PrivateIntentError("The quote nonce was already consumed.");
   }
@@ -632,3 +726,6 @@ export function planRestock(
 
   return { netExposure, orders, deferred };
 }
+
+export * from "#operations";
+export * from "#protocol";

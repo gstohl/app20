@@ -4,7 +4,7 @@ import {
   createLocalnetIntentId,
   formatLocalnetTokenAmount,
   parseLocalnetTokenAmount,
-  requestLocalnetSolverQuote,
+  requestLocalnetSolverQuotes,
   signLocalnetSolverQuote,
   type LocalnetMarketToken,
 } from "./localnet-private-intents";
@@ -85,7 +85,7 @@ describe("localnet private-intent adapter", () => {
     ]);
   });
 
-  it("parses a bounded quote from the local solver", async () => {
+  it("parses request-scoped maker offers without exposing raw inventory", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -93,12 +93,20 @@ describe("localnet private-intent adapter", () => {
           new Response(
             JSON.stringify({
               result: {
-                solverId: "app20-localnet-solver",
-                buyAmount: "100",
-                solverInventory: "1000",
-                sellToken: STRK,
-                buyToken: ETH,
-                provenance: "fixture",
+                offers: [
+                  {
+                    solverId: "app20-localnet-solver",
+                    solverKey: "app20-localnet-solver/ecdsa-p256-v1",
+                    grossBuyAmount: "100",
+                    sellToken: STRK,
+                    buyToken: ETH,
+                    spreadBps: 30,
+                    provenance: "fixture",
+                    nonce: `0x${"11".repeat(32)}`,
+                    reservationId: `0x${"22".repeat(32)}`,
+                    reservationExpiresAt: 1_800_000_180,
+                  },
+                ],
               },
             }),
             { status: 200, headers: { "content-type": "application/json" } },
@@ -106,16 +114,23 @@ describe("localnet private-intent adapter", () => {
       ),
     );
     await expect(
-      requestLocalnetSolverQuote({
+      requestLocalnetSolverQuotes({
+        intentDigest: `0x${"aa".repeat(32)}`,
+        createdAt: 1_800_000_000,
+        expiresAt: 1_800_000_300,
         sellToken: STRK,
         sellAmount: 1_000n,
         buyToken: ETH,
+        minBuyAmount: 90n,
       }),
-    ).resolves.toMatchObject({
-      solverId: "app20-localnet-solver",
-      buyAmount: 100n,
-      solverInventory: 1_000n,
-    });
+    ).resolves.toMatchObject([
+      {
+        solverId: "app20-localnet-solver",
+        grossBuyAmount: 100n,
+        spreadBps: 30,
+        reservationId: `0x${"22".repeat(32)}`,
+      },
+    ]);
     vi.unstubAllGlobals();
   });
 
@@ -147,6 +162,8 @@ describe("localnet private-intent adapter", () => {
         solverId: "app20-localnet-solver",
         solverKey: "app20-localnet-solver/ecdsa-p256-v1",
         nonce: `0x${"11".repeat(32)}`,
+        reservationId: `0x${"22".repeat(32)}`,
+        reservationExpiresAt: 2,
         buyAmount: 1n,
         spreadBps: 30,
         pricingProvenance: "fixture",

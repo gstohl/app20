@@ -132,13 +132,13 @@ describe("mail envelope v1", () => {
   });
 
   it("preserves legacy raw UTF-8 as a synthesized text envelope", () => {
-    const bytes = encoder.encode("hello from quietline");
+    const bytes = encoder.encode("hello from app20");
     const decoded = decodeEnvelope(bytes);
 
     expect(decoded).toMatchObject({
       version: 0,
       type: "text",
-      payload: { body: "hello from quietline" },
+      payload: { body: "hello from app20" },
     });
     expect(decoded.bytes).toEqual(bytes);
   });

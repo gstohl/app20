@@ -1,7 +1,7 @@
 import { canonicalizeStarknetAddress } from "./addresses";
 import { parseConversationId } from "./mail-thread";
 
-export const MAIL_ASSIGNMENT_STORAGE_PREFIX = "quietline/assignments/v1";
+export const MAIL_ASSIGNMENT_STORAGE_PREFIX = "app20/assignments/v1";
 
 export type MailAssignment = {
   messageId: string;

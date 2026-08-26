@@ -65,7 +65,7 @@ function fundPayload(): EscrowFundPayload {
 /**
  * FROZEN V1 VECTORS. Changing IKM/salt/info length or ordering, HKDF length,
  * the 252-bit mask, or rejection rule silently destroys existing claim access.
- * Any such change requires a version bump from quietline/escrow-claim/v1.
+ * Any such change requires a version bump from app20/escrow-claim/v1.
  * These are public test-only seeds/scalars, never a persisted user claim key.
  */
 const CLAIM_KEY_VECTORS = [
@@ -74,33 +74,33 @@ const CLAIM_KEY_VECTORS = [
     dealId: "0x1",
     attempt: 1,
     privateKey:
-      "027c4ed3bd1f7c066ce761377deecaf25614169f4a62124c230779932651b917",
+      "063258d10b00eff964e8b2728d8b53aa6576bd6ebec42eb1693079fa1d06f86f",
     claimPubkey:
-      "0x6b9e0b165e7179d49cedecf238461927d2e16183dcdfa9c6b71dfc8a9623fcf",
+      "0x3416b948f33c36b599c8ee887f9e1aa82544ff6513c2d162e2389ea1696f781",
   },
   {
     seed: new Uint8Array(32).fill(0xab),
     dealId: "0x123456789abcdef",
     attempt: 0,
     privateKey:
-      "00336622cc32d6b5be8c3d98c157926e54ec33ba13ef4049a70a102527f7e3ef",
+      "007ca6b29e07e6a01f1638477db2709ad06346769137906c40f55899f2b8f781",
     claimPubkey:
-      "0x53e27f2d11256ae9d4fc9a37bd0dfaefa620cdab76dff8aa8987a025257698f",
+      "0x5fb6b2be82e153b6f826d35f3f36d13d7907863adcdea3256dacc21c0a0d493",
   },
   {
     seed: new Uint8Array(32).fill(0xff),
     dealId: "0x11111111111111111111111111111111111111111111111111111111111111",
-    attempt: 1,
+    attempt: 3,
     privateKey:
-      "0648ff4960a228b4fa6262bf536565e299a71429ae4287da12fef026a76a5060",
+      "06c23ff46ea7b3ad304d055925e954282360cb65e5eb7ef00d9dfdf1bb32f92d",
     claimPubkey:
-      "0x1a121b5617b463492e39275d9edacb5e66352e4dfdc5e0044cc63c87580358e",
+      "0x209c77d515dfeadc01ff191a0e1488bcf8ee41f1af07f2a43879bd165e13705",
   },
 ] as const;
 
 describe("escrow claim-key derivation", () => {
   it("locks the documented unbiased derivation with frozen vectors", () => {
-    expect(ESCROW_CLAIM_KEY_LABEL).toBe("quietline/escrow-claim/v1");
+    expect(ESCROW_CLAIM_KEY_LABEL).toBe("app20/escrow-claim/v1");
     for (const vector of CLAIM_KEY_VECTORS) {
       const key = deriveEscrowClaimKey(vector.seed, vector.dealId);
       expect(hex(key.privateKey)).toBe(vector.privateKey);

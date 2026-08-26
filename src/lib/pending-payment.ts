@@ -5,7 +5,7 @@ import {
 } from "./payment-link";
 
 export const PENDING_PAYMENT_STORAGE_KEY =
-  "quietline/pending-payment/v1";
+  "app20/pending-payment/v1";
 
 export type PendingPaymentStorage = Pick<
   Storage,
