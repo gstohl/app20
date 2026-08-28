@@ -1,0 +1,5 @@
+import { settlementReceiptAuthority, type SettlementReceipt, type VerifiedChainSettlementReceipt } from "@/lib/settlement-receipt";
+export default function SettlementEvidencePanel({ receipt, transactionHashes = [] }: { receipt?: SettlementReceipt | VerifiedChainSettlementReceipt; transactionHashes?: readonly string[] }) {
+  const authority = receipt ? settlementReceiptAuthority(receipt) : { authoritative: false, reason: "Authoritative receipt unavailable." };
+  return <section aria-labelledby="evidence-title"><strong>LOCALNET DEMO EVIDENCE</strong><h3 id="evidence-title">{authority.authoritative ? "Authoritative receipt" : "Not a production authoritative receipt"}</h3><p>{authority.reason}</p><details><summary>Non-authoritative transaction references</summary>{transactionHashes.length ? transactionHashes.map((hash) => <code key={hash}>{hash}</code>) : <p>None observed.</p>}</details><p>Pending, stale, reorg-invalidated, or RPC-disagreement evidence never enables execution.</p></section>;
+}

@@ -5,6 +5,7 @@
   "type": "module",
   "exports": "./src/index.ts",
   "dependencies": {
+    "@app20/private-intents": "0.1.0",
     "@privy-io/node": "0.8.0"
   },
   "scripts": {

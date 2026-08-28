@@ -103,7 +103,7 @@ describe("privacy preflight", () => {
     expect(
       report.findings.find((finding) => finding.id === "timing-correlation"),
     ).toMatchObject({ level: "unavailable", freshness: "stale" });
-    expect(JSON.stringify(report)).toMatch(/no anonymity claim|unavailable/i);
+    expect(JSON.stringify(report)).toMatch(/privacy guarantee|unavailable/i);
   });
 
   it("blocks missing or stale required maturity evidence and never bypasses a block", () => {

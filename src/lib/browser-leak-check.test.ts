@@ -76,6 +76,12 @@ describe("browser leak release check", () => {
   });
 
   it.each([
+    "RFQ_MAKER_AUTH",
+    "RFQ_TAKER_CAPABILITY_SECRET",
+    "APP20_LOCALNET_CONTROL_TOKEN",
+    "directory authority private",
+    "makerPrivateKeyPath",
+    "@app20/private-intents/hpke-open",
     "VITE_E2E_WALLET",
     "VITE_LOCALNET_WALLET_URL",
     "VITE_LOCALNET_RPC_URL",

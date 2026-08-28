@@ -7,18 +7,28 @@
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts"
+    },
+    "./hpke-open": {
+      "types": "./src/hpke-open.ts",
+      "import": "./src/hpke-open.ts"
     }
   },
   "imports": {
+    "#directory-delivery": "./src/directory-delivery.ts",
+    "#hpke": "./src/hpke.ts",
+    "#index": "./src/index.ts",
     "#operations": "./src/operations.ts",
-    "#protocol": "./src/protocol.ts"
+    "#protocol": "./src/protocol.ts",
+    "#quote-v2": "./src/quote-v2.ts",
+    "#replay": "./src/replay.ts"
   },
   "scripts": {
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@app20/domain": "0.1.0"
+    "@app20/domain": "0.1.0",
+    "@hpke/core": "1.9.0"
   },
   "devDependencies": {
     "typescript": "5.9.3",

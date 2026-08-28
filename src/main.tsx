@@ -14,9 +14,14 @@ import AppProviders from "@/app/providers";
 import InboxPage from "@/app/inbox/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
-import VaultPage from "@/app/vault/page";
+import RfqPage from "@/app/rfq/page";
+import OperationsDashboard from "@/app/rfq/OperationsDashboard";
 import SwapPage from "@/app/swap/page";
-import PoolCreationPage from "@/app/pools/create/page";
+import MarketProposalPage from "@/app/pools/create/page";
+import FundingPage from "@/app/funding/page";
+import SendPage from "@/app/send/page";
+import PrivyRecoveryPage from "@/app/recovery/privy/page";
+import CrossChainReviewPage from "@/app/cross-chain-review/page";
 import { CANONICAL_ROUTES } from "@/app/routes";
 import "@/app/globals.css";
 
@@ -53,15 +58,17 @@ function RoutedSwapPage() {
   return <SwapPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
 }
 
-function RoutedPoolCreationPage() {
+function RoutedMarketProposalPage() {
   const { tokenA, tokenB } = useParams({ strict: false });
-  return <PoolCreationPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
+  return <MarketProposalPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
 }
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: SwapPage,
+  beforeLoad: () => {
+    throw redirect({ to: CANONICAL_ROUTES.rfq, replace: true });
+  },
 });
 
 const swapIndexRoute = createRoute({
@@ -82,16 +89,49 @@ const swapRoute = createRoute({
   component: RoutedSwapPage,
 });
 
-const poolCreationRoute = createRoute({
+const marketProposalRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/pools/create/$tokenA/$tokenB",
-  component: RoutedPoolCreationPage,
+  path: "/rfq/markets/$tokenA/$tokenB/proposal",
+  component: RoutedMarketProposalPage,
 });
 
-const vaultRoute = createRoute({
+const legacyPoolCreationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pools/create/$tokenA/$tokenB",
+  beforeLoad: ({ params, location }) => {
+    const hash = location.hash.replace(/^#/, "");
+    throw redirect({
+      to: "/rfq/markets/$tokenA/$tokenB/proposal",
+      params: { tokenA: params.tokenA, tokenB: params.tokenB },
+      ...(hash ? { hash } : {}),
+      replace: true,
+    });
+  },
+});
+
+const rfqRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rfq",
+  component: RfqPage,
+});
+
+const rfqOperationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/rfq/operations",
+  component: OperationsDashboard,
+});
+
+const legacyVaultRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/vault",
-  component: VaultPage,
+  beforeLoad: ({ location }) => {
+    const hash = location.hash.replace(/^#/, "");
+    throw redirect({
+      to: CANONICAL_ROUTES.rfq,
+      ...(hash ? { hash } : {}),
+      replace: true,
+    });
+  },
 });
 
 const mailRoute = createRoute({
@@ -121,8 +161,7 @@ const intentsRoute = createRoute({
   path: "/intents",
   beforeLoad: () => {
     throw redirect({
-      to: CANONICAL_ROUTES.vault,
-      hash: "intents",
+      to: CANONICAL_ROUTES.crossChainReview,
       replace: true,
     });
   },
@@ -138,7 +177,7 @@ const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
   beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.vault, replace: true });
+    throw redirect({ to: CANONICAL_ROUTES.rfq, replace: true });
   },
 });
 
@@ -148,13 +187,21 @@ const payRoute = createRoute({
   component: ReadyPaymentPage,
 });
 
+const fundingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/funding", component: FundingPage });
+const sendRoute = createRoute({ getParentRoute: () => rootRoute, path: "/send", component: SendPage });
+const recoveryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/recovery/privy", component: PrivyRecoveryPage });
+const crossChainReviewRoute = createRoute({ getParentRoute: () => rootRoute, path: "/cross-chain-review", component: CrossChainReviewPage });
+
 const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
     swapIndexRoute,
     swapRoute,
-    poolCreationRoute,
-    vaultRoute,
+    marketProposalRoute,
+    legacyPoolCreationRoute,
+    rfqRoute,
+    rfqOperationsRoute,
+    legacyVaultRoute,
     mailRoute,
     legacyInboxRoute,
     mailboxRoute,
@@ -162,6 +209,10 @@ const router = createRouter({
     contactsRoute,
     workflowsRoute,
     payRoute,
+    fundingRoute,
+    sendRoute,
+    recoveryRoute,
+    crossChainReviewRoute,
   ]),
 });
 

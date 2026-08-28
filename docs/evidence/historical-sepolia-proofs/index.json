@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "scope": "historical-sepolia-proof-evidence-only",
+  "runtimeAllowed": false,
+  "productionEligible": false,
+  "canonicalProductionAddressesConfigured": false,
+  "blockedProductionManifest": "deployments/sepolia/deployment-manifest.template.json",
+  "schema": {
+    "path": "docs/evidence/historical-sepolia-proofs/historical-sepolia-proof.schema.json",
+    "sha256": "cd869398fb3f2a7ed19d583302dcfca94be35e694a26414108d8a41ac71c2d13"
+  },
+  "records": [
+    {
+      "path": "docs/evidence/historical-sepolia-proofs/App20Mail.proof.json",
+      "sha256": "36c33aa10b01920a82b7b14382ed6c56e460f0f0b255eedde25680f5a980946a",
+      "classification": "unaudited-one-off-deployability-proof"
+    },
+    {
+      "path": "docs/evidence/historical-sepolia-proofs/LegacyEscrowClaimTicket.proof.json",
+      "sha256": "1a7e9d8dc5f194f9d6e0b0a60abd178e60051a54c2cdfd3295dcf1665e020718",
+      "classification": "historical-localnet-fixture-proof"
+    }
+  ]
+}

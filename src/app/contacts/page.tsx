@@ -11,7 +11,7 @@ import {
   saveAddressBookEntry,
   type AddressBookEntry,
 } from "@/lib/address-book";
-import styles from "@/app/vault/vault.module.css";
+import styles from "@/app/rfq/rfq.module.css";
 
 function shortAddress(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
@@ -118,11 +118,11 @@ function AddressBookPanel({
   return (
     <section
       className={`${styles.panel} ${styles.bookPanel}`}
-      aria-labelledby="vault-book-title"
+      aria-labelledby="rfq-book-title"
     >
       <header className={styles.panelHeading}>
         <span>COUNTERPARTIES</span>
-        <strong id="vault-book-title">
+        <strong id="rfq-book-title">
           Device-encrypted directory · RFQ and Mail actions
         </strong>
       </header>
@@ -181,7 +181,7 @@ function AddressBookPanel({
                     {handoffsEnabled ? (
                       <>
                         <Link
-                          to="/vault"
+                          to="/rfq"
                           hash="desk"
                           onClick={() => {
                             storeDeskHandoff(

@@ -4,8 +4,9 @@
  * intended Cairo escrow.
  *
  * Boundaries this package refuses to blur:
- * - It never holds value. Settlement authority is the (not yet deployed)
- *   escrow contract; this code builds and validates, fail-closed.
+ * - It never holds value. Canonical production escrow authority is not
+ *   implemented or configured; historical proof fixtures are ineligible.
+ *   This code builds and validates, fail-closed.
  * - No live NEAR 1Click transport exists here. Pricing is injected; the
  *   dry-only connector can back it in review builds.
  * - Netting reduces amount/timing correlation on the public hedge. It does
@@ -31,6 +32,8 @@ const MAX_U256 = (1n << 256n) - 1n;
 const MIN_INTENT_ID_LENGTH = 32;
 const ECDSA_PARAMS = { name: "ECDSA", namedCurve: "P-256" } as const;
 const ECDSA_SIGN = { name: "ECDSA", hash: "SHA-256" } as const;
+const P256_ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const P256_HALF_ORDER = P256_ORDER >> 1n;
 
 export type StarknetPool =
   | "starknet:SN_MAIN"
@@ -295,16 +298,33 @@ export async function importQuotePublicKey(
   return crypto.subtle.importKey("jwk", jwk, ECDSA_PARAMS, true, ["verify"]);
 }
 
+function canonicalP256SignatureBytes(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.byteLength !== 64) return null;
+  const r = BigInt(`0x${bytesToHex(bytes.slice(0, 32))}`);
+  const s = BigInt(`0x${bytesToHex(bytes.slice(32))}`);
+  if (r <= 0n || r >= P256_ORDER || s <= 0n || s > P256_HALF_ORDER) return null;
+  return bytes;
+}
+
+export function isCanonicalQuoteSignature(signature: string): boolean {
+  const bytes = hexToBytes(signature);
+  return bytes !== null && canonicalP256SignatureBytes(bytes) !== null;
+}
+
 export async function signCanonicalQuote(
   canonical: string,
   privateKey: CryptoKey,
 ): Promise<string> {
-  const signature = await crypto.subtle.sign(
+  const bytes = new Uint8Array(await crypto.subtle.sign(
     ECDSA_SIGN,
     privateKey,
     new TextEncoder().encode(canonical),
-  );
-  return `0x${bytesToHex(new Uint8Array(signature))}`;
+  ));
+  if (bytes.byteLength !== 64) throw new PrivateIntentError("P-256 signer returned a non-raw signature.");
+  const s = BigInt(`0x${bytesToHex(bytes.slice(32))}`);
+  const canonicalS = s > P256_HALF_ORDER ? P256_ORDER - s : s;
+  const normalized = `${bytesToHex(bytes.slice(0, 32))}${canonicalS.toString(16).padStart(64, "0")}`;
+  return `0x${normalized}`;
 }
 
 export async function verifyCanonicalQuote(
@@ -313,7 +333,7 @@ export async function verifyCanonicalQuote(
   publicKey: CryptoKey,
 ): Promise<boolean> {
   const bytes = hexToBytes(signature);
-  if (!bytes) return false;
+  if (!bytes || !canonicalP256SignatureBytes(bytes)) return false;
   try {
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
@@ -729,3 +749,7 @@ export function planRestock(
 
 export * from "#operations";
 export * from "#protocol";
+export * from "#directory-delivery";
+export * from "#hpke";
+export * from "#quote-v2";
+export * from "#replay";

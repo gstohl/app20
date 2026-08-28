@@ -8,13 +8,19 @@ import { spaSecurityHeaders } from "./headers.ts";
 import { relayOhttp } from "./ohttp.ts";
 import { requireSameOrigin } from "./origin.ts";
 import { relayRpc } from "./rpc.ts";
+import { handleRfq } from "./rfq.ts";
+import { RfqReplayDurableObject } from "./rfq-replay-do.ts";
 import { expireOhttpSessionCookie } from "./session.ts";
 import type { RelayDependencies, RelayEnv } from "./types.ts";
 
 export { issueOhttpSession, requireOhttpSession } from "./session.ts";
 export { spaSecurityHeaders } from "./headers.ts";
-export { RelayGateDurableObject };
+export { RelayGateDurableObject, RfqReplayDurableObject };
 export type { AtomicGate, RelayEnv, SpaSecurityConfig } from "./types.ts";
+
+// Localnet-final policy is immutable in application code. Checked-in or
+// externally persisted Worker configuration cannot activate dormant RFQ routes.
+export const RFQ_TRANSPORT_ENABLED = false as const;
 
 function configuredOrigins(value: string | undefined): string[] {
   return (value ?? "")
@@ -136,6 +142,15 @@ export function createRelayHandler(overrides: Partial<RelayDependencies> = {}) {
           dependencies,
           gateForRequest(),
         );
+      }
+      if (path.startsWith("/api/rfq/")) {
+        if (!RFQ_TRANSPORT_ENABLED) {
+          return Response.json(
+            { error: "Not found." },
+            { status: 404, headers: { "cache-control": "no-store" } },
+          );
+        }
+        return await handleRfq(request, env);
       }
       if (path.startsWith("/api/")) {
         return Response.json(

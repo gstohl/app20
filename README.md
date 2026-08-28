@@ -1,17 +1,21 @@
 # APP20
 
-Professional private RFQ trading desk on Starknet.
+Professional private RFQ venue on Starknet.
 
 Three surfaces form one workflow:
 
-1. **Desk** — inventory-backed private USDC↔STRK RFQs and shielded funding
+1. **RFQ** — inventory-backed private USDC↔STRK requests and shielded funding
 2. **Mailbox** — encrypted deal correspondence, structured evidence, and contact recovery
 3. **Counterparties** — a device-encrypted directory with RFQ and Mail handoffs
 
-Users connect once in the header. Viewing keys and mailbox keys stay on the
-device. The STRK20 pool is reached through the official Starknet privacy path.
+Users connect once in the header. The Ready Wallet API path does not expose a
+viewing key to APP20; the optional Privy browser-owned SDK derives/holds its
+viewing key on the user's device. Mailbox keys also stay on-device. The STRK20
+pool is reached through the reviewed Starknet privacy paths.
 Dry cross-chain review and payment links remain secondary tools,
-not separate claims in the judged trading flow.
+not separate claims in the judged trading flow. APP20 uses the existing STRK20
+privacy pool; deploying or letting users create a new dark pool, AMM, order
+book, or liquidity pool is an explicit non-goal.
 
 Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
 
@@ -22,15 +26,15 @@ yet. This is not a Mainnet value-moving release.
 
 | Rank | Feature | Route | Status |
 | --- | --- | --- | --- |
-| 1 | Private Desk | `/vault` | Localnet solicits two sealed USDC↔STRK makers with distinct processes, settlement accounts, quote keys, private-note inventories, and fsynced reservation WALs. APP20 verifies both signatures, selects deterministically, and proves crash recovery, lock, fill, claim, expiry refund, and insufficient-inventory refusal. No order book is published. Funding remains a distinct STRK20 rail. No production maker network is deployed |
+| 1 | Private RFQ | `/rfq` | Localnet solicits two sealed USDC↔STRK makers with distinct processes, settlement accounts, quote keys, private-note inventories, and fsynced reservation WALs. APP20 verifies both signatures, selects deterministically, and proves crash recovery, lock, fill, claim, expiry refund, and insufficient-inventory refusal. No order book is published. Funding remains a distinct STRK20 rail. No production maker network is deployed |
 | 2 | Mailbox | `/mail/inbox` | On-chain ciphertext for letters, legacy OTC documents, receipts, and authenticated self-addressed contact snapshots. Mail is correspondence/evidence, never settlement authority |
 | 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase |
-| 4 | Secondary tools | `/vault#intents`, `/pay` | Dry cross-chain review and unsigned payment links. No live 1Click submission or TEE execution |
+| 4 | Secondary tools | `/rfq#intents`, `/pay` | Dry cross-chain review and unsigned payment links. No live 1Click submission or TEE execution |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
 
-### Desk, Mailbox, and Counterparties
+### RFQ, Mailbox, and Counterparties
 
 The RFQ is authoritative only when Cairo and the pool confirm its lifecycle.
 Mailbox letters can carry coordination and evidence but cannot prove a fill.
@@ -42,7 +46,7 @@ RFQ or encrypted letter; a settled local RFQ produces a lifecycle receipt and
 links back to Mailbox. Shield, private transfer, and unshield remain separate
 funding actions under **Balances & funding**.
 
-Dry cross-chain Intents still share `/vault`, but remain a public review rail
+Dry cross-chain Intents still share `/rfq`, but remain a public review rail
 against NEAR 1Click. They have different signers, disclosure, and failure modes
 and are never merged into the private RFQ submit path.
 
@@ -76,9 +80,9 @@ flowchart TD
     P --> PS[Sepolia recovery rail only]
     L --> LD[Ephemeral localnet demo]
 
-    M --> V[Vault funding and public send]
+    M --> V[RFQ funding utilities and public send]
     S --> V
-    LD --> D[Private RFQ Desk]
+    LD --> D[Private RFQ]
     W --> MB[Mailbox and Counterparties]
     L --> MB
 
@@ -183,7 +187,7 @@ flowchart TD
 
     Q[Verified maker quote and reservation] --> ST[Settlement call]
     ST --> CH[Cairo plus finalized chain events]
-    CH --> AR[Authoritative receipt after configured-chain verification]
+    CH --> AR[Future authoritative receipt; configured-chain authority currently unavailable]
 
     EV -. may reference a digest .-> AR
     EV -. cannot authorize value .-> ST
@@ -196,7 +200,7 @@ key material. Mail can preserve evidence but cannot invoke or prove settlement.
 
 ```mermaid
 flowchart LR
-    CE[Configured-chain verifier] --> VR[Verified chain receipt]
+    CE[Future server-only configured-chain verifier; unavailable] --> VR[Verified chain receipt]
     LE[Local quote and negotiation evidence] --> LR[Local evidence]
     VR --> FR[Canonical full receipt]
     LR --> FR
@@ -272,8 +276,9 @@ unlinkability.
 | OHTTP ciphertext on the relay | The final prover after decapsulation |
 
 A replaced frontend can still request signatures and read browser-owned keys.
-Ready signatures are not used as encryption keys and the dapp never requests a
-STRK20 viewing key. Wallet connection identifies the mailbox but cannot decrypt
+Ready signatures are not used as encryption keys and the Ready Wallet API path
+never requests a STRK20 viewing key. The optional Privy browser-owned SDK has a
+separate, documented local viewing-key trust boundary. Wallet connection identifies the mailbox but cannot decrypt
 Mail or contact snapshots by itself: recovery also requires the mailbox backup
 phrase. Old on-chain ciphertext cannot be deleted. Cross-chain amounts, assets,
 destinations, and timing remain correlatable.
@@ -331,8 +336,10 @@ not a Mainnet market or send.
 | `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
 
 Architecture: [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
-Private Desk and contact-recovery model:
+Private RFQ and contact-recovery model:
 [`docs/APP20_PRIVATE_DESK.md`](docs/APP20_PRIVATE_DESK.md).
+Canonical definitive goals, non-goals, and gap register:
+[`docs/APP20_RFQ_GAPS.md`](docs/APP20_RFQ_GAPS.md).
 Value flows and the gated future SOL/Wormhole→StarkGate market:
 [`docs/APP20_SWAP_FLOWS.md`](docs/APP20_SWAP_FLOWS.md).
 Contract inventory and rollout gates:
@@ -376,8 +383,9 @@ VITE_PRIVY_APP_ID
 VITE_PRIVY_CLIENT_ID
 VITE_PROVER_OHTTP_KEY_CONFIG
 VITE_DISCOVERY_OHTTP_KEY_CONFIG
-VITE_MAIL_HELPER_SEPOLIA
-VITE_MAIL_HELPER_MAINNET
+
+# APP20 Mail/escrow addresses are localnet-generated only. Live helper build
+# variables are not part of the runtime configuration surface.
 ```
 
 Worker secrets:

@@ -2,19 +2,74 @@
 
 > Historical Mail implementation remains below. The approved 2026-08-25 programme expands APP20 into a bookless invited-maker RFQ venue. A later explicit pre-release namespace reset renamed the active contracts, storage and cryptographic domains, environment variables, runtime paths, and artifacts to APP20; pre-reset data is not silently migrated. APP20 routing, Cloudflare relay, Privy Sepolia support, and Mainnet Ready-only policy remain defined in `docs/APP20_ARCHITECTURE.md`. Never restore browser RPC credentials or the former `VITE_PROVIDER_URL` design from this document.
 
+## Current operative decision: localnet-final
+
+APP20 Mail helpers, escrow, and RFQ are now scoped only to build-gated localnet. Ready remains available on live networks and Privy remains optional on Sepolia, but neither live rail may configure APP20 Mail/escrow or production RFQ. The one-off Sepolia transactions are denylisted historical proof evidence only. Every later phase, manual live-network instruction, deployment gate, and “next gate” below is **superseded and non-operational** unless a new scope is explicitly approved. See `docs/LOCALNET_SCOPE_DECISION.md`.
+
+### Current local product evidence (milestone 2)
+
+`/rfq` is the only executable local RFQ venue and now separates New/Active/Activity, quote comparison and explicit final review from funding, send, recovery, Mail/Pay coordination, and dry cross-chain review. Local IndexedDB lifecycle rows are account/chain-bound and labelled non-authoritative; they never auto-resubmit. CoinGecko context is opt-in. `/swap/:pair` is non-executable, and market planning is proposal-only at `/rfq/markets/:tokenA/:tokenB/proposal`. These local changes do not close production custody, HSM/KMS, contract/audit, deployment, token funding, chain-verifier, operator, network, soak, or rollout gates.
+
+Wallet integration remains on `starknet@10.5.0`, discovery/wallet-standard `6.0.3`, and Wallet API types `0.10.3`. APP20 uses the existing `WalletAccountV6.strk20Balances` and `strk20InvokeTransaction` paths only during explicit Ready-wallet operations; that path does not request balances for feature detection, call shadow-account methods, or access viewing keys. The separate optional Privy browser-owned SDK derives/holds its viewing key locally under its documented browser trust boundary. The definitive RFQ goals, non-goals, stage definitions, and current gaps are maintained in `docs/APP20_RFQ_GAPS.md`; creating a new privacy venue, AMM, order book, liquidity pool, or pool factory is explicitly outside scope.
+
+## Historical 2026-08-26 bounded Sepolia RFQ candidate — recorded fail-closed decisions
+
+This historical app-code-only wiring slice did not establish audit evidence or make APP20 release-ready. `starknet@10.5.0` is the installed reviewed pin (the historical text below says 10.4.0); keep 10.5.0 and do not adopt 10.7.x or Wallet API 0.10.4 pre-releases in this slice.
+
+Canonical production product names are **App20Mail**, **App20Escrow**, and **App20Claim**. “VNext” is internal migration terminology only. The current localnet `ClaimTicket`, localnet escrow, and `MockErc20` remain historical/test fixtures; none is a Sepolia production artifact and `MockErc20` must never be included in a Sepolia deployment.
+
+| Decision | Recorded conservative result |
+| --- | --- |
+| Milestone/network | Historical bounded Sepolia candidate, superseded by localnet-final; `releaseReady` remains false and private RFQ is denied on every live network |
+| App20Claim | Replace historical/localnet ClaimTicket with a new canonical production App20Claim Cairo-team/audit handoff; do not reuse or deploy the localnet class |
+| App20Escrow | App-side internal-migration commitment and typed null-selector ABI/event expectations only; canonical production Cairo is not implemented |
+| HPKE | Pinned `@hpke/core@1.9.0`, RFC 9180 Base one-shot P-256/HKDF-SHA256/AES-256-GCM, canonical AAD, fixed buckets; maker opener is a Node-only export |
+| Directory | Pinned public authority roots, signed genesis, predecessor/epoch/registry/window/revocation checks; no client-selected delivery URL |
+| Relay | Authenticated poll topology with opaque ciphertext and per-maker SQLite Durable Object replay/idempotency; no maker endpoint fetch/SSRF |
+| Maker durability/custody | Localnet WAL remains single-host; production repository, custody, signer, auth and reconciler ports fail closed without independent adapters |
+| Receipts | `finalized` means `ACCEPTED_ON_L1`; block hash, selector, address, class, ABI decoder, RPC 0.10.2 and at least two independent origins are required; no configured RPC adapter/evidence means unavailable |
+| Manifest/RFQ | Production RFQ and publication are unconditionally disabled until the complete lifecycle exists; manifest validation separately pins directory public roots/checkpoint; USDC remains unconfigured; no public fallback |
+| Quotes | Localnet v1 remains localnet-only; v2 binds an acyclic pre-quote settlement-context digest; the final VNext commitment binds the selected signed quote digest |
+| Wallet gap | Claim/timeout still require destination-bound `${openNoteIds[n]}`; production claim remains unavailable (§10.1) |
+| Parallel lanes | Mail, negotiation, checkout, webhooks and receipts remain non-authoritative; live submission remains false |
+
+### Wiring phase log (implemented versus blocked)
+
+1. **Decisions/docs:** recorded here; release gate stays closed. **Blocked:** approval/audit/deployment evidence.
+2. **Production App20Escrow/App20Claim app specification:** canonical commitment, digest, typed calldata/event expectations and internal migration handoff added; historical localnet classes refused. **Blocked:** canonical Cairo selectors, ABI, implementation and audit.
+3. **Quote v2:** acyclic pre-quote/final transcript, strict decimal wire codec, async replay, directory-key verification and exact-bigint ranking added; v1 remains localnet. **Blocked:** production maker v2 signer/custody.
+4. **HPKE:** real reviewed-library seal/open, context binding and padding added with adversarial tests. **Blocked:** external protocol review and HSM key handle.
+5. **Replay:** async conflict/idempotency contract and memory test adapter added; maker consumes after open. **Blocked:** production retention/restore approval.
+6. **Directory:** signed publication and pinned monotonic acceptance added. **Blocked:** real authority operators/keys and published epoch.
+7. **Relay:** dormant RFQ directory/ingress/poll/quote/select primitives and SQLite DO code exist. **Disabled:** Worker `/api/rfq/*` routing is immutable-off before configuration is read; checked-in manifests record the false policy.
+8. **Maker ports:** repository/CAS fence, custody, signer, admin auth, reconciliation and HPKE ingress seams added; unavailable adapters fail closed. **Blocked:** replicated independently administered persistence and HSM/KMS.
+9. **Receipts:** raw receipt binding plus pure exact-origin, canonical block-number membership, and transcript validators added; the self-issuable verifier was removed and configured-chain authority is unconditionally unavailable. **Blocked:** a server-only runtime-provenanced adapter/generated decoder, approved RPC members, deployed identity, and durable reorg state.
+10. **Manifest/network:** immutable disabled Sepolia manifest and Mainnet hard deny added. Historical proof deployments are recorded separately and denylisted; no canonical production address, review, quorum, or USDC evidence is configured.
+11. **Desk:** localnet mounts only on build-gated localnet; production Desk/publication are unconditionally disabled and network-specific unavailable states are rendered. **Blocked:** complete v2 maker/Desk/resume/confirmation/wallet/receipt/custody lifecycle.
+12. **Parallel lanes:** async webhook replay port added; live submission remains false. **Blocked:** durable production adapter.
+13. **Validation/docs:** adversarial suites and leak sentinels updated; exact run results are captured in the implementation handoff. P3–P6 remain closed.
+
+**External blockers (not fabricated):** any reopened production scope would still require independent operators/HSM custody, audited canonical App20Escrow and App20Claim Cairo, approved canonical deployment/ABI evidence, an independent RPC quorum/finality policy, a funded two-maker soak, independent reviews, Mainnet approval, and verified release evidence.
+
+### Superseded Sepolia spike and localnet-final decision
+
+The one-off Sepolia spike proved deployability for App20Mail and the historical/localnet App20Escrow/ClaimTicket fixture. It did **not** deliver a reusable deployment pipeline, audit, canonical production escrow/claim, custody handoff, independent reproduction, or release approval. The proof records are denylisted under `docs/evidence/historical-sepolia-proofs/`; the separate production template remains deliberately blocked with `releaseReady: false`, `null`/`0x0` evidence, and no configured USDC.
+
+Operational deployer/funding/deployment scripts were removed for localnet-final. Only offline validators for the blocked template and historical proof index remain. See `docs/LOCALNET_SCOPE_DECISION.md` for closure of #142, #143, #148, and #152–#156.
+
 ## 2026-08-25 approved maximal implementation programme
 
 The developer approved implementation of every compatible app-code capability. This approval does **not** authorize Cairo changes, contract deployment, a commit or push, Mainnet value movement, live cross-chain funding, production TEE authority, or cap increases. Those remain separate human and independent-review gates.
 
 ### Product and privacy boundary
 
-APP20 is a bookless private RFQ venue. Only invited makers receive exact pre-trade terms; no public RFQ book is created, losing quotes are not published, and a refusal never triggers public fallback. Invited makers still learn the exact pair, direction, amount, floor, and expiry. First-version settlement terms, amounts, deadlines, lifecycle timing, helper activity, and public hedges remain observable. APP20 does not claim anonymity, unlinkability, untraceability, or a synthetic privacy score.
+APP20 is a bookless private RFQ venue using the existing STRK20 privacy pool. It does not create or deploy a new privacy venue, AMM, order book, liquidity pool, or pool factory. Only invited makers receive exact pre-trade terms; no public RFQ book is created, losing quotes are not published, and a refusal never triggers public fallback. Invited makers still learn the exact pair, direction, amount, floor, and expiry. First-version settlement terms, amounts, deadlines, lifecycle timing, helper activity, and public hedges remain observable. APP20 does not claim anonymity, unlinkability, untraceability, or a synthetic privacy score.
 
-Private RFQ, STRK20 funding, informational public context, and separately confirmed public execution remain distinct rails. Mail is correspondence and evidence only; Cairo and finalized pool state remain value authority. The dapp never requests or hosts a user's viewing key, derives encryption from Ready signatures, or places solver private keys in browser code.
+Private RFQ, STRK20 funding, informational public context, and separately confirmed public execution remain distinct rails. Mail is correspondence and evidence only; Cairo and finalized pool state remain value authority. The Ready Wallet API path never requests or hosts a user's viewing key, derives encryption from Ready signatures, or places solver private keys in browser code. The optional Privy browser-owned SDK separately derives/holds its viewing key locally and must never upload or log it.
 
 ### Upstream re-verification — 2026-08-25
 
-- `starknet@10.4.0` remains sufficient for the current `WalletAccountV6` integration; the current guide documents `strk20Balances`, `strk20InvokeTransaction`, `strk20PrepareInvoke`, `executeWithProof`, and `strk20ShadowAccountCommitment`.
+- `starknet@10.5.0` is the reviewed installed route for the current `WalletAccountV6` integration; the current guide documents `strk20Balances`, `strk20InvokeTransaction`, `strk20PrepareInvoke`, `executeWithProof`, and `strk20ShadowAccountCommitment`.
 - Wallet API stable remains `0.10.3`; `0.10.4-rc.1` is pre-release and is not adopted.
 - `@starknet-io/get-starknet-discovery` moved from `6.0.3` to `6.0.4` and wallet-standard from `6.0.3` to `6.0.5`. APP20 keeps its reviewed `6.0.3` pins until a dedicated compatibility upgrade passes all wallet tests.
 - `packages/sub_account_anonymizer` disappeared from the upstream monorepo and `packages/shadow_account_anonymizer` appeared. APP20 will not infer production capability from that rename; Wallet API shadow-account work stays proof-gated.
@@ -27,14 +82,14 @@ Private RFQ, STRK20 funding, informational public context, and separately confir
 3. **P2 production-shaped localnet:** independent maker processes and custody configuration, durable fenced reservations, encrypted maker-specific fanout, app integration, restart recovery, and no raw inventory exposure.
 4. **P3 adversarial localnet:** replay, expiry, equivocation, concurrency, crash/restart, stale keys, relay/RPC failure, privacy sentinels, multi-tab/device, and recovery tests.
 5. **P4 independent review:** protocol/transport/service/browser review plus the team-owned Cairo audit. No audit claim is inherited from older reports.
-6. **P5 Sepolia:** manual Ready/Privy validation only after the relevant infrastructure and reviewed helper deployments exist.
+6. **Historical P5 Sepolia (superseded):** manual Ready/Privy validation was proposed only after relevant infrastructure and reviewed helper deployments existed; it is not an active gate.
 7. **P6 tiny approved Mainnet evidence:** separately approved Mail/STRK first; RFQ only after audited nonzero settlement addresses, reviewed tokens, independent makers, hard caps, and recovery drills.
 8. **P7 capped production:** Swap first, then Block/Desk, negotiation/channels, integrations, crossing, recurring settlement, cross-chain warehousing, and cryptographically constrained automation. Each promotion requires its own evidence and approval.
 
 ### Execution status — 2026-08-25
 
 - **P0 complete:** the pre-existing dirty worktree was inventoried without reverting or committing it; application/package tests, typechecks, production build, browser-leak scan, and fresh localnet UI journeys passed.
-- **P1 privacy/receipt slice complete:** `src/lib/privacy-preflight.ts` now reports evidence-labelled facts, warnings, unavailable inputs, and fail-closed blocks without a synthetic score; the Desk requires informed acknowledgement before sealed quote requests. Canonical exact-unit settlement receipts separate local from supplied chain evidence, bind lifecycle coordinates and finality, and support user-selected disclosure packages with sensitive structures excluded by default.
+- **P1 privacy/receipt slice complete:** `src/lib/privacy-preflight.ts` now reports evidence-labelled facts, warnings, unavailable inputs, and fail-closed blocks without a synthetic score; the Desk requires informed acknowledgement before request-scoped signed local quote requests. Canonical exact-unit settlement receipts separate local from supplied chain evidence, bind lifecycle coordinates and finality, and support user-selected disclosure packages with sensitive structures excluded by default.
 - **Receipt boundary:** a receipt digest binds supplied evidence but is not authorization or proof that chain data is true. Trusted chain integration must reconstruct and verify events before treating a receipt as authoritative.
 - **P1 maker-protocol slice complete:** `@app20/private-intents` now freezes canonical RFQ v1, predecessor-bound signed directory epochs with historical P-256 key windows, maker-specific RFC 9180 HPKE envelope metadata/replay/padding validation, and monotonic fenced reservation transitions. The package validates envelopes but does not yet encrypt/decrypt them, and its memory replay store is not durable.
 - **P1 negotiation/channel slice complete:** `src/lib/negotiation.ts` now freezes strict offer/counter/accept/cancel documents, exact-unit terms, full-document Mail signatures, attachment manifests, and predecessor-bound transcript states. `src/lib/relationship-channel.ts` adds externally verified SNIP-12 wallet-to-Mail binding certificates, opaque invitation capabilities, quotas, replay-safe sequences, and predecessor-bound key-epoch metadata. These artifacts are correspondence protocols only and never authorize settlement. The required Double Ratchet suite is schema metadata; audited ratchet encryption, relay delivery, recovery, and production channel storage are not implemented.
@@ -52,7 +107,7 @@ Private RFQ, STRK20 funding, informational public context, and separately confir
 - Replace synthetic localnet maker behavior with separately configured maker nodes and durable crash-recoverable reservations; private keys and raw balances stay server-side.
 - Add wallet-bound Mail identity, canonical offer/counter/accept/cancel documents, attachment commitments, key rotation, and explicit recovery migrations without granting Mail value authority.
 - Add inventory exposure, crossing, netting, restocking, incident, checkout/webhook, dry cross-chain, and advisory-agent models behind fail-closed release gates.
-- Integrate Swap and Block progressively while preserving one primary action on `/`, complete tooling on `/vault`, terminal refusal, winner-only settlement, and separate public-route confirmation.
+- Integrate Instant RFQ and Block RFQ progressively while preserving one primary action on `/`, complete tooling on `/rfq`, terminal refusal, winner-only settlement, and separate public-route confirmation.
 
 ### Contract boundary
 
@@ -82,7 +137,7 @@ These are closed. Do not re-interview. Poker decisions are void.
 | Scope | One complete send → discover → decrypt loop by 31 Aug 2026, plus an optional memo-on-transfer. |
 | Route | Privacy Wallet API via starknet.js for shield / unshield / private transfer, plus `privacy_invoke` to append encrypted payloads to per-channel storage. |
 | Sub-accounts | Do **not** use Wallet API sub-accounts (pending). |
-| Viewing keys | Never in the dapp. Discovery that needs `k` stays in the wallet or a local, user-held scan — never uploaded. |
+| Viewing keys | Ready Wallet API: never requested by the dapp. Optional Privy SDK: browser-owned local derivation/custody under the documented trust boundary. Neither path uploads `k`. |
 | Day-0 token | **STRK**. |
 
 ## 1. Project snapshot
@@ -106,7 +161,7 @@ These are closed. Do not re-interview. Poker decisions are void.
 
 APP20 is a normal dapp. User-facing privacy goes through `WalletAccountV6`. Shield, unshield, and private transfers need no custom contract. Storing an encrypted payload on the existing ECDH channel needs our own helper. The pool already supplies key agreement, persistent channels, and sender anonymity via `InvokeExternal` (the pool is `msg.sender`).
 
-**The rule this follows:** this app never touches viewing keys — the user’s wallet acts on its behalf via starknet.js. If a step would need `k` in the dapp, the route is wrong.
+**The Ready-path rule:** this app never touches Ready-wallet viewing keys — the user’s wallet acts on its behalf via starknet.js. The optional Privy browser-owned SDK is an explicit exception with local derivation/custody; any upload, logging, or backend handling of `k` is forbidden.
 
 RFP-01 also names an off-chain discovery indexer and SDK methods `sendMessage` / `discoverMessages`. Sprint reading: ship send via Wallet API + helper first; discovery is local scan or a user-run indexer that receives a viewing key **only in the user’s process**. Do not stand up a hosted indexer that holds `k`.
 
@@ -138,15 +193,7 @@ Same pins as the landed scaffold. Do not unpin.
 | Pool (mainnet) | `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a` |
 | Token | STRK `0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d` |
 
-Env:
-
-```
-# RPC is now same-origin; real provider origins and credentials are Worker secrets.
-VITE_MAIL_HELPER_SEPOLIA=0x0
-VITE_MAIL_HELPER_MAINNET=0x0
-```
-
-`VITE_*` Alchemy values ship in the browser bundle. Treat them as public or move RPC behind a server before claiming RPC-operator privacy.
+Live APP20 helper/escrow constants are hard-coded to `0x0`; only the build-gated localnet harness injects ephemeral helper addresses. RPC is same-origin and real provider origins/credentials are Worker secrets. Any `VITE_*` value ships in the browser bundle and must be treated as public.
 
 ## 5. Phase 1 — first shielded flow · retargeted 2026-08-14
 
@@ -162,7 +209,7 @@ Do not deploy a helper. Do not touch `strk20.json`. Do not enable mainnet financ
 
 ## 6. Phase 2 — compose + `App20Mail` invoke wiring ✅ code complete 2026-08-14
 
-Status: code-complete locally. No Sepolia or mainnet helper was deployed, no live STRK20 transaction was sent, and the manual Ready gate remains open.
+Historical status at that checkpoint: code-complete locally, with no helper deployment or live STRK20 transaction then recorded. Later one-off Sepolia proof deployments are denylisted separately and do not reopen this gate.
 
 ### 6.1 Landed dapp files
 
@@ -337,7 +384,7 @@ APP20 batch itself reaches the helper or rejects a duplicate action ID.
 
 Status: not started.
 
-Entry criterion: helper on Sepolia, Ready can post one encrypted payload without revert.
+Historical entry criterion (superseded): a reviewed helper on Sepolia and one successful Ready encrypted payload.
 
 1. Two Ready wallets shield STRK and wait ~10 blocks.
 2. Alice `privacy_invoke` Send to Bob.
@@ -367,7 +414,7 @@ still required; code-complete does not establish sender authentication or
 atomic settlement of the quoted token leg.
 
 Payload deviation approved during implementation: `payment_request` adds the
-claimed `requester` address and uses a random `requestId`, because the anonymous
+claimed `requester` address and uses a random `requestId`, because the unbound
 `MessagePosted` event has no sender address from which a payer could build the
 private transfer. The card always discloses that raw, unauthenticated address.
 
@@ -398,7 +445,7 @@ creation. Live Ready payment validation remains required.
 
 **Manual — Phase 1:** Ready connect, degrade, Sepolia shield / transfer / unshield.
 
-**Manual — Phase 2–3:** deploy the audited helper on Sepolia; register two durable keys; post a message; second wallet decrypts; memo+payment is atomic; Voyager sender is a relayer.
+**Historical manual Phase 2–3 (superseded):** the former plan proposed an audited Sepolia helper, durable keys, encrypted Mail validation, and memo+payment checks. It is not an active instruction.
 
 **Manual — Phase 4:** tiny mainnet amounts; three hashes in `strk20.json`.
 
@@ -456,4 +503,4 @@ Escrow remains off the mainnet scoring path until reviewed.
 - Wallet test dapp: <https://starknet-wallet-account.vercel.app/>
 - Ready: <https://www.ready.co/>
 
-Phase 2 is code-complete only. The next gate is helper review/audit plus Ready validation on Sepolia; do not revive poker scope or enable mainnet sends early.
+Historical Phase 2 implementation remains source context only. The operative scope is localnet-final: there is no live helper, Sepolia, or Mainnet execution gate until a new scope receives explicit approval.

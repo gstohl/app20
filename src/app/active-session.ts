@@ -2,7 +2,7 @@
 
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { useVaultMode, type VaultMode } from "@/app/vault/vaultMode";
+import { useWalletMode, type WalletMode } from "@/app/rfq/walletMode";
 import { canonicalizeStarknetAddress, feltEquals } from "@/lib/addresses";
 import {
   networkForProviderIndex,
@@ -22,7 +22,7 @@ export type ActiveStarknetSession = Readonly<{
 }>;
 
 export type ActiveStarknetSessionInput = Readonly<{
-  mode: VaultMode;
+  mode: WalletMode;
   providerIndex: number;
   readyConnected: boolean;
   readyAddress: string;
@@ -105,9 +105,9 @@ export function resolveActiveStarknetSession(
 }
 
 export function useActiveStarknetSession(): ActiveStarknetSession {
-  const mode = useVaultMode((state) => state.mode);
-  const privyConnected = useVaultMode((state) => state.privyConnected);
-  const privyAddress = useVaultMode((state) => state.privyAddress);
+  const mode = useWalletMode((state) => state.mode);
+  const privyConnected = useWalletMode((state) => state.privyConnected);
+  const privyAddress = useWalletMode((state) => state.privyAddress);
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );

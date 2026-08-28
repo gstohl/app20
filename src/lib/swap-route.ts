@@ -83,9 +83,12 @@ export function swapRoutePath(tokenA: string, tokenB: string): string {
   return `/swap/${encodeURIComponent(normalizedA)}/${encodeURIComponent(normalizedB)}`;
 }
 
-export function poolCreationPath(tokenA: string, tokenB: string): string {
+export function marketProposalPath(tokenA: string, tokenB: string): string {
   const normalizedA = normalizeSwapToken(tokenA);
   const normalizedB = normalizeSwapToken(tokenB);
-  if (!normalizedA || !normalizedB) return "/pools/create/strk/usdc";
-  return `/pools/create/${encodeURIComponent(normalizedA)}/${encodeURIComponent(normalizedB)}`;
+  if (!normalizedA || !normalizedB) return "/rfq/markets/strk/usdc/proposal";
+  return `/rfq/markets/${encodeURIComponent(normalizedA)}/${encodeURIComponent(normalizedB)}/proposal`;
 }
+
+/** @deprecated Use the proposal-only canonical RFQ market route. */
+export const poolCreationPath = marketProposalPath;

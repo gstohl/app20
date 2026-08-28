@@ -39,7 +39,7 @@ import {
   type EscrowFundPayload,
 } from "@/lib/escrow";
 import { buildEscrowFundActions } from "@/lib/escrow-actions";
-import { ensureLocalnetEscrowTicket } from "@/app/vault/localnet-private-intents";
+import { ensureLocalnetMailEscrowTicket } from "@/app/rfq/localnet-private-intents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import {
   deriveKeypair,
@@ -72,6 +72,8 @@ import {
 } from "@/lib/strk20";
 import {
   addrSTRK,
+  LOCALNET_PROVIDER_INDEX,
+  localnetWalletEnabled,
   myFrontendProviders,
   strk20PoolForProviderIndex,
 } from "@/utils/constants";
@@ -503,7 +505,10 @@ export default function Compose({
     };
   }
 
-  function buildDocument(recipientAddress: string, ticketAddress?: string): {
+  function buildDocument(
+    recipientAddress: string,
+    ticketAddress?: string,
+  ): {
     type: EnvelopeType;
     payload: unknown;
     composite: CompositePayload | null;
@@ -708,7 +713,7 @@ export default function Compose({
         (attachment) => attachment.type === "escrow_fund",
       );
       const ticketAddress = escrowAttachment
-        ? await ensureLocalnetEscrowTicket({ dealId: escrowAttachment.dealId })
+        ? await ensureLocalnetMailEscrowTicket(escrowAttachment.dealId)
         : undefined;
       const document = buildDocument(recipientAddresses[0], ticketAddress);
       const plaintextBytes = envelopeByteLength(
@@ -727,7 +732,8 @@ export default function Compose({
       const encodedDocument = encodeEnvelope(document.type, document.payload);
       const provider = myFrontendProviders[providerIndex];
       const policy = () => {
-        if (!selectedWallet) throw new Error("Wallet policy context is missing.");
+        if (!selectedWallet)
+          throw new Error("Wallet policy context is missing.");
         assertWalletOperationPolicy(
           selectedWallet,
           providerIndex as 0 | 2 | 3,
@@ -808,6 +814,14 @@ export default function Compose({
       const startedAt = Date.now();
 
       if (document.escrow) {
+        if (
+          providerIndex !== LOCALNET_PROVIDER_INDEX ||
+          !localnetWalletEnabled
+        ) {
+          throw new Error(
+            "Escrow funding is available only on build-gated localnet.",
+          );
+        }
         if (!chainId || !escrowAddress) {
           throw new Error("Connect the escrow mailbox account first.");
         }
@@ -1104,8 +1118,8 @@ export default function Compose({
               <>
                 {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
                 Recipient count is public; identities are absent from
-                MessagePosted. Attachments are bilateral; body-only delivery
-                can be multi-recipient.
+                MessagePosted. Attachments are bilateral; body-only delivery can
+                be multi-recipient.
               </>
             }
           />

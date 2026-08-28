@@ -10,6 +10,7 @@ import {
 } from "@starknet-io/get-starknet-wallet-standard/features";
 import { useState } from "react";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { setLocalnetRuntimeEpoch } from "./localnet-runtime-epoch";
 import styles from "./localnet-wallet.module.css";
 
 export const LOCALNET_DEV_WALLET_SENTINEL =
@@ -29,6 +30,7 @@ export type LocalnetIdentity = {
 
 export type LocalnetWalletConfig = {
   walletName: string;
+  runtimeEpoch: string;
   chainId: string;
   rpcUrl: string;
   poolAddress: string;
@@ -64,6 +66,8 @@ function requireIdentity(
 /** Wallet Standard implementation used only by the gated localnet build. */
 export class App20LocalnetWallet implements WalletWithStarknetFeatures {
   readonly version = "1.0.0" as const;
+  /** Stable artifact sentinel: release scanners must reject this development wallet. */
+  readonly releaseSentinel = LOCALNET_DEV_WALLET_SENTINEL;
   readonly name: string;
   readonly icon = WALLET_ICON;
   readonly chains: readonly `${string}:${string}`[];
@@ -71,6 +75,7 @@ export class App20LocalnetWallet implements WalletWithStarknetFeatures {
 
   private connected = false;
   private selectedIdentityId: IdentityId;
+  private activeIdentityRequests = 0;
   private readonly changeListeners = new Set<
     (properties: StandardEventsChangeProperties) => void
   >();
@@ -82,7 +87,9 @@ export class App20LocalnetWallet implements WalletWithStarknetFeatures {
   ) {
     this.name = config.walletName;
     this.chains = [`starknet:${config.chainId}`];
-    const savedIdentity = storage.getItem(SELECTED_IDENTITY_KEY);
+    const savedIdentity = storage.getItem(
+      `${SELECTED_IDENTITY_KEY}/${config.runtimeEpoch}`,
+    );
     this.selectedIdentityId = isIdentityId(savedIdentity)
       ? savedIdentity
       : "alice";
@@ -150,14 +157,44 @@ export class App20LocalnetWallet implements WalletWithStarknetFeatures {
   selectIdentity(identityId: IdentityId): void {
     requireIdentity(this.config.identities, identityId);
     if (identityId === this.selectedIdentityId) return;
+    if (this.activeIdentityRequests > 0)
+      throw new Error(
+        "Localnet wallet identity is locked by an in-flight account request.",
+      );
     this.selectedIdentityId = identityId;
-    this.storage.setItem(SELECTED_IDENTITY_KEY, identityId);
+    this.storage.setItem(
+      `${SELECTED_IDENTITY_KEY}/${this.config.runtimeEpoch}`,
+      identityId,
+    );
     if (this.connected) this.emitAccounts();
   }
 
   private emitAccounts(): void {
     const properties = { accounts: this.accounts };
     for (const listener of this.changeListeners) listener(properties);
+  }
+
+  private async identityRequest(
+    path: string,
+    payload: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (!this.connected)
+      throw new Error("Connect the Localnet (dev) wallet before using account methods.");
+    const identity = this.selectedIdentity;
+    this.activeIdentityRequests += 1;
+    try {
+      return await this.apiRequest(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          runtimeEpoch: this.config.runtimeEpoch,
+          identity: identity.id,
+          ...payload,
+        }),
+      });
+    } finally {
+      this.activeIdentityRequests -= 1;
+    }
   }
 
   private async handleRequest(call: WalletApiCall): Promise<unknown> {
@@ -176,31 +213,14 @@ export class App20LocalnetWallet implements WalletWithStarknetFeatures {
       case "wallet_supportedSpecs":
         return ["0.10"];
       case "wallet_addInvokeTransaction":
-        return this.apiRequest("/invoke", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            identity: this.selectedIdentity.id,
-            calls: call.params?.calls,
-          }),
-        });
+        return this.identityRequest("/invoke", { calls: call.params?.calls });
       case "wallet_strk20InvokeTransaction":
-        return this.apiRequest("/privacy", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            identity: this.selectedIdentity.id,
-            actions: call.params?.actions,
-          }),
+        return this.identityRequest("/privacy", {
+          actions: call.params?.actions,
         });
       case "wallet_strk20Balances":
-        return this.apiRequest("/balances", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            identity: this.selectedIdentity.id,
-            tokens: call.params?.tokens ?? [],
-          }),
+        return this.identityRequest("/balances", {
+          tokens: call.params?.tokens ?? [],
         });
       default:
         throw new Error(
@@ -271,6 +291,7 @@ export async function initializeLocalnetDevWallet(): Promise<App20LocalnetWallet
   const apiRequest: ApiRequest = (path, init) =>
     readApiResponse(baseUrl, path, init);
   const config = (await apiRequest("/config")) as LocalnetWalletConfig;
+  setLocalnetRuntimeEpoch(config.runtimeEpoch);
   const wallet = new App20LocalnetWallet(
     config,
     window.localStorage,
@@ -359,7 +380,9 @@ export function LocalnetDevTools({
         <button
           type="button"
           onClick={() =>
-            void navigator.clipboard.writeText(wallet.config.counterTokenAddress)
+            void navigator.clipboard.writeText(
+              wallet.config.counterTokenAddress,
+            )
           }
         >
           Copy escrow leg-B

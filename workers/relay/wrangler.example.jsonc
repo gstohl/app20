@@ -5,14 +5,17 @@
   "compatibility_date": "2025-03-01",
   "durable_objects": {
     "bindings": [
-      { "name": "RELAY_GATE", "class_name": "RelayGateDurableObject" }
+      { "name": "RELAY_GATE", "class_name": "RelayGateDurableObject" },
+      { "name": "RFQ_REPLAY", "class_name": "RfqReplayDurableObject" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["RelayGateDurableObject"] }
+    { "tag": "v1", "new_sqlite_classes": ["RelayGateDurableObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["RfqReplayDurableObject"] }
   ],
   "vars": {
     "ENVIRONMENT": "production",
+    "RFQ_TRANSPORT_ENABLED": "false",
     "PRIVY_FRAME_ORIGINS": "https://replace-with-reviewed-privy-frame-origin.invalid",
     "PRIVY_CONNECT_ORIGINS": "https://replace-with-reviewed-privy-connect-origin.invalid"
   }

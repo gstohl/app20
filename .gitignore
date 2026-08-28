@@ -25,6 +25,18 @@ ui-artifacts/
 .env.*
 !.env.example
 
+# Starkli/deployer material — ignore only explicitly named secret/export formats
+deployments/sepolia/*.local.json
+*.keystore.json
+*.account.json
+*.handoff.json
+*.pem
+*.key
+mnemonic.txt
+mnemonic.json
+hardware-wallet-export.json
+rpc-credentials.json
+
 # debug / logs
 npm-debug.log*
 yarn-debug.log*

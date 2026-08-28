@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SWAP_ROUTE,
+  marketProposalPath,
   normalizeSwapToken,
   poolCreationPath,
   resolveSwapRoutePair,
@@ -34,7 +35,12 @@ describe("swap routes", () => {
 
   it("builds canonical routed paths without consuming relationship data", () => {
     expect(swapRoutePath("USDC", "STRK")).toBe("/swap/usdc/strk");
-    expect(poolCreationPath("ETH", "USDC")).toBe("/pools/create/eth/usdc");
+    expect(marketProposalPath("ETH", "USDC")).toBe(
+      "/rfq/markets/eth/usdc/proposal",
+    );
+    expect(poolCreationPath("ETH", "USDC")).toBe(
+      "/rfq/markets/eth/usdc/proposal",
+    );
     expect(swapRoutePath("bad/path", "usdc")).toBe(DEFAULT_SWAP_ROUTE);
   });
 });

@@ -6,7 +6,7 @@ import { constants as snConstants, walletV6 } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { useVaultMode, type VaultMode } from "@/app/vault/vaultMode";
+import { useWalletMode, type WalletMode } from "@/app/rfq/walletMode";
 import {
   isStrk20Chain,
   localnetWalletEnabled,
@@ -16,7 +16,7 @@ import {
 import styles from "./session.module.css";
 
 type SessionState = {
-  mode: VaultMode;
+  mode: WalletMode;
   readyConnected: boolean;
   readyAddress: string;
   readyChain: string;
@@ -65,7 +65,7 @@ export function resolveSessionDisplay(state: SessionState): SessionDisplay {
 }
 
 function NetworkToggle() {
-  const mode = useVaultMode((state) => state.mode);
+  const mode = useWalletMode((state) => state.mode);
   const wallet = useStoreWallet((state) => state.StarknetWalletObject);
   const connected = useStoreWallet((state) => state.isConnected);
   const providerIndex = useFrontendProvider(

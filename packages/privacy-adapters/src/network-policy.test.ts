@@ -10,6 +10,34 @@ import {
 } from "./network-policy.js";
 
 describe("evaluateNetworkPolicy", () => {
+  it.each([
+    ["mainnet", "ready"],
+    ["sepolia", "ready"],
+    ["sepolia", "privy"],
+  ] as const)(
+    "hard-denies private RFQ on %s even for the %s live adapter",
+    (network, adapter) => {
+      expect(
+        evaluateNetworkPolicy({ network, adapter, operation: "private-rfq" }),
+      ).toMatchObject({
+        allowed: false,
+        submittable: false,
+        code: "private-rfq-localnet-only",
+        reason: expect.stringMatching(/hard-disabled/),
+      });
+    },
+  );
+
+  it("allows private RFQ only on the localnet adapter", () => {
+    expect(
+      evaluateNetworkPolicy({
+        network: "localnet",
+        adapter: "localnet",
+        operation: "private-rfq",
+      }),
+    ).toMatchObject({ allowed: true, submittable: true, code: "allowed" });
+  });
+
   const liveCases: Array<{
     network: PrivacyNetwork;
     adapter: PrivacyAdapterKind;

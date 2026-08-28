@@ -1,7 +1,7 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import SessionControl from "@/app/components/SessionControl";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import { useVaultMode } from "@/app/vault/vaultMode";
+import { useWalletMode } from "@/app/rfq/walletMode";
 import type { ReactNode } from "react";
 
 type AppShellProps = {
@@ -13,15 +13,12 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
     select: (state) => state.location.pathname,
   });
   const readyConnected = useStoreWallet((state) => state.isConnected);
-  const vaultMode = useVaultMode((state) => state.mode);
-  const privyConnected = useVaultMode((state) => state.privyConnected);
+  const walletMode = useWalletMode((state) => state.mode);
+  const privyConnected = useWalletMode((state) => state.privyConnected);
   const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
-  const swapActive =
-    pathname === "/" ||
-    pathname.startsWith("/swap") ||
-    pathname.startsWith("/pools");
-  const deskActive = pathname === "/vault" || pathname.startsWith("/intents");
-  const connected = vaultMode === "privy" ? privyConnected : readyConnected;
+  const swapActive = pathname.startsWith("/swap");
+  const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
+  const connected = walletMode === "privy" ? privyConnected : readyConnected;
 
   return (
     <div
@@ -35,8 +32,8 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           className={`signal-dot ${connected ? "is-live" : ""}`}
           aria-hidden="true"
         />
-        {connected ? "TRADING SESSION CONNECTED" : "APP20 PRIVATE TRADING DESK"}
-        <span>PUBLIC BOUNDARIES REMAIN CORRELATABLE</span>
+        {connected ? "WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED" : "APP20 RFQ WORKSPACE"}
+        <span>MAIL / PAY / FUNDING ARE SEPARATE · PUBLIC BOUNDARIES REMAIN CORRELATABLE</span>
       </div>
       <header className="app-header">
         <Link
@@ -48,11 +45,15 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           <b>[20]</b>
         </Link>
         <nav className="app-tabs" aria-label="APP20 modules">
-          <Link to="/" aria-current={swapActive ? "page" : undefined}>
-            Swap
+          <Link
+            to="/swap/$tokenA/$tokenB"
+            params={{ tokenA: "strk", tokenB: "usdc" }}
+            aria-current={swapActive ? "page" : undefined}
+          >
+            Pair review
           </Link>
-          <Link to="/vault" aria-current={deskActive ? "page" : undefined}>
-            Desk
+          <Link to="/rfq" aria-current={rfqActive ? "page" : undefined}>
+            RFQ
           </Link>
           <Link to="/mail/inbox" aria-current={mailActive ? "page" : undefined}>
             Mailbox

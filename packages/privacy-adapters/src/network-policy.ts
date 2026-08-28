@@ -16,7 +16,8 @@ export type PrivacyOperation =
   | "private-swap"
   | "unshield"
   | "mail"
-  | "mail-with-transfer";
+  | "mail-with-transfer"
+  | "private-rfq";
 
 export interface NetworkPolicyInput {
   network: PrivacyNetwork;
@@ -31,6 +32,7 @@ export interface NetworkPolicyDecision {
   code:
     | "allowed"
     | "mainnet-ready-only"
+    | "private-rfq-localnet-only"
     | "unreviewed-wallet-standard"
     | "localnet-adapter-only"
     | "localnet-not-live"
@@ -55,6 +57,15 @@ const NON_SUBMITTING_OPERATIONS = new Set<PrivacyOperation>([
 export function evaluateNetworkPolicy(
   input: NetworkPolicyInput,
 ): NetworkPolicyDecision {
+  if (input.network !== "localnet" && input.operation === "private-rfq") {
+    return {
+      allowed: false,
+      submittable: false,
+      code: "private-rfq-localnet-only",
+      reason: "Private RFQ is hard-disabled outside build-gated localnet.",
+    };
+  }
+
   if (input.network === "mainnet" && input.adapter !== "ready") {
     return {
       allowed: false,

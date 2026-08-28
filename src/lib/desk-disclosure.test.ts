@@ -18,7 +18,9 @@ describe("desk disclosure", () => {
         .join(" ");
       expect(labels.toLowerCase()).not.toMatch(/\bdark pool\b/);
       expect(labels).not.toBe("PRIVATE");
-      expect(deskVenueCopy(venue).toLowerCase()).not.toMatch(/\bdark pool\b/);
+      expect(deskVenueCopy(venue).toLowerCase()).not.toMatch(
+        /sealed|anonymous|unlinkable|dark pool/,
+      );
     }
     expect(deskLeakChips("idle").map((chip) => chip.label)).not.toContain(
       "Refused",

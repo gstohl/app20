@@ -45,14 +45,10 @@ export const MAIL_FOLDERS: Array<{ id: MailFolder; label: string }> = [
   { id: "drafts", label: "Drafts" },
 ];
 
-function configuredForNetwork(
+function configuredForLocalnet(
   providerIndex: number,
-  mainnet: string,
-  sepolia: string,
   localnet: string,
 ): string | null {
-  if (providerIndex === 0) return mainnet;
-  if (providerIndex === 2) return sepolia;
   if (
     providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
     constants.localnetWalletEnabled
@@ -63,10 +59,8 @@ function configuredForNetwork(
 }
 
 export function helperForNetwork(providerIndex: number): string | null {
-  const configured = configuredForNetwork(
+  const configured = configuredForLocalnet(
     providerIndex,
-    constants.mailHelperMainnet,
-    constants.mailHelperSepolia,
     constants.mailHelperLocalnet,
   );
   if (!isConfiguredMailHelper(configured)) return null;
@@ -79,10 +73,8 @@ export function helperForNetwork(providerIndex: number): string | null {
 }
 
 export function escrowForNetwork(providerIndex: number): string | null {
-  const configured = configuredForNetwork(
+  const configured = configuredForLocalnet(
     providerIndex,
-    constants.escrowHelperMainnet,
-    constants.escrowHelperSepolia,
     constants.escrowHelperLocalnet,
   );
   if (!isConfiguredMailHelper(configured)) return null;

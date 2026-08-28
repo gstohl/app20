@@ -6,7 +6,7 @@ APP20 is one private execution desk with three primitives:
 2. bounded cross-chain execution through NEAR Intents;
 3. a remotely attested workflow/policy service.
 
-The current production-capable surface is the Starknet vault and APP20 Mail. Cross-chain intents and TEE workflows start in **review-only** mode. They must not expose a deposit address, submit a signed intent, or claim attested enforcement until the release gates in this document pass.
+The allowed live-network surface is Ready wallet functionality, plus the optional Privy wallet rail on Sepolia. APP20 Mail helpers, escrow, and Private Desk settlement are available only as build-gated localnet fixtures; historical Sepolia proofs are runtime-ineligible. Cross-chain intents and TEE workflows remain **review-only** and must not expose a deposit address, submit a signed intent, or claim attested enforcement until a newly approved release scope passes its gates.
 
 ## Honest product claim
 
@@ -85,7 +85,7 @@ Required invariants:
 - A Starknet address is never inferred to be the destination address on another chain.
 - Quotes bind source/destination accounts, assets, integer amounts, fee and slippage bounds, deadline, and refund target.
 - Aggregate balances retain chain, custody, and finality provenance.
-- Mail and vault must not silently switch authorization rail when navigating between routes.
+- Mail and the RFQ workspace must not silently switch authorization rail when navigating between routes.
 
 ## Canonical intent
 

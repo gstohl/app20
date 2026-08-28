@@ -1,4 +1,8 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
+import {
+  executeConfiguredChainVerifier,
+  type ConfiguredChainVerifierCapability,
+} from "./settlement-receipt-chain";
 
 export const SETTLEMENT_RECEIPT_DOMAIN = "app20/settlement-receipt/v1";
 
@@ -16,10 +20,16 @@ export type ReceiptBinding = Readonly<{
   dealId: string;
   claimTicketId: string;
   intentDigest: string;
+  /** Final VNext transcript identity emitted by every authoritative lifecycle event. */
+  commitmentDigest: string;
+  directoryDigest: string;
+  rfqDigest: string;
+  settlementContextDigest: string;
   winningQuoteDigest: string;
   makerKeyId: string;
   directoryEpoch: number;
   reservationId: string;
+  reservationFence: bigint;
   registryRevision: string;
   inputAsset: string;
   inputAmountBaseUnits: bigint;
@@ -38,6 +48,8 @@ export type ChainLifecycleEvidence = Readonly<{
   stage: SettlementStage;
   transactionHash: string;
   event: Readonly<{
+    blockHash: string;
+    eventSelector: string;
     blockNumber: number;
     transactionIndex: number;
     eventIndex: number;
@@ -64,6 +76,7 @@ const DIGEST_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const MAX_U256 = (1n << 256n) - 1n;
 const VERIFIED_CHAIN_RECEIPT = Symbol("app20.verified-chain-receipt");
 const VERIFIED_CHAIN_RECEIPTS = new WeakSet<object>();
+const INVALIDATED_CHAIN_RECEIPTS = new WeakSet<object>();
 const FINALITY_RANK: Record<ChainFinality, number> = {
   pending: 0,
   accepted: 1,
@@ -152,10 +165,15 @@ function assertBinding(receipt: SettlementReceipt): void {
   requireFelt(receipt.dealId, "dealId");
   requireFelt(receipt.claimTicketId, "claimTicketId");
   requireDigest(receipt.intentDigest, "intentDigest");
+  requireDigest(receipt.commitmentDigest, "commitmentDigest");
+  requireDigest(receipt.directoryDigest, "directoryDigest");
+  requireDigest(receipt.rfqDigest, "rfqDigest");
+  requireDigest(receipt.settlementContextDigest, "settlementContextDigest");
   requireDigest(receipt.winningQuoteDigest, "winningQuoteDigest");
   requireText(receipt.makerKeyId, "makerKeyId");
   requireSafeNonNegative(receipt.directoryEpoch, "directoryEpoch");
   requireDigest(receipt.reservationId, "reservationId");
+  requirePositiveU256(receipt.reservationFence, "reservationFence");
   requireText(receipt.registryRevision, "registryRevision");
   requireFelt(receipt.inputAsset, "inputAsset");
   requireFelt(receipt.outputAsset, "outputAsset");
@@ -199,6 +217,8 @@ export function assertSettlementReceipt(receipt: SettlementReceipt): void {
   let previousCoordinate: readonly [number, number, number] | null = null;
   const coordinates = new Set<string>();
   receipt.lifecycle.forEach((item) => {
+    requireFelt(item.event.blockHash, `${item.stage} blockHash`);
+    requireFelt(item.event.eventSelector, `${item.stage} eventSelector`);
     const coordinate = [
       requireSafeNonNegative(
         item.event.blockNumber,
@@ -239,7 +259,9 @@ function canonicalBinding(receipt: SettlementReceipt) {
   return {
     chainId: requireText(receipt.chainId, "chainId"),
     claimTicketId: requireFelt(receipt.claimTicketId, "claimTicketId"),
+    commitmentDigest: requireDigest(receipt.commitmentDigest, "commitmentDigest"),
     dealId: requireFelt(receipt.dealId, "dealId"),
+    directoryDigest: requireDigest(receipt.directoryDigest, "directoryDigest"),
     directoryEpoch: receipt.directoryEpoch,
     domain: receipt.domain,
     escrowAddress: requireFelt(receipt.escrowAddress, "escrowAddress"),
@@ -260,7 +282,10 @@ function canonicalBinding(receipt: SettlementReceipt) {
     outputAmountBaseUnits: receipt.outputAmountBaseUnits.toString(),
     outputAsset: requireFelt(receipt.outputAsset, "outputAsset"),
     registryRevision: requireText(receipt.registryRevision, "registryRevision"),
+    reservationFence: receipt.reservationFence.toString(),
     reservationId: requireDigest(receipt.reservationId, "reservationId"),
+    rfqDigest: requireDigest(receipt.rfqDigest, "rfqDigest"),
+    settlementContextDigest: requireDigest(receipt.settlementContextDigest, "settlementContextDigest"),
     version: receipt.version,
     winningQuoteDigest: requireDigest(
       receipt.winningQuoteDigest,
@@ -290,8 +315,10 @@ export function canonicalSettlementReceipt(receipt: SettlementReceipt): string {
     ...binding,
     lifecycle: receipt.lifecycle.map((item) => ({
       event: {
+        blockHash: requireFelt(item.event.blockHash, `${item.stage} blockHash`),
         blockNumber: item.event.blockNumber,
         eventIndex: item.event.eventIndex,
+        eventSelector: requireFelt(item.event.eventSelector, `${item.stage} eventSelector`),
         transactionIndex: item.event.transactionIndex,
       },
       finality: item.finality,
@@ -324,6 +351,7 @@ export type VerifiedChainSettlementReceipt = Readonly<{
   receipt: ChainSettlementReceipt;
   verifiedAt: number;
   verificationReference: string;
+  expiresAt: number;
 }>;
 
 function deepFreeze<T>(value: T): T {
@@ -339,11 +367,8 @@ function deepFreeze<T>(value: T): T {
 export async function verifyChainSettlementReceipt(
   receipt: ChainSettlementReceipt,
   input: {
-    verifiedAt: number;
     verificationReference: string;
-    verifyAgainstConfiguredChain: (
-      receipt: ChainSettlementReceipt,
-    ) => Promise<boolean>;
+    verifier: ConfiguredChainVerifierCapability;
   },
 ): Promise<VerifiedChainSettlementReceipt> {
   assertSettlementReceipt(receipt);
@@ -355,20 +380,19 @@ export async function verifyChainSettlementReceipt(
   ) {
     throw new Error("Chain receipt has not reached its required finality.");
   }
-  const verifiedAt = requireUnixSeconds(input.verifiedAt, "receipt verifiedAt");
   const verificationReference = requireText(
     input.verificationReference,
     "receipt verificationReference",
   );
   const cloned = structuredClone(receipt);
-  if (!(await input.verifyAgainstConfiguredChain(cloned))) {
-    throw new Error("Configured-chain receipt verification failed.");
-  }
+  const verifiedAt = await executeConfiguredChainVerifier(input.verifier, cloned);
+  requireUnixSeconds(verifiedAt, "receipt verifiedAt");
   const verified = deepFreeze({
     [VERIFIED_CHAIN_RECEIPT]: true as const,
     receipt: deepFreeze(cloned),
     verifiedAt,
     verificationReference,
+    expiresAt: verifiedAt + 300,
   });
   VERIFIED_CHAIN_RECEIPTS.add(verified);
   return verified;
@@ -379,19 +403,37 @@ export type ReceiptAuthority = Readonly<{
   reason: string;
 }>;
 
+/** A reorg/canonical-membership monitor can revoke in-memory authority immediately. */
+export function invalidateVerifiedChainSettlementReceipt(
+  value: VerifiedChainSettlementReceipt,
+): void {
+  if (!VERIFIED_CHAIN_RECEIPTS.has(value)) {
+    throw new Error("Only a configured-chain verified receipt can be invalidated.");
+  }
+  INVALIDATED_CHAIN_RECEIPTS.add(value);
+}
+
 /** Raw local or chain evidence is never authoritative without configured-chain verification. */
 export function settlementReceiptAuthority(
   value: SettlementReceipt | VerifiedChainSettlementReceipt,
 ): ReceiptAuthority {
+  const now = Math.floor(Date.now() / 1_000);
   if (
     value !== null &&
     typeof value === "object" &&
     VERIFIED_CHAIN_RECEIPTS.has(value) &&
     (value as VerifiedChainSettlementReceipt)[VERIFIED_CHAIN_RECEIPT] === true
   ) {
+    const verified = value as VerifiedChainSettlementReceipt;
+    if (INVALIDATED_CHAIN_RECEIPTS.has(verified)) {
+      return { authoritative: false, reason: "Configured-chain verification was invalidated by reorg or canonical-membership loss." };
+    }
+    if (now >= verified.expiresAt) {
+      return { authoritative: false, reason: "Configured-chain verification is stale and must be refreshed." };
+    }
     return {
       authoritative: true,
-      reason: `Configured-chain verification succeeded (${(value as VerifiedChainSettlementReceipt).verificationReference}).`,
+      reason: `Configured-chain verification succeeded (${verified.verificationReference}).`,
     };
   }
   const receipt = value as SettlementReceipt;

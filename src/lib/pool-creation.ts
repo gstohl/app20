@@ -1,11 +1,13 @@
 import { canonicalizeStarknetAddress } from "./addresses";
 
-export const POOL_PROPOSAL_SCHEMA_REVISION = "app20/pool-proposal/v1" as const;
+export const MARKET_PROPOSAL_SCHEMA_REVISION = "app20/market-proposal/v1" as const;
+/** @deprecated Compatibility name for locally stored pre-route proposal drafts. */
+export const POOL_PROPOSAL_SCHEMA_REVISION = MARKET_PROPOSAL_SCHEMA_REVISION;
 
 export const POOL_REFERENCE_PRICE_ORIENTATION = "token-b-per-token-a" as const;
 
 const POOL_REVIEW_CHECKSUM_DOMAIN =
-  "app20/pool-proposal-review-checksum/v1" as const;
+  "app20/market-proposal-review-checksum/v1" as const;
 const MAX_U128 = (1n << 128n) - 1n;
 const MAX_DECIMALS = 255n;
 const MAX_DECIMAL_INPUT_LENGTH = 1_024;

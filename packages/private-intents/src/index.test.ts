@@ -8,6 +8,7 @@ import {
   createMemoryQuoteReplayStore,
   digestPrivateSwapIntent,
   fillLockedIntent,
+  isCanonicalQuoteSignature,
   planRestock,
   quotePrivateSwapIntent,
   refundExpiredIntent,
@@ -164,6 +165,19 @@ describe("solver quoting", () => {
         keys.publicKey,
       ),
     ).resolves.toBe(true);
+  });
+
+  it("normalizes signatures to low-S and rejects the malleable high-S twin", async () => {
+    const keys = await testKeys();
+    const canonical = "canonical quote";
+    const signature = await signCanonicalQuote(canonical, keys.privateKey);
+    expect(isCanonicalQuoteSignature(signature)).toBe(true);
+    const raw = signature.slice(2);
+    const order = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    const highS = order - BigInt(`0x${raw.slice(64)}`);
+    const twin = `0x${raw.slice(0, 64)}${highS.toString(16).padStart(64, "0")}`;
+    expect(isCanonicalQuoteSignature(twin)).toBe(false);
+    await expect(verifyCanonicalQuote(canonical, twin, keys.publicKey)).resolves.toBe(false);
   });
 
   it("declines when the spread pushes the fill under the floor", async () => {

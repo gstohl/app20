@@ -93,8 +93,8 @@ export function resolveAddressBookInput(
   return { address: trimmed };
 }
 
-// Session-only stand-in for the shared vault AddressBookField. Same props and
-// resolver semantics; swap the import once the vault module merges.
+// Session-only stand-in for the shared RFQ AddressBookField. Same props and
+// resolver semantics; swap the import once the shared module merges.
 export function AddressBookField({
   id,
   label,

@@ -17,6 +17,7 @@ import {
   digestPrivateRfq,
   digestRfqTransportAad,
   resolveMakerQuoteKeyAt,
+  resolveMakerTransportKeyAt,
   transitionMakerReservation,
   verifyMakerDirectoryEpoch,
   type DirectoryAuthorityKey,
@@ -488,7 +489,23 @@ describe("maker-specific RFQ transport envelope", () => {
         replay,
         { open: async () => decryptedRfq },
       ),
-    ).rejects.toThrow(/replay/i);
+    ).resolves.toMatchObject({ replay: "idempotent" });
+  });
+
+  it("enforces transport-key expiry, revocation, and explicit key rotation", async () => {
+    const keys = await p256Keys();
+    const oldKey = { keyId: "maker-a/hpke/p256/old", publicKey: keys.publicKey, validFrom: NOW - 100, validUntil: NOW + 100, revokedAt: NOW + 50 };
+    const newKey = { keyId: "maker-a/hpke/p256/new", publicKey: keys.publicKey, validFrom: NOW + 100, validUntil: NOW + 300 };
+    const body = directory(keys.publicKey, { makers: [maker(keys.publicKey, { transportKeys: [oldKey, newKey] })] });
+    const signed = await signDirectory(body, keys.privateKey);
+    const verification = await verifyMakerDirectoryEpoch(signed, { now: NOW, expectedChainId: body.chainId, authorityKeys: [authority(keys.publicKey)], verify: verifyP256 });
+    if (!verification.ok) throw new Error(verification.reason);
+    expect(resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW).keyId).toBe(oldKey.keyId);
+    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW + 50)).toThrow(/not valid/);
+    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW + 100)).toThrow(/not valid/);
+    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 99)).toThrow(/not valid/);
+    expect(resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 100).keyId).toBe(newKey.keyId);
+    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 300)).toThrow(/not valid/);
   });
 
   it("rejects header mutation, wrong padding, and unverified directory digests", async () => {
@@ -525,6 +542,9 @@ describe("maker-specific RFQ transport envelope", () => {
         aad: { ...aad, recipientMakerId: "maker-b" },
       }),
     ).rejects.toThrow(/AAD digest/i);
+    await expect(
+      assertEncryptedRfqEnvelope({ ...envelope, ciphertext: "AB" }),
+    ).rejects.toThrow(/canonical unpadded base64url/i);
     await expect(
       assertEncryptedRfqEnvelope({
         ...envelope,

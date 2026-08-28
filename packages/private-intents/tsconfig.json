@@ -5,7 +5,17 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
+    "paths": {
+      "#directory-delivery": ["./src/directory-delivery.ts"],
+      "#hpke": ["./src/hpke.ts"],
+      "#index": ["./src/index.ts"],
+      "#operations": ["./src/operations.ts"],
+      "#protocol": ["./src/protocol.ts"],
+      "#quote-v2": ["./src/quote-v2.ts"],
+      "#replay": ["./src/replay.ts"]
+    },
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },

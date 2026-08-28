@@ -11,6 +11,7 @@ Cloudflare Worker control plane for APP20. It serves the reviewed SPA, verifies 
 | `POST /api/ohttp/discovery` | Forward bounded `message/ohttp-req` bytes to the fixed discovery gateway |
 | `POST /api/starknet/sepolia` | Restricted, quota-controlled Sepolia JSON-RPC |
 | `POST /api/starknet/mainnet` | Restricted, quota-controlled Mainnet JSON-RPC for the Ready rail |
+| `/api/rfq/*` | Immutable localnet-final denial: no-store `404` before configuration or storage access |
 | everything else | Serve the SPA through the `ASSETS` binding with strict security headers |
 
 The Privy bootstrap is hard-coded to return `network: "sepolia"`; it cannot issue Mainnet Privy configuration. The browser receives non-routable `.invalid` OHTTP target names and same-origin relay paths, never the real gateway origins.

@@ -24,8 +24,8 @@ A read-only `app20-security` review identified ten trust-boundary failures. Focu
 | Critical | Forged risk manifest/exception objects could bypass caps | Verified policies are frozen and runtime-provenanced; decisions require fresh snapshots and current exceptions; v1 exceptions can waive only the per-trade cap | Approval-key governance and durable policy distribution remain operator responsibilities |
 | High | Channel bindings and key rotations were structural only | Wallet/Mail bindings now have runtime provenance and revocation snapshots; opening rechecks expiry/revocation; every key epoch requires both wallet-bound Mail authentication signatures | Audited Double Ratchet, recovery, and relay storage remain unimplemented |
 | High | One Mail key could impersonate taker and maker | Transcript evaluation requires verified role bindings and matches both binding digest and authentication key; an equivocation-store interface detects same-role revision forks | Production requires a durable shared equivocation store |
-| High | Caller-labelled finality was reported authoritative | Raw chain evidence is always non-authoritative; authority requires a private-runtime-provenanced result from a configured-chain verifier | RPC quorum, escrow event decoding, class-hash pinning, and reorg handling remain unimplemented |
-| High | Random bytes could pass RFQ transport metadata checks | Acceptance now requires an external reviewed HPKE opener, validates the decrypted canonical RFQ/context, and consumes replay state only after authentication | APP20 still has no RFC 9180 implementation wired to maker transport; localnet remains authenticated loopback HTTP |
+| High | Caller-labelled finality was reported authoritative | Raw evidence is non-authoritative; the self-issuable verifier factory was removed and configured-chain authority is unconditionally unavailable. Pure validators require exact reviewed public-hostname origins, canonical block-number membership, and all VNext transcript bindings. | A server-only runtime-provenanced RPC/decoder composition root, approved providers, VNext ABI/deployment and durable reorg monitoring remain external |
+| High | Random bytes could pass RFQ transport metadata checks | Real pinned RFC 9180 Base seal/open validates authenticated plaintext/context; maker ingress now requires an atomic replay+reservation result seam | Production HSM resolver and independently administered repository remain external; localnet stays loopback HTTP |
 | High | Missing/future privacy evidence could pass | Future evidence and overlong validity fail; missing maker/public-settlement disclosures block; unavailable noncritical evidence requires informed confirmation | Public event/indexer evidence is still unavailable in localnet and is labelled accordingly |
 | High | Disclosure values were not checked against their receipt | Verification can recompute every selected value against the full canonical receipt; null-prototype canonical maps preserve prototype-named keys | A disclosure remains a package/digest, not a cryptographic selective-disclosure proof |
 | Medium | Maker reservation stored the intent digest as `rfqDigest` | Maker requests now carry the complete canonical RFQ and independent digest; the maker recomputes it and persists the RFQ digest | Quote-bound audited Cairo is still required |
@@ -45,21 +45,34 @@ The focused suites exercise:
 - stale risk exceptions, stale exposure snapshots, duplicate finalized fills, missing venues, cap breaches, and browser balance leakage;
 - checkout tampering, webhook context/freshness/signature/idempotency/lifecycle replay, dry-only cross-chain review, and non-submitting advisory plans.
 
+## 2026-08-26 production-wiring adversarial matrix
+
+| Surface | Automated/refusal coverage | Residual external boundary |
+| --- | --- | --- |
+| HPKE | real matching open; wrong key/info/suite/AAD, deterministic decoded-byte ciphertext tamper, truncation, malformed/non-canonical base64url, padding boundary/non-zero pad; protocol transport-key expiry/revocation and rotation resolution | Library is vector-conformant, not audited; HSM resolver/operator review absent |
+| Directory | signed-body mutation/signature failure, chain mismatch, rollback, predecessor fork, authority/key revocation and expired window | No production authority keys/operators or published epoch |
+| Replay | async idempotent same digest and conflict on nonce/different bytes; SQLite UNIQUE transaction seam | DO not deployed; retention/restore/failover drill absent |
+| Maker | CAS fence port, authenticated operation requirement, duplicate/unknown outcome quarantine, localnet WAL crash tests | No replicated ledger, HSM custody or independent administration |
+| Receipts | raw binding/finality checks plus pure exact-origin, canonical block-number membership, and full VNext transcript-binding validators; no public capability constructor | Configured-chain authority is disabled; no runtime-provenanced adapter, approved RPC set, VNext ABI decoder/deployment, or persistent reorg listener |
+| Desk/network | zero/partial/stale manifest refusal, hard Mainnet denial, separate localnet component, no public fallback | Manifest intentionally incomplete; production Desk unavailable |
+
+These tests validate app behavior only and do not constitute deployment, audit, soak or operational evidence.
+
 ## Validation evidence
 
-Latest successful runs during this review:
+Historical successful runs before the first remediation follow-up included:
 
 ```text
 npm run test:all
-  application: 67 files / 495 tests passed
-  packages + relay: all passed
+  application at that checkpoint: 76 files / 519 tests passed
+  all package suites passed; relay at that checkpoint: 21 tests passed
 npm run typecheck
 npm run test:ui
-  Playwright localnet: 4/4 passed, including selected-maker SIGKILL/WAL recovery
+  an earlier pre-remediation Playwright localnet run passed 4/4
 ```
 
-The first adversarial UI rerun exposed a Node ESM TypeScript export-resolution failure; package imports were moved to the package import map. A later payment-link run exposed nondeterministic network selection; the test now explicitly selects the build-gated local network. The final fresh run passed 4/4.
+The first remediation follow-up's final `npm run test:ui` invocation did **not** pass: it exceeded the bounded 300-second timeout while still emitting localnet RPC progress and was terminated. A later historical remediation tree passed 4/4 in 2.6 minutes. Both results predate the current uncommitted localnet-final diff and are historical only; current acceptance must come from repository commands recorded in `APP20_RELEASE_GATES.md`, never a machine-local `/tmp` handoff.
 
 ## Gate verdict
 
-The implemented app-code models and localnet demonstration pass this internal adversarial round. **P3 production transport/release remains closed** until real maker-specific HPKE, durable replay/equivocation/idempotency stores, independently administered maker custody, configured-chain receipt verification, replicated reservation consistency, Cairo audit/remediation, and external protocol/security review are complete.
+The app-code models and localnet demonstration pass this internal adversarial round. Reviewed HPKE, exact-tuple relay capability, quote-wire/replay, directory-checkpoint/high-water and atomic maker seams now exist; configured receipt authority has instead been removed/disabled, but the production Desk is unconditionally disabled. **P3 production transport/release remains closed** until those seams have deployed durable adapters, independent maker custody/persistence, approved RPC/ABI/reorg evidence, Cairo audit/remediation, external review, and Sepolia soak.

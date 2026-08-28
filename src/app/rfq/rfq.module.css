@@ -1,0 +1,2190 @@
+/* Dense full-estate APP20 RFQ workspace. All color comes from the shared shell palette. */
+
+.operationsGate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 9px 14px;
+  background: var(--shell-inset);
+  font-size: 11px;
+}
+
+.operationsGate strong,
+.operationsGate a {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.operationsDashboard {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.operationsDashboard > section,
+.operationsDashboard > header {
+  border: 1px solid var(--shell-line);
+  padding: 14px;
+  background: var(--shell-panel);
+}
+
+.operationsDashboard dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--shell-line);
+}
+
+.operationsDashboard dl > div {
+  padding: 9px;
+  background: var(--shell-bg);
+}
+
+.operationsDashboard code,
+.operationsDashboard td {
+  overflow-wrap: anywhere;
+}
+
+.page {
+  width: 100%;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  color: var(--shell-text);
+  background: var(--shell-bg);
+}
+
+.activeRecords {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.activeCard {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--shell-line);
+  padding: 14px;
+  background: var(--shell-panel);
+}
+
+.activeCard header,
+.phaseAction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activeCard dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--shell-line);
+}
+
+.activeCard dl > div {
+  min-width: 0;
+  padding: 8px;
+  background: var(--shell-bg);
+}
+
+.activeCard dd,
+.activeCard code {
+  overflow-wrap: anywhere;
+}
+
+.activeCard ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--shell-muted);
+}
+
+.panelHeading span,
+.metric > span,
+.metric button,
+.stageBadge,
+.tokenHead span,
+.sendHead span,
+.sendAmount > span,
+.sendRecipient > span,
+.bookAdd button,
+.sendButton {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.panelHeading span,
+.sendHead span {
+  color: var(--shell-orange);
+}
+
+.deskSubnav {
+  display: flex;
+  min-height: 34px;
+  align-items: stretch;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.deskSubnav a,
+.deskSubnav button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  padding: 0 14px;
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.deskSubnav a.isActive,
+.deskSubnav button.isActive,
+.deskSubnav a[aria-current="page"],
+.deskSubnav button[aria-pressed="true"] {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.readyDesk {
+  display: grid;
+  gap: 1px;
+  background: var(--shell-line);
+}
+
+.readyDesk[hidden] {
+  display: none;
+}
+
+.railPick {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.railPick button {
+  min-height: 40px;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+}
+
+.railPick button.isActive {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.railPick a {
+  margin-left: auto;
+  padding: 0 16px;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-decoration: none;
+}
+
+.panel[hidden] {
+  display: none;
+}
+
+.desk {
+  display: block;
+  background: var(--shell-line);
+}
+
+.panel {
+  min-width: 0;
+  background: var(--shell-panel);
+}
+
+.panelHeading {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 6px 14px;
+}
+
+.panelHeading strong {
+  min-width: 0;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-align: right;
+}
+
+.publicOverview {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.55fr) minmax(0, 1.45fr);
+  align-items: stretch;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.metric {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 14px;
+}
+
+.metric > span {
+  color: var(--shell-muted);
+}
+
+.metric > div {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.metric strong {
+  overflow: hidden;
+  font-size: clamp(22px, 2.2vw, 34px);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  text-overflow: ellipsis;
+}
+
+.metric small {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.metric button {
+  width: fit-content;
+  min-height: 24px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+}
+
+.metric button:hover:not(:disabled),
+.sendButton:hover:not(:disabled),
+.bookList button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.bookAdd button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  background: color-mix(in srgb, var(--shell-orange) 86%, var(--shell-text));
+  color: var(--shell-bg);
+}
+
+.metric button:disabled,
+.sendButton:disabled,
+.bookAdd button:disabled,
+.bookList button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.tokenTable {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  border-left: 1px solid var(--shell-line);
+}
+
+.tokenHead,
+.tokenTable > div[role="row"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 0.9fr);
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.tokenHead {
+  border-bottom: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+}
+
+.tokenTable > div[role="row"]:not(.tokenHead) {
+  border-bottom: 1px solid var(--shell-line);
+  font-size: 12px;
+}
+
+.tokenTable [role="cell"] {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.tokenTable [role="cell"] code {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.tokenNote {
+  margin: 0;
+  padding: 7px 12px;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.sendForm {
+  display: grid;
+  gap: 6px;
+  padding: 9px 14px 11px;
+}
+
+.sendHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.sendHead small {
+  color: var(--shell-muted);
+  font-size: 10px;
+}
+
+.sendControls {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.sendAmount,
+.sendRecipient {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.sendAmount > span,
+.sendRecipient > span {
+  color: var(--shell-muted);
+}
+
+.sendAmount input,
+.sendBookRow input,
+.sendBookRow select,
+.bookAdd input {
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font-size: 12px;
+}
+
+.sendAmount input:focus-visible,
+.sendBookRow input:focus-visible,
+.sendBookRow select:focus-visible,
+.bookAdd input:focus-visible {
+  outline: 2px solid var(--shell-orange);
+  outline-offset: -1px;
+}
+
+.sendBookRow {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.sendBookRow select {
+  min-width: 0;
+  max-width: 150px;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.sendBookRow button {
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 9px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sendBookRow button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.sendBookRow button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.sendHint,
+.sendError {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.sendError {
+  color: var(--shell-danger, #e5484d);
+}
+
+.sendButton {
+  min-height: 30px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 12px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+}
+
+.sendButton:hover:not(:disabled) {
+  color: var(--shell-orange);
+  background: transparent;
+}
+
+.sendStatus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sendStatus a {
+  color: var(--shell-orange);
+}
+
+.sendStatusError {
+  color: var(--shell-danger, #e5484d);
+}
+
+.privateWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+  min-height: 620px;
+  background: var(--shell-bg);
+}
+
+.marketWorkspace {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--shell-line);
+  background: var(--shell-bg);
+}
+
+.marketHeader {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 5px 12px;
+  background: var(--shell-panel);
+}
+
+.marketHeader span,
+.marketHeader > strong,
+.marketFacts dt {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.marketHeader span,
+.marketHeader > strong {
+  color: var(--shell-orange);
+}
+
+.marketHeader h2 {
+  margin: 1px 0 0;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.marketBoard {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+  background: var(--shell-line);
+}
+
+.marketStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background: var(--shell-panel);
+}
+
+.marketStats > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 11px 14px;
+}
+
+.marketStats > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+
+.marketStats span,
+.marketSectionHeader span,
+.marketSectionHeader > strong,
+.chartLegend,
+.chartFooter,
+.ladderHead,
+.priceLadder dt,
+.depthWithheld span,
+.marketSignals span {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.marketStats span,
+.marketSectionHeader span,
+.ladderHead,
+.priceLadder dt,
+.depthWithheld span,
+.marketSignals span {
+  color: var(--shell-muted);
+}
+
+.marketStats strong {
+  overflow: hidden;
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: clamp(16px, 1.7vw, 23px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketStats small {
+  color: var(--shell-muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.marketStats strong.marketPositive {
+  color: var(--shell-live);
+}
+
+.marketStats strong.marketNegative {
+  color: var(--shell-orange);
+}
+
+.marketDataGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.34fr);
+  min-width: 0;
+  background: var(--shell-panel);
+}
+
+.executionChart,
+.referenceBook {
+  min-width: 0;
+}
+
+.referenceBook {
+  border-left: 1px solid var(--shell-line);
+}
+
+.marketSectionHeader {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 8px 12px;
+}
+
+.marketSectionHeader h3 {
+  margin: 3px 0 0;
+  font-size: 13px;
+  letter-spacing: -0.015em;
+}
+
+.marketSectionHeader > strong {
+  color: var(--shell-orange);
+  white-space: nowrap;
+}
+
+.priceRangeTabs {
+  display: flex;
+  border: 1px solid var(--shell-line);
+}
+
+.priceRangeTabs button {
+  min-width: 38px;
+  min-height: 28px;
+  border: 0;
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.priceRangeTabs button + button {
+  border-left: 1px solid var(--shell-line);
+}
+
+.priceRangeTabs button[aria-pressed="true"] {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.priceRangeTabs button:hover:not([aria-pressed="true"]) {
+  color: var(--shell-text);
+  background: var(--shell-inset);
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--shell-muted);
+  letter-spacing: 0.05em;
+}
+
+.chartLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chartLegend i {
+  width: 14px;
+  height: 2px;
+  background: var(--shell-muted);
+}
+
+.chartLegend .legendQuote {
+  background: var(--shell-orange);
+}
+
+.chartFrame {
+  min-height: 320px;
+  padding: 8px 10px 0;
+  background: var(--shell-bg);
+}
+
+.marketChart {
+  display: block;
+  width: 100%;
+  height: 320px;
+  overflow: visible;
+}
+
+.chartGridLine {
+  stroke: var(--shell-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartTick {
+  stroke: var(--shell-muted);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartAxisText,
+.chartAxisTitle {
+  fill: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.chartAxisTitle {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.chartCandleWickUp,
+.chartCandleWickDown {
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartCandleWickUp {
+  stroke: var(--shell-live);
+}
+
+.chartCandleWickDown {
+  stroke: var(--shell-orange);
+}
+
+.chartCandleBodyUp,
+.chartCandleBodyDown {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartCandleBodyUp {
+  fill: color-mix(in srgb, var(--shell-live) 70%, var(--shell-bg));
+  stroke: var(--shell-live);
+}
+
+.chartCandleBodyDown {
+  fill: color-mix(in srgb, var(--shell-orange) 74%, var(--shell-bg));
+  stroke: var(--shell-orange);
+}
+
+.chartLastPriceLine {
+  stroke: color-mix(in srgb, var(--shell-orange) 55%, transparent);
+  stroke-dasharray: 2 4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartLastPriceText {
+  fill: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.chartActivePoint {
+  fill: var(--shell-bg);
+  stroke: var(--shell-text);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartCrosshair {
+  pointer-events: none;
+  stroke: color-mix(in srgb, var(--shell-text) 48%, transparent);
+  stroke-dasharray: 3 4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chartStatus {
+  display: grid;
+  min-height: 300px;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: var(--shell-muted);
+  text-align: center;
+}
+
+.chartStatus strong {
+  color: var(--shell-text);
+  font-size: 13px;
+}
+
+.chartStatus p {
+  max-width: 46ch;
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.chartStatus button {
+  min-height: 28px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 12px;
+  color: var(--shell-orange);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.chartFooter {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--shell-line);
+  padding: 7px 12px;
+  color: var(--shell-orange);
+  letter-spacing: 0.05em;
+}
+
+.chartFooter small {
+  color: var(--shell-muted);
+  font-family: var(--font-body), sans-serif;
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: none;
+}
+
+.chartFooter a {
+  color: var(--shell-text);
+}
+
+.ladderHead,
+.priceLadder > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+}
+
+.ladderHead {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.ladderHead span:last-child {
+  text-align: right;
+}
+
+.priceLadder {
+  margin: 0;
+}
+
+.priceLadder > div + div {
+  border-top: 1px solid var(--shell-line);
+}
+
+.priceLadder dd {
+  margin: 0;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.ladderAsk dd {
+  color: var(--shell-orange);
+}
+
+.ladderMid {
+  background: var(--shell-inset);
+}
+
+.ladderMid dd {
+  color: var(--shell-text);
+}
+
+.ladderBid dd {
+  color: var(--shell-live);
+}
+
+.depthWithheld {
+  display: grid;
+  gap: 5px;
+  margin: 12px;
+  border: 1px solid var(--shell-line);
+  padding: 12px;
+  background: var(--shell-inset);
+}
+
+.depthWithheld strong {
+  font-size: 12px;
+}
+
+.depthWithheld p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.marketSignals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--shell-panel);
+}
+
+.marketSignals article {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 5px;
+  padding: 11px 14px;
+}
+
+.marketSignals article + article {
+  border-left: 1px solid var(--shell-line);
+}
+
+.marketSignals strong {
+  font-size: 12px;
+}
+
+.marketSignals p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.marketCanvas {
+  display: grid;
+  min-height: 360px;
+  flex: 1 1 auto;
+  align-content: space-between;
+  gap: 32px;
+  padding: clamp(24px, 5vw, 72px);
+  background: var(--shell-bg);
+}
+
+.marketCanvasCopy {
+  max-width: 630px;
+}
+
+.marketCanvasCopy h3 {
+  max-width: 18ch;
+  margin: 8px 0 0;
+  font-size: clamp(32px, 4.8vw, 68px);
+  line-height: 0.96;
+  letter-spacing: -0.055em;
+}
+
+.marketCanvasCopy > p:last-child {
+  max-width: 62ch;
+  margin: 16px 0 0;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.marketFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.marketFacts > div {
+  min-width: 0;
+  padding: 10px 12px;
+}
+
+.marketFacts > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+
+.marketFacts dt {
+  color: var(--shell-muted);
+}
+
+.marketFacts dd {
+  margin: 5px 0 0;
+  color: var(--shell-text);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.tradeTicket {
+  min-width: 0;
+  align-self: start;
+  padding: 14px;
+  background: var(--shell-panel);
+}
+
+.fundingDetails {
+  margin: 10px 14px 12px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.fundingDetails summary {
+  padding: 9px 11px;
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.fundingDetails[open] summary {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.bookPanel {
+  min-width: 0;
+}
+
+.bookBody {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.bookAdd {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.bookField {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.bookField > span {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.bookEmptyBlock {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  border: 1px dashed var(--shell-line);
+  padding: 26px 16px;
+  text-align: center;
+}
+
+.bookEmptyBlock strong {
+  font-size: 13px;
+}
+
+.bookEmptyBlock .bookEmpty {
+  max-width: 62ch;
+}
+
+.bookAdd button {
+  min-height: 30px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 16px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+}
+
+.bookError {
+  margin: 0;
+  color: var(--shell-danger, #e5484d);
+  font-size: 11px;
+}
+
+.bookStatus {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.bookEmpty {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.bookList {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--shell-line);
+  list-style: none;
+}
+
+.bookList li {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.bookList li + li {
+  border-top: 1px solid var(--shell-line);
+}
+
+.bookList b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookList code {
+  overflow-wrap: anywhere;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.bookActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.bookList button,
+.bookActions a {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.bookActions a:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+.privateIntentDesk {
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-bg);
+}
+
+.privateIntentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.privateIntentHeader span,
+.privateIntentHeader > strong,
+.privateIntentForm span,
+.privateIntentQuote span,
+.privateIntentOutcome legend,
+.privateIntentExecute,
+.privateIntentSuccess span {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.privateIntentHeader span,
+.privateIntentHeader > strong,
+.privateIntentForm span,
+.privateIntentOutcome legend {
+  color: var(--shell-orange);
+}
+
+.privateIntentHeader h3 {
+  margin: 3px 0 0;
+  font-size: 15px;
+}
+
+.deskModeSwitch {
+  display: flex;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.deskModeSwitch button {
+  min-height: 34px;
+  flex: 1;
+  border: 0;
+  border-right: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.deskModeSwitch button:last-child {
+  border-right: 0;
+}
+
+.deskModeSwitch button[aria-selected="true"] {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.deskModeSwitch button:disabled {
+  cursor: not-allowed;
+}
+
+.deskChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+
+.deskChips span {
+  border: 1px solid var(--shell-line);
+  padding: 3px 7px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.deskVenueCopy,
+.deskHint {
+  margin: 6px 12px 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.deskHint button {
+  margin-left: 8px;
+  border: 1px solid var(--shell-line);
+  padding: 2px 7px;
+  color: var(--shell-text);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.deskRefusal {
+  display: grid;
+  gap: 6px;
+  margin: 8px 12px 0;
+  border: 1px solid var(--shell-line);
+  padding: 10px;
+  background: var(--shell-inset);
+}
+
+.deskRefusal p {
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.deskRefusal button:disabled {
+  min-height: 32px;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.privateIntentCounterparty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.privateIntentCounterparty > div {
+  display: grid;
+  gap: 3px;
+}
+
+.privateIntentCounterparty span,
+.privateIntentCounterparty a {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.privateIntentCounterparty span {
+  color: var(--shell-muted);
+}
+
+.privateIntentCounterparty code {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+}
+
+.privateIntentCounterparty a {
+  border: 1px solid var(--shell-line);
+  padding: 6px 9px;
+  color: var(--shell-text);
+  text-decoration: none;
+}
+
+.privateIntentCounterparty a:hover {
+  border-color: var(--shell-orange);
+}
+
+.privateIntentForm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.privateIntentForm label {
+  display: grid;
+  gap: 5px;
+}
+
+.privacyPreflight {
+  border: 1px dashed var(--shell-line);
+  padding: 10px;
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+  font-size: 11px;
+}
+
+.privacyPreflight > strong {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.privacyPreflight ul {
+  display: grid;
+  gap: 6px;
+  margin: 9px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.privacyPreflight li {
+  border-top: 1px solid var(--shell-line);
+  padding-top: 6px;
+}
+
+.privacyPreflight li > strong {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.privacyPreflight small {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.privateIntentForm .privacyPreflight > label {
+  display: flex;
+  grid-template-columns: none;
+  align-items: flex-start;
+  gap: 7px;
+  border-top: 1px solid var(--shell-line);
+  padding-top: 8px;
+  color: var(--shell-text);
+}
+
+.privateIntentMarket select {
+  width: 100%;
+  min-height: 36px;
+  appearance: none;
+  border: 1px solid var(--shell-line);
+  border-radius: 0;
+  padding: 0 10px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+}
+
+.swapAssetStack {
+  position: relative;
+  display: grid;
+  gap: 7px;
+}
+
+.swapAssetCard {
+  min-width: 0;
+  border: 1px solid var(--shell-line);
+  padding: 12px;
+  background: var(--shell-inset);
+}
+
+.swapAssetHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--shell-muted);
+}
+
+.swapAssetHead b {
+  color: var(--shell-text);
+  font-family: var(--font-body), sans-serif;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.swapAssetHead small {
+  overflow: hidden;
+  color: var(--shell-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.swapAssetControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.swapAssetControl input,
+.swapAssetControl output {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 0;
+  padding: 0;
+  color: var(--shell-text);
+  background: transparent;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: clamp(25px, 2.5vw, 34px);
+  font-variant-numeric: tabular-nums;
+  line-height: 44px;
+  outline: 0;
+}
+
+.swapAssetControl input:focus-visible {
+  box-shadow: inset 0 -1px 0 var(--shell-orange);
+}
+
+.swapAssetControl strong {
+  min-width: 78px;
+  border: 1px solid var(--shell-line);
+  padding: 9px 10px;
+  color: var(--shell-text);
+  background: var(--shell-panel);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.swapDirection {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 34px;
+  min-height: 34px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border: 4px solid var(--shell-bg);
+  padding: 0;
+  color: var(--shell-orange);
+  background: var(--shell-panel);
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.swapDirection:hover:not(:disabled) {
+  background: var(--shell-inset);
+}
+
+.finalReview dd,
+.finalReview code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.finalReview dd {
+  font-family: var(--font-sans-ui), sans-serif;
+  font-size: 14px;
+}
+
+.privateIntentQuoteButton,
+.privateIntentExecute {
+  min-height: 48px;
+  border: 1px solid var(--shell-orange);
+  border-radius: 0;
+  padding: 0 13px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.privateIntentQuoteButton:disabled,
+.privateIntentExecute:disabled,
+.swapDirection:disabled {
+  cursor: not-allowed;
+  border-color: var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-inset);
+}
+
+.privateIntentQuote {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-block: 1px solid var(--shell-line);
+}
+
+.privateIntentQuote > div {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px;
+}
+
+.privateIntentQuote > div:nth-child(even) {
+  border-left: 1px solid var(--shell-line);
+}
+
+.privateIntentQuote > div:nth-child(n + 3) {
+  border-top: 1px solid var(--shell-line);
+}
+
+.privateIntentQuote span {
+  color: var(--shell-muted);
+}
+
+.privateIntentQuote > div:first-child strong {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.privateIntentQuote strong {
+  font-size: 12px;
+}
+
+.privateIntentStepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-line);
+  list-style: none;
+}
+
+.privateIntentStepper li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.privateIntentStepper li + li::before {
+  width: 18px;
+  height: 1px;
+  margin-right: 2px;
+  background: var(--shell-line);
+  content: "";
+}
+
+.privateIntentStepper li > span {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid var(--shell-line);
+}
+
+.privateIntentStepper li[data-state="complete"],
+.privateIntentStepper li[data-state="current"] {
+  color: var(--shell-text);
+}
+
+.privateIntentStepper li[data-state="complete"] > span {
+  border-color: var(--shell-live);
+  color: var(--shell-bg);
+  background: var(--shell-live);
+}
+
+.privateIntentStepper li[data-state="current"] > span {
+  border-color: var(--shell-orange);
+  color: var(--shell-orange);
+}
+
+.privateIntentDemoControls {
+  margin: 8px 12px 0;
+  border: 1px dashed var(--shell-line);
+  padding: 7px 9px;
+}
+
+.privateIntentDemoControls summary {
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.privateIntentDemoControls .privateIntentOutcome {
+  margin: 9px 0 0;
+}
+
+.privateIntentOutcome {
+  display: flex;
+  gap: 16px;
+  margin: 10px 12px 0;
+  border: 0;
+  padding: 0;
+}
+
+.privateIntentOutcome label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--shell-muted);
+  font-size: 11px;
+}
+
+.privateIntentExecute {
+  width: calc(100% - 24px);
+  margin: 11px 12px 0;
+}
+
+.privateIntentHint,
+.privateIntentStatus,
+.privateIntentDisclosure {
+  margin: 8px 12px 0;
+  color: var(--shell-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.privateIntentStatus,
+.privateIntentSuccess {
+  border: 1px solid var(--shell-line);
+  padding: 8px 10px;
+  background: var(--shell-inset);
+}
+
+.privateIntentError {
+  color: var(--shell-danger, #ff6666);
+}
+
+.privateIntentSuccess {
+  display: grid;
+  gap: 10px;
+  margin: 8px 12px 0;
+  color: var(--shell-live);
+}
+
+.privateIntentSuccess > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.privateIntentSuccess span {
+  color: var(--shell-muted);
+}
+
+.privateIntentReceipt {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--shell-line);
+}
+
+.privateIntentReceipt > div {
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.privateIntentReceipt > div + div {
+  border-left: 1px solid var(--shell-line);
+}
+
+.privateIntentReceipt dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+}
+
+.privateIntentReceipt dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--shell-text);
+  font-size: 11px;
+}
+
+.privateIntentReceipt code,
+.privateIntentTransactions code {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.privateIntentTransactions summary {
+  color: var(--shell-muted);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.privateIntentTransactions code {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--shell-muted);
+}
+
+.privateIntentLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.privateIntentLinks a {
+  border: 1px solid var(--shell-line);
+  padding: 6px 9px;
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.privateIntentLinks a:hover {
+  border-color: var(--shell-orange);
+}
+
+.privateIntentDisclosure {
+  margin-bottom: 11px;
+  padding-top: 9px;
+  border-top: 1px solid var(--shell-line);
+}
+
+.railMap {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--shell-line);
+}
+
+.railStage {
+  min-width: 0;
+  padding: 9px 14px 11px;
+  background: var(--shell-panel);
+}
+
+.railStage header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.railStage h2 {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.railStage p {
+  max-width: 72ch;
+  margin-top: 4px;
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.stageBadge {
+  flex: 0 0 auto;
+  border: 1px solid var(--shell-line);
+  padding: 2px 6px;
+  color: var(--shell-muted);
+}
+
+.stageBadgePrivate {
+  border-color: var(--shell-live);
+  color: var(--shell-live);
+}
+
+.disclosure {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--shell-muted);
+  background: var(--shell-bg);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.privyFallback {
+  min-height: 50dvh;
+  padding: clamp(20px, 4vw, 48px);
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-family: var(--font-mono-ui), monospace;
+}
+
+.page {
+  font-family: var(--font-body), sans-serif;
+  font-size: 14px;
+}
+
+.privateIntentDesk,
+.privateIntentDesk p,
+.privateIntentDesk li,
+.privateIntentDesk dd {
+  font-size: 14px;
+}
+
+.privateIntentDesk button,
+.privateIntentDesk code,
+.privateIntentDesk dt,
+.privateIntentDesk small,
+.privateIntentDesk span {
+  font-size: 11px;
+}
+
+@media (max-width: 1180px) {
+  .railPick {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--shell-line);
+    background: var(--shell-panel);
+  }
+
+  .railPick button {
+    min-height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-right: 1px solid var(--shell-line);
+    color: var(--shell-muted);
+    background: transparent;
+    font-family: var(--font-mono-ui), monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    cursor: pointer;
+  }
+
+  .railPick button.isActive {
+    color: var(--shell-bg);
+    background: var(--shell-orange);
+  }
+
+  .railPick a {
+    margin-left: auto;
+    padding: 0 16px;
+    color: var(--shell-orange);
+    font-family: var(--font-mono-ui), monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-decoration: none;
+  }
+
+  .panel[hidden] {
+    display: none;
+  }
+
+  .desk {
+    grid-template-columns: 1fr;
+  }
+
+  .marketDataGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .referenceBook {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .activeCard dl {
+    grid-template-columns: 1fr;
+  }
+
+  .railSwitch {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: auto auto;
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .railSwitch button:first-child {
+    border-right: 1px solid var(--shell-line);
+  }
+
+  .railSwitchNote {
+    grid-column: 1 / -1;
+  }
+
+  .railMap,
+  .marketStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marketStats > div:nth-child(3) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .marketStats > div:nth-child(4) {
+    border-top: 1px solid var(--shell-line);
+  }
+
+  .marketSignals {
+    grid-template-columns: 1fr;
+  }
+
+  .marketSignals article + article {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .publicOverview {
+    grid-template-columns: 1fr;
+  }
+
+  .tokenTable {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .sendControls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .privateWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .tradeTicket {
+    order: 1;
+  }
+
+  .marketWorkspace {
+    order: 2;
+    border-right: 0;
+  }
+
+  .marketCanvas {
+    min-height: 300px;
+    padding: clamp(24px, 8vw, 52px);
+  }
+
+  .marketFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .marketFacts > div:nth-child(3) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .marketFacts > div:nth-child(4) {
+    border-top: 1px solid var(--shell-line);
+  }
+
+  .tradeTicket {
+    border-top: 1px solid var(--shell-line);
+    padding: 12px;
+  }
+
+  .railMap .railStage:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 580px) {
+  .railMap,
+  .marketStats {
+    grid-template-columns: 1fr;
+  }
+
+  .marketStats > div,
+  .marketStats > div + div,
+  .marketStats > div:nth-child(3),
+  .marketStats > div:nth-child(4) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .marketStats > div:first-child {
+    border-top: 0;
+  }
+
+  .marketSectionHeader,
+  .chartFooter {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .chartLegend {
+    justify-content: flex-start;
+  }
+
+  .chartFrame,
+  .marketChart {
+    min-height: 250px;
+    height: 250px;
+  }
+
+  .chartFooter small {
+    text-align: left;
+  }
+
+  .railMap .railStage:last-child {
+    grid-column: auto;
+  }
+
+  .panelHeading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .panelHeading strong {
+    text-align: left;
+  }
+
+  .bookAdd,
+  .sendBookRow,
+  .privateIntentQuote,
+  .marketFacts {
+    grid-template-columns: 1fr;
+  }
+
+  .privateIntentQuote > div:nth-child(even),
+  .privateIntentQuote > div:nth-child(n + 3) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .marketFacts > div + div,
+  .marketFacts > div:nth-child(3),
+  .marketFacts > div:nth-child(4) {
+    border-top: 1px solid var(--shell-line);
+    border-left: 0;
+  }
+
+  .marketCanvas {
+    min-height: 250px;
+    padding: 28px 16px;
+  }
+
+  .marketCanvasCopy h3 {
+    font-size: clamp(32px, 13vw, 48px);
+  }
+
+  .sendBookRow select {
+    max-width: none;
+  }
+
+  .bookList li {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .bookActions {
+    justify-content: flex-start;
+  }
+
+  .privateIntentStepper,
+  .privateIntentReceipt {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .privateIntentStepper li + li::before {
+    display: none;
+  }
+
+  .privateIntentReceipt > div + div {
+    border-left: 0;
+  }
+
+  .privateIntentReceipt > div:nth-child(n + 3) {
+    border-top: 1px solid var(--shell-line);
+  }
+
+  .privateIntentSuccess > div:first-child,
+  .privateIntentCounterparty {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

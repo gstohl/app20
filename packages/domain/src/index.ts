@@ -1,3 +1,6 @@
+export { encodeDigest256Limbs, parseDigest256 } from "./digest256.ts";
+export type { Digest256 } from "./digest256.ts";
+
 const STARKNET_FELT_LIMIT = 2n ** 251n;
 const STARKNET_U128_LIMIT = 2n ** 128n;
 const MAX_FELT_INPUT_LENGTH = 78;

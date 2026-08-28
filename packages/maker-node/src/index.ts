@@ -1,5 +1,4 @@
 import {
-  appendFileSync,
   chmodSync,
   closeSync,
   existsSync,
@@ -7,18 +6,23 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   rmSync,
   truncateSync,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 import {
   QUOTE_DOMAIN,
+  QUOTE_V2_DOMAIN,
   canonicalMakerReservation,
   canonicalPrivateRfq,
   canonicalSolverQuote,
+  canonicalSolverQuoteV2,
   digestPrivateRfq,
+  digestSolverQuoteV2,
   createMakerReservation,
   transitionMakerReservation,
   type MakerReservationV1,
@@ -26,6 +30,7 @@ import {
   type SolverQuote,
   type StarknetPool,
   type UnsignedSolverQuote,
+  type UnsignedSolverQuoteV2,
 } from "@app20/private-intents";
 
 const WAL_DOMAIN = "app20/maker-reservation-wal/v1" as const;
@@ -49,6 +54,9 @@ export type StoredMakerReservation = Readonly<{
   signedCanonical?: string;
   signature?: string;
   quoteDigest?: string;
+  settlementDealId?: string;
+  settlementDeadline?: number;
+  settlementTicketAddress?: string;
 }>;
 
 export type MakerQuoteRequest = Readonly<{
@@ -73,16 +81,21 @@ export type MakerReservationOffer = Readonly<{
   nonce: string;
   reservationId: string;
   reservationExpiresAt: number;
+  fence: bigint;
 }>;
 
 export type MakerFillRequest = Readonly<{
   reservationId: string;
   intentDigest: string;
+  fence: bigint;
+  quoteDigest: string;
   dealId: string;
   sellToken: string;
   sellAmount: bigint;
   buyToken: string;
   buyAmount: bigint;
+  deadline: number;
+  ticketAddress: string;
 }>;
 
 export type MakerWalletAdapter = Readonly<{
@@ -127,6 +140,9 @@ type StoredWire = Readonly<{
   signedCanonical?: string;
   signature?: string;
   quoteDigest?: string;
+  settlementDealId?: string;
+  settlementDeadline?: number;
+  settlementTicketAddress?: string;
 }>;
 
 type WalPayload = Readonly<{
@@ -217,6 +233,30 @@ function serializeStored(record: StoredMakerReservation): StoredWire {
     ...(record.quoteDigest === undefined
       ? {}
       : { quoteDigest: requireHex32(record.quoteDigest, "quoteDigest") }),
+    ...(record.settlementDealId === undefined
+      ? {}
+      : {
+          settlementDealId: requireText(
+            record.settlementDealId,
+            "settlementDealId",
+          ).toLowerCase(),
+        }),
+    ...(record.settlementDeadline === undefined
+      ? {}
+      : {
+          settlementDeadline: requireTimestamp(
+            record.settlementDeadline,
+            "settlementDeadline",
+          ),
+        }),
+    ...(record.settlementTicketAddress === undefined
+      ? {}
+      : {
+          settlementTicketAddress: requireText(
+            record.settlementTicketAddress,
+            "settlementTicketAddress",
+          ).toLowerCase(),
+        }),
   };
 }
 
@@ -251,6 +291,30 @@ function deserializeStored(wire: StoredWire): StoredMakerReservation {
     ...(wire.quoteDigest === undefined
       ? {}
       : { quoteDigest: requireHex32(wire.quoteDigest, "quoteDigest") }),
+    ...(wire.settlementDealId === undefined
+      ? {}
+      : {
+          settlementDealId: requireText(
+            wire.settlementDealId,
+            "settlementDealId",
+          ).toLowerCase(),
+        }),
+    ...(wire.settlementDeadline === undefined
+      ? {}
+      : {
+          settlementDeadline: requireTimestamp(
+            wire.settlementDeadline,
+            "settlementDeadline",
+          ),
+        }),
+    ...(wire.settlementTicketAddress === undefined
+      ? {}
+      : {
+          settlementTicketAddress: requireText(
+            wire.settlementTicketAddress,
+            "settlementTicketAddress",
+          ).toLowerCase(),
+        }),
   };
   if (
     (record.signedCanonical === undefined) !==
@@ -290,24 +354,65 @@ function cloneRecords(
   );
 }
 
+export type DurableReservationFileSystem = Readonly<{
+  open: (path: string, flags: string, mode?: number) => number;
+  write: (
+    descriptor: number,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+  ) => number;
+  fsync: (descriptor: number) => void;
+  close: (descriptor: number) => void;
+  rename: (from: string, to: string) => void;
+  chmod: (path: string, mode: number) => void;
+}>;
+
+const durableReservationFileSystem: DurableReservationFileSystem = {
+  open: (path, flags, mode) => openSync(path, flags, mode),
+  write: (descriptor, buffer, offset, length) =>
+    writeSync(descriptor, buffer, offset, length),
+  fsync: (descriptor) => fsyncSync(descriptor),
+  close: (descriptor) => closeSync(descriptor),
+  rename: (from, to) => renameSync(from, to),
+  chmod: (path, mode) => chmodSync(path, mode),
+};
+
+export type DurableReservationStoreOptions = Readonly<{
+  faultInjector?: (stage: string) => void;
+  fileSystem?: DurableReservationFileSystem;
+}>;
+
 export class DurableReservationStore {
   readonly #walPath: string;
   readonly #lockPath: string;
   readonly #exitHandler: () => void;
+  readonly #faultInjector?: (stage: string) => void;
+  readonly #fileSystem: DurableReservationFileSystem;
   #records = new Map<string, StoredMakerReservation>();
   #sequence = 0;
   #headDigest: string | null = null;
+  #durableSerialized = "";
   #tail: Promise<void> = Promise.resolve();
   #closed = false;
+  #failed = false;
 
-  private constructor(walPath: string) {
+  private constructor(
+    walPath: string,
+    options: DurableReservationStoreOptions = {},
+  ) {
     this.#walPath = walPath;
     this.#lockPath = `${walPath}.lock`;
+    this.#faultInjector = options.faultInjector;
+    this.#fileSystem = options.fileSystem ?? durableReservationFileSystem;
     this.#exitHandler = () => rmSync(this.#lockPath, { force: true });
   }
 
-  static open(walPath: string): DurableReservationStore {
-    const store = new DurableReservationStore(walPath);
+  static open(
+    walPath: string,
+    options: DurableReservationStoreOptions = {},
+  ): DurableReservationStore {
+    const store = new DurableReservationStore(walPath, options);
     store.#acquireLock();
     try {
       store.#load();
@@ -351,7 +456,22 @@ export class DurableReservationStore {
       rejectResult = reject;
     });
     const run = this.#tail.then(async () => {
-      const draft = cloneRecords(this.#records);
+      if (this.#closed)
+        throw new MakerNodeError("Reservation store is closed.");
+      if (this.#failed)
+        throw new MakerNodeError(
+          "Reservation store is fail-stopped after an uncertain WAL transition; reopen it from disk before retrying.",
+        );
+      let draft: Map<string, StoredMakerReservation>;
+      try {
+        draft = cloneRecords(this.#records);
+      } catch (error) {
+        this.#failed = true;
+        throw new MakerNodeError(
+          "Reservation WAL serialization failed; the store is fail-stopped.",
+          { cause: error },
+        );
+      }
       try {
         const value = await mutate(draft, this.#sequence + 1);
         this.#appendSnapshot(draft);
@@ -410,11 +530,15 @@ export class DurableReservationStore {
     rmSync(this.#lockPath, { force: true });
   }
 
+  #checkpoint(stage: string): void {
+    this.#faultInjector?.(stage);
+  }
+
   #load(): void {
     mkdirSync(dirname(this.#walPath), { recursive: true, mode: 0o700 });
     if (!existsSync(this.#walPath)) {
-      const descriptor = openSync(this.#walPath, "wx", 0o600);
-      closeSync(descriptor);
+      this.#replaceDurableFile("", "initial");
+      this.#durableSerialized = "";
       return;
     }
     chmodSync(this.#walPath, 0o600);
@@ -422,8 +546,15 @@ export class DurableReservationStore {
     if (content && !content.endsWith("\n")) {
       const lastComplete = content.lastIndexOf("\n") + 1;
       truncateSync(this.#walPath, lastComplete);
+      const descriptor = openSync(this.#walPath, "r");
+      try {
+        fsyncSync(descriptor);
+      } finally {
+        closeSync(descriptor);
+      }
       content = content.slice(0, lastComplete);
     }
+    this.#durableSerialized = content;
     const lines = content.split("\n").filter(Boolean);
     for (const [index, line] of lines.entries()) {
       let entry: WalEntry;
@@ -472,36 +603,108 @@ export class DurableReservationStore {
     }
   }
 
-  #appendSnapshot(records: Map<string, StoredMakerReservation>): void {
-    const sequence = this.#sequence + 1;
-    const payload = {
-      records: [...records.values()]
-        .sort((left, right) =>
-          left.reservation.reservationId.localeCompare(
-            right.reservation.reservationId,
-          ),
-        )
-        .map(serializeStored),
-    } satisfies WalPayload;
-    const canonical = canonicalWalEntry(sequence, this.#headDigest, payload);
-    const entry: WalEntry = {
-      version: 1,
-      domain: WAL_DOMAIN,
-      sequence,
-      previousDigest: this.#headDigest,
-      payload,
-      digest: sha256(canonical),
-    };
-    const descriptor = openSync(this.#walPath, "a", 0o600);
+  #replaceDurableFile(candidate: string, label: string): void {
+    const directoryPath = dirname(this.#walPath);
+    const temporary = `${this.#walPath}.${process.pid}.${label}.${randomBytes(8).toString("hex")}.tmp`;
+    let descriptor: number | undefined;
+    let directory: number | undefined;
     try {
-      appendFileSync(descriptor, `${JSON.stringify(entry)}\n`, "utf8");
-      fsyncSync(descriptor);
+      this.#checkpoint("open");
+      descriptor = this.#fileSystem.open(temporary, "wx", 0o600);
+      const bytes = Buffer.from(candidate, "utf8");
+      const split = Math.floor(bytes.length / 2);
+      const first = this.#fileSystem.write(descriptor, bytes, 0, split);
+      if (first !== split)
+        throw new MakerNodeError(
+          "Reservation WAL candidate write was partial.",
+        );
+      this.#checkpoint("partial-write");
+      let offset = split;
+      do {
+        const written = this.#fileSystem.write(
+          descriptor,
+          bytes,
+          offset,
+          bytes.length - offset,
+        );
+        if (written < 0 || (offset < bytes.length && written === 0))
+          throw new MakerNodeError(
+            "Reservation WAL candidate write was partial.",
+          );
+        offset += written;
+      } while (offset < bytes.length);
+      this.#checkpoint("write");
+      this.#checkpoint("file-fsync");
+      this.#fileSystem.fsync(descriptor);
+      this.#checkpoint("close");
+      this.#fileSystem.close(descriptor);
+      descriptor = undefined;
+      this.#checkpoint("rename");
+      this.#fileSystem.rename(temporary, this.#walPath);
+      this.#checkpoint("chmod");
+      this.#fileSystem.chmod(this.#walPath, 0o600);
+      this.#checkpoint("dir-open");
+      directory = this.#fileSystem.open(directoryPath, "r");
+      this.#checkpoint("dir-fsync");
+      this.#fileSystem.fsync(directory);
+      this.#checkpoint("dir-close");
+      this.#fileSystem.close(directory);
+      directory = undefined;
     } finally {
-      closeSync(descriptor);
+      if (descriptor !== undefined) {
+        try {
+          this.#fileSystem.close(descriptor);
+        } catch {
+          // The caller fail-stops on every uncertainty.
+        }
+      }
+      if (directory !== undefined) {
+        try {
+          this.#fileSystem.close(directory);
+        } catch {
+          // The caller fail-stops on every uncertainty.
+        }
+      }
+      rmSync(temporary, { force: true });
     }
-    this.#records = records;
-    this.#sequence = sequence;
-    this.#headDigest = entry.digest;
+  }
+
+  #appendSnapshot(records: Map<string, StoredMakerReservation>): void {
+    try {
+      this.#checkpoint("serialize");
+      const sequence = this.#sequence + 1;
+      const payload = {
+        records: [...records.values()]
+          .sort((left, right) =>
+            left.reservation.reservationId.localeCompare(
+              right.reservation.reservationId,
+            ),
+          )
+          .map(serializeStored),
+      } satisfies WalPayload;
+      const canonical = canonicalWalEntry(sequence, this.#headDigest, payload);
+      const entry: WalEntry = {
+        version: 1,
+        domain: WAL_DOMAIN,
+        sequence,
+        previousDigest: this.#headDigest,
+        payload,
+        digest: sha256(canonical),
+      };
+      const serializedEntry = `${JSON.stringify(entry)}\n`;
+      const candidate = `${this.#durableSerialized}${serializedEntry}`;
+      this.#replaceDurableFile(candidate, String(sequence));
+      this.#records = records;
+      this.#sequence = sequence;
+      this.#headDigest = entry.digest;
+      this.#durableSerialized = candidate;
+    } catch (error) {
+      this.#failed = true;
+      throw new MakerNodeError(
+        "Reservation WAL transition was uncertain; the store is fail-stopped and must be reopened from disk.",
+        { cause: error },
+      );
+    }
   }
 }
 
@@ -536,6 +739,7 @@ function toOffer(record: StoredMakerReservation): MakerReservationOffer {
     nonce: record.nonce,
     reservationId: record.reservation.reservationId,
     reservationExpiresAt: record.reservation.expiresAt,
+    fence: record.reservation.fence,
   };
 }
 
@@ -821,35 +1025,120 @@ export class DurableMakerNode {
     });
   }
 
+  async signQuoteV2(
+    quote: UnsignedSolverQuoteV2,
+    canonical: string,
+    now: number,
+  ): Promise<{ signature: string; canonical: string }> {
+    requireTimestamp(now, "now");
+    return this.#store.transaction(async (draft) => {
+      pruneDraft(draft, now);
+      const reservationId = requireHex32(quote.reservationId, "reservationId");
+      const record = draft.get(reservationId);
+      if (!record || record.reservation.state !== "reserved") {
+        throw new MakerNodeError(
+          "Quote v2 reservation is missing, expired, or no longer signable.",
+        );
+      }
+      if (quote.domain !== QUOTE_V2_DOMAIN) {
+        throw new MakerNodeError("Only quote v2 may use signQuoteV2.");
+      }
+      const reconstructed = canonicalSolverQuoteV2(quote);
+      if (canonical !== reconstructed) {
+        throw new MakerNodeError(
+          "Quote v2 canonical payload does not match its fields.",
+        );
+      }
+      if (
+        quote.pool !== this.#config.pool ||
+        quote.helper.toLowerCase() !== this.#config.helper.toLowerCase() ||
+        quote.solverId !== record.solverId ||
+        quote.quoteKeyId !== record.solverKey ||
+        quote.intentDigest !== record.reservation.intentDigest ||
+        quote.rfqDigest !== record.reservation.rfqDigest ||
+        quote.nonce !== record.nonce ||
+        quote.sellToken.toLowerCase() !== record.sellToken.toLowerCase() ||
+        quote.sellAmount !== record.sellAmount ||
+        quote.buyToken.toLowerCase() !== record.buyToken.toLowerCase() ||
+        quote.buyAmount !== record.buyAmount ||
+        quote.spreadBps !== record.spreadBps ||
+        quote.pricingProvenance !== record.pricingProvenance ||
+        quote.reservationExpiresAt !== record.reservation.expiresAt ||
+        quote.reservationFence !== record.reservation.fence ||
+        !Number.isSafeInteger(quote.quotedAt) ||
+        quote.quotedAt > now + 30 ||
+        !Number.isSafeInteger(quote.quoteExpiresAt) ||
+        quote.quoteExpiresAt <= quote.quotedAt ||
+        quote.quoteExpiresAt > record.reservation.expiresAt
+      ) {
+        throw new MakerNodeError(
+          "Quote v2 does not match its durable inventory reservation.",
+        );
+      }
+      if (record.signedCanonical !== undefined) {
+        if (record.signedCanonical !== canonical || !record.signature) {
+          throw new MakerNodeError(
+            "Maker refused quote v2 equivocation for this reservation.",
+          );
+        }
+        return { signature: record.signature, canonical };
+      }
+      const signature = requireText(
+        await this.#config.signer(canonical),
+        "signature",
+      );
+      const signedQuoteDigest = await digestSolverQuoteV2({
+        ...quote,
+        signature,
+      });
+      draft.set(reservationId, {
+        ...record,
+        signedCanonical: canonical,
+        signature,
+        quoteDigest: signedQuoteDigest,
+      });
+      return { signature, canonical };
+    });
+  }
+
   async select(
     reservationId: string,
     intentDigest: string,
     now: number,
-  ): Promise<void> {
-    await this.#store.transaction((draft) => {
+  ): Promise<Readonly<{ fence: bigint; quoteDigest: string }>> {
+    return this.#store.transaction((draft) => {
       pruneDraft(draft, now);
       const id = requireHex32(reservationId, "reservationId");
       const record = draft.get(id);
+      const expectedIntentDigest = requireHex32(intentDigest, "intentDigest");
+      if (
+        record?.reservation.state === "selected" &&
+        record.reservation.intentDigest === expectedIntentDigest &&
+        record.quoteDigest
+      ) {
+        return {
+          fence: record.reservation.fence,
+          quoteDigest: record.quoteDigest,
+        };
+      }
       if (
         !record ||
         record.reservation.state !== "reserved" ||
-        record.reservation.intentDigest !==
-          requireHex32(intentDigest, "intentDigest") ||
+        record.reservation.intentDigest !== expectedIntentDigest ||
         !record.quoteDigest
       ) {
         throw new MakerNodeError(
           "Only a signed active reservation can be selected.",
         );
       }
-      draft.set(id, {
-        ...record,
-        reservation: transitionMakerReservation(record.reservation, {
-          kind: "select",
-          expectedFence: record.reservation.fence,
-          at: now,
-          quoteDigest: record.quoteDigest,
-        }),
+      const selected = transitionMakerReservation(record.reservation, {
+        kind: "select",
+        expectedFence: record.reservation.fence,
+        at: now,
+        quoteDigest: record.quoteDigest,
       });
+      draft.set(id, { ...record, reservation: selected });
+      return { fence: selected.fence, quoteDigest: record.quoteDigest };
     });
   }
 
@@ -862,10 +1151,11 @@ export class DurableMakerNode {
       pruneDraft(draft, now);
       const id = requireHex32(reservationId, "reservationId");
       const record = draft.get(id);
+      if (!record) return false;
+      if (record.reservation.state === "released") return true;
       if (
-        !record ||
-        (record.reservation.state !== "reserved" &&
-          record.reservation.state !== "selected")
+        record.reservation.state !== "reserved" &&
+        record.reservation.state !== "selected"
       ) {
         return false;
       }
@@ -888,19 +1178,47 @@ export class DurableMakerNode {
     now: number,
   ): Promise<{ transactionHash: string }> {
     requireTimestamp(now, "now");
-    const record = await this.#store.transaction((draft) => {
+    const acquisition = await this.#store.transaction((draft) => {
       pruneDraft(draft, now);
       const id = requireHex32(request.reservationId, "reservationId");
       const current = draft.get(id);
+      const exactTerms = Boolean(
+        current &&
+          current.reservation.intentDigest ===
+            requireHex32(request.intentDigest, "intentDigest") &&
+          current.quoteDigest ===
+            requireHex32(request.quoteDigest, "quoteDigest") &&
+          current.sellToken.toLowerCase() === request.sellToken.toLowerCase() &&
+          current.sellAmount === request.sellAmount &&
+          current.buyToken.toLowerCase() === request.buyToken.toLowerCase() &&
+          current.buyAmount === request.buyAmount &&
+          Number.isSafeInteger(request.deadline) &&
+          request.deadline === current.rfqExpiresAt &&
+          /^0x[0-9a-f]+$/i.test(request.dealId) &&
+          /^0x[0-9a-f]+$/i.test(request.ticketAddress) &&
+          (current.settlementDealId === undefined ||
+            current.settlementDealId === request.dealId.toLowerCase()) &&
+          (current.settlementDeadline === undefined ||
+            current.settlementDeadline === request.deadline) &&
+          (current.settlementTicketAddress === undefined ||
+            current.settlementTicketAddress ===
+              request.ticketAddress.toLowerCase()),
+      );
       if (
-        !current ||
-        current.reservation.state !== "selected" ||
-        current.reservation.intentDigest !==
-          requireHex32(request.intentDigest, "intentDigest") ||
-        current.sellToken.toLowerCase() !== request.sellToken.toLowerCase() ||
-        current.sellAmount !== request.sellAmount ||
-        current.buyToken.toLowerCase() !== request.buyToken.toLowerCase() ||
-        current.buyAmount !== request.buyAmount
+        exactTerms &&
+        current?.reservation.state === "consumed" &&
+        current.reservation.fence === request.fence + 2n &&
+        current.reservation.settlementTransactionHash
+      ) {
+        return {
+          complete: true as const,
+          transactionHash: current.reservation.settlementTransactionHash,
+        };
+      }
+      if (
+        !exactTerms ||
+        current?.reservation.state !== "selected" ||
+        current.reservation.fence !== request.fence
       ) {
         throw new MakerNodeError(
           "Selected reservation does not authorize this fill.",
@@ -910,6 +1228,9 @@ export class DurableMakerNode {
         this.#config.randomId ?? (() => `0x${randomBytes(32).toString("hex")}`);
       const filling: StoredMakerReservation = {
         ...current,
+        settlementDealId: request.dealId.toLowerCase(),
+        settlementDeadline: request.deadline,
+        settlementTicketAddress: request.ticketAddress.toLowerCase(),
         reservation: transitionMakerReservation(current.reservation, {
           kind: "begin-fill",
           expectedFence: current.reservation.fence,
@@ -918,8 +1239,11 @@ export class DurableMakerNode {
         }),
       };
       draft.set(id, filling);
-      return filling;
+      return { complete: false as const, record: filling };
     });
+    if (acquisition.complete)
+      return { transactionHash: acquisition.transactionHash };
+    const record = acquisition.record;
     try {
       const result = await this.#config.wallet.fill(request);
       await this.#store.transaction((draft) => {
@@ -992,3 +1316,5 @@ export class DurableMakerNode {
 }
 
 export type { SolverQuote };
+export * from "#hpke-ingress";
+export * from "#production-ports";

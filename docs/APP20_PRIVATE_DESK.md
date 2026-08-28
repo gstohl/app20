@@ -1,21 +1,29 @@
-# APP20 Private Trading Desk
+# APP20 Private RFQ
 
 APP20 joins three existing surfaces into one professional workflow:
 
-1. **Desk** — inventory-backed private USDC↔STRK RFQ settlement.
+1. **RFQ** — inventory-backed private USDC↔STRK quote and settlement.
 2. **Mailbox** — encrypted correspondence and non-authoritative evidence.
 3. **Counterparties** — a device-encrypted address book with RFQ and Mail handoffs.
 
-## Desk lifecycle
+APP20 is definitively a bookless invited-maker RFQ venue using the existing STRK20 privacy pool. Creating a new privacy venue, AMM, order book, liquidity pool, or pool factory is an explicit non-goal. See [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md) for the canonical goals, non-goals, definitions of done, and open gaps.
+
+## Localnet-final gate (2026-08-26)
+
+The existing `LocalnetPrivateIntentDesk` mounts only on the build-gated localnet provider. **The production RFQ, browser RFQ publication, and Worker RFQ transport are immutable-off.** `/api/rfq/*` returns `404` before reading directory, replay, or authentication configuration; checked-in Wrangler manifests explicitly record `RFQ_TRANSPORT_ENABLED=false`. Local account-and-chain-bound resume records, comparison, and final-review models are non-authoritative browser conveniences. The production quote-v2 transport, wallet maturity evidence, custody, reconciliation, and authoritative settlement lifecycle are not wired. Neither Sepolia nor Mainnet publishes an RFQ or automatically falls back to a public book.
+
+Reviewed app-code primitives now exist for one RFC 9180 HPKE envelope per invited maker, quote-v2 wire verification/replay, scoped relay capabilities, select/release commands, and pure receipt-binding/origin/canonical-membership validation. Configured-chain receipt authority is intentionally unavailable: there is no public verifier constructor or runtime-provenanced server adapter. These are **unwired production seams**, not present-tense RFQ behavior. Quotes would remain relay-visible; padding would not hide timing, source, fanout, or bucket size.
+
+## RFQ lifecycle
 
 ```text
-Counterparty → Privacy preflight + confirm → Sealed maker requests
+Counterparty → Privacy preflight + confirm → Request-scoped signed local maker requests
              → Verify all → Select one → Lock
                                       ↘ Maker fill → Claim → Receipt
                                       ↘ Expiry → Refund
 ```
 
-Before sending exact terms, the Desk reports evidence-labelled amount
+Before sending exact terms, the RFQ reports evidence-labelled amount
 fingerprinting, denomination, note-maturity, timing, invited-maker, and public
 settlement findings. Missing evidence is shown as unavailable, no synthetic
 privacy score is invented, and known maker/public disclosures require explicit
@@ -45,9 +53,9 @@ ERC-20 ticket held as a private note. Funding mints that ticket into an OPEN
 note; payout atomically withdraws and burns it before creating the OPEN payout
 note. The Mail seed cannot derive or spend the ticket. Ticket and deal contract
 addresses, token amounts, deadline, and escrow events remain public, and OPEN
-notes remain subject to pool maturity. This path is localnet-only: Mainnet and
-Sepolia escrow helper addresses remain zero and Mainnet RFQ execution is still
-disabled.
+notes remain subject to pool maturity. This path is localnet-only: Mainnet and Sepolia escrow helper addresses are
+hard-coded to zero, injected live build variables are ignored, and live-network
+RFQ execution remains disabled.
 
 ## Contact storage and recovery
 

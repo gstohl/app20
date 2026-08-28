@@ -12,6 +12,7 @@ import {
   importQuotePrivateKey,
   signCanonicalQuote,
 } from "../packages/private-intents/src/index.ts";
+import { dispatchLocalnetMakerFill } from "./localnet-maker-http.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_REQUEST_BYTES = 1_000_000;
@@ -335,6 +336,8 @@ async function readEscrowDeal(dealId) {
     sellAmount: BigInt(result[1]),
     buyToken: result[2],
     buyAmount: BigInt(result[3]),
+    deadline: Number(BigInt(result[5])),
+    ticketAddress: result[6],
     status: Number(BigInt(result[7])),
   };
 }
@@ -348,7 +351,10 @@ async function fillReservation(request) {
     deal.sellAmount !== request.sellAmount ||
     runtime.starknet.num.toBigInt(deal.buyToken) !==
       runtime.starknet.num.toBigInt(request.buyToken) ||
-    deal.buyAmount !== request.buyAmount
+    deal.buyAmount !== request.buyAmount ||
+    deal.deadline !== request.deadline ||
+    runtime.starknet.num.toBigInt(deal.ticketAddress) !==
+      runtime.starknet.num.toBigInt(request.ticketAddress)
   ) {
     fail("on-chain escrow terms do not match the selected reservation.");
   }
@@ -547,8 +553,14 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (url.pathname === "/v1/select") {
-      await maker.select(body.reservationId, body.intentDigest, now);
-      jsonResponse(response, 200, { result: { selected: true } });
+      const authorization = await maker.select(
+        body.reservationId,
+        body.intentDigest,
+        now,
+      );
+      jsonResponse(response, 200, {
+        result: { selected: true, ...authorization },
+      });
       return;
     }
     if (url.pathname === "/v1/release") {
@@ -561,18 +573,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (url.pathname === "/v1/fill") {
-      const result = await maker.fill(
-        {
-          reservationId: body.reservationId,
-          intentDigest: body.intentDigest,
-          dealId: body.dealId,
-          sellToken: body.sellToken,
-          sellAmount: BigInt(body.sellAmount),
-          buyToken: body.buyToken,
-          buyAmount: BigInt(body.buyAmount),
-        },
-        now,
-      );
+      const result = await dispatchLocalnetMakerFill(maker, body, now);
       jsonResponse(response, 200, { result });
       return;
     }

@@ -4,9 +4,6 @@ useDefault = true
 [[allowlists]]
 description = "Vendored upstream deterministic signer and devnet fixtures; never runtime credentials"
 paths = [
-  '''^vendor/starknet-privacy/client/tests/signers/''',
-  '''^vendor/starknet-privacy/crates/discovery-service/tests/fixtures/''',
-  '''^vendor/starknet-privacy/crates/discovery-core/tests/fixtures/''',
   '''^vendor/starknet-privacy/demo/\.env\.example$''',
   '''^workers/relay/test/security\.test\.ts$''',
   '''^scripts/fixtures/localnet-maker-a\.private\.json$''',

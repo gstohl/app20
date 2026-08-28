@@ -11,7 +11,7 @@ flowchart LR
   subgraph User["Browser"]
     Ready[Ready Wallet API]
     Book[Address book]
-    Desk[Vault desk]
+    Desk[Private RFQ]
   end
 
   subgraph Starknet["Starknet / Cairo"]
@@ -52,7 +52,7 @@ Best hide. Depth = Starknet only (AVNU is often thin).
 ```mermaid
 sequenceDiagram
   actor U as User Ready
-  participant V as APP20 Vault
+  participant V as APP20 RFQ
   participant P as STRK20 pool
   participant A as AVNU / Ekubo
 
@@ -79,7 +79,7 @@ flowchart TB
   end
 
   subgraph REST["Protected default"]
-    N1 --> Stop[STOP in Vault]
+    N1 --> Stop[STOP in RFQ funding]
   end
 
   subgraph OUT["OUT — later, new quote"]
@@ -99,7 +99,7 @@ Does not break: size, time, Circle, 1Click.
 
 ```mermaid
 flowchart LR
-  A[NEAR in 500 USDC] -->|minutes later| V[Vault]
+  A[NEAR in 500 USDC] -->|minutes later| V[RFQ funding]
   V -->|same 500| B[NEAR out 500]
   A -.->|solver + amount + time| B
 ```
@@ -201,10 +201,10 @@ flowchart LR
   User --> Visible
 ```
 
-Cairo enforces the vault door on Starknet.  
-NEAR is depth.  
-CCTP is the USDC pipe.  
-TEE is the clerk.  
+Cairo enforces the private-settlement boundary on Starknet.
+NEAR is depth.
+CCTP is the USDC pipe.
+TEE is the clerk.
 None of them turn a same-size round trip into unlinkability.
 
 ---
@@ -218,12 +218,11 @@ the deadline or returns the original asset after expiry.
 ```mermaid
 flowchart LR
   T[Private taker note] --> Q[APP20 RFQ]
-  Q --> C{Cross another order?}
-  C -->|yes| X[Private note-for-note settlement]
-  C -->|no| I[APP20 private inventory]
+  Q --> I[Selected maker private inventory]
   I --> E[Fill-or-refund Cairo escrow]
   E --> U[Private output note]
-  I -. delayed net residual .-> H[PUBLIC hedge]
+  I -. delayed operational netting .-> N[Completed maker fills]
+  I -. delayed residual .-> H[PUBLIC hedge]
 ```
 
 The localnet implementation proves both STRK→USDC and USDC→STRK with a
@@ -231,8 +230,7 @@ six-decimal USDC fixture, a deterministic test price, live solver-note inventory
 and fail-closed insufficient-inventory handling. It is not a production price
 feed, deployed market, or yield product.
 
-The moat is crossing and netting recurring private flow. Bridges remain public
-commodity ingress and hedge infrastructure.
+The narrow product is maker-principal RFQ plus operational netting of completed fills. Atomic two-taker crossing is outside the definitive RFQ goal and would require a separate future specification and audit. Bridges remain public commodity ingress and hedge infrastructure.
 
 ---
 

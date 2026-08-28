@@ -39,10 +39,16 @@ This is production-shaped localnet, not production custody:
 
 - Devnet itself exposes deterministic predeployed account keys. Each child reads
   only its configured account index, but the fixture is not an HSM or TEE.
-- Maker HTTP transport is authenticated loopback HTTP. RFC 9180 HPKE envelope
-  schemas exist in `@app20/private-intents`; encryption and split ingress/egress
-  are not yet wired into this service.
+- Localnet HTTP remains authenticated loopback HTTP. Production-shaped
+  `openEnvelopeThenReserve` uses the reviewed HPKE opener and async replay seam,
+  but no HSM/KMS key resolver or deployed relay is configured.
 - The WAL is single-host and PID-locked, not a replicated linearizable database.
+  `LocalnetWalReservationRepository` is labelled localnet-only. Production
+  repository/CAS-fence, custody, quote-signer, admin-auth and reconciliation
+  ports fail closed through unavailable adapters.
+- Backup/failover/PITR, multi-host linearizability, independent administration,
+  dual control and key rotation are required operator procedures/interfaces;
+  this repository does not claim to implement or evidence them.
 - Localnet proof bytes are the upstream mock. Cairo VNext, deployment, audit,
   key governance, operator reconciliation, and Mainnet release remain closed
   gates.

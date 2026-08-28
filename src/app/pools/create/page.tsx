@@ -3,11 +3,10 @@
 import { useActiveStarknetSession } from "@/app/active-session";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import {
-  digestPoolCreationReview,
-  validatePoolCreationDraft,
-  type PoolCreationReview,
-} from "@/lib/pool-creation";
-import { buildPoolReadiness } from "@/lib/pool-readiness";
+  digestMarketProposalReview,
+  validateMarketProposalDraft,
+  type MarketProposalReview,
+} from "@/lib/market-proposal";
 import {
   APP20_TOKEN_REGISTRY_REVISION,
   networkForProviderIndex,
@@ -17,14 +16,14 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import styles from "./pool-create.module.css";
 
-export type PoolCreationPageProps = Readonly<{
+export type MarketProposalPageProps = Readonly<{
   tokenA: string;
   tokenB: string;
 }>;
 
 type PreparedDraft = Readonly<{
   key: string;
-  review: PoolCreationReview;
+  review: MarketProposalReview;
   checksum: string;
 }>;
 
@@ -32,10 +31,10 @@ function shortFelt(value: string): string {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
-export default function PoolCreationPage({
+export default function MarketProposalPage({
   tokenA,
   tokenB,
-}: PoolCreationPageProps) {
+}: MarketProposalPageProps) {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
@@ -55,7 +54,7 @@ export default function PoolCreationPage({
   const generation = useRef(0);
 
   const validation = pair
-    ? validatePoolCreationDraft({
+    ? validateMarketProposalDraft({
         account: session.account ?? "",
         chainId: session.chainId ?? "",
         registryRevision: APP20_TOKEN_REGISTRY_REVISION,
@@ -93,46 +92,6 @@ export default function PoolCreationPage({
     setShowErrors(false);
   }, [contextKey]);
 
-  const readiness = buildPoolReadiness({
-    correctNetwork: session.compatible
-      ? {
-          status: pair && session.network === pair.network ? "pass" : "block",
-          freshness: "current",
-          evidence:
-            pair && session.network === pair.network
-              ? `${pair.network.toUpperCase()} session matches the proposal.`
-              : "The active session does not match the proposal network.",
-        }
-      : {
-          status: session.connected ? "block" : "unknown",
-          freshness: "current",
-          evidence: session.reason,
-        },
-    ownerAccount: session.account
-      ? {
-          status: "pass",
-          freshness: "current",
-          evidence: `Active ${session.rail.toUpperCase()} account ${shortFelt(session.account)}.`,
-        }
-      : {
-          status: "unknown",
-          freshness: "current",
-          evidence: "Connect the proposal owner in the header.",
-        },
-    allowedContracts: pair
-      ? {
-          status: "pass",
-          freshness: "current",
-          evidence: `Both contracts are reviewed in ${APP20_TOKEN_REGISTRY_REVISION}.`,
-        }
-      : {
-          status: "block",
-          freshness: "current",
-          evidence:
-            "The requested pair is not in the active network allowlist.",
-        },
-  });
-
   function invalidateReview() {
     generation.current += 1;
     setPrepared(null);
@@ -150,7 +109,7 @@ export default function PoolCreationPage({
     const requestGeneration = ++generation.current;
     setPreparing(true);
     try {
-      const checksum = await digestPoolCreationReview(validation.review);
+      const checksum = await digestMarketProposalReview(validation.review);
       if (requestGeneration !== generation.current) return;
       setPrepared({ key: draftKey, review: validation.review, checksum });
     } finally {
@@ -165,14 +124,14 @@ export default function PoolCreationPage({
     return (
       <main className={styles.page}>
         <section className={styles.invalidCard} role="alert">
-          <p className={styles.eyebrow}>APP20 / POOL PROPOSAL</p>
+          <p className={styles.eyebrow}>APP20 / MARKET PROPOSAL</p>
           <h1>Asset not reviewed</h1>
           <p>{reason}</p>
           <p>
-            APP20 cannot prepare or deploy a proposal for unverified token
-            metadata. No transaction or quote was created.
+            APP20 cannot draft a market proposal for unverified token metadata.
+            No transaction, liquidity venue, or quote was created.
           </p>
-          <Link to="/">Back to Swap</Link>
+          <Link to="/rfq">Back to RFQ</Link>
         </section>
       </main>
     );
@@ -182,12 +141,13 @@ export default function PoolCreationPage({
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <p className={styles.eyebrow}>APP20 / POOL PROPOSAL</p>
-          <h1>Prepare draft</h1>
+          <p className={styles.eyebrow}>APP20 / MARKET PROPOSAL</p>
+          <h1>Draft market proposal</h1>
+          <strong>PROPOSAL ONLY · NO DEPLOYMENT</strong>
         </div>
         <nav
           className={styles.headerActions}
-          aria-label="Pool proposal navigation"
+          aria-label="Market proposal navigation"
         >
           <Link
             to="/swap/$tokenA/$tokenB"
@@ -195,7 +155,7 @@ export default function PoolCreationPage({
           >
             ← Back to pair
           </Link>
-          <Link to="/vault">Open Desk</Link>
+          <Link to="/rfq">Open RFQ</Link>
         </nav>
       </header>
 
@@ -207,22 +167,22 @@ export default function PoolCreationPage({
           <strong>{pair.tokenB.symbol}</strong>
         </div>
         <p>
-          This is a session-only proposal review. It does not create a pool,
-          fund inventory, or authorize deployment.
+          This session-only review does not create a venue, AMM, order book, LP position,
+          inventory, transaction, or deployment authorization.
         </p>
       </div>
 
       <div className={styles.workspace}>
         <form
           className={styles.formPanel}
-          aria-labelledby="pool-proposal-title"
+          aria-labelledby="market-proposal-title"
           onSubmit={(event) => void submitDraft(event)}
         >
           <section className={styles.formSection}>
             <header className={styles.sectionHeader}>
               <div>
                 <span>01 / CANONICAL ASSETS</span>
-                <h2 id="pool-proposal-title">Reviewed proposal scope</h2>
+                <h2 id="market-proposal-title">Reviewed proposal scope</h2>
               </div>
               <strong>{pair.network.toUpperCase()}</strong>
             </header>
@@ -355,11 +315,11 @@ export default function PoolCreationPage({
           </button>
         </form>
 
-        <aside className={styles.reviewPanel} aria-label="Pool proposal review">
+        <aside className={styles.reviewPanel} aria-label="Market proposal review">
           <header className={styles.reviewHeader}>
             <div>
               <span>SESSION REVIEW</span>
-              <h2>{currentPrepared ? "Draft prepared" : "Readiness"}</h2>
+              <h2>{currentPrepared ? "Proposal identifier prepared" : "Proposal summary"}</h2>
             </div>
             <strong className={currentPrepared ? styles.ready : undefined}>
               {currentPrepared ? "DRAFT PREPARED" : "NOT PREPARED"}
@@ -371,8 +331,8 @@ export default function PoolCreationPage({
               <span>REVIEW CHECKSUM</span>
               <code>{currentPrepared.checksum}</code>
               <p>
-                Deterministic identifier only—not a signature, approval, pool
-                ID, transaction, or deployment authorization.
+                Deterministic identifier only—not a signature, approval,
+                transaction, venue ID, or deployment authorization.
               </p>
               <dl>
                 <div>
@@ -388,39 +348,10 @@ export default function PoolCreationPage({
           ) : null}
 
           <section className={styles.readinessSection}>
-            <span>DEPLOYMENT READINESS</span>
-            <div className={styles.readinessList}>
-              {Object.values(readiness.checks).map((check) => (
-                <article key={check.key}>
-                  <i
-                    className={
-                      check.status === "pass"
-                        ? styles.checkPass
-                        : check.status === "block"
-                          ? styles.checkBlock
-                          : styles.checkUnknown
-                    }
-                  >
-                    {check.status}
-                  </i>
-                  <div>
-                    <strong>{check.label}</strong>
-                    <p>{check.evidence}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
+            <span>PROPOSAL ONLY · NO DEPLOYMENT</span>
+            <p>Reviewed assets, owner/session, network, exact amounts, registry revision, and a non-executable reference price are the entire proposal scope.</p>
+            <p>The checksum is an identifier only. It does not represent operational readiness or a liquidity action.</p>
           </section>
-
-          <button
-            type="button"
-            className={styles.deployButton}
-            disabled
-            title="No reviewed factory, ABI, calldata, or deployment approval exists"
-          >
-            Deployment unavailable
-          </button>
-          <p className={styles.deployHint}>{readiness.deployment.evidence}</p>
         </aside>
       </div>
     </main>

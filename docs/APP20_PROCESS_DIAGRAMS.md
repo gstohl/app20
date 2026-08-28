@@ -20,10 +20,10 @@ flowchart TD
     PV --> PS[Sepolia recovery rail only]
     LW --> LD[Ephemeral localnet demo]
 
-    RM --> V[Vault funding and public send]
+    RM --> V[RFQ funding utilities and public send]
     RS --> V
     PS --> PR[Privy Sepolia recovery vault]
-    LD --> D[Private RFQ Desk]
+    LD --> D[Private RFQ]
     RW --> M[Mailbox and Counterparties]
     LW --> M
 
@@ -141,7 +141,7 @@ flowchart TD
 
     Q[Verified maker quote and reservation] --> ST[Settlement call]
     ST --> CH[Cairo plus finalized chain events]
-    CH --> AR[Authoritative receipt after configured-chain verification]
+    CH --> AR[Future authoritative receipt; configured-chain authority currently unavailable]
 
     EV -. may reference intent or receipt digest .-> AR
     EV -. cannot authorize value .-> ST
@@ -153,7 +153,7 @@ Wallet signatures attest correspondence-key control; they are never encryption-k
 
 ```mermaid
 flowchart LR
-    CE[Configured-chain RPC and event verifier] --> VR[Verified chain receipt]
+    CE[Future server-only configured-chain RPC/event verifier; unavailable] --> VR[Verified chain receipt]
     LE[Local intent, quote, ranking, and negotiation evidence] --> LR[Local evidence layer]
 
     VR --> FR[Canonical full receipt]

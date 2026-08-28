@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app20.gstohl.com/schemas/historical-sepolia-proof-v1.json",
+  "title": "APP20 historical Sepolia proof (never runtime configuration)",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "network",
+    "classification",
+    "canonicalProductionDeployment",
+    "runtimeAllowed",
+    "productionEligible",
+    "supersededByLocalnetDecision",
+    "warning",
+    "source",
+    "testCapture",
+    "excludedLocalTestAssets"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "network": { "const": "SN_SEPOLIA" },
+    "classification": {
+      "enum": [
+        "unaudited-one-off-deployability-proof",
+        "historical-localnet-fixture-proof"
+      ]
+    },
+    "canonicalContractName": {
+      "type": ["string", "null"]
+    },
+    "canonicalProductionDeployment": { "const": false },
+    "runtimeAllowed": { "const": false },
+    "productionEligible": { "const": false },
+    "supersededByLocalnetDecision": { "const": true },
+    "warning": { "type": "string", "minLength": 40 },
+    "source": {
+      "type": "object",
+      "required": ["commit", "cairoDiffFromCommit"],
+      "properties": {
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "cairoDiffFromCommit": { "const": false }
+      }
+    },
+    "testCapture": {
+      "type": "object",
+      "required": ["command", "passed", "failed"],
+      "properties": {
+        "command": { "const": "snforge test" },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "const": 0 }
+      }
+    },
+    "excludedLocalTestAssets": { "const": true }
+  }
+}

@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app20.example/schemas/sepolia-deployment-manifest-v1.json",
+  "title": "APP20 blocked Sepolia preparation manifest (no readiness semantics)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "environment", "chainId", "chainIdHex", "releaseReady", "source", "networkPins", "tools", "artifactBundle", "contracts", "evidence", "releaseApproval"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "environment": { "const": "sepolia" },
+    "chainId": { "const": "SN_SEPOLIA" },
+    "chainIdHex": { "const": "0x534e5f5345504f4c4941" },
+    "releaseReady": { "const": false },
+    "source": { "$ref": "#/$defs/sourceRecord" },
+    "networkPins": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strk20Pool", "tokens"],
+      "properties": {
+        "strk20Pool": { "const": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91" },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["STRK", "USDC"],
+          "properties": {
+            "STRK": { "$ref": "#/$defs/token" },
+            "USDC": { "$ref": "#/$defs/token" }
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["starkli", "scarb", "cairo", "sierraCompiler", "casmCompiler"],
+      "properties": {
+        "starkli": { "const": "0.4.2" },
+        "scarb": { "type": ["string", "null"] },
+        "cairo": { "type": ["string", "null"] },
+        "sierraCompiler": { "type": ["string", "null"] },
+        "casmCompiler": { "type": ["string", "null"] }
+      }
+    },
+    "artifactBundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reproductionCommand", "bundleSha256", "reproducedBy", "reproducedAt"],
+      "properties": {
+        "reproductionCommand": { "type": ["string", "null"] },
+        "bundleSha256": { "$ref": "#/$defs/nullableSha256" },
+        "reproducedBy": { "type": ["string", "null"] },
+        "reproducedAt": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["App20Mail", "App20Escrow", "App20Claim"],
+      "properties": {
+        "App20Mail": { "$ref": "#/$defs/contract" },
+        "App20Escrow": { "$ref": "#/$defs/contract" },
+        "App20Claim": { "$ref": "#/$defs/contract" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactReview", "auditReports", "declarationTransactions", "deploymentTransactions", "constructorVerifications", "classHashVerifications", "operatorApprovals", "postDeploymentChecks"],
+      "properties": {
+        "artifactReview": { "$ref": "#/$defs/evidenceArray" },
+        "auditReports": { "$ref": "#/$defs/evidenceArray" },
+        "declarationTransactions": { "$ref": "#/$defs/evidenceArray" },
+        "deploymentTransactions": { "$ref": "#/$defs/evidenceArray" },
+        "constructorVerifications": { "$ref": "#/$defs/evidenceArray" },
+        "classHashVerifications": { "$ref": "#/$defs/evidenceArray" },
+        "operatorApprovals": { "$ref": "#/$defs/evidenceArray" },
+        "postDeploymentChecks": { "$ref": "#/$defs/evidenceArray" }
+      }
+    },
+    "releaseApproval": { "$ref": "#/$defs/approval" }
+  },
+  "$defs": {
+    "nullableSha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" },
+    "nullableFelt": { "type": ["string", "null"], "pattern": "^0x[0-9a-f]+$" },
+    "sourceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "commit", "dirty"],
+      "properties": {
+        "repository": { "type": "string", "format": "uri" },
+        "commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "token": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address", "decimals", "registryEvidence"],
+      "properties": {
+        "address": { "$ref": "#/$defs/nullableFelt" },
+        "decimals": { "type": ["integer", "null"], "minimum": 0 },
+        "registryEvidence": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1 },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["registryUrl", "verifiedBy", "verifiedAt", "evidenceSha256"],
+              "properties": {
+                "registryUrl": { "type": "string", "format": "uri" },
+                "verifiedBy": { "type": "string", "minLength": 1 },
+                "verifiedAt": { "type": "string", "format": "date-time" },
+                "evidenceSha256": { "$ref": "#/$defs/nullableSha256" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sierraPath", "sierraSha256", "casmPath", "casmSha256", "abiSha256"],
+      "properties": {
+        "sierraPath": { "type": ["string", "null"] },
+        "sierraSha256": { "$ref": "#/$defs/nullableSha256" },
+        "casmPath": { "type": ["string", "null"] },
+        "casmSha256": { "$ref": "#/$defs/nullableSha256" },
+        "abiSha256": { "$ref": "#/$defs/nullableSha256" }
+      }
+    },
+    "transaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transactionHash", "blockNumber", "explorerUrl"],
+      "properties": {
+        "transactionHash": { "type": "null" },
+        "blockNumber": { "type": "null" },
+        "explorerUrl": { "type": "null" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewer", "report", "reviewedAt", "remediationAcceptedBy"],
+      "properties": {
+        "status": { "const": "blocked" },
+        "reviewer": { "type": ["string", "null"] },
+        "report": { "type": ["string", "null"] },
+        "reviewedAt": { "type": ["string", "null"], "format": "date-time" },
+        "remediationAcceptedBy": { "type": ["string", "null"] }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved", "approvers", "approvedAt", "scope", "notes"],
+      "properties": {
+        "approved": { "const": false },
+        "approvers": { "type": "array", "maxItems": 0 },
+        "approvedAt": { "type": "null" },
+        "scope": { "type": "null" },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "operatorApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved", "operator", "approvedAt", "scope"],
+      "properties": {
+        "approved": { "const": false },
+        "operator": { "type": "null" },
+        "approvedAt": { "type": "null" },
+        "scope": { "type": "null" }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productName", "deploymentAllowed", "source", "artifacts", "constructor", "reviewedSelectors", "classHash", "casmClassHash", "declaration", "deployment", "audits", "review", "operatorApproval"],
+      "properties": {
+        "productName": { "enum": ["App20Mail", "App20Escrow", "App20Claim"] },
+        "deploymentAllowed": { "const": false },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "commit"],
+          "properties": {
+            "path": { "type": ["string", "null"] },
+            "commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" }
+          }
+        },
+        "artifacts": { "$ref": "#/$defs/artifact" },
+        "constructor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "calldata", "calldataSha256"],
+          "properties": {
+            "description": { "type": ["string", "null"] },
+            "calldata": { "type": ["array", "null"], "items": { "type": "string", "pattern": "^0x[0-9a-f]+$" } },
+            "calldataSha256": { "$ref": "#/$defs/nullableSha256" }
+          }
+        },
+        "reviewedSelectors": { "type": "object", "additionalProperties": { "$ref": "#/$defs/nullableFelt" } },
+        "classHash": { "const": "0x0" },
+        "casmClassHash": { "const": "0x0" },
+        "declaration": { "$ref": "#/$defs/transaction" },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["address", "transactionHash", "blockNumber", "explorerUrl"],
+          "properties": {
+            "address": { "const": "0x0" },
+            "transactionHash": { "type": "null" },
+            "blockNumber": { "type": "null" },
+            "explorerUrl": { "type": "null" }
+          }
+        },
+        "audits": { "$ref": "#/$defs/evidenceArray" },
+        "review": { "$ref": "#/$defs/review" },
+        "operatorApproval": { "$ref": "#/$defs/operatorApproval" }
+      }
+    },
+    "evidenceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "reference", "sha256", "recordedBy", "recordedAt", "status", "notes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["artifact-review", "audit-report", "declaration-transaction", "deployment-transaction", "constructor-verification", "class-hash-verification", "operator-approval", "post-deployment-check"] },
+        "reference": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/nullableSha256" },
+        "recordedBy": { "type": "string", "minLength": 1 },
+        "recordedAt": { "type": "string", "format": "date-time" },
+        "status": { "enum": ["pending", "accepted", "rejected"] },
+        "notes": { "type": ["string", "null"] }
+      }
+    },
+    "evidenceArray": { "type": "array", "maxItems": 0 }
+  }
+}

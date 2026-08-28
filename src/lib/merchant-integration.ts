@@ -139,6 +139,10 @@ export type AdvisoryOperationsPlanV1 = Readonly<{
   canSubmit: false;
 }>;
 
+export interface AsyncMerchantWebhookReplayStore {
+  consume(webhook: VerifiedMerchantWebhookV1): Promise<"accepted" | "idempotent">;
+}
+
 export class MerchantWebhookReplayStore {
   readonly #eventDigests = new Map<string, string>();
   readonly #idempotencyDigests = new Map<string, string>();
@@ -182,6 +186,16 @@ export class MerchantWebhookReplayStore {
     });
     return true;
   }
+}
+
+/** Unit/local adapter only; production must inject a durable UNIQUE/CAS implementation. */
+export function createMemoryAsyncMerchantWebhookReplayStore(): AsyncMerchantWebhookReplayStore {
+  const memory = new MerchantWebhookReplayStore();
+  return {
+    async consume(webhook) {
+      return memory.consume(webhook) ? "accepted" : "idempotent";
+    },
+  };
 }
 
 function bytesToHex(bytes: Uint8Array): string {

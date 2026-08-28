@@ -352,6 +352,27 @@ export class Strk20RevertedError extends Error {
   }
 }
 
+export class Strk20NotSubmittedError extends Error {
+  constructor(cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `Transaction policy failed before the wallet submission call; no transaction was submitted. ${reason}`,
+      { cause },
+    );
+    this.name = "Strk20NotSubmittedError";
+  }
+}
+
+export class Strk20WalletSubmissionUnknownError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "The wallet submission call was entered, but no transaction hash was returned. Its outcome is unknown; reconcile before retrying.",
+      { cause },
+    );
+    this.name = "Strk20WalletSubmissionUnknownError";
+  }
+}
+
 export class Strk20UnknownOutcomeError extends Error {
   readonly transactionHash: string;
   readonly receipt?: unknown;
@@ -470,7 +491,9 @@ export async function waitForStrk20Transaction(
 
 export type SubmitLifecycleOptions = {
   timeoutMs?: number;
-  onSubmitted?: (transactionHash: string) => void;
+  /** Durably fences retries; policy is re-run after it and before the wallet call. */
+  beforeWalletSubmission?: () => void | Promise<void>;
+  onSubmitted?: (transactionHash: string) => void | Promise<void>;
 };
 
 export type SubmitActionsOptions = SubmitLifecycleOptions & {
@@ -481,9 +504,11 @@ export type SubmitActionsOptions = SubmitLifecycleOptions & {
 export function transactionStateFromError(
   error: unknown,
 ): "reverted" | "unknown" | undefined {
+  if (error instanceof Strk20NotSubmittedError) return "reverted";
   if (error instanceof Strk20RevertedError) return "reverted";
   if (
     error instanceof Strk20WaitTimeoutError ||
+    error instanceof Strk20WalletSubmissionUnknownError ||
     error instanceof Strk20UnknownOutcomeError ||
     error instanceof Strk20SubmissionCallbackError
   ) {
@@ -508,13 +533,38 @@ export async function submitActions(
   actions: WALLET_API.STRK20_ACTION[],
   options: SubmitActionsOptions,
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  options.policy();
-  const { transaction_hash: transactionHash } =
-    await account.strk20InvokeTransaction(actions);
+  try {
+    options.policy();
+  } catch (error: unknown) {
+    throw new Strk20NotSubmittedError(error);
+  }
+  if (options.beforeWalletSubmission) {
+    try {
+      await options.beforeWalletSubmission();
+    } catch (error: unknown) {
+      // The fence may have committed before its response was lost. Treat the
+      // boundary as unknown rather than claiming the wallet was never entered.
+      throw new Strk20WalletSubmissionUnknownError(error);
+    }
+    try {
+      // The awaited fence is a TOCTOU boundary: re-run the complete caller
+      // policy immediately before entering the wallet method.
+      options.policy();
+    } catch (error: unknown) {
+      throw new Strk20WalletSubmissionUnknownError(error);
+    }
+  }
+  let submitted: { transaction_hash: string };
+  try {
+    submitted = await account.strk20InvokeTransaction(actions);
+  } catch (error: unknown) {
+    throw new Strk20WalletSubmissionUnknownError(error);
+  }
+  const { transaction_hash: transactionHash } = submitted;
 
   let submissionCallbackError: unknown;
   try {
-    options.onSubmitted?.(transactionHash);
+    await options.onSubmitted?.(transactionHash);
   } catch (error: unknown) {
     submissionCallbackError = error;
   }

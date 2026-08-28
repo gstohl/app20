@@ -1,5 +1,9 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
-import type { StarknetPool } from "./index";
+import {
+  createMemoryAsyncReplayStore,
+  type AsyncEnvelopeReplayStore,
+} from "#replay";
+import type { StarknetPool } from "./index.ts";
 
 export const PRIVATE_RFQ_DOMAIN = "app20/private-rfq/v1" as const;
 export const MAKER_DIRECTORY_DOMAIN = "app20/maker-directory-epoch/v1" as const;
@@ -15,9 +19,9 @@ const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 const P256_COORDINATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_U256 = (1n << 256n) - 1n;
 const MAX_DIRECTORY_LIFETIME_SECONDS = 366 * 24 * 60 * 60;
-const MAX_RFQ_LIFETIME_SECONDS = 24 * 60 * 60;
+export const MAX_RFQ_LIFETIME_SECONDS = 24 * 60 * 60;
 const MAX_ENVELOPE_LIFETIME_SECONDS = 60 * 60;
-const MAX_RESERVATION_LIFETIME_SECONDS = 24 * 60 * 60;
+export const MAX_RESERVATION_LIFETIME_SECONDS = 24 * 60 * 60;
 const MAX_DIRECTORY_PUBLICATION_LEAD_SECONDS = 24 * 60 * 60;
 const PADDING_BUCKETS = new Set([
   512, 1_024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536,
@@ -153,9 +157,7 @@ export type EncryptedRfqEnvelopeV1 = Readonly<{
   ciphertextBytes: number;
 }>;
 
-export interface EnvelopeReplayStore {
-  consume(replayNonce: string): boolean;
-}
+export type EnvelopeReplayStore = AsyncEnvelopeReplayStore;
 
 export interface RfqEnvelopeOpener {
   /** Must perform RFC 9180 point validation, HPKE open, and AEAD authentication. */
@@ -168,6 +170,7 @@ export interface RfqEnvelopeOpener {
 export type AcceptedEncryptedRfqEnvelope = Readonly<{
   transportKey: MakerKeyWindow;
   rfq: PrivateRfqV1;
+  replay: "accepted" | "idempotent";
 }>;
 
 export type ReservationState =
@@ -294,7 +297,26 @@ function base64UrlDecodedLength(value: string, label: string): number {
   if (!BASE64URL_PATTERN.test(value) || value.length % 4 === 1) {
     throw new MakerProtocolError(`${label} must be unpadded base64url.`);
   }
-  return Math.floor((value.length * 6) / 8);
+  let binary: string;
+  try {
+    binary = atob(
+      value
+        .replaceAll("-", "+")
+        .replaceAll("_", "/")
+        .padEnd(Math.ceil(value.length / 4) * 4, "="),
+    );
+  } catch {
+    throw new MakerProtocolError(`${label} must be unpadded base64url.`);
+  }
+  const canonical = btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
+  if (canonical !== value)
+    throw new MakerProtocolError(
+      `${label} must use canonical unpadded base64url.`,
+    );
+  return binary.length;
 }
 
 function requirePositiveU256(value: bigint, label: string): bigint {
@@ -830,15 +852,20 @@ export async function assertEncryptedRfqEnvelope(
 }
 
 export function createMemoryEnvelopeReplayStore(): EnvelopeReplayStore {
-  const consumed = new Set<string>();
-  return {
-    consume(replayNonce) {
-      const canonical = requireDigest(replayNonce, "replayNonce");
-      if (consumed.has(canonical)) return false;
-      consumed.add(canonical);
-      return true;
-    },
-  };
+  return createMemoryAsyncReplayStore();
+}
+
+async function digestEncryptedEnvelope(
+  envelope: EncryptedRfqEnvelopeV1,
+): Promise<string> {
+  return sha256Hex(
+    JSON.stringify({
+      aadDigest: requireDigest(envelope.aadDigest, "aadDigest"),
+      ciphertext: envelope.ciphertext,
+      encapsulatedKey: envelope.encapsulatedKey,
+      suite: envelope.suite,
+    }),
+  );
 }
 
 export async function acceptEncryptedRfqEnvelope(
@@ -922,10 +949,21 @@ export async function acceptEncryptedRfqEnvelope(
       "Decrypted RFQ does not match the authenticated envelope context.",
     );
   }
-  if (!replayStore.consume(envelope.aad.replayNonce)) {
+  const replay = await replayStore.consume({
+    replayNonce: requireDigest(envelope.aad.replayNonce, "replayNonce"),
+    envelopeDigest: await digestEncryptedEnvelope(envelope),
+    directoryDigest: requireDigest(directory.digest, "directoryDigest"),
+    makerId: envelope.aad.recipientMakerId,
+    now: timestamp,
+  });
+  if (replay.kind === "conflict") {
     throw new MakerProtocolError("RFQ envelope replay was refused.");
   }
-  return deepFreeze({ transportKey: key, rfq: deepFreeze(rfq) });
+  return deepFreeze({
+    transportKey: key,
+    rfq: deepFreeze(rfq),
+    replay: replay.kind,
+  });
 }
 
 function assertReservation(reservation: MakerReservationV1): void {

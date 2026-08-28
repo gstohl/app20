@@ -85,21 +85,18 @@ export function strk20PoolForProviderIndex(
   return null;
 }
 
-// App20Mail helper — 0x0 until Phase 2 deploy.
-export const mailHelperSepolia =
-  import.meta.env.VITE_MAIL_HELPER_SEPOLIA ?? "0x0";
-export const mailHelperMainnet =
-  import.meta.env.VITE_MAIL_HELPER_MAINNET ?? "0x0";
+// Localnet-final policy: historical proof deployments and injected live build
+// variables are never runtime configuration.
+export const mailHelperSepolia = "0x0";
+export const mailHelperMainnet = "0x0";
 export const mailHelperLocalnet = localnetWalletEnabled
   ? (import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0")
   : "0x0";
 
-// App20Escrow remains 0x0 unless a reviewed deployment is configured.
-// It is intentionally excluded from the mainnet scoring path.
-export const escrowHelperSepolia =
-  import.meta.env.VITE_ESCROW_HELPER_SEPOLIA ?? "0x0";
-export const escrowHelperMainnet =
-  import.meta.env.VITE_ESCROW_HELPER_MAINNET ?? "0x0";
+// Historical App20Escrow/ClaimTicket fixtures are localnet-only and cannot be
+// enabled on live networks by public build variables.
+export const escrowHelperSepolia = "0x0";
+export const escrowHelperMainnet = "0x0";
 export const escrowHelperLocalnet = localnetWalletEnabled
   ? (import.meta.env.VITE_ESCROW_HELPER_LOCALNET ?? "0x0")
   : "0x0";

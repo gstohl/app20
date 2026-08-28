@@ -1,0 +1,55 @@
+{
+  "$schema": "./historical-sepolia-proof.schema.json",
+  "schemaVersion": 1,
+  "network": "SN_SEPOLIA",
+  "classification": "unaudited-one-off-deployability-proof",
+  "canonicalContractName": "App20Mail",
+  "canonicalProductionDeployment": false,
+  "runtimeAllowed": false,
+  "productionEligible": false,
+  "supersededByLocalnetDecision": true,
+  "warning": "This address is proof evidence only. It is not configured, audited, approved, or authorized for production runtime use.",
+  "source": {
+    "commit": "1748c0d673653a6fe2ff33dcfec347e24c619033",
+    "cairoDiffFromCommit": false,
+    "libCairoSha256": "e2d8cf3fb1d5ea13ce81cf729a4c947f371323db344aa291eed247317a013cf7",
+    "scarbTomlSha256": "be0d7d16aa7a2c70e86abece8b9fd27d20461c7e8e5bcc6d7c616bb3cb44448a",
+    "scarbLockSha256": "f819ecd0c9e4e762937aacdf88ce1eacae759901a03a359ef46fda807396ac25"
+  },
+  "testCapture": {
+    "command": "snforge test",
+    "passed": 24,
+    "failed": 0
+  },
+  "artifactAttestation": {
+    "sierraSha256": "f53f5d19c3c5ac0555abde15e9aa3275cf05ad80555c202dc56c96674d21f60b",
+    "casmSha256": "a8ae80ef04d735158aa9ac59f57f320b6c6b0abaa3113aa1ae20d73a06f54e3b",
+    "classHash": "0x05f066234003eb6f9104e7730c88f50dab82113ad5e9dbbc0db3f75972d586ca",
+    "compiledClassHash": "0x051bf53e257134b282c82e12fa2904a39f9bf59c6aa52cccbca21c06b80571f9"
+  },
+  "constructor": {
+    "pool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91"
+  },
+  "deployer": {
+    "address": "0x02f2a32fc41ed42dab4a6072af491081fa7e33efc90c8647cd5b4d1c79b9a517",
+    "accountDeploymentTransaction": "0x00aebee6d685b8caa8f451f0f68607a1236909d43c21b735966544bc280059f3",
+    "publicRpcStatus": "ACCEPTED_ON_L1"
+  },
+  "declaration": {
+    "transactionHash": "0x042b835b5d8d479634068bdd5cfa717ffd35d32edbaf65d8fa19dac8011ac36b",
+    "blockNumber": 14123353,
+    "publicRpcStatus": "ACCEPTED_ON_L1",
+    "executionStatus": "SUCCEEDED"
+  },
+  "deployment": {
+    "transactionHash": "0x050b2b5fd11f9834be369074b5b590562019f22fecbe9cafc0ef8a2fb3a307da",
+    "blockNumber": 14123508,
+    "address": "0x0204ce7efff77e4bef8f05ea4ee0e810c51cd1f1532ec0c04da3fdcb662fe545",
+    "publicRpcStatus": "ACCEPTED_ON_L1",
+    "executionStatus": "SUCCEEDED",
+    "verifiedClassHash": "0x05f066234003eb6f9104e7730c88f50dab82113ad5e9dbbc0db3f75972d586ca",
+    "verifiedPoolStorage": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+    "verifiedInitialMessageCount": "0"
+  },
+  "excludedLocalTestAssets": true
+}

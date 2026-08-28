@@ -4,6 +4,7 @@ import {
   assertSettlementReceipt,
   canonicalSettlementReceipt,
   digestSettlementReceipt,
+  invalidateVerifiedChainSettlementReceipt,
   settlementReceiptAuthority,
   verifyChainSettlementReceipt,
   type ChainSettlementReceipt,
@@ -20,10 +21,15 @@ function chainReceipt(): ChainSettlementReceipt {
     dealId: "0xd001",
     claimTicketId: "0x71c",
     intentDigest: `0x${"11".repeat(32)}`,
+    commitmentDigest: `0x${"44".repeat(32)}`,
+    directoryDigest: `0x${"55".repeat(32)}`,
+    rfqDigest: `0x${"66".repeat(32)}`,
+    settlementContextDigest: `0x${"77".repeat(32)}`,
     winningQuoteDigest: `0x${"22".repeat(32)}`,
     makerKeyId: "maker-a/p256/v1",
     directoryEpoch: 7,
     reservationId: `0x${"33".repeat(32)}`,
+    reservationFence: 9n,
     registryRevision: "localnet-registry:4",
     inputAsset: "0x053c",
     inputAmountBaseUnits: 100_000_001n,
@@ -36,19 +42,19 @@ function chainReceipt(): ChainSettlementReceipt {
       {
         stage: "fund",
         transactionHash: "0xf001",
-        event: { blockNumber: 10, transactionIndex: 0, eventIndex: 2 },
+        event: { blockHash: "0xb10", eventSelector: "0xe1", blockNumber: 10, transactionIndex: 0, eventIndex: 2 },
         finality: "confirmed",
       },
       {
         stage: "fill",
         transactionHash: "0xf002",
-        event: { blockNumber: 11, transactionIndex: 1, eventIndex: 0 },
+        event: { blockHash: "0xb11", eventSelector: "0xe2", blockNumber: 11, transactionIndex: 1, eventIndex: 0 },
         finality: "finalized",
       },
       {
         stage: "claim",
         transactionHash: "0xf003",
-        event: { blockNumber: 12, transactionIndex: 0, eventIndex: 3 },
+        event: { blockHash: "0xb12", eventSelector: "0xe3", blockNumber: 12, transactionIndex: 0, eventIndex: 3 },
         finality: "confirmed",
       },
     ],
@@ -81,7 +87,12 @@ describe("canonical settlement receipt", () => {
       inputAmountBaseUnits: receipt.inputAmountBaseUnits,
       inputAsset: receipt.inputAsset,
       registryRevision: receipt.registryRevision,
+      reservationFence: receipt.reservationFence,
       reservationId: receipt.reservationId,
+      settlementContextDigest: receipt.settlementContextDigest,
+      rfqDigest: receipt.rfqDigest,
+      directoryDigest: receipt.directoryDigest,
+      commitmentDigest: receipt.commitmentDigest,
       directoryEpoch: receipt.directoryEpoch,
       makerKeyId: receipt.makerKeyId,
       winningQuoteDigest: receipt.winningQuoteDigest,
@@ -225,7 +236,7 @@ describe("canonical settlement receipt", () => {
         {
           stage: "timeout",
           transactionHash: "0xf004",
-          event: { blockNumber: 22, transactionIndex: 0, eventIndex: 1 },
+          event: { blockHash: "0xb22", eventSelector: "0xe4", blockNumber: 22, transactionIndex: 0, eventIndex: 1 },
           finality: "confirmed",
         },
       ],
@@ -253,15 +264,12 @@ describe("settlement receipt authority", () => {
       authoritative: false,
       reason: expect.stringMatching(/not authoritative.*trusted integration/i),
     });
-    const verified = await verifyChainSettlementReceipt(chainReceipt(), {
-      verifiedAt: 2_000_000_000,
-      verificationReference: "localnet-rpc-quorum:10-12",
-      verifyAgainstConfiguredChain: async () => true,
-    });
-    expect(settlementReceiptAuthority(verified)).toMatchObject({
-      authoritative: true,
-      reason: expect.stringMatching(/Configured-chain verification succeeded/i),
-    });
+    await expect(
+      verifyChainSettlementReceipt(chainReceipt(), {
+        verificationReference: "forged",
+        verifier: {} as never,
+      }),
+    ).rejects.toThrow(/authority is unavailable/i);
     const pending: ChainSettlementReceipt = {
       ...chainReceipt(),
       lifecycle: chainReceipt().lifecycle.map((item, index) =>
@@ -280,10 +288,9 @@ describe("settlement receipt authority", () => {
     ).toBe(false);
     await expect(
       verifyChainSettlementReceipt(chainReceipt(), {
-        verifiedAt: 2_000_000_000,
         verificationReference: "untrusted",
-        verifyAgainstConfiguredChain: async () => false,
+        verifier: {} as never,
       }),
-    ).rejects.toThrow(/verification failed/i);
+    ).rejects.toThrow(/authority is unavailable/i);
   });
 });

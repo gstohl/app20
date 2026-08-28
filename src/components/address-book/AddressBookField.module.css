@@ -1,6 +1,6 @@
 /*
  * Default look for AddressBookField, matching the established book-row
- * pattern in vault.module.css / privy-vault.module.css. Callers can still
+ * pattern in rfq.module.css / privy-vault.module.css. Callers can still
  * replace any part via className / rowClassName / hintClassName /
  * errorClassName; these classes only apply when the caller passes nothing.
  */

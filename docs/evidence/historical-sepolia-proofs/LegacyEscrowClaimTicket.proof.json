@@ -1,0 +1,56 @@
+{
+  "$schema": "./historical-sepolia-proof.schema.json",
+  "schemaVersion": 1,
+  "network": "SN_SEPOLIA",
+  "classification": "historical-localnet-fixture-proof",
+  "canonicalContractName": null,
+  "canonicalProductionDeployment": false,
+  "runtimeAllowed": false,
+  "productionEligible": false,
+  "supersededByLocalnetDecision": true,
+  "warning": "These are the historical localnet App20Escrow and ClaimTicket classes, not canonical production App20Escrow/App20Claim. Their addresses and hashes are denylisted product evidence only.",
+  "source": {
+    "commit": "1748c0d673653a6fe2ff33dcfec347e24c619033",
+    "cairoDiffFromCommit": false
+  },
+  "testCapture": {
+    "command": "snforge test",
+    "passed": 24,
+    "failed": 0
+  },
+  "claimTicketDeclaration": {
+    "historicalName": "ClaimTicket",
+    "canonicalProductionName": "App20Claim",
+    "classHash": "0x07619ea7dcb8615874fb9d29b217f649e9b7b596f01d47d673e4e37132b17196",
+    "sierraSha256": "e3a7b73fc9b02474126ae53796d64152bfaf49c439d8dc9816356b725679bcd3",
+    "casmSha256": "d394d29cf38698ade1efc4460a96df15ba9c75c79cb1f7fc75902f42a4fda7e8",
+    "compiledClassHash": "0x04e037924b3edc96cc4fd655dcef7251e2168cfbeb7220e28e70b086192b9673",
+    "transactionHash": "0x005466fc1053df866694ab3423a72f600f2c126ea92e809c0578daede128e622",
+    "blockNumber": 14124917,
+    "recordedStatus": "ACCEPTED_ON_L2",
+    "standaloneInstance": null,
+    "instancePolicy": "The historical escrow deploys one ticket per nonzero deal id. No standalone ticket deployment is claimed."
+  },
+  "legacyEscrowDeclaration": {
+    "historicalName": "App20Escrow",
+    "canonicalProductionReplacementRequired": true,
+    "classHash": "0x0638d8554dc095f63f253c8dd32ac09a3e9ffedd5a308b0d0f188e5fca6c8c3b",
+    "sierraSha256": "37b6337a01bcb16e154c30ade293486c141eeb20d7a82050c9a243189a680aaa",
+    "casmSha256": "a4274fb887d3685c2d56f6fa827f5e1ea22b28209fb7f0413ef449b9da10e1f7",
+    "compiledClassHash": "0x0625b280c68b1c2540fb98518075f6e7d83d8800be466fd17b418726ed37884f",
+    "transactionHash": "0x00df3d826c53db5d628b7d017cb393db4ec1dd653a74ca499f4f7528be81ed2e",
+    "blockNumber": 14125040,
+    "recordedStatus": "ACCEPTED_ON_L2"
+  },
+  "legacyEscrowDeployment": {
+    "address": "0x06a9ea8288df876d1e174db1e0b8d58bc8bc4641b3ed9f592fb56003f69712a4",
+    "transactionHash": "0x07d9e93049b37091287af6e0bb9e604f023073aec8eb586e0e2c45ff14e878ff",
+    "blockNumber": 14125112,
+    "publicRpcStatus": "ACCEPTED_ON_L2",
+    "executionStatus": "SUCCEEDED",
+    "verifiedClassHash": "0x0638d8554dc095f63f253c8dd32ac09a3e9ffedd5a308b0d0f188e5fca6c8c3b",
+    "verifiedPool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+    "verifiedTicketClassHash": "0x07619ea7dcb8615874fb9d29b217f649e9b7b596f01d47d673e4e37132b17196"
+  },
+  "excludedLocalTestAssets": true
+}

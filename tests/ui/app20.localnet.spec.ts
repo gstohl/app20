@@ -336,11 +336,9 @@ test("all APP20 localnet journeys", async ({
 
   await test.step("2. shield STRK and observe truthful progress", async () => {
     await switchIdentity(page, config, "alice");
-    await page.getByRole("link", { name: "Desk", exact: true }).click();
-    await page
-      .locator("summary")
-      .filter({ hasText: "Balances & funding" })
-      .click();
+    await page.getByRole("link", { name: "RFQ", exact: true }).click();
+    await page.getByRole("link", { name: "Shield / unshield funding" }).click();
+    await expect(page).toHaveURL(/\/funding$/);
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
@@ -377,11 +375,11 @@ test("all APP20 localnet journeys", async ({
     });
 
     // Bob needs STRK for the later offer acceptance and invoice payment.
-    // The identity switch stays in Mail's dev-only sidebar; Vault keeps one
+    // The identity switch stays in Mail's dev-only sidebar; RFQ keeps one
     // shared wallet session control instead of duplicating that test chrome.
     await page.getByRole("link", { name: "Mailbox", exact: true }).click();
     await switchIdentity(page, config, "bob");
-    await page.getByRole("link", { name: "Desk", exact: true }).click();
+    await page.getByRole("link", { name: "RFQ", exact: true }).click();
     const bobBefore = parseDisplayedStrk(
       await shieldedBalanceLabel(page, walletRegion),
     );

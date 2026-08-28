@@ -369,17 +369,17 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         <strong>You choose the device risk.</strong> Default stores the raw
         32-byte mailbox seed in this browser profile. Anyone with this profile
         can read retained mail. Optional passphrase wrap encrypts that seed at
-        rest; Mail then cannot open the mailbox until you unlock this
-        session. A wallet signature cannot be the wrap key — Ready signatures
-        are not a stable secret. The eight-group backup is still the only
-        recovery if you forget the passphrase or clear this profile.
+        rest; Mail then cannot open the mailbox until you unlock this session. A
+        wallet signature cannot be the wrap key — Ready signatures are not a
+        stable secret. The eight-group backup is still the only recovery if you
+        forget the passphrase or clear this profile.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
-          Mailbox registration needs the mail helper on this network.
-          It is not deployed here yet, so register and restore stay disabled.
-          Shield and unshield still work from the wallet rail — they talk to the
-          live STRK20 pool, not this helper.
+          Mailbox registration needs a helper configured for this APP20 rail.
+          Live-network helpers are intentionally unavailable, so register and
+          restore stay disabled. Shield and unshield still work from the wallet
+          rail — they talk to the live STRK20 pool, not this helper.
         </p>
       )}
 
@@ -466,8 +466,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           <code>{backupPhrase}</code>
           <p>
             Anyone with this phrase can read mail encrypted to this key. Store
-            it offline; Mail does not upload it. If you chose a passphrase,
-            this backup is still required when you forget it.
+            it offline; Mail does not upload it. If you chose a passphrase, this
+            backup is still required when you forget it.
           </p>
           <button
             className={styles.secondaryButton}

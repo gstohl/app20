@@ -5,7 +5,11 @@ export type RelayService =
   | "prover"
   | "discovery"
   | "starknet-sepolia"
-  | "starknet-mainnet";
+  | "starknet-mainnet"
+  | "rfq-ingress"
+  | "rfq-directory"
+  | "rfq-maker"
+  | "rfq-taker";
 export type GateBudget =
   | "privy-bootstrap"
   | "ohttp-prover"
@@ -53,6 +57,12 @@ export interface RelayEnv {
   SEPOLIA_STRK_TOKEN_ADDRESS: string;
   READY_ACCOUNT_CLASS_HASH: string;
   RELAY_GATE: DurableObjectNamespaceLike;
+  /** Checked-in policy marker only; application code cannot enable transport. */
+  RFQ_TRANSPORT_ENABLED?: "false";
+  RFQ_REPLAY?: DurableObjectNamespaceLike;
+  RFQ_DIRECTORY_JSON?: string;
+  RFQ_MAKER_AUTH?: string;
+  RFQ_TAKER_CAPABILITY_SECRET?: string;
   ASSETS?: AssetBindingLike;
 
   PRIVY_FRAME_ORIGINS?: string;

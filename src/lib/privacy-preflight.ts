@@ -170,7 +170,7 @@ function uniqueSortedText(values: readonly string[]): string[] {
 /**
  * Produces a deterministic, evidence-labelled privacy preflight. It reports
  * observations and unavailable inputs; it deliberately does not compute a
- * privacy or anonymity score.
+ * synthetic privacy score.
  */
 export function evaluatePrivacyPreflight(
   input: PrivacyPreflightInput,
@@ -188,7 +188,7 @@ export function evaluatePrivacyPreflight(
       unavailable(
         "amount-frequency",
         "amount-fingerprinting",
-        "Exact-amount frequency is unavailable; no anonymity claim can be made.",
+        "Exact-amount frequency is unavailable; no privacy guarantee can be made.",
         frequency,
         now,
       ),
@@ -210,7 +210,7 @@ export function evaluatePrivacyPreflight(
           topic: "amount-fingerprinting",
           level:
             frequency.exactAmountObservationCount <= 1 ? "warning" : "fact",
-          message: `The exact base-unit amount appeared ${frequency.exactAmountObservationCount} time(s) in a ${frequency.cohortObservationCount}-observation cohort. This is evidence, not an anonymity score.`,
+          message: `The exact base-unit amount appeared ${frequency.exactAmountObservationCount} time(s) in a ${frequency.cohortObservationCount}-observation cohort. This evidence does not establish that activity cannot be correlated.`,
         },
         frequency,
         now,
@@ -243,7 +243,7 @@ export function evaluatePrivacyPreflight(
           topic: "denomination",
           level: amounts.length ? "fact" : "unavailable",
           message: amounts.length
-            ? `Available base-unit alternatives: ${amounts.map(String).join(", ")}. Changing the amount is always the user's choice.`
+            ? `Client-policy base-unit suggestions: ${amounts.map(String).join(", ")}. Changing the amount is always the user's choice; these suggestions do not establish that activity cannot be correlated.`
             : "No distinct positive denomination alternative is present in the supplied evidence.",
         },
         denominations,
@@ -295,7 +295,7 @@ export function evaluatePrivacyPreflight(
       unavailable(
         "timing-correlation",
         "timing-correlation",
-        "Timing-correlation evidence is unavailable; no unlinkability claim can be made.",
+        "Timing-correlation evidence is unavailable; no claim against correlation can be made.",
         timing,
         now,
       ),
@@ -310,7 +310,7 @@ export function evaluatePrivacyPreflight(
           message:
             timing.correlation === "observed"
               ? "The supplied evidence observed timing correlation."
-              : "The supplied evidence did not observe timing correlation; this does not prove unlinkability.",
+              : "The supplied evidence did not observe timing correlation; this does not prove that activity cannot be correlated.",
         },
         timing,
         now,

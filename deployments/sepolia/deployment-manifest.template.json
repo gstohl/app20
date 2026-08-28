@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "environment": "sepolia",
+  "chainId": "SN_SEPOLIA",
+  "chainIdHex": "0x534e5f5345504f4c4941",
+  "releaseReady": false,
+  "source": {
+    "repository": "https://github.com/gstohl/app20",
+    "commit": null,
+    "dirty": null
+  },
+  "networkPins": {
+    "strk20Pool": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+    "tokens": {
+      "STRK": {
+        "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+        "decimals": 18,
+        "registryEvidence": "canonical Starknet token registry; re-verify at execution time"
+      },
+      "USDC": {
+        "address": null,
+        "decimals": null,
+        "registryEvidence": null
+      }
+    }
+  },
+  "tools": {
+    "starkli": "0.4.2",
+    "scarb": null,
+    "cairo": null,
+    "sierraCompiler": null,
+    "casmCompiler": null
+  },
+  "artifactBundle": {
+    "reproductionCommand": null,
+    "bundleSha256": null,
+    "reproducedBy": null,
+    "reproducedAt": null
+  },
+  "contracts": {
+    "App20Mail": {
+      "productName": "App20Mail",
+      "deploymentAllowed": false,
+      "source": {
+        "path": "cairo/src/lib.cairo",
+        "commit": null
+      },
+      "artifacts": {
+        "sierraPath": "cairo/target/dev/app20_mail_App20Mail.contract_class.json",
+        "sierraSha256": null,
+        "casmPath": "cairo/target/dev/app20_mail_App20Mail.compiled_contract_class.json",
+        "casmSha256": null,
+        "abiSha256": null
+      },
+      "constructor": {
+        "description": "pinned STRK20 pool",
+        "calldata": [
+          "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91"
+        ],
+        "calldataSha256": null
+      },
+      "reviewedSelectors": {},
+      "classHash": "0x0",
+      "casmClassHash": "0x0",
+      "declaration": {
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "deployment": {
+        "address": "0x0",
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "audits": [],
+      "review": {
+        "status": "blocked",
+        "reviewer": null,
+        "report": null,
+        "reviewedAt": null,
+        "remediationAcceptedBy": null
+      },
+      "operatorApproval": {
+        "approved": false,
+        "operator": null,
+        "approvedAt": null,
+        "scope": null
+      }
+    },
+    "App20Escrow": {
+      "productName": "App20Escrow",
+      "deploymentAllowed": false,
+      "source": {
+        "path": null,
+        "commit": null
+      },
+      "artifacts": {
+        "sierraPath": null,
+        "sierraSha256": null,
+        "casmPath": null,
+        "casmSha256": null,
+        "abiSha256": null
+      },
+      "constructor": {
+        "description": null,
+        "calldata": null,
+        "calldataSha256": null
+      },
+      "reviewedSelectors": {
+        "fund": null,
+        "fill": null,
+        "claim": null,
+        "timeout": null
+      },
+      "classHash": "0x0",
+      "casmClassHash": "0x0",
+      "declaration": {
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "deployment": {
+        "address": "0x0",
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "audits": [],
+      "review": {
+        "status": "blocked",
+        "reviewer": null,
+        "report": null,
+        "reviewedAt": null,
+        "remediationAcceptedBy": null
+      },
+      "operatorApproval": {
+        "approved": false,
+        "operator": null,
+        "approvedAt": null,
+        "scope": null
+      }
+    },
+    "App20Claim": {
+      "productName": "App20Claim",
+      "deploymentAllowed": false,
+      "source": {
+        "path": null,
+        "commit": null
+      },
+      "artifacts": {
+        "sierraPath": null,
+        "sierraSha256": null,
+        "casmPath": null,
+        "casmSha256": null,
+        "abiSha256": null
+      },
+      "constructor": {
+        "description": null,
+        "calldata": null,
+        "calldataSha256": null
+      },
+      "reviewedSelectors": {
+        "mint": null,
+        "burn": null,
+        "transfer": null,
+        "approve": null
+      },
+      "classHash": "0x0",
+      "casmClassHash": "0x0",
+      "declaration": {
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "deployment": {
+        "address": "0x0",
+        "transactionHash": null,
+        "blockNumber": null,
+        "explorerUrl": null
+      },
+      "audits": [],
+      "review": {
+        "status": "blocked",
+        "reviewer": null,
+        "report": null,
+        "reviewedAt": null,
+        "remediationAcceptedBy": null
+      },
+      "operatorApproval": {
+        "approved": false,
+        "operator": null,
+        "approvedAt": null,
+        "scope": null
+      }
+    }
+  },
+  "evidence": {
+    "artifactReview": [],
+    "auditReports": [],
+    "declarationTransactions": [],
+    "deploymentTransactions": [],
+    "constructorVerifications": [],
+    "classHashVerifications": [],
+    "operatorApprovals": [],
+    "postDeploymentChecks": []
+  },
+  "releaseApproval": {
+    "approved": false,
+    "approvers": [],
+    "approvedAt": null,
+    "scope": null,
+    "notes": "Preparation template only; no live readiness or deployment approval."
+  }
+}

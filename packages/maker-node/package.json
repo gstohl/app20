@@ -9,6 +9,11 @@
       "import": "./src/index.ts"
     }
   },
+  "imports": {
+    "#hpke-ingress": "./src/hpke-ingress.ts",
+    "#index": "./src/index.ts",
+    "#production-ports": "./src/production-ports.ts"
+  },
   "scripts": {
     "test": "vitest run src",
     "typecheck": "tsc --noEmit"

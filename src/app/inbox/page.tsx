@@ -270,7 +270,10 @@ export default function InboxPage() {
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
-  const escrowEnabled = providerIndex !== 0 && escrowAddress !== null;
+  const escrowEnabled =
+    providerIndex === constants.LOCALNET_PROVIDER_INDEX &&
+    constants.localnetWalletEnabled &&
+    escrowAddress !== null;
   const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
   const draftScopeChain = chainId ?? `network-${providerIndex}`;
   const draftScopeAddress = address || "unconnected";
@@ -1762,6 +1765,12 @@ export default function InboxPage() {
     let reserved = false;
     let submittedHash = "";
     try {
+      if (
+        providerIndex !== constants.LOCALNET_PROVIDER_INDEX ||
+        !constants.localnetWalletEnabled
+      ) {
+        throw new Error("Escrow fill is available only on build-gated localnet.");
+      }
       const context = requireActionContext();
       if (!escrowAddress || !escrowEnabled) {
         throw new Error(

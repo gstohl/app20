@@ -17,8 +17,9 @@ restock → fills net per token; residuals ≥ minBatch round up to a
 
 ## Boundaries
 
-- **No custody.** The Cairo escrow (not yet deployed) is the settlement
-  authority. This package builds and validates, fail-closed.
+- **No custody.** Canonical production escrow authority is not implemented or
+  configured. Historical proof fixtures are runtime-ineligible; this package
+  builds and validates, fail-closed.
 - **No live 1Click.** `PricingSource` is injected; review builds back it with
   the dry-only connector fixture.
 - **Inventory-first.** A signed quote carries an opaque, expiring reservation
@@ -48,14 +49,19 @@ infrastructure:
   `issuedAt` time. Quote and transport keys retain historical validity windows
   and explicit revocation times; public JWKs reject private `d` material.
 - `EncryptedRfqEnvelopeV1` fixes maker-specific RFC 9180 HPKE suite metadata,
-  authenticated-header digest, replay nonce, expiry, and reviewed padding
-  buckets. This package validates envelope structure and replay state; it does
-  **not** perform HPKE encryption/decryption or claim relay-metadata unlinkability.
+  canonical AAD, replay nonce, expiry, and fixed reviewed padding buckets.
+  Browser-safe `hpke.ts` seals once per invited maker with pinned
+  `@hpke/core@1.9.0`; the separate `@app20/private-intents/hpke-open` export
+  opens through a maker key-id handle and must never enter the browser graph.
+  The upstream library passes RFC/Wycheproof vectors but is **not formally
+  audited**. Padding does not hide timing, source, maker fanout, or bucket size.
 - `MakerReservationV1` provides monotonic fencing and legal reserve → select →
   begin-fill → consume/release/expire/quarantine transitions. The pure model is
   not storage; `@app20/maker-node` supplies the localnet fsynced hash-chain WAL.
-  Envelope replay storage remains process-local until authenticated transport
-  is integrated into the maker service.
+  Replay now uses an async accepted/idempotent/conflict contract after
+  successful HPKE authentication. The memory adapter is test/local only;
+  production relay storage uses a SQLite Durable Object UNIQUE transaction,
+  which is not maker custody or multi-host replication.
 
 Directory signatures authenticate canonical epochs. RFQ/receipt/reservation
 digests only bind supplied bytes and never authorize value or prove chain truth.

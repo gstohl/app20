@@ -19,6 +19,10 @@ const forbiddenMarkers = [
   "STARKNET_SEPOLIA_AUTHORIZATION",
   "OHTTP_SESSION_SECRET",
   "PROXY_IDENTITY_HMAC_SECRET",
+  "RFQ_MAKER_AUTH",
+  "RFQ_TAKER_CAPABILITY_SECRET",
+  "APP20_LOCALNET_CONTROL_TOKEN",
+  "directory authority private",
   "NEAR_INTENTS_API_KEY",
   "ONE_CLICK_API_KEY",
   "ONE_CLICK_PARTNER_JWT",
@@ -33,8 +37,16 @@ const forbiddenMarkers = [
   "VITE_LOCALNET_RPC_URL",
   "VITE_LOCALNET_POOL_ADDRESS",
   "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
+  "APP20_LOCALNET_DEV_WALLET_SENTINEL_7C91E2",
   "/__app20_localnet_wallet",
   "@privy-io/node",
+  "@app20/private-intents/hpke-open",
+  "hpke-open.ts",
+  "VITE_VIEWING_KEY",
+  "APP20_VIEWING_KEY",
+  "maker-viewing-key",
+  "maker-private-key",
+  "makerPrivateKeyPath",
   "src/proxy/server",
 ];
 const privateEnvironmentNames = [
@@ -52,6 +64,9 @@ const privateEnvironmentNames = [
   "RPC_URL",
   "OHTTP_SESSION_SECRET",
   "PROXY_IDENTITY_HMAC_SECRET",
+  "RFQ_MAKER_AUTH",
+  "RFQ_TAKER_CAPABILITY_SECRET",
+  "APP20_LOCALNET_CONTROL_TOKEN",
   "NEAR_INTENTS_API_KEY",
   "ONE_CLICK_API_KEY",
   "ONE_CLICK_PARTNER_JWT",
@@ -104,6 +119,13 @@ async function main() {
     const text = content.toString("utf8");
     for (const marker of forbiddenMarkers) {
       if (text.includes(marker)) findings.push({ file, marker });
+    }
+    if (
+      /\"kty\"\s*:\s*\"EC\"[\s\S]{0,500}\"d\"\s*:|\"d\"\s*:[\s\S]{0,500}\"kty\"\s*:\s*\"EC\"/.test(
+        text,
+      )
+    ) {
+      findings.push({ file, marker: "an EC private JWK d coordinate" });
     }
     for (const secret of [...secretValues, ...additionalCanaries]) {
       if (text.includes(secret.value)) {

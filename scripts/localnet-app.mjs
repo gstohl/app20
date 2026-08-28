@@ -24,10 +24,44 @@ import {
   LOCALNET_SOLVER_ID,
   LOCALNET_SOLVER_KEY_ID,
   digestPrivateRfq,
+  digestPrivateSwapIntent,
 } from "../packages/private-intents/src/index.ts";
+import { localnetEconomicReview } from "../src/app/rfq/rfq-operations.ts";
+import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
+import {
+  bindExpiryHttpTargetThroughCoordinator,
+  terminalizeHttpTargetThroughCoordinator,
+} from "./localnet-release-boundary.mjs";
+import { createLocalnetRfqStateHandlers } from "./localnet-rfq-state-handlers.mjs";
+import { requestLocalnetMaker } from "./localnet-maker-http.mjs";
+import { validateLocalnetDealObservation } from "./localnet-deal-validator.mjs";
+import { runLocalnetSolve } from "./localnet-solve-handler.mjs";
+import { runLocalnetEnsureTicketRoute } from "./localnet-ticket-handler.mjs";
+import { selectQuoteThroughCoordinator } from "./localnet-selection-handler.mjs";
+import {
+  createLocalnetExpiryHandler,
+  resolveExactLocalnetReservationOwner,
+} from "./localnet-expiry-handler.mjs";
+import {
+  initializeLocalnetRuntime,
+  rotateLocalnetDeploymentEpoch,
+} from "./localnet-runtime-state.mjs";
+import {
+  assertLocalnetMutationGuards,
+  assertLocalnetRuntimeEpoch,
+  LocalnetMutationGuardError,
+} from "./localnet-control-auth.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_DIR = join(ROOT, ".app20-localnet");
+const RESET_RUNTIME = process.argv.includes("--reset-runtime");
+let RUNTIME_LAYOUT = initializeLocalnetRuntime(RUNTIME_DIR, {
+  destructiveReset: RESET_RUNTIME,
+  confirmation: process.argv.includes("--confirm-delete-localnet-runtime")
+    ? "DELETE-LOCALNET-RUNTIME"
+    : undefined,
+});
+let RUNTIME_EPOCH = RUNTIME_LAYOUT.epoch;
 const STATE_FILE = join(RUNTIME_DIR, "state.json");
 const LOCK_FILE = join(RUNTIME_DIR, "start.lock");
 const GENERATED_ENV_FILE = join(ROOT, ".env.localnet.local");
@@ -41,7 +75,24 @@ const RPC_PROXY_PATH = "/__app20_localnet_rpc";
 const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
 const MAX_REQUEST_BYTES = 1_000_000;
 const LOCALNET_QUOTE_RESERVATION_SECONDS = 10 * 60;
-const MAKER_RUNTIME_DIR = join(RUNTIME_DIR, "makers");
+const RFQ_OPERATIONS_STATUS_SCHEMA = "app20/rfq-operations-status/v1";
+const RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS = 30;
+const RFQ_OPERATIONS_STARTED_AT = Math.floor(Date.now() / 1_000);
+const RFQ_OPERATIONS_MODE = process.env.APP20_LOCALNET_RFQ_MODE ?? "running";
+if (!["running", "paused", "drain-only"].includes(RFQ_OPERATIONS_MODE)) {
+  fail("APP20_LOCALNET_RFQ_MODE must be running, paused, or drain-only.");
+}
+const RFQ_OPERATIONS_CONTROL = Object.freeze({
+  mode: RFQ_OPERATIONS_MODE,
+  reason:
+    RFQ_OPERATIONS_MODE === "running"
+      ? "Named localnet fixture operations are running."
+      : `Named localnet fixture operations are ${RFQ_OPERATIONS_MODE}; recovery remains enabled.`,
+  updatedAt: RFQ_OPERATIONS_STARTED_AT,
+  claimsAndRefundsEnabled: true,
+});
+let MAKER_RUNTIME_DIR = RUNTIME_LAYOUT.makerRuntimeDir;
+let RESERVATION_COORDINATOR_JOURNAL = RUNTIME_LAYOUT.coordinatorJournal;
 const MAKER_NODE_SCRIPT = join(ROOT, "scripts", "localnet-maker-node.mjs");
 const MAKER_NODE_PORT_A = Number(
   process.env.APP20_LOCALNET_MAKER_A_PORT ?? 5052,
@@ -113,6 +164,10 @@ if (process.argv.includes("--stop")) {
   await stopExisting();
   process.exit(0);
 }
+if (RESET_RUNTIME) {
+  console.log(`APP20 localnet runtime reset created epoch ${RUNTIME_EPOCH}.`);
+  process.exit(0);
+}
 
 if (!Number.isInteger(API_PORT) || API_PORT <= 0 || API_PORT > 65_535) {
   fail("APP20_LOCALNET_API_PORT must be a valid TCP port.");
@@ -140,7 +195,7 @@ if (priorState?.pid && isProcessAlive(Number(priorState.pid))) {
 }
 
 mkdirSync(RUNTIME_DIR, { recursive: true });
-rmSync(MAKER_RUNTIME_DIR, { recursive: true, force: true });
+mkdirSync(MAKER_RUNTIME_DIR, { recursive: true, mode: 0o700 });
 rmSync(STATE_FILE, { force: true });
 rmSync(GENERATED_ENV_FILE, { force: true });
 const priorLock = readJsonFile(LOCK_FILE);
@@ -381,21 +436,7 @@ async function stopMakerNodes() {
 }
 
 async function makerRequest(client, pathname, body) {
-  const response = await fetch(`${client.endpoint}${pathname}`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${client.authToken}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.error) {
-    throw new Error(
-      `${client.solverId}: ${payload.error ?? `HTTP ${response.status}`}`,
-    );
-  }
-  return payload.result;
+  return requestLocalnetMaker(client, pathname, body);
 }
 
 async function fundMakerPublicUsdc(env, token, accounts, starknet) {
@@ -541,10 +582,7 @@ async function deployHelper(env, starknet) {
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(
-        artifactRoot,
-        "app20_mail_App20Mail.compiled_contract_class.json",
-      ),
+      join(artifactRoot, "app20_mail_App20Mail.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -583,10 +621,7 @@ async function deployLocalUsdc(env, starknet, recipient) {
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(
-        artifactRoot,
-        "app20_mail_MockErc20.compiled_contract_class.json",
-      ),
+      join(artifactRoot, "app20_mail_MockErc20.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -625,10 +660,7 @@ async function deployEscrow(env, starknet) {
   );
   const ticketCasm = starknet.json.parse(
     readFileSync(
-      join(
-        artifactRoot,
-        "app20_mail_ClaimTicket.compiled_contract_class.json",
-      ),
+      join(artifactRoot, "app20_mail_ClaimTicket.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -650,10 +682,7 @@ async function deployEscrow(env, starknet) {
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(
-        artifactRoot,
-        "app20_mail_App20Escrow.compiled_contract_class.json",
-      ),
+      join(artifactRoot, "app20_mail_App20Escrow.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -813,6 +842,25 @@ function assertCalls(value) {
       calldata: Array.isArray(call.calldata) ? call.calldata.map(String) : [],
     };
   });
+}
+
+async function readDevnetTimestamp(rpcUrl) {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "starknet_getBlockWithTxHashes",
+      params: ["latest"],
+    }),
+  });
+  const payload = await response.json();
+  const timestamp = payload?.result?.timestamp;
+  if (!response.ok || payload.error || !Number.isSafeInteger(timestamp)) {
+    fail("devnet returned an invalid latest block timestamp.");
+  }
+  return timestamp;
 }
 
 async function createDevnetBlocks(rpcUrl, count = 10) {
@@ -1014,24 +1062,6 @@ async function ensureLocalEscrowTicket(dealId, env, escrowAddress, starknet) {
   return ticketAddress;
 }
 
-function assertFundedIntentDeal(
-  deal,
-  { sellToken, sellAmount, buyToken, buyAmount },
-  starknet,
-) {
-  if (deal.status !== 1)
-    fail("the private intent is not awaiting a solver fill.");
-  if (
-    starknet.num.toBigInt(deal.legAToken) !==
-      starknet.num.toBigInt(sellToken) ||
-    deal.legAAmount !== sellAmount ||
-    starknet.num.toBigInt(deal.legBToken) !== starknet.num.toBigInt(buyToken) ||
-    deal.legBTerms !== buyAmount
-  ) {
-    fail("the on-chain escrow terms do not match the quoted private intent.");
-  }
-}
-
 function jsonResponse(response, statusCode, payload) {
   response.writeHead(statusCode, {
     "cache-control": "no-store",
@@ -1063,41 +1093,218 @@ function canonicalHex32(value, label) {
   return value.toLowerCase();
 }
 
-function startApi({
+async function startApi({
   config,
   identities,
   env,
-  helperAddress,
+  helperAddress: _helperAddress,
   escrowAddress,
   starknet,
   makerClients,
+  controlToken,
 }) {
   const reservationOwners = new Map();
   const makerById = new Map(
     makerClients.map((client) => [client.solverId, client]),
   );
+  const coordinator = createLocalnetReservationCoordinator(
+    RESERVATION_COORDINATOR_JOURNAL,
+  );
+  const releaseAttempt = async (attempt, reason) => {
+    const client = makerById.get(attempt.makerId);
+    if (!client) return false;
+    const result = await makerRequest(client, "/v1/release", {
+      reservationId: attempt.reservationId,
+      reason,
+    });
+    return result.released === true;
+  };
+  function exactOwnerForObservation(target) {
+    return resolveExactLocalnetReservationOwner({
+      coordinator,
+      makerById,
+      reservationOwners,
+      target,
+    });
+  }
+
+  function validateCanonicalFundedObservation(
+    target,
+    observed,
+    expectedStatus = 1,
+  ) {
+    const owner = exactOwnerForObservation(target);
+    if (
+      !owner?.sellToken ||
+      !owner.buyToken ||
+      owner.sellAmount === undefined ||
+      owner.buyAmount === undefined ||
+      owner.deadline === undefined
+    )
+      fail("the durable maker reservation lacks canonical settlement terms.");
+    if (
+      target.sellToken !== undefined &&
+      (starknet.num.toBigInt(target.sellToken) !==
+        starknet.num.toBigInt(owner.sellToken) ||
+        target.sellAmount !== owner.sellAmount ||
+        starknet.num.toBigInt(target.buyToken) !==
+          starknet.num.toBigInt(owner.buyToken) ||
+        target.buyAmount !== owner.buyAmount ||
+        target.deadline !== owner.deadline ||
+        (target.ticketAddress !== undefined &&
+          owner.ticketAddress !== undefined &&
+          starknet.num.toBigInt(target.ticketAddress) !==
+            starknet.num.toBigInt(owner.ticketAddress)))
+    )
+      fail(
+        "client settlement terms do not match the durable maker reservation.",
+      );
+    validateLocalnetDealObservation(
+      observed,
+      {
+        sellToken: owner.sellToken,
+        sellAmount: owner.sellAmount,
+        buyToken: owner.buyToken,
+        buyAmount: owner.buyAmount,
+        deadline: owner.deadline,
+        ticketAddress:
+          owner.ticketAddress ?? target.ticketAddress ?? observed.ticket,
+      },
+      expectedStatus,
+      starknet.num.toBigInt,
+    );
+  }
+
+  const expiryHandler = createLocalnetExpiryHandler({
+    coordinator,
+    makerById,
+    reservationOwners,
+    release: releaseAttempt,
+    observeEscrow: (dealId) => readLocalEscrowDeal(dealId, env, escrowAddress),
+    validateFundedObservation: validateCanonicalFundedObservation,
+    readTime: () => readDevnetTimestamp(devnet.url),
+    advanceTime: async (timestamp) => {
+      const setTimeResponse = await fetch(devnet.url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "devnet_setTime",
+          params: { time: timestamp },
+        }),
+      });
+      const setTimePayload = await setTimeResponse.json();
+      if (!setTimeResponse.ok || setTimePayload.error)
+        fail("devnet could not advance the private-intent expiry.");
+      await createDevnetBlocks(devnet.url, 1);
+    },
+    now: () => Math.floor(Date.now() / 1_000),
+  });
+
+  const rfqStateHandlers = createLocalnetRfqStateHandlers({
+    coordinator,
+    observeEscrow: (dealId) => readLocalEscrowDeal(dealId, env, escrowAddress),
+    release: releaseAttempt,
+    now: () => Math.floor(Date.now() / 1_000),
+    validateFundedObservation: validateCanonicalFundedObservation,
+  });
+  const pendingAfterRecovery = await coordinator.recover(
+    releaseAttempt,
+    Math.floor(Date.now() / 1_000),
+  );
+  if (pendingAfterRecovery.length) {
+    console.warn(
+      `Localnet reservation coordinator recovered with ${pendingAfterRecovery.length} unresolved release(s); affected RFQs remain quarantined.`,
+    );
+  }
+  for (const attempt of coordinator.list()) {
+    if (attempt.state === "released" || attempt.state === "expired") continue;
+    const client = makerById.get(attempt.makerId);
+    if (!client) continue;
+    const request = coordinator
+      .listRequests()
+      .find((candidate) => candidate.intentDigest === attempt.intentDigest);
+    const durableTerms =
+      request?.ticketAuthorization?.settlementTerms ??
+      request?.settlementTerms ??
+      request?.ticketSettlementTerms;
+    const durableTicket =
+      request?.ticketAuthorization?.ticketAddress ??
+      request?.settlementTerms?.ticketAddress;
+    reservationOwners.set(attempt.reservationId, {
+      client,
+      intentDigest: attempt.intentDigest,
+      selected: attempt.state === "selected",
+      fence: attempt.fence,
+      quoteDigest: attempt.quoteDigest,
+      expiresAt: attempt.expiresAt,
+      ...(durableTerms
+        ? {
+            sellToken: durableTerms.sellToken,
+            sellAmount: BigInt(durableTerms.sellAmount),
+            buyToken: durableTerms.buyToken,
+            buyAmount: BigInt(durableTerms.buyAmount),
+            deadline: durableTerms.deadline,
+          }
+        : {}),
+      ...(durableTicket === undefined ? {} : { ticketAddress: durableTicket }),
+    });
+  }
+  function browserSafeMakerStatus(client) {
+    const available = makerProcesses.get(client.solverId)?.exitCode === null;
+    return {
+      makerId: client.solverId,
+      keyId: client.solverKey,
+      invitationStatus: available ? "not-invited" : "unavailable",
+      capacityBand: available ? "medium" : "unknown",
+      eligible: available && RFQ_OPERATIONS_CONTROL.mode === "running",
+      rationale: available
+        ? RFQ_OPERATIONS_CONTROL.mode === "running"
+          ? "Eligible under the named localnet fixture policy; capacity is a coarse band, not inventory proof."
+          : `Excluded while local operations are ${RFQ_OPERATIONS_CONTROL.mode}; recovery remains enabled.`
+        : "Excluded because this local maker process is unavailable.",
+    };
+  }
+
+  function assertRfqStartAllowed(action) {
+    if (RFQ_OPERATIONS_CONTROL.mode !== "running") {
+      fail(
+        `${action} is blocked while RFQ operations are ${RFQ_OPERATIONS_CONTROL.mode}; claims and refunds remain enabled.`,
+      );
+    }
+  }
+
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", BACKEND_TARGET);
-      if (request.method === "GET" && url.pathname === "/health") {
+      if (
+        request.method === "GET" &&
+        url.pathname === "/rfq/operations/status"
+      ) {
+        const observedAt = Math.floor(Date.now() / 1_000);
         jsonResponse(response, 200, {
           result: {
-            ok: true,
-            pid: process.pid,
-            appUrl: APP_URL,
-            poolAddress: env.privacy.address,
-            helperAddress,
-            escrowAddress,
-            makers: makerClients.map((maker) => ({
-              makerId: maker.solverId,
-              settlementAccount: maker.settlementAccount,
-              processAlive:
-                makerProcesses.get(maker.solverId)?.exitCode === null,
-              processPid: makerProcesses.get(maker.solverId)?.pid,
-            })),
-            operations: operationLog,
+            schema: RFQ_OPERATIONS_STATUS_SCHEMA,
+            environment: "localnet",
+            observedAt,
+            validUntil: observedAt + RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS,
+            mode: RFQ_OPERATIONS_CONTROL.mode,
+            reason: RFQ_OPERATIONS_CONTROL.reason,
+            claimsAndRefundsEnabled: true,
+            directory: {
+              epoch: 0,
+              checkpoint: "local-fixture-checkpoint-v1",
+              validUntil: observedAt + RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS,
+            },
+            makers: makerClients.map(browserSafeMakerStatus),
+            rawInventoryExposed: false,
           },
         });
+        return;
+      }
+      if (request.method === "GET" && url.pathname === "/health") {
+        jsonResponse(response, 200, { result: { ok: true } });
         return;
       }
       if (request.method === "GET" && url.pathname === "/config") {
@@ -1110,16 +1317,118 @@ function startApi({
         });
         return;
       }
+      assertLocalnetMutationGuards(request, {
+        expectedOrigin: APP_URL,
+        controlToken,
+      });
 
       const body = await readRequestBody(request);
-      if (url.pathname === "/escrow/ensure-ticket") {
+      assertLocalnetRuntimeEpoch(url.pathname, body, RUNTIME_EPOCH);
+      if (url.pathname === "/escrow/ensure-mail-ticket") {
         const dealId = feltInput(body.dealId, "dealId", starknet);
         const ticketAddress = await serializeOperation(
-          "ensure claim ticket",
+          "ensure mail claim ticket",
           "localnet-admin",
           () => ensureLocalEscrowTicket(dealId, env, escrowAddress, starknet),
         );
         jsonResponse(response, 200, { result: { ticketAddress } });
+        return;
+      }
+      if (url.pathname === "/escrow/ensure-ticket") {
+        if (body.operation !== "funding-ticket")
+          fail(
+            "RFQ ticket deployment requires an exact funding-ticket target.",
+          );
+        if (
+          typeof body.attemptId !== "string" ||
+          !body.attemptId.trim() ||
+          body.attemptId.includes("\0")
+        )
+          fail("attemptId is required for exact funding-ticket replay.");
+        const { sellToken, buyToken } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const sellAmount = positiveBaseUnits(
+          body.sellAmount,
+          "sellAmount",
+          starknet,
+        );
+        const buyAmount = positiveBaseUnits(
+          body.buyAmount,
+          "buyAmount",
+          starknet,
+        );
+        const intentDigest = canonicalHex32(
+          body.requestDigest,
+          "requestDigest",
+        );
+        const reservationId = canonicalHex32(
+          body.reservationId,
+          "reservationId",
+        );
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const exact = {
+          intentDigest,
+          rfqId: feltInput(body.rfqId, "rfqId", starknet),
+          account: feltInput(body.account, "account", starknet),
+          chainId: feltInput(body.chainId, "chainId", starknet),
+          dealId,
+          reservationId,
+          makerId: body.solverId,
+          fence: body.reservationFence,
+          quoteDigest: canonicalHex32(body.quoteDigest, "quoteDigest"),
+          attemptId: body.attemptId,
+        };
+        if (!Number.isSafeInteger(body.deadline) || body.deadline <= 0)
+          fail("deadline must be a positive timestamp.");
+        const result = await runLocalnetEnsureTicketRoute({
+          coordinator,
+          target: exact,
+          settlementTerms: {
+            sellToken: starknet.num.toHex(sellToken),
+            sellAmount: sellAmount.toString(),
+            buyToken: starknet.num.toHex(buyToken),
+            buyAmount: buyAmount.toString(),
+            deadline: body.deadline,
+          },
+          resolveOwner: exactOwnerForObservation,
+          validateOwner: (owner) => {
+            if (
+              !owner?.selected ||
+              owner.intentDigest !== intentDigest ||
+              owner.client.solverId !== body.solverId ||
+              String(owner.fence) !== String(body.reservationFence) ||
+              owner.quoteDigest !== exact.quoteDigest ||
+              starknet.num.toBigInt(owner.sellToken) !==
+                starknet.num.toBigInt(sellToken) ||
+              owner.sellAmount !== sellAmount ||
+              starknet.num.toBigInt(owner.buyToken) !==
+                starknet.num.toBigInt(buyToken) ||
+              owner.buyAmount !== buyAmount ||
+              owner.deadline !== body.deadline
+            )
+              fail(
+                "coordinator selection does not authorize the exact funding ticket target.",
+              );
+          },
+          ensureTicket: (exactDealId) =>
+            serializeOperation(
+              "ensure claim ticket",
+              "localnet-admin",
+              async () =>
+                starknet.num.toHex(
+                  await ensureLocalEscrowTicket(
+                    exactDealId,
+                    env,
+                    escrowAddress,
+                    starknet,
+                  ),
+                ),
+            ),
+        });
+        jsonResponse(response, 200, { result });
         return;
       }
       if (url.pathname === "/escrow/deal") {
@@ -1136,8 +1445,14 @@ function startApi({
         return;
       }
       if (url.pathname === "/private-intents/quotes") {
+        assertRfqStartAllowed("New RFQ requests");
         const now = Math.floor(Date.now() / 1_000);
         const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        const rfqId = feltInput(body.rfqId, "rfqId", starknet);
+        if (body.rfqId !== rfqId)
+          fail("rfqId must be a canonical lowercase Starknet felt.");
+        const account = feltInput(body.account, "account", starknet);
+        const chainId = feltInput(body.chainId, "chainId", starknet);
         if (
           !Number.isSafeInteger(body.createdAt) ||
           body.createdAt > now + 30 ||
@@ -1150,7 +1465,35 @@ function startApi({
         if (!Number.isSafeInteger(body.expiresAt) || body.expiresAt <= now) {
           fail("the private RFQ expiry is missing or already elapsed.");
         }
-        const { sellToken, buyToken } = assertLocalIntentPair(
+        const plannedCohort = body.cohort;
+        const plannedMakers = makerClients.map(({ solverId, solverKey }) => ({
+          makerId: solverId,
+          keyId: solverKey,
+        }));
+        const expectedBinding = [
+          RFQ_OPERATIONS_STATUS_SCHEMA,
+          0,
+          "local-fixture-checkpoint-v1",
+          plannedCohort?.validUntil,
+          ...plannedMakers.flatMap(({ makerId, keyId }) => [makerId, keyId]),
+        ].join("|");
+        if (
+          !plannedCohort ||
+          plannedCohort.epoch !== 0 ||
+          plannedCohort.checkpoint !== "local-fixture-checkpoint-v1" ||
+          !Number.isSafeInteger(plannedCohort.validUntil) ||
+          plannedCohort.validUntil <= now ||
+          plannedCohort.validUntil >
+            now + RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS ||
+          JSON.stringify(plannedCohort.makers) !==
+            JSON.stringify(plannedMakers) ||
+          plannedCohort.binding !== expectedBinding
+        ) {
+          fail(
+            "the confirmed planned maker cohort is stale or does not match the actual invitation recipients.",
+          );
+        }
+        const { sellToken, buyToken, direction } = assertLocalIntentPair(
           body,
           env,
           starknet,
@@ -1165,6 +1508,46 @@ function startApi({
           "minBuyAmount",
           starknet,
         );
+        try {
+          localnetEconomicReview({
+            pairId: direction,
+            sellAmount,
+            requestedFloor: minBuyAmount,
+            surface: "block",
+          });
+        } catch (error) {
+          fail(
+            error instanceof Error
+              ? error.message
+              : "the named localnet economic policy rejected this RFQ.",
+          );
+        }
+        const recomputedIntentDigest = await digestPrivateSwapIntent({
+          version: 1,
+          intentId: rfqId,
+          pool: "starknet:APP20_LOCALNET",
+          sellToken,
+          sellAmount,
+          buyToken,
+          minBuyAmount,
+          createdAt: body.createdAt,
+          expiresAt: body.expiresAt,
+        });
+        if (recomputedIntentDigest !== intentDigest) {
+          fail("intentDigest does not match the canonical received RFQ terms.");
+        }
+        await coordinator.beginRequest({
+          intentDigest,
+          rfqId,
+          account,
+          chainId,
+          createdAt: body.createdAt,
+          expiresAt: body.expiresAt,
+          makerIds: makerClients.map(({ solverId }) => solverId),
+          market: [sellToken.toLowerCase(), buyToken.toLowerCase()]
+            .sort()
+            .join("/"),
+        });
         const rfq = {
           version: 1,
           domain: PRIVATE_RFQ_DOMAIN,
@@ -1189,42 +1572,101 @@ function startApi({
           minBuyAmountBaseUnits: rfq.minBuyAmountBaseUnits.toString(),
         };
         const outcomes = await Promise.allSettled(
-          makerClients.map((client) =>
-            makerRequest(client, "/v1/reservations", {
-              rfq: wireRfq,
-              rfqDigest,
-              intentDigest,
-              expiresAt: body.expiresAt,
-              sellToken,
-              sellAmount: sellAmount.toString(),
-              buyToken,
-              minBuyAmount: minBuyAmount.toString(),
-            }),
-          ),
+          makerClients.map(async (client) => {
+            try {
+              const result = await makerRequest(client, "/v1/reservations", {
+                rfq: wireRfq,
+                rfqDigest,
+                intentDigest,
+                expiresAt: body.expiresAt,
+                sellToken,
+                sellAmount: sellAmount.toString(),
+                buyToken,
+                minBuyAmount: minBuyAmount.toString(),
+              });
+              const offer = result.offer;
+              const registered = await coordinator.register(
+                {
+                  intentDigest,
+                  reservationId: offer.reservationId,
+                  makerId: client.solverId,
+                  expiresAt: offer.reservationExpiresAt,
+                },
+                releaseAttempt,
+                Math.floor(Date.now() / 1_000),
+              );
+              return { ...result, registered };
+            } catch (error) {
+              const declined =
+                /inventory|no output|below the intent floor|cannot cover/i.test(
+                  String(error),
+                );
+              if (declined) {
+                await coordinator.markFanoutRefused(
+                  intentDigest,
+                  client.solverId,
+                );
+              }
+              throw error;
+            }
+          }),
         );
         const offers = [];
-        outcomes.forEach((outcome, index) => {
+        const cohort = [];
+        for (const [index, outcome] of outcomes.entries()) {
+          const client = makerClients[index];
           if (outcome.status === "rejected") {
+            const declined =
+              /inventory|no output|below the intent floor|cannot cover/i.test(
+                String(outcome.reason),
+              );
             console.warn(
-              `Invited maker ${makerClients[index].solverId} declined: ${String(outcome.reason)}`,
+              `Invited maker ${client.solverId} declined the browser-safe local request.`,
             );
-            return;
+            cohort.push({
+              makerId: client.solverId,
+              keyId: client.solverKey,
+              invitationStatus: declined ? "refused" : "unavailable",
+              capacityBand: declined ? "none" : "unknown",
+              eligible: false,
+              rationale: declined
+                ? "Excluded because the maker refused the exact clip under its local fixture capacity policy."
+                : "Excluded because a safe maker response was unavailable for this request.",
+            });
+            continue;
           }
           const offer = outcome.value.offer;
+          const registered = outcome.value.registered;
+          if (registered.state !== "reserved") {
+            continue;
+          }
           reservationOwners.set(offer.reservationId, {
             client: makerClients[index],
             intentDigest,
             selected: false,
+            expiresAt: offer.reservationExpiresAt,
+            sellToken,
+            sellAmount,
+            buyToken,
+            deadline: body.expiresAt,
           });
           offers.push(offer);
-        });
-        if (offers.length === 0) {
-          fail("No private maker inventory can cover this RFQ.");
+          cohort.push({
+            makerId: client.solverId,
+            keyId: client.solverKey,
+            invitationStatus: "responded",
+            capacityBand: "medium",
+            eligible: true,
+            rationale:
+              "Eligible because the maker reserved the exact reviewed clip; the band is coarse and is not inventory proof.",
+          });
         }
-        jsonResponse(response, 200, { result: { offers } });
+        await coordinator.completeRequestFanout(intentDigest);
+        jsonResponse(response, 200, { result: { offers, cohort } });
         return;
       }
       if (url.pathname === "/private-intents/select-quote") {
+        assertRfqStartAllowed("Quote selection");
         const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
         const selectedReservationId = canonicalHex32(
           body.selectedReservationId,
@@ -1236,51 +1678,147 @@ function startApi({
             "the selected quote belongs to a different or missing private RFQ.",
           );
         }
-        await makerRequest(selected.client, "/v1/select", {
-          reservationId: selectedReservationId,
+        const { confirmed, unresolved } = await selectQuoteThroughCoordinator({
+          coordinator,
           intentDigest,
+          reservationId: selectedReservationId,
+          makerId: selected.client.solverId,
+          makerSelect: ({ reservationId, intentDigest: digest }) =>
+            makerRequest(selected.client, "/v1/select", {
+              reservationId,
+              intentDigest: digest,
+            }),
+          publishConfirmed: (durableSelection) => {
+            selected.selected = true;
+            selected.fence = durableSelection.fence;
+            selected.quoteDigest = durableSelection.quoteDigest;
+          },
+          release: releaseAttempt,
+          now: Math.floor(Date.now() / 1_000),
         });
-        selected.selected = true;
-        const releases = [];
-        for (const [reservationId, owner] of reservationOwners) {
+        for (const attempt of coordinator.list()) {
           if (
-            owner.intentDigest === intentDigest &&
-            reservationId !== selectedReservationId
+            attempt.intentDigest === intentDigest &&
+            (attempt.state === "released" || attempt.state === "expired")
           ) {
-            releases.push(
-              makerRequest(owner.client, "/v1/release", {
-                reservationId,
-                reason: "losing quote released after client selection",
-              }),
-            );
-            reservationOwners.delete(reservationId);
+            reservationOwners.delete(attempt.reservationId);
           }
         }
-        await Promise.allSettled(releases);
+        if (unresolved.length) {
+          jsonResponse(response, 409, {
+            error:
+              "Quote selection is quarantined because a losing reservation release is unresolved.",
+            state: "quarantined",
+            unresolved: unresolved.map((attempt) => ({
+              makerId: attempt.makerId,
+              reservationId: attempt.reservationId,
+            })),
+          });
+          return;
+        }
         jsonResponse(response, 200, {
           result: {
             selectedReservationId,
             solverId: selected.client.solverId,
+            reservationFence: selected.fence,
+            quoteDigest: selected.quoteDigest,
           },
         });
         return;
       }
-      if (url.pathname === "/private-intents/release-quote") {
-        const reservationId = canonicalHex32(
-          body.reservationId,
-          "reservationId",
+      if (url.pathname === "/private-intents/release-intent") {
+        const intentDigest = canonicalHex32(
+          body.requestDigest,
+          "requestDigest",
         );
-        const owner = reservationOwners.get(reservationId);
-        let released = false;
-        if (owner) {
-          const result = await makerRequest(owner.client, "/v1/release", {
-            reservationId,
-            reason: "client released quote",
-          });
-          released = result.released;
+        const rfqId = feltInput(body.rfqId, "rfqId", starknet);
+        const release = await rfqStateHandlers.releaseIntent(
+          {
+            requestDigest: intentDigest,
+            rfqId,
+            account: feltInput(body.account, "account", starknet),
+            chainId: feltInput(body.chainId, "chainId", starknet),
+          },
+          body.releaseLeaseId,
+        );
+        for (const attempt of coordinator.list()) {
+          if (
+            attempt.intentDigest === intentDigest &&
+            (attempt.state === "released" || attempt.state === "expired")
+          ) {
+            reservationOwners.delete(attempt.reservationId);
+          }
         }
-        if (released) reservationOwners.delete(reservationId);
-        jsonResponse(response, 200, { result: { released } });
+        jsonResponse(response, release.released ? 200 : 409, {
+          ...(release.released
+            ? { result: { released: true } }
+            : {
+                error: "One or more RFQ reservations remain unresolved.",
+                state: "quarantined",
+              }),
+        });
+        return;
+      }
+      if (
+        [
+          "/private-intents/funding-prepare",
+          "/private-intents/funding-unknown",
+          "/private-intents/funding-abandon",
+          "/private-intents/funding-observe",
+          "/private-intents/converge",
+        ].includes(url.pathname)
+      ) {
+        const { sellToken, buyToken } = assertLocalIntentPair(
+          body,
+          env,
+          starknet,
+        );
+        const target = {
+          intentDigest: canonicalHex32(body.intentDigest, "intentDigest"),
+          rfqId: feltInput(body.rfqId, "rfqId", starknet),
+          account: feltInput(body.account, "account", starknet),
+          chainId: feltInput(body.chainId, "chainId", starknet),
+          dealId: feltInput(body.dealId, "dealId", starknet),
+          reservationId: canonicalHex32(body.reservationId, "reservationId"),
+          solverId: body.solverId,
+          reservationFence: body.reservationFence,
+          quoteDigest: canonicalHex32(body.quoteDigest, "quoteDigest"),
+          sellToken,
+          sellAmount: positiveBaseUnits(
+            body.sellAmount,
+            "sellAmount",
+            starknet,
+          ),
+          buyToken,
+          buyAmount: positiveBaseUnits(body.buyAmount, "buyAmount", starknet),
+          deadline: body.deadline,
+          ticketAddress: feltInput(
+            body.ticketAddress,
+            "ticketAddress",
+            starknet,
+          ),
+        };
+        if (!Number.isSafeInteger(target.deadline) || target.deadline <= 0)
+          fail("deadline must be a positive timestamp.");
+        if (url.pathname === "/private-intents/funding-prepare") {
+          assertRfqStartAllowed("Wallet funding");
+          await rfqStateHandlers.prepareFunding(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/funding-unknown") {
+          await rfqStateHandlers.markFundingUnknown(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/funding-abandon") {
+          await rfqStateHandlers.abandonFunding(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/converge") {
+          if (![1, 2, 3, 4].includes(body.status))
+            fail("status must be an exact value-bearing escrow status.");
+          await rfqStateHandlers.convergeObservation(
+            target,
+            body.attemptId,
+            body.status,
+          );
+        } else {
+          await rfqStateHandlers.observeFunding(target, body.attemptId);
+        }
+        jsonResponse(response, 200, { result: { ok: true } });
         return;
       }
       if (url.pathname === "/private-intents/sign-quote") {
@@ -1302,10 +1840,22 @@ function startApi({
           fail("the quote named an unexpected maker reservation or key.");
         }
         const result = await makerRequest(maker, "/v1/sign", body);
+        owner.buyAmount = positiveBaseUnits(
+          body.buyAmount,
+          "buyAmount",
+          starknet,
+        );
         jsonResponse(response, 200, { result });
         return;
       }
       if (url.pathname === "/private-intents/solve") {
+        assertRfqStartAllowed("Maker fills");
+        if (
+          typeof body.attemptId !== "string" ||
+          !body.attemptId.trim() ||
+          body.attemptId.includes("\0")
+        )
+          fail("attemptId is required for exact maker-fill replay.");
         const { sellToken, buyToken } = assertLocalIntentPair(
           body,
           env,
@@ -1326,7 +1876,10 @@ function startApi({
           body.reservationId,
           "reservationId",
         );
-        const owner = reservationOwners.get(reservationId);
+        const owner = exactOwnerForObservation({
+          intentDigest,
+          reservationId,
+        });
         if (
           !owner?.selected ||
           owner.intentDigest !== intentDigest ||
@@ -1335,20 +1888,70 @@ function startApi({
           fail("the selected private quote does not authorize this fill.");
         }
         const dealId = feltInput(body.dealId, "dealId", starknet);
+        const target = {
+          intentDigest,
+          rfqId: feltInput(body.rfqId, "rfqId", starknet),
+          account: feltInput(body.account, "account", starknet),
+          chainId: feltInput(body.chainId, "chainId", starknet),
+          dealId,
+          reservationId,
+          solverId: body.solverId,
+          reservationFence: body.reservationFence,
+          quoteDigest: canonicalHex32(body.quoteDigest, "quoteDigest"),
+        };
         const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
-        assertFundedIntentDeal(
-          deal,
-          { sellToken, sellAmount, buyToken, buyAmount },
+        if (!Number.isSafeInteger(body.deadline) || body.deadline <= 0)
+          fail("deadline must be a positive timestamp.");
+        const ticketAddress = feltInput(
+          body.ticketAddress,
+          "ticketAddress",
           starknet,
         );
-        const filled = await makerRequest(owner.client, "/v1/fill", {
-          reservationId,
-          intentDigest,
-          dealId,
+        const solveTarget = {
+          ...target,
           sellToken,
-          sellAmount: sellAmount.toString(),
+          sellAmount,
           buyToken,
-          buyAmount: buyAmount.toString(),
+          buyAmount,
+          deadline: body.deadline,
+          ticketAddress,
+        };
+        const filled = await runLocalnetSolve({
+          target: solveTarget,
+          observed: deal,
+          validateObservation: validateCanonicalFundedObservation,
+          bind: (exact) =>
+            bindExpiryHttpTargetThroughCoordinator({
+              coordinator,
+              target: exact,
+            }),
+          submitExact: () =>
+            makerRequest(owner.client, "/v1/fill", {
+              reservationId,
+              intentDigest,
+              fence: owner.fence,
+              quoteDigest: owner.quoteDigest,
+              dealId,
+              sellToken,
+              sellAmount: sellAmount.toString(),
+              buyToken,
+              buyAmount: buyAmount.toString(),
+              deadline: body.deadline,
+              ticketAddress,
+              attemptId: body.attemptId,
+            }),
+          reconcileCommitted: (exact, observedStatus) =>
+            observedStatus === 1
+              ? terminalizeHttpTargetThroughCoordinator({
+                  coordinator,
+                  target: exact,
+                  outcome: "filled",
+                })
+              : rfqStateHandlers.convergeObservation(
+                  exact,
+                  body.attemptId,
+                  observedStatus,
+                ),
         });
         reservationOwners.delete(reservationId);
         jsonResponse(response, 200, {
@@ -1380,46 +1983,32 @@ function startApi({
           body.reservationId,
           "reservationId",
         );
-        const owner = reservationOwners.get(reservationId);
-        if (
-          !owner?.selected ||
-          owner.intentDigest !== intentDigest ||
-          owner.client.solverId !== body.solverId
-        ) {
-          fail("the selected private quote does not match this expiry path.");
-        }
-        const dealId = feltInput(body.dealId, "dealId", starknet);
-        const deal = await readLocalEscrowDeal(dealId, env, escrowAddress);
-        assertFundedIntentDeal(
-          deal,
-          { sellToken, sellAmount, buyToken, buyAmount },
-          starknet,
-        );
-        const released = await makerRequest(owner.client, "/v1/release", {
+        if (!Number.isSafeInteger(body.deadline) || body.deadline <= 0)
+          fail("deadline must be a positive timestamp.");
+        const target = {
+          intentDigest,
+          rfqId: feltInput(body.rfqId, "rfqId", starknet),
+          account: feltInput(body.account, "account", starknet),
+          chainId: feltInput(body.chainId, "chainId", starknet),
+          dealId: feltInput(body.dealId, "dealId", starknet),
           reservationId,
-          reason: "user chose the explicit no-fill expiry path",
-        });
-        if (!released.released) {
-          fail("the selected maker reservation could not be released.");
-        }
+          solverId: body.solverId,
+          reservationFence: body.reservationFence,
+          quoteDigest: canonicalHex32(body.quoteDigest, "quoteDigest"),
+          sellToken,
+          sellAmount,
+          buyToken,
+          buyAmount,
+          deadline: body.deadline,
+          ticketAddress: feltInput(
+            body.ticketAddress,
+            "ticketAddress",
+            starknet,
+          ),
+        };
+        const expiry = await expiryHandler.expire(target);
         reservationOwners.delete(reservationId);
-        const timestamp = deal.deadline + 1;
-        const setTimeResponse = await fetch(devnet.url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "devnet_setTime",
-            params: { time: timestamp },
-          }),
-        });
-        const setTimePayload = await setTimeResponse.json();
-        if (!setTimeResponse.ok || setTimePayload.error) {
-          fail("devnet could not advance the private-intent expiry.");
-        }
-        await createDevnetBlocks(devnet.url, 1);
-        jsonResponse(response, 200, { result: { expiredAt: timestamp } });
+        jsonResponse(response, 200, { result: expiry });
         return;
       }
 
@@ -1467,7 +2056,11 @@ function startApi({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Localnet wallet request failed: ${message}`);
-      jsonResponse(response, 400, { error: message });
+      jsonResponse(
+        response,
+        error instanceof LocalnetMutationGuardError ? error.status : 400,
+        { error: message },
+      );
     }
   });
 
@@ -1548,6 +2141,15 @@ try {
   const runtime = await importRuntime();
   process.env.PATH = `${join(ROOT, "vendor", "bin")}:${process.env.PATH ?? ""}`;
 
+  currentStage = "deployment epoch rotation";
+  RUNTIME_LAYOUT = rotateLocalnetDeploymentEpoch(RUNTIME_DIR);
+  RUNTIME_EPOCH = RUNTIME_LAYOUT.epoch;
+  MAKER_RUNTIME_DIR = RUNTIME_LAYOUT.makerRuntimeDir;
+  RESERVATION_COORDINATOR_JOURNAL = RUNTIME_LAYOUT.coordinatorJournal;
+  console.log(
+    `\n==> fresh chain deployment is isolated in runtime epoch ${RUNTIME_EPOCH}`,
+  );
+
   currentStage = "real privacy_Privacy deployment";
   console.log("\n==> booting native devnet and deploying real privacy_Privacy");
   devnet = new runtime.testing.Devnet({ userAccounts: 4 });
@@ -1565,12 +2167,7 @@ try {
     alice: {
       id: "alice",
       label: "Alice",
-      ...makePrivacyRuntime(
-        env.alice,
-        "app20-localnet-alice-v1",
-        env,
-        runtime,
-      ),
+      ...makePrivacyRuntime(env.alice, "app20-localnet-alice-v1", env, runtime),
     },
     bob: {
       id: "bob",
@@ -1605,6 +2202,7 @@ try {
 
   const config = {
     walletName: "Localnet (dev)",
+    runtimeEpoch: RUNTIME_EPOCH,
     chainId: LOCALNET_CHAIN_ID,
     rpcUrl: RPC_PROXY_PATH,
     poolAddress: env.privacy.address,
@@ -1619,12 +2217,6 @@ try {
     ],
     marketPairs: ["STRK_USDC", "USDC_STRK"],
     proofMode: "upstream devnet mock proof · no STARK bytes",
-    makers: makers.map((maker) => ({
-      makerId: maker.solverId,
-      solverKey: maker.solverKey,
-      settlementAccount: maker.settlementAccount,
-      custody: "independent localnet process · WAL-backed reservations",
-    })),
     identities: Object.values(identities).map((identity) => ({
       id: identity.id,
       label: identity.label,
@@ -1633,6 +2225,7 @@ try {
   };
 
   currentStage = "local wallet API startup";
+  const localnetControlToken = randomBytes(32).toString("base64url");
   apiServer = await startApi({
     config,
     identities,
@@ -1641,6 +2234,7 @@ try {
     escrowAddress: escrow.address,
     starknet: runtime.starknet,
     makerClients: makers,
+    controlToken: localnetControlToken,
   });
   writeGeneratedEnv({
     rpcTarget: devnet.url,
@@ -1663,6 +2257,7 @@ try {
     VITE_LOCALNET_USDC_TOKEN_ADDRESS: env.usdc,
     APP20_LOCALNET_BACKEND_TARGET: BACKEND_TARGET,
     APP20_LOCALNET_RPC_TARGET: devnet.url,
+    APP20_LOCALNET_CONTROL_TOKEN: localnetControlToken,
   };
   viteProcess = spawn(
     join(ROOT, "node_modules", ".bin", "vite"),
@@ -1696,6 +2291,7 @@ try {
 
   const state = {
     pid: process.pid,
+    runtimeEpoch: RUNTIME_EPOCH,
     startedAt: new Date().toISOString(),
     appUrl: APP_URL,
     apiUrl: BACKEND_TARGET,
