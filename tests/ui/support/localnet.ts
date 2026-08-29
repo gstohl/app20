@@ -111,7 +111,10 @@ export async function expectNoHorizontalOverflow(page: Page) {
   const metrics = await page.evaluate(() => {
     const limit = document.documentElement.clientWidth;
     const offenders = [...document.querySelectorAll<HTMLElement>("*")]
-      .map((element) => ({ element, right: element.getBoundingClientRect().right }))
+      .map((element) => ({
+        element,
+        right: element.getBoundingClientRect().right,
+      }))
       .filter(({ element, right }) => {
         if (right <= limit + 0.5) return false;
         const style = getComputedStyle(element);
