@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 2,
+  "knownViolations": [
+    {
+      "route": "/rfq",
+      "directive": "connect-src",
+      "blockedURI": "https://api.coingecko.com/api/v3/coins/starknet/ohlc?vs_currency=usd&days=1",
+      "occurrenceCount": 1,
+      "affectedFeature": "Opt-in CoinGecko OHLC price-history chart on the RFQ market board",
+      "userVisibleConsequence": "After the user chooses Load CoinGecko context, the chart reports that public candlesticks are unavailable.",
+      "exactFile": "workers/relay/src/headers.ts",
+      "exactChange": "Add https://api.coingecko.com to the connect-src values emitted by spaSecurityHeaders() after an explicit security and privacy review."
+    }
+  ]
+}

@@ -23,14 +23,34 @@ export type MakerInvitationStatus =
   | "refused"
   | "unavailable";
 
+export type MakerKeyStatus = "valid" | "expired" | "rotated" | "revoked";
+
 export type BrowserSafeMakerStatus = Readonly<{
   makerId: string;
   keyId: string;
+  keyStatus: MakerKeyStatus;
+  keyValidUntil: number;
   invitationStatus: MakerInvitationStatus;
   capacityBand: CapacityBand;
   eligible: boolean;
   rationale: string;
 }>;
+
+export type MakerDirectoryStatus = Readonly<{
+  epoch: 0;
+  checkpoint: "local-fixture-checkpoint-v1";
+  validUntil: number;
+}>;
+
+export type MakerCohortSummary = Readonly<{
+  governed: number;
+  invited: number;
+  responded: number;
+  refused: number;
+  unavailable: number;
+}>;
+
+export type DirectoryFreshnessState = "fresh" | "expiring" | "expired";
 
 export type RfqOperationsStatus = Readonly<{
   schema: typeof LOCALNET_OPERATIONS_SCHEMA;
@@ -40,11 +60,8 @@ export type RfqOperationsStatus = Readonly<{
   mode: Exclude<OperationsMode, "stale" | "unknown">;
   reason: string;
   claimsAndRefundsEnabled: true;
-  directory: Readonly<{
-    epoch: 0;
-    checkpoint: "local-fixture-checkpoint-v1";
-    validUntil: number;
-  }>;
+  directory: MakerDirectoryStatus;
+  cohort: MakerCohortSummary;
   makers: readonly BrowserSafeMakerStatus[];
   rawInventoryExposed: false;
 }>;
@@ -53,6 +70,7 @@ export type OperationsAvailability = Readonly<{
   mode: OperationsMode;
   reason: string;
   claimsAndRefundsEnabled: true;
+  asOf: number;
   status?: RfqOperationsStatus;
 }>;
 
@@ -119,12 +137,24 @@ function normalizeMaker(value: unknown): BrowserSafeMakerStatus {
     [
       "makerId",
       "keyId",
+      "keyStatus",
+      "keyValidUntil",
       "invitationStatus",
       "capacityBand",
       "eligible",
       "rationale",
     ],
     "Maker status",
+  );
+  if (
+    !["valid", "expired", "rotated", "revoked"].includes(
+      String(maker.keyStatus),
+    )
+  )
+    throw new Error("Maker key status is unsupported.");
+  const keyValidUntil = timestamp(
+    maker.keyValidUntil,
+    "Maker key validity time",
   );
   if (
     !["not-invited", "responded", "refused", "unavailable"].includes(
@@ -144,7 +174,8 @@ function normalizeMaker(value: unknown): BrowserSafeMakerStatus {
     throw new Error("Maker eligibility is missing.");
   if (
     maker.eligible &&
-    (maker.invitationStatus === "refused" ||
+    (maker.keyStatus !== "valid" ||
+      maker.invitationStatus === "refused" ||
       maker.invitationStatus === "unavailable" ||
       maker.capacityBand === "none" ||
       maker.capacityBand === "unknown")
@@ -156,6 +187,8 @@ function normalizeMaker(value: unknown): BrowserSafeMakerStatus {
   return Object.freeze({
     makerId: safeText(maker.makerId, "Maker id"),
     keyId: safeText(maker.keyId, "Maker key id"),
+    keyStatus: maker.keyStatus as MakerKeyStatus,
+    keyValidUntil,
     invitationStatus: maker.invitationStatus as MakerInvitationStatus,
     capacityBand: maker.capacityBand as CapacityBand,
     eligible: maker.eligible,
@@ -165,6 +198,7 @@ function normalizeMaker(value: unknown): BrowserSafeMakerStatus {
 
 export function normalizeMakerCohort(
   value: unknown,
+  observedAt?: number,
 ): readonly BrowserSafeMakerStatus[] {
   if (!Array.isArray(value) || value.length === 0)
     throw new Error("Maker cohort is unavailable.");
@@ -173,7 +207,89 @@ export function normalizeMakerCohort(
     .sort((left, right) => left.makerId.localeCompare(right.makerId));
   if (new Set(makers.map((maker) => maker.makerId)).size !== makers.length)
     throw new Error("Maker cohort contains duplicate identities.");
+  if (
+    observedAt !== undefined &&
+    makers.some(
+      (maker) =>
+        (maker.keyStatus === "valid") !== maker.keyValidUntil > observedAt,
+    )
+  )
+    throw new Error("Maker key status contradicts its validity deadline.");
   return Object.freeze(makers);
+}
+
+function nonNegativeInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0)
+    throw new Error(`${label} is invalid.`);
+  return Number(value);
+}
+
+function normalizeCohortSummary(
+  value: unknown,
+  makers: readonly BrowserSafeMakerStatus[],
+): MakerCohortSummary {
+  const summary = record(value, "Maker cohort summary");
+  exactKeys(
+    summary,
+    ["governed", "invited", "responded", "refused", "unavailable"],
+    "Maker cohort summary",
+  );
+  const normalized = Object.freeze({
+    governed: nonNegativeInteger(summary.governed, "Governed maker count"),
+    invited: nonNegativeInteger(summary.invited, "Invited maker count"),
+    responded: nonNegativeInteger(summary.responded, "Maker response count"),
+    refused: nonNegativeInteger(summary.refused, "Maker refusal count"),
+    unavailable: nonNegativeInteger(
+      summary.unavailable,
+      "Unavailable maker count",
+    ),
+  });
+  const expected = {
+    governed: makers.length,
+    invited: makers.filter((maker) => maker.invitationStatus !== "not-invited")
+      .length,
+    responded: makers.filter((maker) => maker.invitationStatus === "responded")
+      .length,
+    refused: makers.filter((maker) => maker.invitationStatus === "refused")
+      .length,
+    unavailable: makers.filter(
+      (maker) => maker.invitationStatus === "unavailable",
+    ).length,
+  };
+  if (
+    Object.entries(expected).some(
+      ([key, count]) => normalized[key as keyof MakerCohortSummary] !== count,
+    )
+  )
+    throw new Error("Maker cohort summary contradicts the governed makers.");
+  return normalized;
+}
+
+export function directoryFreshnessState(
+  directory: MakerDirectoryStatus,
+  now: number,
+): DirectoryFreshnessState {
+  if (now >= directory.validUntil) return "expired";
+  if (directory.validUntil - now <= 10) return "expiring";
+  return "fresh";
+}
+
+export function summarizeMakerCohort(
+  makers: readonly BrowserSafeMakerStatus[],
+  governed = makers.length,
+): MakerCohortSummary {
+  return Object.freeze({
+    governed,
+    invited: makers.filter((maker) => maker.invitationStatus !== "not-invited")
+      .length,
+    responded: makers.filter((maker) => maker.invitationStatus === "responded")
+      .length,
+    refused: makers.filter((maker) => maker.invitationStatus === "refused")
+      .length,
+    unavailable: makers.filter(
+      (maker) => maker.invitationStatus === "unavailable",
+    ).length,
+  });
 }
 
 export function normalizeRfqOperationsStatus(
@@ -192,6 +308,7 @@ export function normalizeRfqOperationsStatus(
       "reason",
       "claimsAndRefundsEnabled",
       "directory",
+      "cohort",
       "makers",
       "rawInventoryExposed",
     ],
@@ -234,7 +351,8 @@ export function normalizeRfqOperationsStatus(
     directory.validUntil,
     "Maker directory validity time",
   );
-  const makers = normalizeMakerCohort(status.makers);
+  const makers = normalizeMakerCohort(status.makers, observedAt);
+  const cohort = normalizeCohortSummary(status.cohort, makers);
   return Object.freeze({
     schema: LOCALNET_OPERATIONS_SCHEMA,
     environment: "localnet",
@@ -248,6 +366,7 @@ export function normalizeRfqOperationsStatus(
       checkpoint: "local-fixture-checkpoint-v1",
       validUntil: directoryValidUntil,
     }),
+    cohort,
     makers: Object.freeze(makers),
     rawInventoryExposed: false,
   });
@@ -262,19 +381,25 @@ export function operationsAvailability(
       mode: "unknown",
       reason: "Browser-safe localnet operations status is unavailable.",
       claimsAndRefundsEnabled: true,
+      asOf: now,
     });
   if (status.observedAt > now + 5) {
     return Object.freeze({
       mode: "unknown",
       reason: "Localnet operations status is dated in the future.",
       claimsAndRefundsEnabled: true,
+      asOf: now,
     });
   }
-  if (now >= status.validUntil || now >= status.directory.validUntil) {
+  if (
+    now >= status.validUntil ||
+    directoryFreshnessState(status.directory, now) !== "fresh"
+  ) {
     return Object.freeze({
       mode: "stale",
       reason: "Localnet incident or maker-directory status is stale.",
       claimsAndRefundsEnabled: true,
+      asOf: now,
       status,
     });
   }
@@ -282,6 +407,7 @@ export function operationsAvailability(
     mode: status.mode,
     reason: status.reason,
     claimsAndRefundsEnabled: true,
+    asOf: now,
     status,
   });
 }
@@ -303,9 +429,13 @@ export function gateRfqAction(
       reason: `RFQ ${action} is blocked while operations are ${availability.mode}. Claims and refunds remain available.`,
     });
   }
-  const eligibleMakers = availability.status?.makers.filter(
-    (maker) => maker.eligible,
-  ) ?? [];
+  const eligibleMakers =
+    availability.status?.makers.filter(
+      (maker) =>
+        maker.eligible &&
+        maker.keyStatus === "valid" &&
+        maker.keyValidUntil > availability.asOf,
+    ) ?? [];
   if (eligibleMakers.length === 0) {
     return Object.freeze({
       allowed: false,

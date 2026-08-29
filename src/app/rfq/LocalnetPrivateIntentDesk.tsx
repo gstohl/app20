@@ -81,6 +81,7 @@ import {
   localnetEconomicReview,
   operationsAvailability,
   type BrowserSafeMakerStatus,
+  type MakerDirectoryStatus,
 } from "./rfq-operations";
 import { useRfqOperations } from "./use-rfq-operations";
 import styles from "./rfq.module.css";
@@ -182,6 +183,8 @@ type QuotedIntent = {
   quote: SolverQuote;
   quotes: readonly SolverQuote[];
   cohort: readonly BrowserSafeMakerStatus[];
+  directory: MakerDirectoryStatus;
+  governedMakerCount: number;
   pair: MarketPair;
   surface: DeskSurface;
 };
@@ -230,9 +233,10 @@ type InvitationReview = Readonly<{
   expiresAt: number;
   sellAmount: bigint;
   minBuyAmount: bigint;
-  directoryEpoch: number;
-  directoryCheckpoint: string;
+  directoryEpoch: MakerDirectoryStatus["epoch"];
+  directoryCheckpoint: MakerDirectoryStatus["checkpoint"];
   directoryValidUntil: number;
+  governedMakerCount: number;
   cohort: readonly Readonly<{ makerId: string; keyId: string }>[];
   cohortBinding: string;
 }>;
@@ -385,11 +389,18 @@ export default function LocalnetPrivateIntentDesk({
   const [preflightNow, setPreflightNow] = useState(preflightObservedAt);
   const working = flow.kind === "working";
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setPreflightNow(Math.floor(Date.now() / 1_000)),
-      30_000,
-    );
-    return () => window.clearInterval(timer);
+    const tick = () => setPreflightNow(Math.floor(Date.now() / 1_000));
+    tick();
+    const delay = Math.max(0, 1_000 - (Date.now() % 1_000));
+    let interval: number | undefined;
+    const timeout = window.setTimeout(() => {
+      tick();
+      interval = window.setInterval(tick, 1_000);
+    }, delay);
+    return () => {
+      window.clearTimeout(timeout);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
   }, []);
   const privacyPreflight = useMemo(() => {
     try {
@@ -624,6 +635,7 @@ export default function LocalnetPrivateIntentDesk({
         directoryEpoch: status.directory.epoch,
         directoryCheckpoint: status.directory.checkpoint,
         directoryValidUntil: status.directory.validUntil,
+        governedMakerCount: status.cohort.governed,
         cohort,
         cohortBinding,
       });
@@ -911,6 +923,12 @@ export default function LocalnetPrivateIntentDesk({
         quote: selectedQuote,
         quotes: signedQuotes,
         cohort: quoteRequest.cohort,
+        directory: Object.freeze({
+          epoch: invitationReview.directoryEpoch,
+          checkpoint: invitationReview.directoryCheckpoint,
+          validUntil: invitationReview.directoryValidUntil,
+        }),
+        governedMakerCount: invitationReview.governedMakerCount,
         pair,
         surface,
       });
@@ -2459,7 +2477,12 @@ export default function LocalnetPrivateIntentDesk({
               </aside>
             ) : null}
             {invitationReview && operations.status ? (
-              <MakerCohortPanel makers={operations.status.makers} />
+              <MakerCohortPanel
+                makers={operations.status.makers}
+                directory={operations.status.directory}
+                governedMakerCount={operations.status.cohort.governed}
+                now={preflightNow}
+              />
             ) : null}
             {requestBlockedReason ? (
               <p role="alert">{requestBlockedReason}</p>
@@ -2593,6 +2616,9 @@ export default function LocalnetPrivateIntentDesk({
           <QuoteComparison
             quotes={quoted.quotes}
             cohort={quoted.cohort}
+            directory={quoted.directory}
+            governedMakerCount={quoted.governedMakerCount}
+            now={preflightNow}
             selectedReservationId={quoted.quote.reservationId}
             sellDecimals={quoted.pair.sell.decimals}
             buyDecimals={quoted.pair.buy.decimals}
@@ -2715,8 +2741,17 @@ export default function LocalnetPrivateIntentDesk({
 
       {flow.kind === "refused" ? (
         <div className={styles.deskRefusal} role="alert">
-          {latestCohort.length ? (
-            <MakerCohortPanel makers={latestCohort} />
+          {latestCohort.length && invitationReview ? (
+            <MakerCohortPanel
+              makers={latestCohort}
+              directory={Object.freeze({
+                epoch: invitationReview.directoryEpoch,
+                checkpoint: invitationReview.directoryCheckpoint,
+                validUntil: invitationReview.directoryValidUntil,
+              })}
+              governedMakerCount={invitationReview.governedMakerCount}
+              now={preflightNow}
+            />
           ) : null}
           <strong>No private fill</strong>
           <p>{flow.message}</p>

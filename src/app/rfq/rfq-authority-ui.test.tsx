@@ -47,6 +47,21 @@ function fundedRecord(
   });
   const funded = reviseRfqLifecycle(base, {
     state,
+    selectedQuote: {
+      version: "Quote V1",
+      solverId: "maker-a",
+      solverKey: "key-a",
+      nonce: "quote-77",
+      reservationId: "reservation-77",
+      spreadBps: 20,
+      pricingProvenance: "local-fixture",
+      quotedAt: NOW,
+      quoteExpiresAt: NOW + 300,
+      reservationExpiresAt: NOW + 400,
+      buyAmount: "200",
+      intentDigest: DIGEST,
+      signature: "signature",
+    },
     settlement: {
       version: "Localnet V2",
       dealId: "0x99",
@@ -116,6 +131,25 @@ describe("authority presentation in the record card", () => {
     );
     expect(markup).toContain("Funded · waiting for the maker");
   });
+
+  it("exposes copyable identifiers as local references on an unverified active record", () => {
+    const markup = renderToStaticMarkup(
+      <RfqActiveCard
+        record={fundedRecord("local-non-authoritative")}
+        now={NOW}
+      />,
+    );
+    for (const expected of [
+      "Copy RFQ ID 0x77",
+      "Copy Quote ID quote-77",
+      "Copy Reservation ID reservation-77",
+      "Copy Deal ID 0x99",
+    ]) {
+      expect(markup).toContain(expected);
+    }
+    expect(markup).toContain("Local reference · not settlement authority");
+    expect(markup).not.toContain("Localnet chain-verified value");
+  });
 });
 
 describe("activity records", () => {
@@ -125,7 +159,11 @@ describe("activity records", () => {
     );
     expect(markup).toContain("<h3");
     expect(markup).toContain("STRK → USDC");
-    expect(markup).toMatch(/Copy RFQ ID [^<]*0x77/);
+    expect(markup).toContain("Copy RFQ ID 0x77");
+    expect(markup).toContain("Copy Quote ID quote-77");
+    expect(markup).toContain("Copy Reservation ID reservation-77");
+    expect(markup).toContain("Copy Deal ID 0x99");
+    expect(markup).toContain("Local reference · not settlement authority");
   });
 
   it("does not offer deletion for a terminal record needing reconciliation", () => {
@@ -223,6 +261,13 @@ describe("settlement evidence panel", () => {
     expect(markup).toContain("No exportable receipt is available");
     expect(markup).toContain("Localnet-only modeled authority");
     expect(markup).toContain("Sepolia/Mainnet production authority remains unavailable");
+    const activityMarkup = renderToStaticMarkup(
+      <RfqActivity records={[live]} />,
+    );
+    expect(activityMarkup).toContain(
+      "Localnet chain-verified value · same-devnet fixture only",
+    );
+    expect(activityMarkup).toContain("Local reference · not settlement authority");
     expect(markup).not.toContain("No authoritative receipt");
     expect(markup).not.toContain("configured-chain verifier is unavailable");
   });

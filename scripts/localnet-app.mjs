@@ -85,6 +85,7 @@ const LOCALNET_QUOTE_RESERVATION_SECONDS = 10 * 60;
 const RFQ_OPERATIONS_STATUS_SCHEMA = "app20/rfq-operations-status/v1";
 const RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS = 30;
 const RFQ_OPERATIONS_STARTED_AT = Math.floor(Date.now() / 1_000);
+const RFQ_MAKER_KEY_VALID_UNTIL = RFQ_OPERATIONS_STARTED_AT + 24 * 60 * 60;
 const RFQ_OPERATIONS_MODE = process.env.APP20_LOCALNET_RFQ_MODE ?? "running";
 if (!["running", "paused", "drain-only"].includes(RFQ_OPERATIONS_MODE)) {
   fail("APP20_LOCALNET_RFQ_MODE must be running, paused, or drain-only.");
@@ -1374,23 +1375,36 @@ async function startApi({
     }
   };
 
-  function browserSafeMakerStatus(client) {
+  function browserSafeMakerStatus(
+    client,
+    observedAt = Math.floor(Date.now() / 1_000),
+  ) {
     const available = makerProcesses.get(client.solverId)?.exitCode === null;
+    const keyValid = observedAt < RFQ_MAKER_KEY_VALID_UNTIL;
     return {
       makerId: client.solverId,
       keyId: client.solverKey,
+      keyStatus: keyValid ? "valid" : "expired",
+      keyValidUntil: RFQ_MAKER_KEY_VALID_UNTIL,
       invitationStatus: available ? "not-invited" : "unavailable",
       capacityBand: available ? "medium" : "unknown",
-      eligible: available && RFQ_OPERATIONS_CONTROL.mode === "running",
-      rationale: available
-        ? RFQ_OPERATIONS_CONTROL.mode === "running"
-          ? "Eligible under the named localnet fixture policy; capacity is a coarse band, not inventory proof."
-          : `Excluded while local operations are ${RFQ_OPERATIONS_CONTROL.mode}; recovery remains enabled.`
-        : "Excluded because this local maker process is unavailable.",
+      eligible:
+        available && keyValid && RFQ_OPERATIONS_CONTROL.mode === "running",
+      rationale: !keyValid
+        ? "Excluded because the published local fixture maker key expired."
+        : available
+          ? RFQ_OPERATIONS_CONTROL.mode === "running"
+            ? "Eligible under the named localnet fixture policy; capacity is a coarse band, not inventory proof."
+            : `Excluded while local operations are ${RFQ_OPERATIONS_CONTROL.mode}; recovery remains enabled.`
+          : "Excluded because this local maker process is unavailable.",
     };
   }
 
   function assertRfqStartAllowed(action) {
+    if (Math.floor(Date.now() / 1_000) >= RFQ_MAKER_KEY_VALID_UNTIL)
+      fail(
+        `${action} is blocked because the published local fixture maker keys expired; recovery remains enabled.`,
+      );
     if (authorityPipelineFailed)
       fail(
         `${action} is blocked because local chain/maker reconciliation is fail-stopped; recovery remains verification-only.`,
@@ -1410,6 +1424,12 @@ async function startApi({
         url.pathname === "/rfq/operations/status"
       ) {
         const observedAt = Math.floor(Date.now() / 1_000);
+        const makers = makerClients.map((client) =>
+          browserSafeMakerStatus(client, observedAt),
+        );
+        const invited = makers.filter(
+          (maker) => maker.invitationStatus !== "not-invited",
+        ).length;
         jsonResponse(response, 200, {
           result: {
             schema: RFQ_OPERATIONS_STATUS_SCHEMA,
@@ -1424,7 +1444,20 @@ async function startApi({
               checkpoint: "local-fixture-checkpoint-v1",
               validUntil: observedAt + RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS,
             },
-            makers: makerClients.map(browserSafeMakerStatus),
+            cohort: {
+              governed: makers.length,
+              invited,
+              responded: makers.filter(
+                (maker) => maker.invitationStatus === "responded",
+              ).length,
+              refused: makers.filter(
+                (maker) => maker.invitationStatus === "refused",
+              ).length,
+              unavailable: makers.filter(
+                (maker) => maker.invitationStatus === "unavailable",
+              ).length,
+            },
+            makers,
             rawInventoryExposed: false,
           },
         });
@@ -1870,6 +1903,8 @@ async function startApi({
             cohort.push({
               makerId: client.solverId,
               keyId: client.solverKey,
+              keyStatus: "valid",
+              keyValidUntil: RFQ_MAKER_KEY_VALID_UNTIL,
               invitationStatus: declined ? "refused" : "unavailable",
               capacityBand: declined ? "none" : "unknown",
               eligible: false,
@@ -1898,6 +1933,8 @@ async function startApi({
           cohort.push({
             makerId: client.solverId,
             keyId: client.solverKey,
+            keyStatus: "valid",
+            keyValidUntil: RFQ_MAKER_KEY_VALID_UNTIL,
             invitationStatus: "responded",
             capacityBand: "medium",
             eligible: true,

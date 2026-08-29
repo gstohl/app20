@@ -3,6 +3,10 @@ import { rfqAuthorityPresentation } from "./rfq-authority";
 import { rfqStateLabel } from "./rfq-state-label";
 import { RFQ_RESUME_AUTHORITY_LABEL, lifecycleMayForget, type RfqAttemptPhase, type RfqLifecycleRecord } from "./rfq-lifecycle";
 import { AuthorityStrip } from "./RfqAuthorityStrip";
+import CopyableId, {
+  LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY,
+  LOCAL_IDENTIFIER_AUTHORITY,
+} from "./CopyableId";
 import RfqPhaseAction from "./RfqPhaseAction";
 import styles from "./rfq.module.css";
 
@@ -40,6 +44,10 @@ export default function RfqActiveCard({ record, now, busy = false, actionsDisabl
   onRemove?: (record: RfqLifecycleRecord) => void;
 }) {
   const authority = rfqAuthorityPresentation(record);
+  const dealAuthority =
+    authority.status === "authoritative"
+      ? LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY
+      : LOCAL_IDENTIFIER_AUTHORITY;
   const selected = localnetResumeDecision(record, now);
   const blocked = actionsDisabled || authority.blocksValueActions;
   const next = blocked && selected.action !== "none"
@@ -63,10 +71,10 @@ export default function RfqActiveCard({ record, now, busy = false, actionsDisabl
     <details className={styles.activeCardDetails}>
       <summary>Record details</summary>
       <dl>
-        <div><dt>RFQ</dt><dd><code>{record.rfqId}</code></dd></div>
-        <div><dt>Quote</dt><dd>{record.selectedQuote ? `${record.selectedQuote.version} · ${record.selectedQuote.spreadBps} bps` : "not selected"}</dd></div>
-        <div><dt>Reservation</dt><dd><code>{record.selectedQuote?.reservationId ?? "unavailable"}</code></dd></div>
-        <div><dt>Deal</dt><dd><code>{record.settlement?.dealId ?? "not funded"}</code></dd></div>
+        <div><dt>RFQ</dt><dd><CopyableId value={record.rfqId} label="RFQ ID" /></dd></div>
+        <div><dt>Quote</dt><dd>{record.selectedQuote ? <><CopyableId value={record.selectedQuote.nonce} label="Quote ID" /> · {record.selectedQuote.version} · {record.selectedQuote.spreadBps} bps</> : "not selected"}</dd></div>
+        <div><dt>Reservation</dt><dd>{record.selectedQuote ? <CopyableId value={record.selectedQuote.reservationId} label="Reservation ID" /> : "unavailable"}</dd></div>
+        <div><dt>Deal</dt><dd>{record.settlement ? <CopyableId value={record.settlement.dealId} label="Deal ID" authority={dealAuthority} /> : "not funded"}</dd></div>
         <div><dt>Settlement deadline</dt><dd>{record.settlement ? `${new Date(record.settlement.deadline * 1_000).toISOString()} · ${Math.max(0, record.settlement.deadline - now)}s remaining` : "not funded"}</dd></div>
         <div><dt>Observation</dt><dd>{record.latestObservation?.stage ?? "none"} · {age(record.latestObservation?.observedAt, now)}</dd></div>
         <div><dt>Lifecycle state</dt><dd><code>{record.state}</code></dd></div>

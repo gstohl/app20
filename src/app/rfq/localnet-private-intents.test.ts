@@ -227,6 +227,8 @@ describe("localnet private-intent adapter", () => {
                   {
                     makerId: "app20-localnet-solver",
                     keyId: "app20-localnet-solver/ecdsa-p256-v1",
+                    keyStatus: "valid",
+                    keyValidUntil: 1_800_003_600,
                     invitationStatus: "responded",
                     capacityBand: "medium",
                     eligible: true,
@@ -303,10 +305,19 @@ describe("localnet private-intent adapter", () => {
                 checkpoint: "local-fixture-checkpoint-v1",
                 validUntil: observedAt + 30,
               },
+              cohort: {
+                governed: 1,
+                invited: 0,
+                responded: 0,
+                refused: 0,
+                unavailable: 0,
+              },
               makers: [
                 {
                   makerId: "app20-localnet-solver",
                   keyId: "app20-localnet-solver/ecdsa-p256-v1",
+                  keyStatus: "valid",
+                  keyValidUntil: observedAt + 3_600,
                   invitationStatus: "not-invited",
                   capacityBand: "medium",
                   eligible: true,

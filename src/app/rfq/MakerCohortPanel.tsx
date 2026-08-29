@@ -1,5 +1,10 @@
 import type { SolverQuote } from "@app20/private-intents";
-import type { BrowserSafeMakerStatus } from "./rfq-operations";
+import {
+  directoryFreshnessState,
+  summarizeMakerCohort,
+  type BrowserSafeMakerStatus,
+  type MakerDirectoryStatus,
+} from "./rfq-operations";
 import RfqCountdown from "./RfqCountdown";
 import styles from "./rfq.module.css";
 
@@ -20,8 +25,22 @@ function effectiveRate(
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
+function keyPresentation(maker: BrowserSafeMakerStatus, now: number): string {
+  if (maker.keyStatus === "rotated")
+    return "Rotated · excluded from eligibility";
+  if (maker.keyStatus === "revoked")
+    return "Revoked · excluded from eligibility";
+  if (maker.keyStatus === "expired" || now >= maker.keyValidUntil)
+    return "Expired · excluded from eligibility";
+  if (maker.keyValidUntil - now <= 5 * 60) return "Valid · expiring soon";
+  return "Valid";
+}
+
 export default function MakerCohortPanel({
   makers,
+  directory,
+  governedMakerCount = makers.length,
+  now = Math.floor(Date.now() / 1_000),
   quotes = [],
   selectedReservationId,
   sellDecimals,
@@ -31,6 +50,9 @@ export default function MakerCohortPanel({
   onSelectedExpire,
 }: {
   makers: readonly BrowserSafeMakerStatus[];
+  directory?: MakerDirectoryStatus;
+  governedMakerCount?: number;
+  now?: number;
   quotes?: readonly SolverQuote[];
   selectedReservationId?: string;
   sellDecimals?: number;
@@ -40,11 +62,49 @@ export default function MakerCohortPanel({
   onSelectedExpire?: () => void;
 }) {
   const quoteByMaker = new Map(quotes.map((quote) => [quote.solverId, quote]));
+  const summary = summarizeMakerCohort(makers, governedMakerCount);
+  const freshness = directory
+    ? directoryFreshnessState(directory, now)
+    : "unavailable";
   return (
     <section aria-labelledby="maker-cohort-title">
       <h3 id="maker-cohort-title">Invited-maker cohort</h3>
       <p>
-        Every invited local fixture maker is shown. Capacity is a coarse
+        Governed makers {summary.governed} · invited {summary.invited} ·
+        responded {summary.responded} · refused {summary.refused} · unavailable{" "}
+        {summary.unavailable}.
+      </p>
+      <dl>
+        <div>
+          <dt>Maker-directory epoch</dt>
+          <dd>{directory?.epoch ?? "Unavailable"}</dd>
+        </div>
+        <div>
+          <dt>Maker-directory checkpoint</dt>
+          <dd>
+            {directory ? <code>{directory.checkpoint}</code> : "Unavailable"}
+          </dd>
+        </div>
+        <div>
+          <dt>Directory freshness</dt>
+          <dd>
+            <strong>
+              {freshness === "fresh"
+                ? "Fresh"
+                : freshness === "expiring"
+                  ? "Expiring · stale soon; refresh before use"
+                  : freshness === "expired"
+                    ? "Expired · stale; not eligible"
+                    : "Unavailable · stale; not eligible"}
+            </strong>{" "}
+            {directory
+              ? `· valid through ${new Date(directory.validUntil * 1_000).toISOString()}`
+              : null}
+          </dd>
+        </div>
+      </dl>
+      <p>
+        Every governed local fixture maker is shown. Capacity is a coarse
         browser-safe band, never a raw balance or inventory proof.
       </p>
       {quotes.length ? (
@@ -56,9 +116,16 @@ export default function MakerCohortPanel({
       <ul className={styles.makerCohort} aria-label="Invited maker cohort">
         {makers.map((maker) => {
           const quote = quoteByMaker.get(maker.makerId);
-          const selected = quote?.reservationId === selectedReservationId;
+          const selected = Boolean(
+            quote && quote.reservationId === selectedReservationId,
+          );
+          const keyEligible =
+            maker.keyStatus === "valid" && now < maker.keyValidUntil;
           const eligible =
-            maker.eligible && (quotes.length === 0 || Boolean(quote));
+            maker.eligible &&
+            keyEligible &&
+            freshness === "fresh" &&
+            (quotes.length === 0 || Boolean(quote));
           return (
             <li
               key={maker.makerId}
@@ -91,9 +158,17 @@ export default function MakerCohortPanel({
               </p>
               <dl>
                 <div>
-                  <dt>Key</dt>
+                  <dt>Key ID</dt>
                   <dd>
                     <code>{maker.keyId}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Key status</dt>
+                  <dd>
+                    <strong>{keyPresentation(maker, now)}</strong> · valid
+                    through{" "}
+                    {new Date(maker.keyValidUntil * 1_000).toISOString()}
                   </dd>
                 </div>
                 <div>

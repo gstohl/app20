@@ -1,6 +1,7 @@
 import type { RefObject } from "react";
 import { APP20_TOKEN_REGISTRY_REVISION } from "@/lib/token-registry";
 import { FINAL_REVIEW_ENVIRONMENT, LEGACY_ESCROW_WARNING, type RfqFinalReviewSnapshot, type RfqFinalReviewTerms } from "./rfq-final-review";
+import CopyableId from "./CopyableId";
 import RfqCountdown from "./RfqCountdown";
 import styles from "./rfq.module.css";
 
@@ -67,10 +68,11 @@ export default function RfqFinalReview({ terms, onAccept, onDecline, disabled, d
         <div><dt>Exact sell</dt><dd>{terms.sellAmount.toString()} base units · {terms.sellAddress} · {terms.sellDecimals} decimals</dd></div>
         <div><dt>Exact receive</dt><dd>{terms.buyAmount.toString()} base units · {terms.buyAddress} · {terms.buyDecimals} decimals</dd></div>
         <div><dt>Registry</dt><dd>{terms.registryRevision || APP20_TOKEN_REGISTRY_REVISION}</dd></div>
-        <div><dt>RFQ / quote nonce</dt><dd><code>{terms.rfqId}</code> · <code>{terms.quoteNonce}</code></dd></div>
+        <div><dt>RFQ ID</dt><dd><CopyableId value={terms.rfqId} label="RFQ ID" /></dd></div>
+        <div><dt>Quote ID</dt><dd><CopyableId value={terms.quoteNonce} label="Quote ID" /></dd></div>
         <div><dt>Quote digest</dt><dd>{terms.quoteDigest ? <code>{terms.quoteDigest}</code> : "Unavailable on active local Quote V1 · not inferred"}</dd></div>
         <div><dt>Intent digest bound by maker signature</dt><dd><code>{terms.intentDigest}</code></dd></div>
-        <div><dt>Reservation / fence</dt><dd><code>{terms.reservationId}</code> · {terms.reservationFence?.toString() ?? "V1 fence unavailable"}</dd></div>
+        <div><dt>Reservation / fence</dt><dd><CopyableId value={terms.reservationId} label="Reservation ID" /> · {terms.reservationFence?.toString() ?? "V1 fence unavailable"}</dd></div>
         <div><dt>Maker key</dt><dd>{terms.makerKeyId}</dd></div>
         <div><dt>Maker spread versus reference</dt><dd>{terms.spreadBps} bps · {humanUnits(terms.referenceGrossBuyAmount - terms.buyAmount, terms.buyDecimals)} {terms.buySymbol} versus named fixture reference</dd></div>
         <div><dt>Public STRK available for fee</dt><dd>{snapshot?.publicFeeBalance === undefined ? "unavailable" : `${snapshot.publicFeeBalance.toString()} base units · ${humanUnits(snapshot.publicFeeBalance, 18)} STRK`}</dd></div>

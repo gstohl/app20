@@ -21,6 +21,7 @@ export function AuthorityStrip({
                         className={styles.authorityStrip}
                         data-tone={presentation.tone}
                         role={critical ? "alert" : "status"}
+                        aria-label={`Settlement authority: ${presentation.label}`}
                 >
                         <Heading className={styles.authorityStripLabel}>
                                 {presentation.label}

@@ -1,6 +1,6 @@
 "use client";
 
-import { createStore, type Store } from "@starknet-io/get-starknet-discovery";
+import type { Store } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useRef, useState } from "react";
@@ -56,19 +56,64 @@ export default function SelectWallet({
   const [error, setError] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [wallets, setWallets] = useState<WalletWithStarknetFeatures[]>([]);
+  const [discoveryState, setDiscoveryState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
+  const discoveryStoreRef = useRef<Store | null>(null);
+  const discoveryLoadRef = useRef<Promise<void> | null>(null);
+  const discoveryUnsubscribeRef = useRef<(() => void) | null>(null);
+  const discoveryMountedRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const firstWalletRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const pickerWasOpen = useRef(false);
 
-  // Create one v6 discovery store and disable EIP-1193 adapters so MetaMask is
-  // not probed. The selected wallet is the only one that receives a request.
+  // Discovery includes the optional virtual-wallet/module-federation runtime.
+  // Load it only after explicit connect intent so unrelated routes never fetch
+  // or execute that dependency chain. EIP-1193 adapters remain disabled and
+  // the selected wallet is still the only wallet that receives a request.
+  async function loadWalletDiscovery(): Promise<void> {
+    if (discoveryStoreRef.current) return;
+    if (discoveryLoadRef.current) return discoveryLoadRef.current;
+
+    setDiscoveryState("loading");
+    const pending = import("@starknet-io/get-starknet-discovery")
+      .then(({ createStore }) => {
+        const store: Store = createStore({ eip1193Adapters: [] });
+        const unsubscribe = store.subscribe((next) => {
+          if (discoveryMountedRef.current) setWallets(next.slice());
+        });
+        if (!discoveryMountedRef.current) {
+          unsubscribe();
+          return;
+        }
+        discoveryStoreRef.current = store;
+        discoveryUnsubscribeRef.current = unsubscribe;
+        setWallets(store.getWallets().slice());
+        setDiscoveryState("ready");
+      })
+      .catch(() => {
+        if (!discoveryMountedRef.current) return;
+        setDiscoveryState("error");
+        setError(
+          "Wallet discovery could not load. Close this dialog and try connecting again.",
+        );
+        discoveryLoadRef.current = null;
+      });
+    discoveryLoadRef.current = pending;
+    return pending;
+  }
+
   useEffect(() => {
-    const store: Store = createStore({ eip1193Adapters: [] });
-    setWallets(store.getWallets().slice());
-    const unsubscribe = store.subscribe((next) => setWallets(next.slice()));
-    return unsubscribe;
+    discoveryMountedRef.current = true;
+    return () => {
+      discoveryMountedRef.current = false;
+      discoveryUnsubscribeRef.current?.();
+      discoveryUnsubscribeRef.current = null;
+      discoveryStoreRef.current = null;
+      discoveryLoadRef.current = null;
+    };
   }, []);
 
   // Keep the app store in sync with wallet-standard account changes. Extension
@@ -196,9 +241,9 @@ export default function SelectWallet({
     try {
       assertWalletOperationPolicy(selectedWallet, providerIndex, "connect");
     } catch (error) {
-      await selectedWallet.features["standard:disconnect"].disconnect().catch(
-        () => undefined,
-      );
+      await selectedWallet.features["standard:disconnect"]
+        .disconnect()
+        .catch(() => undefined);
       throw error;
     }
     const provider = myFrontendProviders[providerIndex];
@@ -236,6 +281,7 @@ export default function SelectWallet({
   function openPicker() {
     setError("");
     setPickerOpen(true);
+    void loadWalletDiscovery();
   }
 
   async function selectWallet(wallet: WalletWithStarknetFeatures) {
@@ -283,7 +329,11 @@ export default function SelectWallet({
           </button>
         </div>
 
-        {pickable.length ? (
+        {discoveryState === "loading" ? (
+          <div className={styles.walletHint} role="status">
+            Loading available wallets…
+          </div>
+        ) : pickable.length ? (
           <div className={styles.walletList}>
             {pickable.map((wallet, index) => (
               <button
@@ -301,18 +351,22 @@ export default function SelectWallet({
               </button>
             ))}
           </div>
-        ) : (
+        ) : discoveryState === "ready" ? (
           <div className={styles.walletHint}>
             Ready Wallet Standard was not detected. Install{" "}
             <a href="https://www.ready.co/" target="_blank" rel="noreferrer">
               Ready
-            </a>
-            {" "}for the Mainnet rail, or use the separate Privy rail on
-            Sepolia. Privacy actions still require the dapp-facing STRK20 API.
+            </a>{" "}
+            for the Mainnet rail, or use the separate Privy rail on Sepolia.
+            Privacy actions still require the dapp-facing STRK20 API.
           </div>
-        )}
+        ) : null}
 
-        {error ? <div className={styles.errorText}>{error}</div> : null}
+        {error ? (
+          <div className={styles.errorText} role="alert">
+            {error}
+          </div>
+        ) : null}
       </div>
     </div>
   ) : null;
@@ -326,10 +380,11 @@ export default function SelectWallet({
             disconnect();
             setConnectionNotice("");
           }}
-          title="Disconnect"
+          aria-label="Disconnect wallet"
+          title="Disconnect wallet"
         >
           <span className={styles.addrDot} />
-          {shortAddr}
+          <span className={styles.addrAddress}>{shortAddr}</span>
           <span className={styles.addrDisconnect}>Disconnect</span>
         </button>
       );

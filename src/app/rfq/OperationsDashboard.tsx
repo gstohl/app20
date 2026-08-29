@@ -51,7 +51,12 @@ export default function OperationsDashboard() {
           <h2>Directory checkpoint</h2>
           <p>Epoch {status.directory.epoch} · {status.directory.checkpoint} · valid until {new Date(status.directory.validUntil * 1_000).toISOString()}</p>
         </section>
-        <MakerCohortPanel makers={status.makers}/>
+        <MakerCohortPanel
+          makers={status.makers}
+          directory={status.directory}
+          governedMakerCount={status.cohort.governed}
+          now={availability.asOf}
+        />
       </> : <p role="alert">Browser-safe operations status is unknown. New requests and funding are blocked; claim and refund recovery remain available.</p>}
     </section>
   </main>;

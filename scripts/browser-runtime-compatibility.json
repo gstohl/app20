@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "directEval": {
+    "package": "@module-federation/sdk",
+    "version": "0.12.0",
+    "sourcePath": "dist/index.esm.js:680",
+    "dependencyChain": [
+      "src/app/components/client/WalletHandle/SelectWallet.tsx",
+      "@starknet-io/get-starknet-discovery@6.0.3",
+      "@starknet-io/get-starknet-virtual-wallet@6.0.4",
+      "@module-federation/runtime@0.12.0",
+      "@module-federation/sdk@0.12.0"
+    ],
+    "emittedChunkMarkers": [
+      "__FEDERATION__",
+      "FederationHost",
+      "remoteEntry"
+    ],
+    "executionBoundary": "The dependency is fetched only after the user opens the Ready wallet picker. Its direct eval of the require identifier ships in that lazily loaded wallet-discovery chunk, but the emitted-artifact check confirms that chunk is absent from the initial module graph and APP20 does not invoke the dormant Node CommonJS loader path during route load or wallet enumeration.",
+    "residualRisk": "The shipped lazy wallet-discovery chunk contains direct eval. The production CSP deliberately omits 'unsafe-eval', so the browser would block that expression if the dormant dependency path were ever invoked. The build fails if direct eval enters the initial graph or appears outside the reviewed lazy chunk; a future package or code-path change still requires compatibility review."
+  },
+  "externalizedBuiltins": [
+    {
+      "builtin": "async_hooks",
+      "package": "@starkware-libs/starknet-privacy-sdk",
+      "version": "0.14.3-rc.5",
+      "sourcePath": "dist/utils/logging.js",
+      "browserPath": "The SDK is loaded only by the lazy Privy recovery/STRK20 module. async_hooks belongs to its server logging context; emitted browser chunks must contain no builtin import."
+    },
+    {
+      "builtin": "crypto",
+      "package": "@hpke/common",
+      "version": "1.10.1",
+      "sourcePaths": [
+        "esm/src/algorithm.js",
+        "esm/src/utils/misc.js"
+      ],
+      "browserPath": "APP20's RFC 9180 browser path uses globalThis.crypto.subtle. The package's Node crypto import is a server fallback; emitted browser chunks must contain no builtin import."
+    }
+  ]
+}

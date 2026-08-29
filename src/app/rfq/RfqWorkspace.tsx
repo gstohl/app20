@@ -374,7 +374,8 @@ export default function RfqWorkspace() {
       !address ||
       !chain ||
       !workspaceScopeIsReady(loadedScope, currentScope, loadState)
-    ) return;
+    )
+      return;
     let active = true;
     const refresh = () => {
       const now = Date.now();
@@ -396,7 +397,8 @@ export default function RfqWorkspace() {
           record.evidenceAuthority.status === "reorged" ||
           record.evidenceAuthority.status === "quarantined" ||
           nextRefreshAt > now
-        ) continue;
+        )
+          continue;
         // Fence concurrent reads and retry both success and failure. Authority
         // reads are verification-only and never submit or resubmit value.
         authorityRefreshesRef.current.set(record.rfqId, now + 5_000);
@@ -418,7 +420,15 @@ export default function RfqWorkspace() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [address, chain, currentScope, loadState, loadedScope, providerIndex, records]);
+  }, [
+    address,
+    chain,
+    currentScope,
+    loadState,
+    loadedScope,
+    providerIndex,
+    records,
+  ]);
 
   async function persist(
     record: RfqLifecycleRecord,
@@ -1044,6 +1054,8 @@ export default function RfqWorkspace() {
             <Link to="/mail/inbox">Mail · coordination only</Link>
             {" · "}
             <Link to="/cross-chain-review">Cross-chain dry review</Link>
+            {" · "}
+            <Link to="/recovery/privy">Privy recovery</Link>
           </nav>
         </section>
       ) : null}

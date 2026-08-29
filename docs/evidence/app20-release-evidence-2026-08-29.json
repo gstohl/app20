@@ -1,0 +1,193 @@
+{
+  "domain": "app20/release-evidence/v2",
+  "version": 2,
+  "capturedAt": "2026-08-29T19:23:00Z",
+  "source": {
+    "branch": "main",
+    "parentCommit": "e4084f301a3d4f4ade312d443b8a00e65f674871",
+    "rollbackCommit": "4e32ef1ceb932610a0fd98ff56f37ef25464816c",
+    "changeSetState": "uncommitted-at-capture",
+    "deliveringCommit": null,
+    "packageLockSha256": "01751f729d5505b3bb8f8d03b14a34560200ff58b362010961a27d7063928ceb",
+    "immutableSource": false,
+    "note": "The parent and rollback targets are Git commits. The validated follow-up change set, including this record, was uncommitted at capture time; this file cannot attest its eventual delivering commit, which must be recorded externally. This self-reported local record is not CI provenance, a release signature, independent reproduction, audit acceptance, or production authorization."
+  },
+  "scope": {
+    "status": "build-gated-localnet-demonstration-only",
+    "releaseReady": false,
+    "publicNetworkRfqEnabled": false,
+    "publicNetworkValueMovementAuthorized": false,
+    "sepoliaRfqEnabled": false,
+    "mainnetRfqEnabled": false,
+    "deploymentAuthorized": false
+  },
+  "sbom": {
+    "path": "docs/evidence/app20-sbom.cdx.json",
+    "format": "CycloneDX",
+    "specVersion": "1.5",
+    "sha256": "55fd5aa3437aaf5c9888c7baba070cbf1cf1a5c6727c5e128d1a1a71753febdb",
+    "componentCount": 755,
+    "generator": "node scripts/generate-sbom.mjs",
+    "deterministic": true,
+    "timestampOmitted": true,
+    "serialNumberOmitted": true
+  },
+  "validation": [
+    {
+      "command": "node --test scripts/check-dependency-review.test.mjs scripts/check-build-determinism.test.mjs scripts/verify-production-csp.test.mjs",
+      "result": "pass",
+      "evidence": "16 script tests passed for canonical dependency source identity, integrity/SBOM policy, pure artifact-manifest comparison, real Worker asset-path CSP probing, and exact violation reconciliation; this uncommitted record is not commit-bound provenance"
+    },
+    {
+      "command": "node scripts/generate-sbom.mjs",
+      "result": "pass",
+      "evidence": "generated 755 CycloneDX 1.5 components from package-lock.json without network access"
+    },
+    {
+      "command": "node scripts/check-dependency-review.mjs",
+      "result": "pass",
+      "evidence": "external registry entries matched their own canonical package-name/version tarball URLs, the exact vendored tarball matched its pinned SHA-256, and committed SBOM bytes matched fresh generation"
+    },
+    {
+      "command": "node scripts/check-build-determinism.mjs",
+      "result": "pass",
+      "evidence": "each pass rebuilt @app20/privy before Vite; 116 workspace package files and 294 isolated Vite outputs byte-matched on one builder"
+    },
+    {
+      "command": "node scripts/verify-production-csp.mjs",
+      "result": "pass",
+      "evidence": "8 routes were driven through createRelayHandler() with the built-asset binding; the observed connect-src violation matched the baseline's exact blocked URI and occurrence count"
+    },
+    {
+      "command": "npm run build",
+      "result": "pass",
+      "evidence": "typechecks, Vite build, enforced per-chunk budgets, 294-file browser-leak scan, and release-deny policy passed"
+    },
+    {
+      "command": "npm run test:all",
+      "result": "pass",
+      "evidence": "root, workspace, offline evidence, localnet control, release-deny, and supply-chain suites passed"
+    },
+    {
+      "command": "npm run test:ui",
+      "result": "pass",
+      "evidence": "16 same-devnet browser journeys passed, including accessibility, reflow, and responsive hierarchy evidence"
+    }
+  ],
+  "gates": [
+    {
+      "id": "immutable-source",
+      "status": "blocked-current-change-set-uncommitted",
+      "reason": "the parent baseline is e4084f301a3d4f4ade312d443b8a00e65f674871 with rollback target 4e32ef1ceb932610a0fd98ff56f37ef25464816c, but this validated follow-up change set was uncommitted at capture time and its delivering commit can only be attested externally"
+    },
+    {
+      "id": "dependency-review",
+      "status": "pass-local",
+      "reason": "registry lock entries are integrity-pinned and bound to their own canonical package-name/version tarball URLs; the exact repository-vendored tarball matches its pinned SHA-256; the deterministic SBOM byte-matches"
+    },
+    {
+      "id": "build-determinism",
+      "status": "pass-local",
+      "reason": "two production-shaped passes on one builder each rebuilt @app20/privy before Vite, and both package and app artifacts byte-matched; this is repeatability on a single machine, not independent two-builder reproduction"
+    },
+    {
+      "id": "ci-provenance",
+      "status": "blocked",
+      "reason": "no CI attestation is attached to an externally attested delivering commit and SBOM"
+    },
+    {
+      "id": "release-signing",
+      "status": "blocked",
+      "reason": "no release signing key or signature exists"
+    },
+    {
+      "id": "two-independent-builders",
+      "status": "blocked",
+      "reason": "no two-independent-builder artifact reproduction record exists"
+    },
+    {
+      "id": "pure-protocol-models",
+      "status": "pass-existing-local-evidence",
+      "reason": "repository release-gate documentation records app-code model coverage; it was not rerun for this capture"
+    },
+    {
+      "id": "localnet-maker-demonstration",
+      "status": "pass-existing-local-evidence",
+      "reason": "repository release-gate documentation records same-devnet fixture evidence only; it was not rerun for this capture"
+    },
+    {
+      "id": "production-transport-custody",
+      "status": "blocked",
+      "reason": "public transport and execution remain immutable-off; independent operators, production custody, replicated reservations, and reconciliation are absent"
+    },
+    {
+      "id": "independent-security-review",
+      "status": "blocked",
+      "reason": "no accepted external Cairo, protocol, transport, maker-service, browser, custody, or operations review exists"
+    },
+    {
+      "id": "production-operational-controls",
+      "status": "blocked",
+      "reason": "production monitoring, response, recovery, reconciliation, key, and operator controls are absent"
+    },
+    {
+      "id": "sepolia-soak",
+      "status": "blocked",
+      "reason": "no canonical bounded real-token two-independent-maker soak exists"
+    },
+    {
+      "id": "tiny-mainnet",
+      "status": "blocked",
+      "reason": "no separate authorization, audited canonical contracts, independent makers, hard caps, or verified lifecycle exists"
+    },
+    {
+      "id": "strk20-submission",
+      "status": "blocked",
+      "reason": "strk20.json has no accepted transaction, contract, demo URL, or video evidence"
+    }
+  ],
+  "stillBlockedP0": [
+    { "id": "P0-01", "reason": "production RFQ is not mounted" },
+    { "id": "P0-02", "reason": "no production-durable taker lifecycle" },
+    { "id": "P0-03", "reason": "no production final value review" },
+    { "id": "P0-04", "reason": "no production authoritative completion" },
+    { "id": "P0-05", "reason": "canonical App20Escrow is not implemented" },
+    { "id": "P0-06", "reason": "canonical App20Claim is not implemented" },
+    { "id": "P0-07", "reason": "no production ABI or deployment identity" },
+    { "id": "P0-08", "reason": "claim and timeout calldata remains unresolved" },
+    { "id": "P0-09", "reason": "contract assurance and independent reproduction are absent" },
+    { "id": "P0-10", "reason": "live reviewed USDC is unconfigured" },
+    { "id": "P0-11", "reason": "production pricing policy is absent" },
+    { "id": "P0-12", "reason": "production economic controls are absent" },
+    { "id": "P0-13", "reason": "governed maker directory is absent" },
+    { "id": "P0-14", "reason": "independent maker operators are absent" },
+    { "id": "P0-15", "reason": "production key custody is absent" },
+    { "id": "P0-16", "reason": "reservation and replay state are not production durable" },
+    { "id": "P0-17", "reason": "RFQ relay and Durable Object transport are undeployed" },
+    { "id": "P0-18", "reason": "capability issuance is undefined" },
+    { "id": "P0-19", "reason": "HPKE is not production-operational" },
+    { "id": "P0-20", "reason": "no constructible production configured-chain verifier exists" },
+    { "id": "P0-21", "reason": "no generated pinned-ABI decoder exists" },
+    { "id": "P0-22", "reason": "no approved independent RPC quorum exists" },
+    { "id": "P0-23", "reason": "RPC egress is not hardened" },
+    { "id": "P0-24", "reason": "no durable production finality and reorg authority exists" },
+    { "id": "P0-25", "reason": "no production settlement reconciliation exists" },
+    { "id": "P0-26", "reason": "no independent security acceptance exists" },
+    { "id": "P0-27", "reason": "no production operational controls exist" },
+    { "id": "P0-28", "reason": "the parent and rollback commits plus local dependency/SBOM/repeat-build evidence exist, but this validated change set was uncommitted at capture time; its delivering commit, CI provenance, release signing, two-independent-builder reproduction, and approval remain blocked" },
+    { "id": "P0-29", "reason": "no canonical Sepolia soak exists" },
+    { "id": "P0-30", "reason": "no separate Mainnet authorization exists" },
+    { "id": "P0-31", "reason": "continuous production leakage assurance and independent acceptance do not exist" }
+  ],
+  "releaseDecision": {
+    "releaseReady": false,
+    "allowedSurface": "build-gated localnet demonstration and dry review only",
+    "publicNetworkExecutionEnabled": false,
+    "nextImmutableBaselineEvidence": [
+      "externally attest the delivering commit, then attach CI provenance to that exact commit and SBOM digest",
+      "sign the release with an approved release signing key",
+      "reproduce and compare artifacts through two independent builders",
+      "obtain explicit checkpoint approval"
+    ]
+  }
+}

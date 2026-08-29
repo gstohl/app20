@@ -1,5 +1,6 @@
 import ReadyRailGate from "@/app/components/ReadyRailGate";
 import SecondaryRailShell from "@/app/components/SecondaryRailShell";
+import FundingReadinessPanel from "@/app/funding/FundingReadinessPanel";
 import PrivacyWalletMenu from "@/app/rfq/PrivacyWalletMenu";
 
 export default function FundingPage() {
@@ -10,7 +11,9 @@ export default function FundingPage() {
         title="Shield / unshield"
         summary="Shielding and unshielding are explicit public-chain boundaries. They are never bundled with RFQ acceptance, they do not prove settlement, and their amounts and timing stay publicly correlatable."
       >
-        <PrivacyWalletMenu showIdentity active />
+        <FundingReadinessPanel>
+          <PrivacyWalletMenu showIdentity active />
+        </FundingReadinessPanel>
       </SecondaryRailShell>
     </ReadyRailGate>
   );

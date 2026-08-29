@@ -1,7 +1,9 @@
+import { resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 import { devStarknetRelay } from "./scripts/dev-starknet-relay.mjs";
+import { checkBundleDirectory } from "./scripts/check-bundle-budget.mjs";
 
 const LOCALNET_WALLET_PATH = "/__app20_localnet_wallet";
 const LOCALNET_RPC_PATH = "/__app20_localnet_rpc";
@@ -34,6 +36,7 @@ export default defineConfig(({ command, mode }) => {
     process.env.APP20_LOCALNET_RPC_TARGET ?? env.APP20_LOCALNET_RPC_TARGET;
   const localnetControlToken = process.env.APP20_LOCALNET_CONTROL_TOKEN;
   const proxy: Record<string, ProxyOptions> = {};
+  let buildOutputDirectory: string | undefined;
 
   // Local Privy rail: run `npx wrangler dev --port 8787` with .dev.vars and
   // set APP20_WORKER_DEV_TARGET=http://127.0.0.1:8787 so the Worker-only
@@ -72,7 +75,23 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
-    plugins: [react(), devStarknetRelay()],
+    plugins: [
+      react(),
+      devStarknetRelay(),
+      {
+        name: "app20-bundle-budget",
+        apply: "build",
+        configResolved(config) {
+          buildOutputDirectory = resolve(config.root, config.build.outDir);
+        },
+        async closeBundle() {
+          if (!buildOutputDirectory) {
+            throw new Error("Vite build output directory was not resolved.");
+          }
+          await checkBundleDirectory(buildOutputDirectory);
+        },
+      },
+    ],
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -86,6 +105,50 @@ export default defineConfig(({ command, mode }) => {
     },
     server: {
       proxy,
+    },
+    build: {
+      // Vite reports decimal kB. The artifact check applies the tighter,
+      // recorded byte budget for every emitted JavaScript chunk.
+      chunkSizeWarningLimit: 650,
+      rollupOptions: {
+        output: {
+          entryFileNames: "assets/app-[hash].js",
+          chunkFileNames: "assets/[name]-[hash].js",
+          manualChunks(id) {
+            const moduleId = id.replaceAll("\\\\", "/");
+            if (
+              moduleId.includes("/node_modules/react/") ||
+              moduleId.includes("/node_modules/react-dom/") ||
+              moduleId.includes("/node_modules/scheduler/")
+            ) {
+              return "vendor-react";
+            }
+            if (moduleId.includes("/node_modules/@tanstack/")) {
+              return "vendor-tanstack";
+            }
+            // Wallet discovery is intentionally not assigned a manual chunk.
+            // Its explicit connect-intent dynamic import must control the full
+            // transitive virtual-wallet/module-federation graph; forcing that
+            // graph into a manual chunk makes Rollup preserve eager side-effect
+            // ordering from the application entry.
+            if (moduleId.includes("/node_modules/@hpke/")) {
+              return "vendor-hpke";
+            }
+            if (
+              moduleId.includes("/node_modules/starknet/") ||
+              moduleId.includes(
+                "/node_modules/@starknet-io/get-starknet-wallet-standard/",
+              ) ||
+              moduleId.includes("/node_modules/@starknet-io/types-js/") ||
+              moduleId.includes("/node_modules/@noble/") ||
+              moduleId.includes("/node_modules/@scure/")
+            ) {
+              return "vendor-starknet";
+            }
+            return undefined;
+          },
+        },
+      },
     },
   };
 });

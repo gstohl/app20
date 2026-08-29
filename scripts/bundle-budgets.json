@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "unit": "bytes",
+  "budgets": [
+    {
+      "id": "application-entry",
+      "pattern": "^app-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 450000,
+      "rationale": "The eagerly loaded application shell and route registry must stay below 450 kB minified."
+    },
+    {
+      "id": "react-runtime",
+      "pattern": "^vendor-react-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 250000,
+      "rationale": "React and React DOM are shared by every route and have an explicit 250 kB ceiling."
+    },
+    {
+      "id": "tanstack-runtime",
+      "pattern": "^vendor-tanstack-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 250000,
+      "rationale": "Router and query runtime shared by routes has an explicit 250 kB ceiling."
+    },
+    {
+      "id": "starknet-runtime",
+      "pattern": "^vendor-starknet-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 650000,
+      "rationale": "The reviewed Starknet and Wallet Standard runtime is shared by wallet-capable routes and is capped at 650 kB."
+    },
+    {
+      "id": "hpke-runtime",
+      "pattern": "^vendor-hpke-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 300000,
+      "rationale": "The browser HPKE implementation is isolated and capped at 300 kB."
+    },
+    {
+      "id": "other-browser-chunk",
+      "pattern": "^[A-Za-z0-9_.-]+-[A-Za-z0-9_-]+\\.js$",
+      "maxBytes": 650000,
+      "rationale": "Every other emitted browser JavaScript chunk has a fail-closed 650 kB ceiling."
+    }
+  ]
+}

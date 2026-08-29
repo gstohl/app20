@@ -4,13 +4,15 @@
 
 The canonical definitive goals, non-goals, and production-gap inventory is [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md).
 
+Current local evidence: [`evidence/app20-release-evidence-2026-08-29.json`](evidence/app20-release-evidence-2026-08-29.json), with its deterministic CycloneDX SBOM at [`evidence/app20-sbom.cdx.json`](evidence/app20-sbom.cdx.json). The committed parent baseline is `e4084f301a3d4f4ade312d443b8a00e65f674871`, with rollback target `4e32ef1ceb932610a0fd98ff56f37ef25464816c`; this change set was uncommitted at capture time and its eventual delivering commit can only be attested externally. This remains self-reported local evidence, not CI provenance, a release signature, independent reproduction, an audit, or production authorization.
+
 Historical machine-readable checkpoint: [`evidence/app20-release-evidence-2026-08-26.json`](evidence/app20-release-evidence-2026-08-26.json). It predates the current app-code seam work and its older test counts/missing-feature list must not be treated as a current release capture.
 
 ## Gate summary
 
 | Gate | Result | Evidence or blocker |
 | --- | --- | --- |
-| Immutable baseline | **Blocked** | The current localnet-final tree is uncommitted and has no reproducibility-checkpoint approval; historical commit/test captures do not freeze this diff |
+| Immutable baseline | **Partial local evidence; release blocked** | The parent baseline is committed at `e4084f301a3d4f4ade312d443b8a00e65f674871`, with rollback target `4e32ef1ceb932610a0fd98ff56f37ef25464816c`. This validated change set was uncommitted at capture time. Its lockfile/SBOM and repeat-build checks are local evidence only; the delivering commit, CI provenance, release signature, and independent-builder reproduction remain absent |
 | Pure protocol models | **Pass for app-code scope** | Strict schemas/tests cover preflight, receipts/disclosure, RFQ/directory/transport/reservations, negotiation/channels, risk/operations, checkout/webhooks, dry cross-chain, and advisory automation |
 | Localnet maker demonstration | **Pass** | Two separately configured maker processes, private inventories, distinct devnet settlement identities, `0600` hash-chain WALs, full RFQ digest binding, and SIGKILL recovery passed |
 | Production transport/custody | **Blocked** | Dormant app-code primitives exist, but browser publication and Worker `/api/rfq/*` routing are immutable-off. External review, independent operators, HSM/KMS custody, replicated reservation ledger, and production reconciliation evidence remain absent |
@@ -24,13 +26,15 @@ A passing model or localnet gate cannot satisfy a later gate. The browser must c
 
 ## Validation capture
 
-The historical checkpoint linked above records earlier test/build/UI results only. Those runs predate the current uncommitted localnet-final diff and are not current acceptance evidence. Current-tree validation must be recorded from repository commands, never a machine-local `/tmp` handoff, and cannot satisfy the blocked immutable-baseline or production-release gates by itself.
+The historical checkpoint linked above records earlier test/build/UI results only. The new evidence record names the committed parent baseline and records that the validated follow-up change set was uncommitted at capture time; it does not freeze or attest a delivering commit. The dependency/SBOM checks are reproducible from repository scripts. Local validation still cannot provide CI provenance, a release signature, two-independent-builder reproduction, audit acceptance, or a production release gate by itself.
 
 The localnet-final validation commands are:
 
 ```text
 npm run test:all
 npm run build
+npm run check:csp
+npm run check:build-determinism
 npm run test:ui
 npm run sepolia:manifest:validate
 npm run sepolia:evidence:validate
@@ -39,18 +43,16 @@ git diff --cached --stat
 git status --short -- cairo
 ```
 
-Current RFQ-route capture (2026-08-27):
+Current capture (2026-08-29):
 
-- `npm run test:all`: passed; root 77 files / 533 tests, every workspace suite, relay 24 tests, and both offline evidence validators.
-- `npm run build`: passed; root/workspace typechecks, Vite build, and the 302-file browser leak scan passed.
-- `npm run test:ui`: passed 4/4 in 2.8 minutes, including the hash-preserving `/vault#desk` → `/rfq#desk` compatibility redirect.
-- `git diff --check`: passed.
-- staged files: none.
-- Cairo status/diff: none.
+- `npm run test:all`: passed, now including the supply-chain suite and dependency/SBOM review.
+- `npm run build`: passed; typechecks, Vite build, enforced per-chunk byte budgets, the 294-file browser-leak scan, and release-deny.
+- `npm run check:csp`: passed; eight routes exercised through the shipping `createRelayHandler()` asset path, with the observed `connect-src` violation's exact blocked URI and occurrence count matching the reviewed CoinGecko baseline.
+- `npm run check:build-determinism`: passed on one machine; each pass rebuilt `@app20/privy` before Vite, and both the workspace package output and emitted app assets byte-matched.
+- `npm run test:ui`: passed 16/16 in 3.2 minutes, including accessibility, 200% reflow, and responsive-hierarchy evidence.
+- `git diff --check`: passed. Staged files: none at capture time. Cairo status/diff: none.
 
-The immediately preceding localnet-final capture also passed build and UI from an isolated copy with every `.env*` file excluded; the RFQ-route follow-up above used the repository commands directly.
-
-These are self-reported current local checks, not an immutable checkpoint, independent audit, or production release attestation.
+These are self-reported local checks over an uncommitted change set on one machine, not an immutable attested checkpoint, independent reproduction, independent audit, or production release attestation.
 
 ## Version drift
 

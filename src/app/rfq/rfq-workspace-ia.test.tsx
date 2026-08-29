@@ -17,6 +17,8 @@ const MAKERS: readonly BrowserSafeMakerStatus[] = [
   {
     makerId: "maker-a",
     keyId: "key-a",
+    keyStatus: "valid",
+    keyValidUntil: NOW + 3_600,
     invitationStatus: "responded",
     capacityBand: "medium",
     eligible: true,
@@ -25,6 +27,8 @@ const MAKERS: readonly BrowserSafeMakerStatus[] = [
   {
     makerId: "maker-b",
     keyId: "key-b",
+    keyStatus: "rotated",
+    keyValidUntil: NOW - 1,
     invitationStatus: "refused",
     capacityBand: "small",
     eligible: false,
@@ -131,11 +135,29 @@ describe("RFQ workspace information architecture", () => {
     expect(desk).toContain("Review every verified response, refusal");
     expect(desk).not.toContain("<details className={styles.quoteComparison}>");
   });
+
+  it("aligns the eligibility clock to each wall-clock second rather than polling every 30 seconds", () => {
+    const desk = source("src/app/rfq/LocalnetPrivateIntentDesk.tsx");
+    expect(desk).toContain("1_000 - (Date.now() % 1_000)");
+    expect(desk).toContain("window.setInterval(tick, 1_000)");
+    expect(desk).not.toContain("30_000");
+  });
 });
 
 describe("maker cohort layout", () => {
   const markup = renderToStaticMarkup(
-    <MakerCohortPanel makers={MAKERS} sellSymbol="STRK" buySymbol="USDC" />,
+    <MakerCohortPanel
+      makers={MAKERS}
+      directory={{
+        epoch: 0,
+        checkpoint: "local-fixture-checkpoint-v1",
+        validUntil: NOW + 30,
+      }}
+      governedMakerCount={2}
+      now={NOW}
+      sellSymbol="STRK"
+      buySymbol="USDC"
+    />,
   );
 
   it("stacks makers as cards instead of a wide table", () => {
@@ -149,6 +171,44 @@ describe("maker cohort layout", () => {
     expect(markup).toContain("maker-b");
     expect(markup).toContain("Declined: insufficient reserved inventory.");
     expect(markup).toContain("raw inventory not exposed");
+    expect(markup).toContain(
+      "Governed makers 2 · invited 2 · responded 1 · refused 1 · unavailable",
+    );
+    expect(markup).toContain("Maker-directory epoch");
+    expect(markup).toContain("local-fixture-checkpoint-v1");
+    expect(markup).toContain("Directory freshness");
+    expect(markup).toContain("Fresh");
+    expect(markup).toContain("Key status");
+    expect(markup).toContain("Rotated · excluded from eligibility");
+    expect(markup).toContain("Excluded");
+  });
+
+  it("stops presenting freshness and eligibility at their exact deadlines", () => {
+    const maker = {
+      ...MAKERS[0],
+      keyValidUntil: NOW + 11,
+    };
+    const directory = {
+      epoch: 0 as const,
+      checkpoint: "local-fixture-checkpoint-v1" as const,
+      validUntil: NOW + 11,
+    };
+    const before = renderToStaticMarkup(
+      <MakerCohortPanel makers={[maker]} directory={directory} now={NOW} />,
+    );
+    const atDeadline = renderToStaticMarkup(
+      <MakerCohortPanel
+        makers={[maker]}
+        directory={directory}
+        now={NOW + 11}
+      />,
+    );
+
+    expect(before).toContain("<strong>Fresh</strong>");
+    expect(before).toContain("<strong>Eligible</strong>");
+    expect(atDeadline).toContain("Expired · stale; not eligible");
+    expect(atDeadline).toContain("Expired · excluded from eligibility");
+    expect(atDeadline).toContain("<strong>Excluded</strong>");
   });
 });
 
@@ -189,5 +249,15 @@ describe("final review hierarchy", () => {
   it("uses maker wording rather than solver in visible copy", () => {
     expect(markup).toContain("Maker");
     expect(markup).not.toMatch(/solver/i);
+  });
+
+  it("renders copyable local RFQ, quote, and reservation references without calling them settlement authority", () => {
+    expect(markup).toContain("Copy RFQ ID 0x77");
+    expect(markup).toContain("Copy Quote ID 0x01");
+    expect(markup).toContain("Copy Reservation ID res-1");
+    expect(markup).toContain("Local reference · not settlement authority");
+    expect(markup).toContain("aria-label=\"Copy RFQ ID 0x77; authority:");
+    expect(markup).toContain("aria-label=\"Copy Quote ID 0x01; authority:");
+    expect(markup).toContain("aria-label=\"Copy Reservation ID res-1; authority:");
   });
 });

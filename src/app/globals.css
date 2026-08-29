@@ -698,8 +698,9 @@ a {
   .evidence-labels { grid-template-columns: 1fr 1fr; }
   .lifecycle-strip li,
   .evidence-labels li { border-bottom: 1px solid var(--shell-line); }
-  .app-utilities .request-link { padding: 0 9px; }
-  .app-utilities { min-width: 0; gap: 2px; }
+  .app-utilities .request-link { padding: 0 5px; }
+  /* Wrap rather than clip: the Disconnect action stays reachable at 320px. */
+  .app-utilities { min-width: 0; gap: 2px; flex-wrap: wrap; row-gap: 4px; }
   .app-header { grid-template-columns: auto minmax(0, 1fr); }
   .app-brand { font-size: 18px; }
   .workflow-phases { grid-template-columns: 1fr; }

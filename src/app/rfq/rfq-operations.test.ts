@@ -4,6 +4,7 @@ import {
   LOCALNET_ECONOMIC_POLICY_ID,
   LOCALNET_OPERATIONS_SCHEMA,
   gateRfqAction,
+  directoryFreshnessState,
   localnetEconomicReview,
   normalizeRfqOperationsStatus,
   operationsAvailability,
@@ -21,10 +22,13 @@ function wire(overrides: Record<string, unknown> = {}) {
     reason: "Named localnet fixture operations are running.",
     claimsAndRefundsEnabled: true,
     directory: { epoch: 0, checkpoint: "local-fixture-checkpoint-v1", validUntil: NOW + 30 },
+    cohort: { governed: 2, invited: 2, responded: 1, refused: 1, unavailable: 0 },
     makers: [
       {
         makerId: "app20-localnet-solver",
         keyId: "app20-localnet-solver/ecdsa-p256-v1",
+        keyStatus: "valid",
+        keyValidUntil: NOW + 3_600,
         invitationStatus: "responded",
         capacityBand: "medium",
         eligible: true,
@@ -33,6 +37,8 @@ function wire(overrides: Record<string, unknown> = {}) {
       {
         makerId: "app20-localnet-solver-b",
         keyId: "app20-localnet-solver-b/ecdsa-p256-v1",
+        keyStatus: "valid",
+        keyValidUntil: NOW + 3_600,
         invitationStatus: "refused",
         capacityBand: "none",
         eligible: false,
@@ -48,6 +54,13 @@ describe("browser-safe localnet RFQ operations", () => {
   it("keeps every invited maker with deterministic eligible and excluded rationale", () => {
     const status = normalizeRfqOperationsStatus(wire());
     expect(status.makers).toHaveLength(2);
+    expect(status.cohort).toEqual({
+      governed: 2,
+      invited: 2,
+      responded: 1,
+      refused: 1,
+      unavailable: 0,
+    });
     expect(status.makers.map((maker) => [maker.makerId, maker.invitationStatus, maker.capacityBand, maker.eligible])).toEqual([
       ["app20-localnet-solver", "responded", "medium", true],
       ["app20-localnet-solver-b", "refused", "none", false],
@@ -79,6 +92,7 @@ describe("browser-safe localnet RFQ operations", () => {
 
   it("blocks starts when no maker or the selected maker is eligible", () => {
     const status = normalizeRfqOperationsStatus(wire({
+      cohort: { governed: 2, invited: 2, responded: 0, refused: 0, unavailable: 2 },
       makers: (wire().makers as Array<Record<string, unknown>>).map((maker) => ({
         ...maker,
         invitationStatus: "unavailable",
@@ -96,6 +110,56 @@ describe("browser-safe localnet RFQ operations", () => {
     const status = normalizeRfqOperationsStatus(wire({ observedAt: NOW + 10, validUntil: NOW + 30 }));
     expect(operationsAvailability(status, NOW).mode).toBe("unknown");
   });
+
+  it("derives fresh, expiring, and expired directory states from the published deadline", () => {
+    const status = normalizeRfqOperationsStatus(wire());
+    expect(directoryFreshnessState(status.directory, NOW)).toBe("fresh");
+    expect(directoryFreshnessState(status.directory, NOW + 20)).toBe("expiring");
+    expect(operationsAvailability(status, NOW + 20).mode).toBe("stale");
+    expect(directoryFreshnessState(status.directory, NOW + 30)).toBe("expired");
+  });
+
+  it("rejects missing, malformed, contradictory, and unknown cohort or key fields", () => {
+    const missingCohort = wire();
+    delete (missingCohort as Record<string, unknown>).cohort;
+    expect(() => normalizeRfqOperationsStatus(missingCohort)).toThrow(/schema/i);
+
+    const missingKeyStatus = wire();
+    delete ((missingKeyStatus.makers as Array<Record<string, unknown>>)[0] as Record<string, unknown>).keyStatus;
+    expect(() => normalizeRfqOperationsStatus(missingKeyStatus)).toThrow(/schema/i);
+
+    const missingKeyDeadline = wire();
+    delete ((missingKeyDeadline.makers as Array<Record<string, unknown>>)[0] as Record<string, unknown>).keyValidUntil;
+    expect(() => normalizeRfqOperationsStatus(missingKeyDeadline)).toThrow(/schema/i);
+
+    expect(() => normalizeRfqOperationsStatus(wire({
+      cohort: { governed: 2, invited: 1, responded: 1, refused: 1, unavailable: 0 },
+    }))).toThrow(/contradicts/i);
+    expect(() => normalizeRfqOperationsStatus(wire({
+      makers: (wire().makers as Array<Record<string, unknown>>).map((maker, index) =>
+        index === 0 ? { ...maker, keyStatus: "rotated", eligible: true } : maker,
+      ),
+    }))).toThrow(/eligibility/i);
+    expect(() => normalizeRfqOperationsStatus(wire({
+      makers: (wire().makers as Array<Record<string, unknown>>).map((maker, index) =>
+        index === 0 ? { ...maker, unexpected: "field" } : maker,
+      ),
+    }))).toThrow(/schema/i);
+  });
+
+  it.each(["expired", "rotated"] as const)(
+    "blocks a %s maker key even when the maker is otherwise available",
+    (keyStatus) => {
+      const status = normalizeRfqOperationsStatus(wire({
+        makers: (wire().makers as Array<Record<string, unknown>>).map((maker, index) =>
+          index === 0
+            ? { ...maker, keyStatus, keyValidUntil: NOW - 1, eligible: false }
+            : maker,
+        ),
+      }));
+      expect(gateRfqAction(operationsAvailability(status, NOW + 1), "fund", "app20-localnet-solver").allowed).toBe(false);
+    },
+  );
 
   it("rejects raw health, PID, account, log, inventory, or balance fields", () => {
     for (const forbidden of [

@@ -1,6 +1,9 @@
 "use client";
-import { useState } from "react";
 import { rfqAuthorityPresentation } from "./rfq-authority";
+import CopyableId, {
+  LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY,
+  LOCAL_IDENTIFIER_AUTHORITY,
+} from "./CopyableId";
 import { rfqStateLabel } from "./rfq-state-label";
 import { lifecycleMayForget, type RfqLifecycleRecord } from "./rfq-lifecycle";
 import { RFQ_STORAGE_DISCLOSURE } from "./rfq-storage";
@@ -8,42 +11,6 @@ import { AuthorityStrip } from "./RfqAuthorityStrip";
 import RfqRecoveryCard from "./RfqRecoveryCard";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 import styles from "./rfq.module.css";
-
-function shorten(value: string): string {
-  return value.length > 22 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
-}
-
-function CopyableId({ value, label }: { value: string; label: string }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
-    "idle",
-  );
-  const short = shorten(value);
-  return (
-    <span className={styles.copyableId}>
-      <code title={value} aria-label={`${label} ${value}`}>
-        {short}
-      </code>
-      <button
-        type="button"
-        onClick={() => {
-          void navigator.clipboard.writeText(value).then(
-            () => setCopyState("copied"),
-            () => setCopyState("failed"),
-          );
-        }}
-      >
-        Copy {label} {short}
-      </button>
-      <span aria-live="polite">
-        {copyState === "copied"
-          ? `${label} ${short} copied`
-          : copyState === "failed"
-            ? `${label} ${short} copy failed`
-            : ""}
-      </span>
-    </span>
-  );
-}
 
 export default function RfqActivity({
   records,
@@ -86,6 +53,11 @@ export default function RfqActivity({
           const heading = row.terms
             ? `${row.terms.sellSymbol} → ${row.terms.buySymbol}`
             : "Quarantined legacy RFQ";
+          const authority = rfqAuthorityPresentation(row);
+          const dealAuthority =
+            authority.status === "authoritative"
+              ? LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY
+              : LOCAL_IDENTIFIER_AUTHORITY;
           return (
             <article
               key={row.rfqId}
@@ -104,14 +76,29 @@ export default function RfqActivity({
                   base units {row.terms.buySymbol}
                 </p>
               ) : null}
-              <AuthorityStrip presentation={rfqAuthorityPresentation(row)} />
+              <AuthorityStrip presentation={authority} />
               <p className={styles.activityIds}>
                 <CopyableId value={row.rfqId} label="RFQ ID" />
+                {row.selectedQuote ? (
+                  <>
+                    {" "}
+                    · <CopyableId value={row.selectedQuote.nonce} label="Quote ID" />{" "}
+                    ·{" "}
+                    <CopyableId
+                      value={row.selectedQuote.reservationId}
+                      label="Reservation ID"
+                    />
+                  </>
+                ) : null}
                 {row.settlement ? (
                   <>
                     {" "}
                     ·{" "}
-                    <CopyableId value={row.settlement.dealId} label="deal ID" />
+                    <CopyableId
+                      value={row.settlement.dealId}
+                      label="Deal ID"
+                      authority={dealAuthority}
+                    />
                   </>
                 ) : null}
               </p>

@@ -66,7 +66,7 @@ export async function connectLocalnetWallet(
   options: { auditFocusReturn?: boolean } = {},
 ) {
   const trigger = page.getByRole("button", { name: "Connect wallet" });
-  const disconnect = page.getByTitle("Disconnect", { exact: true });
+  const disconnect = page.getByRole("button", { name: "Disconnect wallet" });
   if ((await disconnect.count()) > 0) {
     await expect(disconnect).toBeVisible();
     return;
@@ -108,14 +108,41 @@ export function readStorageSnapshot(page: Page): Promise<StorageSnapshot> {
 }
 
 export async function expectNoHorizontalOverflow(page: Page) {
-  const metrics = await page.evaluate(() => ({
-    documentWidth: document.documentElement.scrollWidth,
-    documentClientWidth: document.documentElement.clientWidth,
-    bodyWidth: document.body.scrollWidth,
-    bodyClientWidth: document.body.clientWidth,
-  }));
-  expect(metrics.documentWidth).toBeLessThanOrEqual(
-    metrics.documentClientWidth,
-  );
-  expect(metrics.bodyWidth).toBeLessThanOrEqual(metrics.bodyClientWidth);
+  const metrics = await page.evaluate(() => {
+    const limit = document.documentElement.clientWidth;
+    const offenders = [...document.querySelectorAll<HTMLElement>("*")]
+      .map((element) => ({ element, right: element.getBoundingClientRect().right }))
+      .filter(({ element, right }) => {
+        if (right <= limit + 0.5) return false;
+        const style = getComputedStyle(element);
+        return style.visibility !== "hidden" && style.display !== "none";
+      })
+      .map(({ element, right }) => {
+        const id = element.id ? `#${element.id}` : "";
+        const cls = element.getAttribute("class");
+        const label =
+          element.getAttribute("aria-label") ??
+          element.textContent?.trim().slice(0, 40) ??
+          "";
+        return `${element.tagName.toLowerCase()}${id}${cls ? `.${cls.split(/\s+/).join(".")}` : ""} right=${Math.round(right)} "${label}"`;
+      });
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      documentClientWidth: limit,
+      bodyWidth: document.body.scrollWidth,
+      bodyClientWidth: document.body.clientWidth,
+      offenders: offenders.slice(-12),
+    };
+  });
+  const detail = metrics.offenders.length
+    ? `\nElements past the viewport edge:\n${metrics.offenders.join("\n")}`
+    : "";
+  expect(
+    metrics.documentWidth,
+    `document overflows its client width${detail}`,
+  ).toBeLessThanOrEqual(metrics.documentClientWidth);
+  expect(
+    metrics.bodyWidth,
+    `body overflows its client width${detail}`,
+  ).toBeLessThanOrEqual(metrics.bodyClientWidth);
 }
