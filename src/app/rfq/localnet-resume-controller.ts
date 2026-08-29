@@ -75,6 +75,14 @@ export function localnetResumeDecision(
       "The exact request identity is retained; verify its idempotent request-wide release before starting another RFQ.",
     );
   }
+  if (record.evidenceAuthority.status !== "local-non-authoritative") {
+    return decision(
+      "none",
+      "Authority reconciliation required",
+      "Settlement authority is stale, disputed, reorg-invalidated, or quarantined. The record remains read-only until a live same-session verifier reconciles it.",
+      true,
+    );
+  }
   if (record.state === "quarantined" || record.state === "reorged") {
     return decision(
       "none",
@@ -237,4 +245,45 @@ export function localnetResumeDecision(
     "This phase has no resumable localnet command.",
     true,
   );
+}
+
+/**
+ * Revalidates an action against the latest in-memory row at the command
+ * boundary. This closes stale-tab and direct-callback paths that bypass the
+ * disabled button rendered from an older record.
+ */
+export function authorizeLocalnetResumeCommand(
+  presented: RfqLifecycleRecord,
+  current: RfqLifecycleRecord | undefined,
+  requestedAction: LocalnetResumeAction,
+  now: number,
+): RfqLifecycleRecord {
+  if (!current) throw new Error("The RFQ record is no longer loaded.");
+  const samePresentedRevision =
+    presented.chainId === current.chainId &&
+    presented.account === current.account &&
+    presented.rfqId === current.rfqId &&
+    presented.storageRevision === current.storageRevision &&
+    presented.updatedAt === current.updatedAt &&
+    presented.state === current.state &&
+    presented.evidenceAuthority.status === current.evidenceAuthority.status &&
+    presented.evidenceAuthority.revision === current.evidenceAuthority.revision;
+  if (!samePresentedRevision) {
+    throw new Error(
+      "The RFQ record changed after it was displayed. Review the latest authority state before acting.",
+    );
+  }
+  const allowed = localnetResumeDecision(current, now);
+  if (
+    requestedAction === "none" ||
+    allowed.disabled ||
+    allowed.action !== requestedAction
+  ) {
+    throw new Error(
+      allowed.disabled
+        ? allowed.reason
+        : "The requested RFQ action is not authorized by the latest lifecycle state.",
+    );
+  }
+  return current;
 }

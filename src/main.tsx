@@ -17,7 +17,7 @@ import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
 import OperationsDashboard from "@/app/rfq/OperationsDashboard";
 import SwapPage from "@/app/swap/page";
-import MarketProposalPage from "@/app/pools/create/page";
+import MarketProposalPage from "@/app/rfq/markets/proposal/page";
 import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
 import PrivyRecoveryPage from "@/app/recovery/privy/page";

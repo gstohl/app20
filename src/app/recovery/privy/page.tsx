@@ -1,7 +1,21 @@
 import PrivyRailGate from "@/app/components/PrivyRailGate";
+import SecondaryRailShell from "@/app/components/SecondaryRailShell";
 import { lazy, Suspense } from "react";
 
 const PrivySepoliaVault = lazy(() => import("@/app/rfq/PrivySepoliaVault"));
+
 export default function PrivyRecoveryPage() {
-  return <PrivyRailGate><main><strong>RECOVERY · NOT RFQ EXECUTION</strong><h1>Privy Sepolia recovery</h1><p>Recovery is a separate wallet operation and never proves RFQ settlement.</p><Suspense fallback={<p>Loading recovery…</p>}><PrivySepoliaVault/></Suspense></main></PrivyRailGate>;
+  return (
+    <PrivyRailGate>
+      <SecondaryRailShell
+        boundary="Recovery · not RFQ execution"
+        title="Privy Sepolia recovery"
+        summary="Recovery is a separate wallet operation on its own rail. It never proves RFQ settlement and cannot fund, fill, claim, or refund a maker trade."
+      >
+        <Suspense fallback={<p>Loading recovery…</p>}>
+          <PrivySepoliaVault />
+        </Suspense>
+      </SecondaryRailShell>
+    </PrivyRailGate>
+  );
 }

@@ -11,6 +11,7 @@ import {
   canonicalRfqChainId,
   isLocalRfqChain,
   finalizeRfqLifecycleForStorage,
+  lifecycleMayForget,
   markRfqLifecyclePersisted,
   reviseRfqLifecycle,
   type RfqLifecycleRecord,
@@ -341,8 +342,15 @@ export function assertRfqStorageReplacement(
         "RFQ storage rejected removal or downgrade of chain observation evidence.",
       );
   }
-  if (replacement.evidenceAuthority.revision < prior.evidenceAuthority.revision)
-    throw new Error("RFQ storage rejected downgraded authority evidence.");
+  if (
+    prior.evidenceAuthority.status !== "local-non-authoritative" &&
+    replacement.evidenceAuthority.status === "local-non-authoritative"
+  )
+    throw new Error("RFQ storage rejected removal of unresolved authority evidence.");
+  // Browser-persisted revision numbers are not a trusted authority high-water.
+  // A runtime-bound verifier may replace a forged large number with its lower
+  // server-owned revision, while the conservative status rule above keeps
+  // unresolved evidence from becoming locally actionable.
 
   for (const phase of [
     "funding",
@@ -411,13 +419,9 @@ export function assertRfqStorageRemoval(
   existing: unknown,
   expected: RfqLifecycleRecord,
 ): void {
-  if (
-    !new Set(["settled", "refunded", "cancelled", "refused"]).has(
-      expected.state,
-    )
-  )
+  if (!lifecycleMayForget(expected))
     throw new Error(
-      "RFQ storage refused removal of value-bearing lifecycle evidence.",
+      "RFQ storage refused removal of unresolved or value-bearing lifecycle evidence.",
     );
   if (isRfqStorageTombstone(existing)) {
     // A tombstone is already the strongest possible forget-wins evidence for

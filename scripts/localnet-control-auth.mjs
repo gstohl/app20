@@ -26,7 +26,8 @@ export function assertLocalnetRuntimeEpoch(pathname, body, expectedEpoch) {
     pathname === "/privacy" ||
     pathname === "/balances" ||
     pathname.startsWith("/private-intents/") ||
-    pathname.startsWith("/escrow/ensure-");
+    pathname.startsWith("/escrow/ensure-") ||
+    pathname === "/rfq/authority/verify";
   if (epochBound && body?.runtimeEpoch !== expectedEpoch) {
     throw new LocalnetMutationGuardError(
       409,

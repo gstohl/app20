@@ -364,6 +364,7 @@ export default function LocalnetPrivateIntentDesk({
   const [reviewSnapshot, setReviewSnapshot] =
     useState<RfqFinalReviewSnapshot | null>(null);
   const [flow, setFlow] = useState<FlowState>({ kind: "idle" });
+  const [requotePending, setRequotePending] = useState(false);
   const [counterparty, setCounterparty] = useState<string | null>(null);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [invitationReview, setInvitationReview] =
@@ -377,6 +378,9 @@ export default function LocalnetPrivateIntentDesk({
   const fundingGate = gateRfqAction(operations, "fund", quoted?.quote.solverId);
   const [executionLocked, setExecutionLocked] = useState(false);
   const executionStartedRef = useRef(false);
+  const quoteComparisonRef = useRef<HTMLElement>(null);
+  const finalReviewRef = useRef<HTMLElement>(null);
+  const quoteFocusPendingRef = useRef(false);
   const [preflightObservedAt] = useState(() => Math.floor(Date.now() / 1_000));
   const [preflightNow, setPreflightNow] = useState(preflightObservedAt);
   const working = flow.kind === "working";
@@ -463,6 +467,7 @@ export default function LocalnetPrivateIntentDesk({
     setMinBuyAmount(nextPair.defaultMinBuyAmount);
     setQuoted(null);
     setFlow({ kind: "idle" });
+    setRequotePending(false);
     setPrivacyConfirmed(false);
     setInvitationReview(null);
     setInvitationConfirmed(false);
@@ -474,6 +479,22 @@ export default function LocalnetPrivateIntentDesk({
   useEffect(() => {
     invalidateQuote();
   }, [address, chain, providerIndex]);
+
+  useEffect(() => {
+    if (!requotePending || requestBlockedReason) return;
+    setRequotePending(false);
+    void buildQuote();
+  }, [requotePending, requestBlockedReason]);
+
+  useEffect(() => {
+    if (!quoted || reviewing || !quoteFocusPendingRef.current) return;
+    quoteComparisonRef.current?.focus();
+    quoteFocusPendingRef.current = false;
+  }, [quoted, reviewing]);
+
+  useEffect(() => {
+    if (reviewing) finalReviewRef.current?.focus();
+  }, [reviewing]);
 
   useEffect(() => {
     if (!address || !chain) return;
@@ -558,6 +579,7 @@ export default function LocalnetPrivateIntentDesk({
     setReviewing(false);
     setLifecycleRecord(null);
     setFlow({ kind: "idle" });
+    setRequotePending(false);
     setPrivacyConfirmed(false);
     setInvitationReview(null);
     setInvitationConfirmed(false);
@@ -883,6 +905,7 @@ export default function LocalnetPrivateIntentDesk({
         },
       );
       await persistLifecycle(quotedRecord);
+      quoteFocusPendingRef.current = true;
       setQuoted({
         intent,
         quote: selectedQuote,
@@ -1047,7 +1070,14 @@ export default function LocalnetPrivateIntentDesk({
   }
 
   async function requote() {
-    if (await cancelRfq("cancel")) await buildQuote();
+    if (!(await cancelRfq("cancel"))) return;
+    setFlow({
+      kind: "working",
+      phase: "quote",
+      message:
+        "Reservation release verified. Waiting for the persisted workspace fence to refresh before requesting new quotes…",
+    });
+    setRequotePending(true);
   }
 
   function exactLocalTerms(current: QuotedIntent, record: RfqLifecycleRecord) {
@@ -2082,13 +2112,12 @@ export default function LocalnetPrivateIntentDesk({
       {swapOnly ? null : (
         <div
           className={styles.deskModeSwitch}
-          role="tablist"
+          role="group"
           aria-label="RFQ surface"
         >
           <button
             type="button"
-            role="tab"
-            aria-selected={surface === "swap"}
+            aria-pressed={surface === "swap"}
             disabled={Boolean(quoted)}
             onClick={() => setSurface("swap")}
           >
@@ -2096,8 +2125,7 @@ export default function LocalnetPrivateIntentDesk({
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={surface === "block"}
+            aria-pressed={surface === "block"}
             disabled={Boolean(quoted)}
             onClick={() => setSurface("block")}
           >
@@ -2489,19 +2517,6 @@ export default function LocalnetPrivateIntentDesk({
         </div>
       ) : null}
 
-      {quoted ? (
-        <QuoteComparison
-          quotes={quoted.quotes}
-          cohort={quoted.cohort}
-          selectedReservationId={quoted.quote.reservationId}
-          sellDecimals={quoted.pair.sell.decimals}
-          buyDecimals={quoted.pair.buy.decimals}
-          sellSymbol={quoted.pair.sell.symbol}
-          buySymbol={quoted.pair.buy.symbol}
-          onSelectedExpire={() => void expireSelectedQuote("Quote expired.")}
-        />
-      ) : null}
-
       {surface === "block" ? (
         <ol
           className={styles.privateIntentStepper}
@@ -2558,6 +2573,34 @@ export default function LocalnetPrivateIntentDesk({
             </label>
           </fieldset>
         </details>
+      ) : null}
+
+      {quoted ? (
+        <section
+          ref={quoteComparisonRef}
+          tabIndex={-1}
+          className={styles.quoteComparison}
+          aria-labelledby="rfq-maker-comparison"
+        >
+          <h3 id="rfq-maker-comparison">
+            Compare all makers ({quoted.quotes.length} verified{" "}
+            {quoted.quotes.length === 1 ? "quote" : "quotes"})
+          </h3>
+          <p>
+            Review every verified response, refusal, capacity state, and the
+            deterministic selection rationale before continuing.
+          </p>
+          <QuoteComparison
+            quotes={quoted.quotes}
+            cohort={quoted.cohort}
+            selectedReservationId={quoted.quote.reservationId}
+            sellDecimals={quoted.pair.sell.decimals}
+            buyDecimals={quoted.pair.buy.decimals}
+            sellSymbol={quoted.pair.sell.symbol}
+            buySymbol={quoted.pair.buy.symbol}
+            onSelectedExpire={() => void expireSelectedQuote("Quote expired.")}
+          />
+        </section>
       ) : null}
 
       {quoted && !reviewing && lifecycleRecord?.state === "quoted" ? (
@@ -2642,6 +2685,7 @@ export default function LocalnetPrivateIntentDesk({
           onReservationExpire={() =>
             void expireSelectedQuote("Reservation expired.")
           }
+          focusRef={finalReviewRef}
         />
       ) : null}
 
@@ -2737,7 +2781,11 @@ export default function LocalnetPrivateIntentDesk({
               </dd>
             </div>
             <div>
-              <dt>{flow.outcome === "settled" ? "RECEIVED" : "REFUNDED"}</dt>
+              <dt>
+                {flow.outcome === "settled"
+                  ? "RECEIVED (LOCALLY OBSERVED)"
+                  : "REFUNDED (LOCALLY OBSERVED)"}
+              </dt>
               <dd>
                 {flow.outcome === "settled"
                   ? `${formatLocalnetTokenAmount(
@@ -2763,8 +2811,9 @@ export default function LocalnetPrivateIntentDesk({
             <div>
               <dt>EVIDENCE</dt>
               <dd>
-                {flow.transactionHashes.length} local references · not
-                production authority
+                {flow.transactionHashes.length} local references · this browser
+                watched the local devnet; no configured-chain verifier confirmed
+                it
               </dd>
             </div>
           </dl>

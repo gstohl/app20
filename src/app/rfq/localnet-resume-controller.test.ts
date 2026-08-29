@@ -4,7 +4,10 @@ import {
   createRfqLifecycleRecord,
   fundingTicketAttemptTargetFromLifecycle,
 } from "./rfq-lifecycle";
-import { localnetResumeDecision } from "./localnet-resume-controller";
+import {
+  authorizeLocalnetResumeCommand,
+  localnetResumeDecision,
+} from "./localnet-resume-controller";
 import {
   prepareFundedSettlementExpiry,
   preparePreFundingReservationRelease,
@@ -112,6 +115,66 @@ describe("localnet resume controller", () => {
       label: "Retry exact maker-fill request",
       disabled: false,
     });
+  });
+
+  it.each([
+    ["authoritative", "claimable", "claim"],
+    ["stale", "refundable", "refund"],
+    ["disagreement", "funded", "request-maker-fill"],
+    ["reorged", "claimable", "claim"],
+    ["quarantined", "refundable", "refund"],
+  ] as const)(
+    "blocks the former %s authority path before it can return %s",
+    (status, state, forbiddenAction) => {
+      const blocked = {
+        ...record(state),
+        evidenceAuthority: {
+          status,
+          label: status,
+          revision: 8,
+          observedAt: NOW,
+        },
+      };
+      const result = localnetResumeDecision(blocked, NOW + 1);
+      expect(result).toMatchObject({ action: "none", disabled: true });
+      expect(result.action).not.toBe(forbiddenAction);
+    },
+  );
+
+  it("rejects stale-tab and direct-call attempts at the command boundary", () => {
+    const presented = record("claimable");
+    const current = {
+      ...presented,
+      storageRevision: presented.storageRevision + 1,
+      updatedAt: presented.updatedAt + 1,
+      evidenceAuthority: {
+        status: "disagreement" as const,
+        label: "disagreement",
+        revision: 2,
+        observedAt: NOW + 1,
+      },
+    };
+    expect(() =>
+      authorizeLocalnetResumeCommand(presented, current, "claim", NOW + 2),
+    ).toThrow(/changed after it was displayed/);
+    expect(() =>
+      authorizeLocalnetResumeCommand(current, current, "claim", NOW + 2),
+    ).toThrow(/remains read-only/);
+  });
+
+  it("allows only the exact action selected from the latest safe record", () => {
+    const funded = record("funded");
+    expect(
+      authorizeLocalnetResumeCommand(
+        funded,
+        funded,
+        "request-maker-fill",
+        NOW + 1,
+      ),
+    ).toBe(funded);
+    expect(() =>
+      authorizeLocalnetResumeCommand(funded, funded, "claim", NOW + 1),
+    ).toThrow(/not authorized/);
   });
 
   it("offers refund only after explicit observed-expiry state", () => {

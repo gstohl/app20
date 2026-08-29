@@ -14,7 +14,7 @@ import {
 } from "@/lib/token-registry";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import styles from "./pool-create.module.css";
+import styles from "./market-proposal.module.css";
 
 export type MarketProposalPageProps = Readonly<{
   tokenA: string;
@@ -49,9 +49,11 @@ export default function MarketProposalPage({
   const [proposedAmountB, setProposedAmountB] = useState("");
   const [referencePrice, setReferencePrice] = useState("");
   const [showErrors, setShowErrors] = useState(false);
+  const [invalidSubmissionCount, setInvalidSubmissionCount] = useState(0);
   const [preparing, setPreparing] = useState(false);
   const [prepared, setPrepared] = useState<PreparedDraft | null>(null);
   const generation = useRef(0);
+  const errorSummaryRef = useRef<HTMLDivElement>(null);
 
   const validation = pair
     ? validateMarketProposalDraft({
@@ -92,6 +94,10 @@ export default function MarketProposalPage({
     setShowErrors(false);
   }, [contextKey]);
 
+  useEffect(() => {
+    if (invalidSubmissionCount > 0) errorSummaryRef.current?.focus();
+  }, [invalidSubmissionCount]);
+
   function invalidateReview() {
     generation.current += 1;
     setPrepared(null);
@@ -102,8 +108,10 @@ export default function MarketProposalPage({
     event.preventDefault();
     setShowErrors(true);
     if (!validation?.ok) {
-      invalidateReview();
-      setShowErrors(true);
+      generation.current += 1;
+      setPrepared(null);
+      setPreparing(false);
+      setInvalidSubmissionCount((count) => count + 1);
       return;
     }
     const requestGeneration = ++generation.current;
@@ -141,7 +149,20 @@ export default function MarketProposalPage({
     <main className={styles.page}>
       <header className={styles.pageHeader}>
         <div>
-          <p className={styles.eyebrow}>APP20 / MARKET PROPOSAL</p>
+          <nav className={styles.eyebrow} aria-label="Breadcrumb">
+            <Link to="/rfq">RFQ</Link>
+            {" / "}
+            <span>Markets</span>
+            {" / "}
+            <Link
+              to="/swap/$tokenA/$tokenB"
+              params={{ tokenA: pair.tokenA.key, tokenB: pair.tokenB.key }}
+            >
+              {pair.tokenA.symbol} / {pair.tokenB.symbol}
+            </Link>
+            {" / "}
+            <span aria-current="page">Proposal</span>
+          </nav>
           <h1>Draft market proposal</h1>
           <strong>PROPOSAL ONLY · NO DEPLOYMENT</strong>
         </div>
@@ -225,6 +246,8 @@ export default function MarketProposalPage({
                 <div>
                   <input
                     aria-label={`${pair.tokenA.symbol} proposed amount`}
+                    aria-describedby={showErrors && validation?.errors.proposedAmountA ? "market-proposal-amount-a-error" : undefined}
+                    aria-errormessage={showErrors && validation?.errors.proposedAmountA ? "market-proposal-amount-a-error" : undefined}
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
@@ -241,7 +264,7 @@ export default function MarketProposalPage({
                   <strong>{pair.tokenA.symbol}</strong>
                 </div>
                 {showErrors && validation?.errors.proposedAmountA ? (
-                  <em>{validation.errors.proposedAmountA}</em>
+                  <em id="market-proposal-amount-a-error">{validation.errors.proposedAmountA}</em>
                 ) : null}
               </label>
               <label className={styles.inventoryCard}>
@@ -249,6 +272,8 @@ export default function MarketProposalPage({
                 <div>
                   <input
                     aria-label={`${pair.tokenB.symbol} proposed amount`}
+                    aria-describedby={showErrors && validation?.errors.proposedAmountB ? "market-proposal-amount-b-error" : undefined}
+                    aria-errormessage={showErrors && validation?.errors.proposedAmountB ? "market-proposal-amount-b-error" : undefined}
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
@@ -265,7 +290,7 @@ export default function MarketProposalPage({
                   <strong>{pair.tokenB.symbol}</strong>
                 </div>
                 {showErrors && validation?.errors.proposedAmountB ? (
-                  <em>{validation.errors.proposedAmountB}</em>
+                  <em id="market-proposal-amount-b-error">{validation.errors.proposedAmountB}</em>
                 ) : null}
               </label>
             </div>
@@ -274,6 +299,8 @@ export default function MarketProposalPage({
               <div className={styles.inputShell}>
                 <input
                   aria-label={`Non-executable reference price in ${pair.tokenB.symbol} per ${pair.tokenA.symbol}`}
+                  aria-describedby={showErrors && validation?.errors.referencePrice ? "market-proposal-reference-price-error" : undefined}
+                  aria-errormessage={showErrors && validation?.errors.referencePrice ? "market-proposal-reference-price-error" : undefined}
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
@@ -296,13 +323,23 @@ export default function MarketProposalPage({
                 executable market price.
               </small>
               {showErrors && validation?.errors.referencePrice ? (
-                <em>{validation.errors.referencePrice}</em>
+                <em id="market-proposal-reference-price-error">{validation.errors.referencePrice}</em>
               ) : null}
             </label>
             {showErrors && validation && !validation.ok ? (
-              <p className={styles.formError} role="alert">
-                Resolve the blocked proposal fields and active-session evidence.
-              </p>
+              <div
+                ref={errorSummaryRef}
+                className={styles.formError}
+                role="alert"
+                tabIndex={-1}
+                aria-labelledby="market-proposal-error-summary-title"
+              >
+                <strong id="market-proposal-error-summary-title">Proposal needs attention</strong>
+                <p>Resolve the blocked proposal fields and active-session evidence.</p>
+                <ul>
+                  {Object.values(validation.errors).map((message) => message ? <li key={message}>{message}</li> : null)}
+                </ul>
+              </div>
             ) : null}
           </section>
 

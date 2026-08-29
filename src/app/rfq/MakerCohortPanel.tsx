@@ -1,6 +1,7 @@
 import type { SolverQuote } from "@app20/private-intents";
 import type { BrowserSafeMakerStatus } from "./rfq-operations";
 import RfqCountdown from "./RfqCountdown";
+import styles from "./rfq.module.css";
 
 function effectiveRate(
   quote: SolverQuote,
@@ -52,65 +53,75 @@ export default function MakerCohortPanel({
           maker ID; reservation ID.
         </p>
       ) : null}
-      <table aria-label="Invited maker cohort">
-        <thead>
-          <tr>
-            <th scope="col">Maker / key</th>
-            <th scope="col">Invitation</th>
-            <th scope="col">Capacity band</th>
-            <th scope="col">Quote</th>
-            <th scope="col">Eligibility rationale</th>
-          </tr>
-        </thead>
-        <tbody>
-          {makers.map((maker) => {
-            const quote = quoteByMaker.get(maker.makerId);
-            const selected = quote?.reservationId === selectedReservationId;
-            const eligible =
-              maker.eligible && (quotes.length === 0 || Boolean(quote));
-            return (
-              <tr key={maker.makerId}>
-                <td>
-                  {maker.makerId}
-                  <br />
-                  <code>{maker.keyId}</code>
-                </td>
-                <td>{maker.invitationStatus}</td>
-                <td>{maker.capacityBand} · raw inventory not exposed</td>
-                <td>
-                  {quote &&
-                  sellDecimals !== undefined &&
-                  buyDecimals !== undefined ? (
-                    <>
-                      Verified signed quote · {quote.buyAmount.toString()} base
-                      units · {quote.spreadBps} bps ·{" "}
-                      {effectiveRate(quote, sellDecimals, buyDecimals)}{" "}
-                      {buySymbol} / {sellSymbol}
-                      <br />
-                      <RfqCountdown
-                        expiresAt={quote.quoteExpiresAt}
-                        onExpire={selected ? onSelectedExpire : undefined}
-                      />
-                    </>
-                  ) : (
-                    "No eligible signed quote"
-                  )}
-                </td>
-                <td>
-                  <strong>
-                    {eligible
-                      ? selected
-                        ? "Eligible · selected"
-                        : "Eligible"
-                      : "Excluded"}
-                  </strong>{" "}
-                  · {maker.rationale}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <ul className={styles.makerCohort} aria-label="Invited maker cohort">
+        {makers.map((maker) => {
+          const quote = quoteByMaker.get(maker.makerId);
+          const selected = quote?.reservationId === selectedReservationId;
+          const eligible =
+            maker.eligible && (quotes.length === 0 || Boolean(quote));
+          return (
+            <li
+              key={maker.makerId}
+              className={styles.makerCard}
+              data-selected={selected || undefined}
+              aria-label={`Maker ${maker.makerId}`}
+            >
+              <h4>
+                {maker.makerId}
+                {selected ? <span> · Selected</span> : null}
+              </h4>
+              <p className={styles.makerQuote}>
+                {quote &&
+                sellDecimals !== undefined &&
+                buyDecimals !== undefined ? (
+                  <>
+                    Verified signed quote · {quote.buyAmount.toString()} base
+                    units · {quote.spreadBps} bps ·{" "}
+                    {effectiveRate(quote, sellDecimals, buyDecimals)}{" "}
+                    {buySymbol} / {sellSymbol}
+                    <br />
+                    <RfqCountdown
+                      expiresAt={quote.quoteExpiresAt}
+                      onExpire={selected ? onSelectedExpire : undefined}
+                    />
+                  </>
+                ) : (
+                  "No eligible signed quote"
+                )}
+              </p>
+              <dl>
+                <div>
+                  <dt>Key</dt>
+                  <dd>
+                    <code>{maker.keyId}</code>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Invitation</dt>
+                  <dd>{maker.invitationStatus}</dd>
+                </div>
+                <div>
+                  <dt>Capacity band</dt>
+                  <dd>{maker.capacityBand} · raw inventory not exposed</dd>
+                </div>
+                <div>
+                  <dt>Eligibility</dt>
+                  <dd>
+                    <strong>
+                      {eligible
+                        ? selected
+                          ? "Eligible · selected"
+                          : "Eligible"
+                        : "Excluded"}
+                    </strong>{" "}
+                    · {maker.rationale}
+                  </dd>
+                </div>
+              </dl>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

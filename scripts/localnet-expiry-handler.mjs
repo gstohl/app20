@@ -1,7 +1,6 @@
 import { runLocalnetFundedExpiry } from "./localnet-funded-expiry.mjs";
 import {
   bindExpiryHttpTargetThroughCoordinator,
-  releaseFundedHttpTargetThroughCoordinator,
   terminalizeHttpTargetThroughCoordinator,
 } from "./localnet-release-boundary.mjs";
 
@@ -64,7 +63,6 @@ export function createLocalnetExpiryHandler({
   coordinator,
   makerById,
   reservationOwners,
-  release,
   observeEscrow,
   validateFundedObservation,
   readTime,
@@ -105,17 +103,6 @@ export function createLocalnetExpiryHandler({
           });
           await afterBarrier("bind", exactTarget);
           return bound;
-        },
-        release: async (exactTarget) => {
-          const released = await releaseFundedHttpTargetThroughCoordinator({
-            coordinator,
-            target: exactTarget,
-            release,
-            now: now(),
-            reason: "user chose the explicit no-fill expiry path",
-          });
-          await afterBarrier("release", exactTarget);
-          return released;
         },
         readTime,
         advanceTime: async (timestamp) => {

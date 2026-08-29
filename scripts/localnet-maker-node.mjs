@@ -512,6 +512,24 @@ function parseQuote(body) {
   };
 }
 
+function parseReconciliationTarget(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Maker reconciliation target is missing.");
+  return {
+    reservationId: value.reservationId,
+    intentDigest: value.intentDigest,
+    fence: BigInt(value.fence),
+    quoteDigest: value.quoteDigest,
+    dealId: value.dealId,
+    sellToken: value.sellToken,
+    sellAmount: BigInt(value.sellAmount),
+    buyToken: value.buyToken,
+    buyAmount: BigInt(value.buyAmount),
+    deadline: value.deadline,
+    ticketAddress: value.ticketAddress,
+  };
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", `http://127.0.0.1:${config.port}`);
@@ -574,6 +592,52 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/v1/fill") {
       const result = await dispatchLocalnetMakerFill(maker, body, now);
+      jsonResponse(response, 200, { result });
+      return;
+    }
+    if (url.pathname === "/v1/reconciliation/bind") {
+      const result = await maker.bindSettlementForReconciliation(
+        parseReconciliationTarget(body.target),
+        now,
+      );
+      jsonResponse(response, 200, { result });
+      return;
+    }
+    if (url.pathname === "/v1/reconciliation/snapshot") {
+      const result = await maker.readReconciliationSnapshot(
+        parseReconciliationTarget(body.target),
+        now,
+      );
+      jsonResponse(response, 200, { result });
+      return;
+    }
+    if (url.pathname === "/v1/reconciliation/quarantine") {
+      const result = await maker.quarantineForAuthority(
+        {
+          target: parseReconciliationTarget(body.target),
+          attemptId: body.attemptId,
+          authorityDigest: body.authorityDigest,
+          authorityRevision: body.authorityRevision,
+          outcome: body.outcome,
+          reason: body.reason,
+        },
+        now,
+      );
+      jsonResponse(response, 200, { result });
+      return;
+    }
+    if (url.pathname === "/v1/reconciliation/terminal") {
+      const result = await maker.reconcileAuthoritativeTerminal(
+        {
+          target: parseReconciliationTarget(body.target),
+          attemptId: body.attemptId,
+          authorityDigest: body.authorityDigest,
+          authorityRevision: body.authorityRevision,
+          outcome: body.outcome,
+          settlementTransactionHash: body.settlementTransactionHash,
+        },
+        now,
+      );
       jsonResponse(response, 200, { result });
       return;
     }

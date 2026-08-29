@@ -37,6 +37,25 @@ const WAL_DOMAIN = "app20/maker-reservation-wal/v1" as const;
 const HEX_32_PATTERN = /^0x[0-9a-f]{64}$/;
 const MAX_U128 = (1n << 128n) - 1n;
 
+export type MakerTerminalReconciliation = Readonly<{
+  attemptId: string;
+  authorityDigest: string;
+  authorityRevision: number;
+  outcome: "settled" | "refunded";
+  selectionFence: bigint;
+  reconciledAt: number;
+}>;
+
+export type MakerAuthorityQuarantine = Readonly<{
+  attemptId: string;
+  authorityDigest: string;
+  authorityRevision: number;
+  outcome: "settled" | "refunded";
+  reason: "authority-disagreement" | "authority-reorged";
+  selectionFence: bigint;
+  quarantinedAt: number;
+}>;
+
 export type StoredMakerReservation = Readonly<{
   reservation: MakerReservationV1;
   nonce: string;
@@ -57,6 +76,74 @@ export type StoredMakerReservation = Readonly<{
   settlementDealId?: string;
   settlementDeadline?: number;
   settlementTicketAddress?: string;
+  authorityQuarantine?: MakerAuthorityQuarantine;
+  terminalReconciliation?: MakerTerminalReconciliation;
+}>;
+
+export type MakerReconciliationTarget = Readonly<{
+  reservationId: string;
+  intentDigest: string;
+  fence: bigint;
+  quoteDigest: string;
+  dealId: string;
+  sellToken: string;
+  sellAmount: bigint;
+  buyToken: string;
+  buyAmount: bigint;
+  deadline: number;
+  ticketAddress: string;
+}>;
+
+export type MakerTerminalReconciliationRequest = Readonly<{
+  target: MakerReconciliationTarget;
+  attemptId: string;
+  authorityDigest: string;
+  authorityRevision: number;
+  outcome: "settled" | "refunded";
+  settlementTransactionHash?: string;
+}>;
+
+export type MakerAuthorityQuarantineRequest = Readonly<{
+  target: MakerReconciliationTarget;
+  attemptId: string;
+  authorityDigest: string;
+  authorityRevision: number;
+  outcome: "settled" | "refunded";
+  reason: "authority-disagreement" | "authority-reorged";
+}>;
+
+export type MakerReconciliationSnapshot = Readonly<{
+  makerId: string;
+  intentDigest: string;
+  reservationId: string;
+  fence: string;
+  quoteDigest: string;
+  dealId: string;
+  sellToken: string;
+  sellAmount: string;
+  buyToken: string;
+  buyAmount: string;
+  deadline: number;
+  ticketAddress: string;
+  state: MakerReservationV1["state"];
+  settlementTransactionHash?: string;
+  authorityQuarantine?: Readonly<{
+    attemptId: string;
+    authorityDigest: string;
+    authorityRevision: number;
+    outcome: "settled" | "refunded";
+    reason: "authority-disagreement" | "authority-reorged";
+    selectionFence: string;
+    quarantinedAt: number;
+  }>;
+  terminalReconciliation?: Readonly<{
+    attemptId: string;
+    authorityDigest: string;
+    authorityRevision: number;
+    outcome: "settled" | "refunded";
+    selectionFence: string;
+    reconciledAt: number;
+  }>;
 }>;
 
 export type MakerQuoteRequest = Readonly<{
@@ -143,6 +230,15 @@ type StoredWire = Readonly<{
   settlementDealId?: string;
   settlementDeadline?: number;
   settlementTicketAddress?: string;
+  authorityQuarantine?: Omit<MakerAuthorityQuarantine, "selectionFence"> & {
+    selectionFence: string;
+  };
+  terminalReconciliation?: Omit<
+    MakerTerminalReconciliation,
+    "selectionFence"
+  > & {
+    selectionFence: string;
+  };
 }>;
 
 type WalPayload = Readonly<{
@@ -257,6 +353,57 @@ function serializeStored(record: StoredMakerReservation): StoredWire {
             "settlementTicketAddress",
           ).toLowerCase(),
         }),
+    ...(record.authorityQuarantine === undefined
+      ? {}
+      : {
+          authorityQuarantine: {
+            attemptId: requireText(
+              record.authorityQuarantine.attemptId,
+              "authority quarantine attemptId",
+            ),
+            authorityDigest: requireHex32(
+              record.authorityQuarantine.authorityDigest,
+              "authority quarantine authorityDigest",
+            ),
+            authorityRevision: requireTimestamp(
+              record.authorityQuarantine.authorityRevision,
+              "authority quarantine authorityRevision",
+            ),
+            outcome: record.authorityQuarantine.outcome,
+            reason: record.authorityQuarantine.reason,
+            selectionFence:
+              record.authorityQuarantine.selectionFence.toString(),
+            quarantinedAt: requireTimestamp(
+              record.authorityQuarantine.quarantinedAt,
+              "authority quarantine quarantinedAt",
+            ),
+          },
+        }),
+    ...(record.terminalReconciliation === undefined
+      ? {}
+      : {
+          terminalReconciliation: {
+            attemptId: requireText(
+              record.terminalReconciliation.attemptId,
+              "terminal reconciliation attemptId",
+            ),
+            authorityDigest: requireHex32(
+              record.terminalReconciliation.authorityDigest,
+              "terminal reconciliation authorityDigest",
+            ),
+            authorityRevision: requireTimestamp(
+              record.terminalReconciliation.authorityRevision,
+              "terminal reconciliation authorityRevision",
+            ),
+            outcome: record.terminalReconciliation.outcome,
+            selectionFence:
+              record.terminalReconciliation.selectionFence.toString(),
+            reconciledAt: requireTimestamp(
+              record.terminalReconciliation.reconciledAt,
+              "terminal reconciliation reconciledAt",
+            ),
+          },
+        }),
   };
 }
 
@@ -315,7 +462,78 @@ function deserializeStored(wire: StoredWire): StoredMakerReservation {
             "settlementTicketAddress",
           ).toLowerCase(),
         }),
+    ...(wire.authorityQuarantine === undefined
+      ? {}
+      : {
+          authorityQuarantine: {
+            attemptId: requireText(
+              wire.authorityQuarantine.attemptId,
+              "authority quarantine attemptId",
+            ),
+            authorityDigest: requireHex32(
+              wire.authorityQuarantine.authorityDigest,
+              "authority quarantine authorityDigest",
+            ),
+            authorityRevision: requireTimestamp(
+              wire.authorityQuarantine.authorityRevision,
+              "authority quarantine authorityRevision",
+            ),
+            outcome: wire.authorityQuarantine.outcome,
+            reason: wire.authorityQuarantine.reason,
+            selectionFence: BigInt(wire.authorityQuarantine.selectionFence),
+            quarantinedAt: requireTimestamp(
+              wire.authorityQuarantine.quarantinedAt,
+              "authority quarantine quarantinedAt",
+            ),
+          },
+        }),
+    ...(wire.terminalReconciliation === undefined
+      ? {}
+      : {
+          terminalReconciliation: {
+            attemptId: requireText(
+              wire.terminalReconciliation.attemptId,
+              "terminal reconciliation attemptId",
+            ),
+            authorityDigest: requireHex32(
+              wire.terminalReconciliation.authorityDigest,
+              "terminal reconciliation authorityDigest",
+            ),
+            authorityRevision: requireTimestamp(
+              wire.terminalReconciliation.authorityRevision,
+              "terminal reconciliation authorityRevision",
+            ),
+            outcome: wire.terminalReconciliation.outcome,
+            selectionFence: BigInt(wire.terminalReconciliation.selectionFence),
+            reconciledAt: requireTimestamp(
+              wire.terminalReconciliation.reconciledAt,
+              "terminal reconciliation reconciledAt",
+            ),
+          },
+        }),
   };
+  if (
+    record.authorityQuarantine &&
+    ((record.authorityQuarantine.outcome !== "settled" &&
+      record.authorityQuarantine.outcome !== "refunded") ||
+      (record.authorityQuarantine.reason !== "authority-disagreement" &&
+        record.authorityQuarantine.reason !== "authority-reorged") ||
+      record.authorityQuarantine.selectionFence <= 0n)
+  ) {
+    throw new MakerNodeError(
+      "Persisted authority quarantine metadata is invalid.",
+    );
+  }
+  if (
+    record.terminalReconciliation &&
+    ((record.terminalReconciliation.outcome !== "settled" &&
+      record.terminalReconciliation.outcome !== "refunded") ||
+      record.terminalReconciliation.selectionFence <= 0n)
+  ) {
+    throw new MakerNodeError(
+      "Persisted terminal reconciliation metadata is invalid.",
+    );
+  }
   if (
     (record.signedCanonical === undefined) !==
       (record.signature === undefined) ||
@@ -712,6 +930,15 @@ function activeState(state: MakerReservationV1["state"]): boolean {
   return state === "reserved" || state === "selected" || state === "filling";
 }
 
+/**
+ * Replay identity is retained for every durable record, while capacity is
+ * locked only by reservations whose inventory outcome is still available or
+ * unknown. In particular, quarantine is never treated as spare inventory.
+ */
+function capacityLockedState(state: MakerReservationV1["state"]): boolean {
+  return activeState(state) || state === "quarantined";
+}
+
 function sameTerms(
   record: StoredMakerReservation,
   request: MakerQuoteRequest,
@@ -783,6 +1010,144 @@ function requireTtl(value: number): number {
     throw new MakerNodeError("reservationTtlSeconds must be in (0, 86400].");
   }
   return value;
+}
+
+function requireFeltText(value: string, label: string): string {
+  const normalized = requireText(value, label).toLowerCase();
+  if (!/^0x[0-9a-f]+$/.test(normalized))
+    throw new MakerNodeError(`${label} must be a canonical felt.`);
+  return normalized;
+}
+
+function canonicalReconciliationTarget(
+  input: MakerReconciliationTarget,
+): MakerReconciliationTarget {
+  return Object.freeze({
+    reservationId: requireHex32(input.reservationId, "reservationId"),
+    intentDigest: requireHex32(input.intentDigest, "intentDigest"),
+    fence: requireAmount(input.fence, "selection fence"),
+    quoteDigest: requireHex32(input.quoteDigest, "quoteDigest"),
+    dealId: requireFeltText(input.dealId, "dealId"),
+    sellToken: requireFeltText(input.sellToken, "sellToken"),
+    sellAmount: requireAmount(input.sellAmount, "sellAmount"),
+    buyToken: requireFeltText(input.buyToken, "buyToken"),
+    buyAmount: requireAmount(input.buyAmount, "buyAmount"),
+    deadline: requireTimestamp(input.deadline, "deadline"),
+    ticketAddress: requireFeltText(input.ticketAddress, "ticketAddress"),
+  });
+}
+
+function selectionFenceForReconciliation(
+  record: StoredMakerReservation,
+): bigint {
+  if (record.terminalReconciliation)
+    return record.terminalReconciliation.selectionFence;
+  if (record.authorityQuarantine)
+    return record.authorityQuarantine.selectionFence;
+  const fence = record.reservation.fence;
+  switch (record.reservation.state) {
+    case "selected":
+      return fence;
+    case "filling":
+      return fence - 1n;
+    case "consumed":
+      return fence - 2n;
+    case "quarantined":
+      return fence - (record.reservation.settlementAttemptId ? 2n : 1n);
+    default:
+      throw new MakerNodeError(
+        "Reservation state has no terminal reconciliation authority.",
+      );
+  }
+}
+
+function assertReconciliationBinding(
+  record: StoredMakerReservation | undefined,
+  target: MakerReconciliationTarget,
+  makerId: string,
+): StoredMakerReservation {
+  if (
+    !record ||
+    record.solverId !== makerId ||
+    record.reservation.intentDigest !== target.intentDigest ||
+    record.quoteDigest !== target.quoteDigest ||
+    record.sellToken.toLowerCase() !== target.sellToken ||
+    record.sellAmount !== target.sellAmount ||
+    record.buyToken.toLowerCase() !== target.buyToken ||
+    record.buyAmount !== target.buyAmount ||
+    record.rfqExpiresAt !== target.deadline ||
+    record.settlementDealId !== target.dealId ||
+    record.settlementDeadline !== target.deadline ||
+    record.settlementTicketAddress !== target.ticketAddress ||
+    selectionFenceForReconciliation(record) !== target.fence
+  ) {
+    throw new MakerNodeError(
+      "Maker reservation does not match the exact terminal reconciliation target.",
+    );
+  }
+  return record;
+}
+
+function reconciliationSnapshot(
+  record: StoredMakerReservation,
+): MakerReconciliationSnapshot {
+  if (
+    !record.quoteDigest ||
+    !record.settlementTicketAddress ||
+    record.settlementDeadline === undefined
+  ) {
+    throw new MakerNodeError(
+      "Maker reservation lacks durable settlement reconciliation fields.",
+    );
+  }
+  return Object.freeze({
+    makerId: record.solverId,
+    intentDigest: record.reservation.intentDigest,
+    reservationId: record.reservation.reservationId,
+    fence: selectionFenceForReconciliation(record).toString(),
+    quoteDigest: record.quoteDigest,
+    dealId: record.settlementDealId!,
+    sellToken: record.sellToken,
+    sellAmount: record.sellAmount.toString(),
+    buyToken: record.buyToken,
+    buyAmount: record.buyAmount.toString(),
+    deadline: record.settlementDeadline,
+    ticketAddress: record.settlementTicketAddress,
+    state: record.reservation.state,
+    ...(record.reservation.settlementTransactionHash === undefined
+      ? {}
+      : {
+          settlementTransactionHash:
+            record.reservation.settlementTransactionHash,
+        }),
+    ...(record.authorityQuarantine === undefined
+      ? {}
+      : {
+          authorityQuarantine: Object.freeze({
+            attemptId: record.authorityQuarantine.attemptId,
+            authorityDigest: record.authorityQuarantine.authorityDigest,
+            authorityRevision: record.authorityQuarantine.authorityRevision,
+            outcome: record.authorityQuarantine.outcome,
+            reason: record.authorityQuarantine.reason,
+            selectionFence:
+              record.authorityQuarantine.selectionFence.toString(),
+            quarantinedAt: record.authorityQuarantine.quarantinedAt,
+          }),
+        }),
+    ...(record.terminalReconciliation === undefined
+      ? {}
+      : {
+          terminalReconciliation: Object.freeze({
+            attemptId: record.terminalReconciliation.attemptId,
+            authorityDigest: record.terminalReconciliation.authorityDigest,
+            authorityRevision: record.terminalReconciliation.authorityRevision,
+            outcome: record.terminalReconciliation.outcome,
+            selectionFence:
+              record.terminalReconciliation.selectionFence.toString(),
+            reconciledAt: record.terminalReconciliation.reconciledAt,
+          }),
+        }),
+  });
 }
 
 export class DurableMakerNode {
@@ -875,9 +1240,7 @@ export class DurableMakerNode {
     return this.#store.transaction(async (draft, nextSequence) => {
       pruneDraft(draft, now);
       const existing = [...draft.values()].find(
-        (record) =>
-          record.reservation.intentDigest === request.intentDigest &&
-          activeState(record.reservation.state),
+        (record) => record.reservation.intentDigest === request.intentDigest,
       );
       if (existing) {
         if (!sameTerms(existing, request)) {
@@ -887,7 +1250,7 @@ export class DurableMakerNode {
         }
         if (existing.reservation.state !== "reserved") {
           throw new MakerNodeError(
-            "RFQ reservation has already been selected or is filling.",
+            "RFQ intent replay is fenced by its durable reservation history.",
           );
         }
         return toOffer(existing);
@@ -909,7 +1272,7 @@ export class DurableMakerNode {
       const reserved = [...draft.values()]
         .filter(
           (record) =>
-            activeState(record.reservation.state) &&
+            capacityLockedState(record.reservation.state) &&
             record.buyToken.toLowerCase() === request.buyToken.toLowerCase(),
         )
         .reduce((total, record) => total + record.buyAmount, 0n);
@@ -1170,6 +1533,295 @@ export class DurableMakerNode {
         }),
       });
       return true;
+    });
+  }
+
+  async bindSettlementForReconciliation(
+    input: MakerReconciliationTarget,
+    now: number,
+  ): Promise<MakerReconciliationSnapshot> {
+    const target = canonicalReconciliationTarget(input);
+    requireTimestamp(now, "now");
+    return this.#store.transaction((draft) => {
+      pruneDraft(draft, now);
+      const record = draft.get(target.reservationId);
+      if (
+        !record ||
+        record.solverId !== this.#config.makerId ||
+        record.reservation.intentDigest !== target.intentDigest ||
+        record.quoteDigest !== target.quoteDigest ||
+        record.sellToken.toLowerCase() !== target.sellToken ||
+        record.sellAmount !== target.sellAmount ||
+        record.buyToken.toLowerCase() !== target.buyToken ||
+        record.buyAmount !== target.buyAmount ||
+        record.rfqExpiresAt !== target.deadline ||
+        selectionFenceForReconciliation(record) !== target.fence ||
+        (record.settlementDealId !== undefined &&
+          record.settlementDealId !== target.dealId) ||
+        (record.settlementDeadline !== undefined &&
+          record.settlementDeadline !== target.deadline) ||
+        (record.settlementTicketAddress !== undefined &&
+          record.settlementTicketAddress !== target.ticketAddress)
+      ) {
+        throw new MakerNodeError(
+          "Maker refused a substituted settlement reconciliation binding.",
+        );
+      }
+      const bound: StoredMakerReservation = {
+        ...record,
+        settlementDealId: target.dealId,
+        settlementDeadline: target.deadline,
+        settlementTicketAddress: target.ticketAddress,
+      };
+      draft.set(target.reservationId, bound);
+      return reconciliationSnapshot(bound);
+    });
+  }
+
+  async readReconciliationSnapshot(
+    input: MakerReconciliationTarget,
+    now: number,
+  ): Promise<MakerReconciliationSnapshot> {
+    const target = canonicalReconciliationTarget(input);
+    requireTimestamp(now, "now");
+    return this.#store.transaction((draft) => {
+      pruneDraft(draft, now);
+      return reconciliationSnapshot(
+        assertReconciliationBinding(
+          draft.get(target.reservationId),
+          target,
+          this.#config.makerId,
+        ),
+      );
+    });
+  }
+
+  async quarantineForAuthority(
+    input: MakerAuthorityQuarantineRequest,
+    now: number,
+  ): Promise<MakerReconciliationSnapshot> {
+    const target = canonicalReconciliationTarget(input.target);
+    const attemptId = requireText(
+      input.attemptId,
+      "authority quarantine attemptId",
+    );
+    const authorityDigest = requireHex32(
+      input.authorityDigest,
+      "authority quarantine authorityDigest",
+    );
+    const authorityRevision = requireTimestamp(
+      input.authorityRevision,
+      "authority quarantine authorityRevision",
+    );
+    if (input.outcome !== "settled" && input.outcome !== "refunded")
+      throw new MakerNodeError("Authority quarantine outcome is invalid.");
+    if (
+      input.reason !== "authority-disagreement" &&
+      input.reason !== "authority-reorged"
+    )
+      throw new MakerNodeError("Authority quarantine reason is invalid.");
+    requireTimestamp(now, "now");
+    return this.#store.transaction((draft) => {
+      pruneDraft(draft, now);
+      const record = assertReconciliationBinding(
+        draft.get(target.reservationId),
+        target,
+        this.#config.makerId,
+      );
+      const prior = record.authorityQuarantine;
+      if (prior && authorityRevision < prior.authorityRevision)
+        throw new MakerNodeError(
+          "Maker refused a stale authority quarantine revision.",
+        );
+      if (prior?.authorityRevision === authorityRevision) {
+        if (
+          prior.attemptId !== attemptId ||
+          prior.authorityDigest !== authorityDigest ||
+          prior.outcome !== input.outcome ||
+          prior.reason !== input.reason ||
+          prior.selectionFence !== target.fence
+        )
+          throw new MakerNodeError(
+            "Maker refused authority quarantine equivocation.",
+          );
+        return reconciliationSnapshot(record);
+      }
+      if (
+        record.terminalReconciliation &&
+        (record.terminalReconciliation.outcome !== input.outcome ||
+          authorityRevision <= record.terminalReconciliation.authorityRevision)
+      )
+        throw new MakerNodeError(
+          "Maker refused authority quarantine that did not supersede terminal authority.",
+        );
+      if (now < record.reservation.updatedAt)
+        throw new MakerNodeError(
+          "Authority quarantine time moved behind reservation history.",
+        );
+      const authorityQuarantine: MakerAuthorityQuarantine = {
+        attemptId,
+        authorityDigest,
+        authorityRevision,
+        outcome: input.outcome,
+        reason: input.reason,
+        selectionFence: target.fence,
+        quarantinedAt: now,
+      };
+      const reservation: MakerReservationV1 =
+        record.reservation.state === "quarantined"
+          ? {
+              ...record.reservation,
+              updatedAt: now,
+              terminalReason:
+                input.reason === "authority-reorged"
+                  ? "chain authority reorged; exact reconciliation required"
+                  : "chain readers disagreed; exact reconciliation required",
+            }
+          : {
+              ...record.reservation,
+              state: "quarantined",
+              fence: record.reservation.fence + 1n,
+              updatedAt: now,
+              terminalReason:
+                input.reason === "authority-reorged"
+                  ? "chain authority reorged; exact reconciliation required"
+                  : "chain readers disagreed; exact reconciliation required",
+            };
+      canonicalMakerReservation(reservation);
+      const next: StoredMakerReservation = {
+        ...record,
+        authorityQuarantine,
+        reservation,
+      };
+      draft.set(target.reservationId, next);
+      return reconciliationSnapshot(next);
+    });
+  }
+
+  async reconcileAuthoritativeTerminal(
+    input: MakerTerminalReconciliationRequest,
+    now: number,
+  ): Promise<MakerReconciliationSnapshot> {
+    const target = canonicalReconciliationTarget(input.target);
+    const attemptId = requireText(
+      input.attemptId,
+      "terminal reconciliation attemptId",
+    );
+    const authorityDigest = requireHex32(
+      input.authorityDigest,
+      "terminal reconciliation authorityDigest",
+    );
+    const authorityRevision = requireTimestamp(
+      input.authorityRevision,
+      "terminal reconciliation authorityRevision",
+    );
+    if (input.outcome !== "settled" && input.outcome !== "refunded")
+      throw new MakerNodeError("Terminal reconciliation outcome is invalid.");
+    requireTimestamp(now, "now");
+    return this.#store.transaction((draft) => {
+      pruneDraft(draft, now);
+      const record = assertReconciliationBinding(
+        draft.get(target.reservationId),
+        target,
+        this.#config.makerId,
+      );
+      const prior = record.terminalReconciliation;
+      if (prior && authorityRevision < prior.authorityRevision)
+        throw new MakerNodeError(
+          "Maker refused a stale terminal reconciliation revision.",
+        );
+      if (prior?.authorityRevision === authorityRevision) {
+        if (
+          prior.attemptId !== attemptId ||
+          prior.authorityDigest !== authorityDigest ||
+          prior.outcome !== input.outcome ||
+          prior.selectionFence !== target.fence
+        )
+          throw new MakerNodeError(
+            "Maker refused terminal reconciliation equivocation.",
+          );
+        return reconciliationSnapshot(record);
+      }
+      if (prior && prior.outcome !== input.outcome)
+        throw new MakerNodeError(
+          "Maker refused terminal reconciliation outcome equivocation.",
+        );
+      if (
+        record.authorityQuarantine &&
+        authorityRevision <= record.authorityQuarantine.authorityRevision
+      )
+        throw new MakerNodeError(
+          "Terminal authority does not supersede the maker quarantine revision.",
+        );
+      if (input.outcome === "settled") {
+        const settlementTransactionHash = requireFeltText(
+          input.settlementTransactionHash ?? "",
+          "settlementTransactionHash",
+        );
+        if (
+          (record.reservation.state !== "consumed" &&
+            record.reservation.state !== "quarantined") ||
+          !record.reservation.settlementAttemptId ||
+          record.reservation.settlementTransactionHash?.toLowerCase() !==
+            settlementTransactionHash
+        ) {
+          throw new MakerNodeError(
+            "Settled authority does not match consumed maker inventory.",
+          );
+        }
+      } else if (
+        (record.reservation.state !== "selected" &&
+          record.reservation.state !== "quarantined" &&
+          !(
+            record.reservation.state === "released" &&
+            prior?.outcome === "refunded"
+          )) ||
+        record.reservation.settlementAttemptId ||
+        record.reservation.settlementTransactionHash
+      ) {
+        throw new MakerNodeError(
+          "Refund authority cannot release attempted or consumed maker inventory.",
+        );
+      }
+      if (now < record.reservation.updatedAt)
+        throw new MakerNodeError(
+          "Terminal reconciliation time moved behind reservation history.",
+        );
+      const terminalReconciliation: MakerTerminalReconciliation = {
+        attemptId,
+        authorityDigest,
+        authorityRevision,
+        outcome: input.outcome,
+        selectionFence: target.fence,
+        reconciledAt: now,
+      };
+      const reservation: MakerReservationV1 =
+        input.outcome === "settled"
+          ? record.reservation.state === "consumed"
+            ? record.reservation
+            : {
+                ...record.reservation,
+                state: "consumed",
+                fence: record.reservation.fence + 1n,
+                updatedAt: now,
+              }
+          : record.reservation.state === "released"
+            ? record.reservation
+            : {
+                ...record.reservation,
+                state: "released",
+                fence: record.reservation.fence + 1n,
+                updatedAt: now,
+                terminalReason: "exact chain-authoritative refund reconciled",
+              };
+      canonicalMakerReservation(reservation);
+      const next: StoredMakerReservation = {
+        ...record,
+        terminalReconciliation,
+        reservation,
+      };
+      draft.set(target.reservationId, next);
+      return reconciliationSnapshot(next);
     });
   }
 

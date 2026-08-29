@@ -12,7 +12,7 @@ const BLOCK_HINT_USDC = 10_000;
 export function deskLeakChips(venue: DeskVenue): readonly DeskLeakChip[] {
   if (venue === "inventory") {
     return [
-      { id: "owner", label: "No public request sender" },
+      { id: "owner", label: "No public order-book request" },
       { id: "size", label: "Invited makers see exact RFQ" },
       { id: "venue", label: "No public book" },
     ];
@@ -26,13 +26,13 @@ export function deskLeakChips(venue: DeskVenue): readonly DeskLeakChip[] {
   }
   if (venue === "refused") {
     return [
-      { id: "owner", label: "No public request sender" },
+      { id: "owner", label: "No public order-book request" },
       { id: "size", label: "No private fill" },
       { id: "venue", label: "Not published" },
     ];
   }
   return [
-    { id: "owner", label: "No public request sender" },
+    { id: "owner", label: "No public order-book request" },
     { id: "size", label: "Request not yet sent" },
     { id: "venue", label: "Awaiting request" },
   ];

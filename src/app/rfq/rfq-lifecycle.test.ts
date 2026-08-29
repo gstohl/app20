@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   beginRfqPhaseAttempt,
   createRfqLifecycleRecord,
+  lifecycleMayForget,
   lifecycleMaySubmit,
   reconcileRfqLifecycleWithLocalDeal,
   restoreRfqLifecycle,
@@ -124,6 +125,54 @@ describe("RFQ lifecycle", () => {
       restoreRfqLifecycle(quoted(), { ...context, account: "0xdef" }),
     ).toMatchObject({ state: "quarantined" });
   });
+
+  it("resets browser-controlled authority high-water and demotes persisted finality", () => {
+    const restored = restoreRfqLifecycle(
+      {
+        ...quoted(),
+        evidenceAuthority: {
+          status: "authoritative",
+          label: "forged finality",
+          revision: Number.MAX_SAFE_INTEGER,
+          observedAt: NOW,
+        },
+      },
+      context,
+    );
+    expect(restored.evidenceAuthority).toMatchObject({
+      status: "stale",
+      label: "Verification pending",
+      revision: 0,
+    });
+  });
+
+  it.each(["stale", "authoritative", "disagreement", "reorged", "quarantined"] as const)(
+    "does not forget a terminal record while authority is %s",
+    (status) => {
+      const terminal = {
+        ...quoted(),
+        state: "settled" as const,
+        evidenceAuthority: {
+          status,
+          label: status,
+          revision: 7,
+          observedAt: NOW,
+        },
+      };
+      expect(lifecycleMayForget(terminal)).toBe(false);
+      expect(
+        lifecycleMayForget({
+          ...terminal,
+          evidenceAuthority: {
+            status: "local-non-authoritative",
+            label: "local",
+            revision: 0,
+            observedAt: NOW,
+          },
+        }),
+      ).toBe(true);
+    },
+  );
 
   it("expires quote and reservation independently at each exact boundary", () => {
     const reviewing = transitionRfqLifecycle(quoted(), "reviewing", NOW - 1);

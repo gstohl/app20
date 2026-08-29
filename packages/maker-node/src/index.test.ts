@@ -262,6 +262,7 @@ type FileOperation = (typeof FILE_OPERATION_ORDER)[number];
 type MutationPhase =
   | "select"
   | "release"
+  | "terminal-refund"
   | "fill-acquisition"
   | "fill-completion";
 
@@ -358,6 +359,13 @@ function exactFillRequest(
   };
 }
 
+function reconciliationTarget(
+  offer: Awaited<ReturnType<DurableMakerNode["reserve"]>>,
+  store: DurableReservationStore,
+) {
+  return exactFillRequest(offer, store);
+}
+
 function assertValidContiguousChain(
   path: string,
   minimumSequence: number,
@@ -418,6 +426,25 @@ async function prepareMutationPhase(
       oldOrNewStates: ["selected", "released"],
     };
   const fillRequest = exactFillRequest(offer, store);
+  if (phase === "terminal-refund") {
+    await context.node.bindSettlementForReconciliation(fillRequest, NOW + 3);
+    return {
+      context,
+      oldSequence: store.sequence,
+      operation: () =>
+        context.node.reconcileAuthoritativeTerminal(
+          {
+            target: fillRequest,
+            attemptId: "reconcile:mutation-refund",
+            authorityDigest: DIGEST_C,
+            authorityRevision: 9,
+            outcome: "refunded",
+          },
+          NOW + 4,
+        ),
+      oldOrNewStates: ["selected", "released"],
+    };
+  }
   return {
     context,
     oldSequence: store.sequence,
@@ -717,7 +744,7 @@ describe("mutation-sensitive filesystem WAL boundaries", () => {
     },
   );
 
-  it.each(["select", "release", "fill-completion"] as const)(
+  it.each(["select", "release", "terminal-refund", "fill-completion"] as const)(
     "uses exact ordered filesystem effects for successful %s mutation(s)",
     async (phase) => {
       const path = walPath();
@@ -741,7 +768,13 @@ describe("mutation-sensitive filesystem WAL boundaries", () => {
 
   it.each(
     (
-      ["select", "release", "fill-acquisition", "fill-completion"] as const
+      [
+        "select",
+        "release",
+        "terminal-refund",
+        "fill-acquisition",
+        "fill-completion",
+      ] as const
     ).flatMap((phase) =>
       FILE_OPERATION_ORDER.map((stage) => ({ phase, stage })),
     ),
@@ -838,6 +871,25 @@ describe("inventory reservations and signing", () => {
     await expect(
       node.reserve(request({ minBuyAmount: 91n }), NOW + 1),
     ).rejects.toThrow(/reused with different terms/i);
+  });
+
+  it("retains replay identity after expiry without retaining known-free capacity", async () => {
+    const store = open();
+    const { node, setBalance } = fixture(store);
+    setBalance(100n);
+    await node.reserve(request(), NOW);
+
+    await expect(node.reserve(request(), NOW + 601)).rejects.toThrow(
+      /replay is fenced/i,
+    );
+    await expect(
+      node.reserve(
+        request({ intentDigest: `0x${"66".repeat(32)}` }),
+        NOW + 601,
+      ),
+    ).resolves.toMatchObject({ grossBuyAmount: 100n });
+    expect(node.health().states.expired).toBe(1);
+    expect(node.health().states.reserved).toBe(1);
   });
 
   it("signs once, persists the signature, and refuses quote equivocation", async () => {
@@ -1070,6 +1122,219 @@ describe("winner-only fill lifecycle", () => {
     expect(recoveredStore.list()[0]!.reservation.terminalReason).toMatch(
       /restarted with unknown chain outcome/i,
     );
+  });
+});
+
+describe("chain-authoritative terminal reconciliation", () => {
+  it("retains quarantined capacity through prune and restart until exact terminal release", async () => {
+    const path = walPath();
+    const first = open(path);
+    const firstContext = fixture(first);
+    firstContext.setBalance(100n);
+    const offer = await reserveSignSelect(firstContext.node);
+    const target = reconciliationTarget(offer, first);
+    await firstContext.node.bindSettlementForReconciliation(target, NOW + 3);
+    await firstContext.node.readReconciliationSnapshot(target, NOW + 700);
+
+    const nextRequest = request({ intentDigest: `0x${"66".repeat(32)}` });
+    await expect(
+      firstContext.node.reserve(nextRequest, NOW + 701),
+    ).rejects.toThrow(/inventory cannot cover/i);
+    await first.close();
+    openStores.splice(openStores.indexOf(first), 1);
+
+    const recoveredStore = open(path);
+    const recoveredContext = fixture(recoveredStore);
+    recoveredContext.setBalance(100n);
+    await recoveredContext.node.recoverAfterRestart(NOW + 702);
+    await expect(
+      recoveredContext.node.reserve(nextRequest, NOW + 702),
+    ).rejects.toThrow(/inventory cannot cover/i);
+
+    await recoveredContext.node.reconcileAuthoritativeTerminal(
+      {
+        target,
+        attemptId: "reconcile:capacity-release",
+        authorityDigest: DIGEST_C,
+        authorityRevision: 9,
+        outcome: "refunded",
+      },
+      NOW + 703,
+    );
+    await expect(
+      recoveredContext.node.reserve(nextRequest, NOW + 704),
+    ).resolves.toMatchObject({ grossBuyAmount: 100n });
+  });
+
+  it("recovers authoritative revisions after durable quarantine and response loss", async () => {
+    const path = walPath();
+    const first = open(path);
+    const firstNode = fixture(first).node;
+    const offer = await reserveSignSelect(firstNode);
+    const target = reconciliationTarget(offer, first);
+    await firstNode.bindSettlementForReconciliation(target, NOW + 3);
+    const initialTerminal = {
+      target,
+      attemptId: "reconcile:revision",
+      authorityDigest: DIGEST_C,
+      authorityRevision: 9,
+      outcome: "refunded" as const,
+    };
+
+    // Treat this durable mutation as a lost response, then replay after a real
+    // WAL close/reopen boundary.
+    await firstNode.reconcileAuthoritativeTerminal(initialTerminal, NOW + 4);
+    await first.close();
+    openStores.splice(openStores.indexOf(first), 1);
+    const replayStore = open(path);
+    const replayNode = fixture(replayStore).node;
+    await expect(
+      replayNode.reconcileAuthoritativeTerminal(initialTerminal, NOW + 5),
+    ).resolves.toMatchObject({ state: "released" });
+
+    const quarantine = {
+      target,
+      attemptId: "quarantine:revision-10",
+      authorityDigest: DIGEST_B,
+      authorityRevision: 10,
+      outcome: "refunded" as const,
+      reason: "authority-disagreement" as const,
+    };
+    await expect(
+      replayNode.quarantineForAuthority(
+        {
+          ...quarantine,
+          target: { ...target, buyAmount: target.buyAmount + 1n },
+        },
+        NOW + 6,
+      ),
+    ).rejects.toThrow(/exact terminal reconciliation target/i);
+    const firstQuarantine = await replayNode.quarantineForAuthority(
+      quarantine,
+      NOW + 6,
+    );
+    await expect(
+      replayNode.quarantineForAuthority(quarantine, NOW + 7),
+    ).resolves.toEqual(firstQuarantine);
+    expect(firstQuarantine.state).toBe("quarantined");
+    await replayStore.close();
+    openStores.splice(openStores.indexOf(replayStore), 1);
+
+    const recoveredStore = open(path);
+    const recoveredNode = fixture(recoveredStore).node;
+    const recoveredTerminal = {
+      ...initialTerminal,
+      authorityDigest: DIGEST_A,
+      authorityRevision: 11,
+    };
+    // Again lose the response after the WAL mutation, restart, and prove the
+    // exact higher-revision retry is idempotent rather than equivocation.
+    await recoveredNode.reconcileAuthoritativeTerminal(
+      recoveredTerminal,
+      NOW + 8,
+    );
+    await recoveredStore.close();
+    openStores.splice(openStores.indexOf(recoveredStore), 1);
+    const finalStore = open(path);
+    const finalNode = fixture(finalStore).node;
+    await expect(
+      finalNode.reconcileAuthoritativeTerminal(recoveredTerminal, NOW + 9),
+    ).resolves.toMatchObject({
+      state: "released",
+      terminalReconciliation: {
+        authorityDigest: DIGEST_A,
+        authorityRevision: 11,
+      },
+    });
+    await expect(
+      finalNode.quarantineForAuthority(
+        { ...quarantine, authorityDigest: DIGEST_C },
+        NOW + 10,
+      ),
+    ).rejects.toThrow(/equivocation|stale|supersede/i);
+  });
+
+  it("keeps selected inventory quarantined until exact refund authority and replays after restart", async () => {
+    const path = walPath();
+    const first = open(path);
+    const firstNode = fixture(first).node;
+    const offer = await reserveSignSelect(firstNode);
+    const target = reconciliationTarget(offer, first);
+    await firstNode.bindSettlementForReconciliation(target, NOW + 3);
+
+    const quarantined = await firstNode.readReconciliationSnapshot(
+      target,
+      NOW + 700,
+    );
+    expect(quarantined.state).toBe("quarantined");
+    expect(firstNode.health().states.released).toBe(0);
+
+    const request = {
+      target,
+      attemptId: "reconcile:refund-a",
+      authorityDigest: DIGEST_C,
+      authorityRevision: 9,
+      outcome: "refunded" as const,
+    };
+    const released = await firstNode.reconcileAuthoritativeTerminal(
+      request,
+      NOW + 701,
+    );
+    expect(released.state).toBe("released");
+    expect(released.fence).toBe(target.fence.toString());
+
+    await first.close();
+    openStores.splice(openStores.indexOf(first), 1);
+    const recoveredStore = open(path);
+    const recoveredNode = fixture(recoveredStore).node;
+    await expect(
+      recoveredNode.reconcileAuthoritativeTerminal(request, NOW + 702),
+    ).resolves.toMatchObject({ state: "released" });
+    await expect(
+      recoveredNode.reconcileAuthoritativeTerminal(
+        { ...request, authorityDigest: DIGEST_B },
+        NOW + 703,
+      ),
+    ).rejects.toThrow(/equivocation/i);
+  });
+
+  it("accepts consumed inventory only with the exact authoritative fill hash", async () => {
+    const store = open();
+    const node = fixture(store).node;
+    const offer = await reserveSignSelect(node);
+    const target = reconciliationTarget(offer, store);
+    await node.bindSettlementForReconciliation(target, NOW + 3);
+    const fill = await node.fill(target, NOW + 4);
+
+    await expect(
+      node.reconcileAuthoritativeTerminal(
+        {
+          target,
+          attemptId: "reconcile:settled-a",
+          authorityDigest: DIGEST_C,
+          authorityRevision: 10,
+          outcome: "settled",
+          settlementTransactionHash: "0xbad",
+        },
+        NOW + 5,
+      ),
+    ).rejects.toThrow(/consumed maker inventory/i);
+    await expect(
+      node.reconcileAuthoritativeTerminal(
+        {
+          target,
+          attemptId: "reconcile:settled-a",
+          authorityDigest: DIGEST_C,
+          authorityRevision: 10,
+          outcome: "settled",
+          settlementTransactionHash: fill.transactionHash,
+        },
+        NOW + 5,
+      ),
+    ).resolves.toMatchObject({
+      state: "consumed",
+      settlementTransactionHash: fill.transactionHash,
+    });
   });
 });
 

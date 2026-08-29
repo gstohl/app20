@@ -3,6 +3,7 @@ export const CANONICAL_ROUTES = {
   swap: "/swap/strk/usdc",
   rfq: "/rfq",
   rfqOperations: "/rfq/operations",
+  marketProposal: "/rfq/markets/$tokenA/$tokenB/proposal",
   funding: "/funding",
   send: "/send",
   recovery: "/recovery/privy",
@@ -17,6 +18,16 @@ export type RfqPairSearch = "STRK_USDC" | "USDC_STRK";
 
 export function validatedRfqPair(value: unknown): RfqPairSearch {
   return value === "USDC_STRK" ? "USDC_STRK" : "STRK_USDC";
+}
+
+export function marketProposalPath(tokenA: string, tokenB: string): string {
+  return `/rfq/markets/${tokenA}/${tokenB}/proposal`;
+}
+
+/** Legacy pool-creation bookmarks resolve to the proposal-only market surface. */
+export function legacyMarketProposalTarget(pathname: string): string | null {
+  const match = /^\/pools\/create\/([^/]+)\/([^/]+)\/?$/.exec(pathname);
+  return match ? marketProposalPath(match[1], match[2]) : null;
 }
 
 export function legacyRouteTarget(pathname: string): string | null {

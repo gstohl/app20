@@ -19,7 +19,7 @@ import {
   myFrontendProviders,
 } from "@/utils/constants";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import DeskMarketBoard from "./DeskMarketBoard";
 import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 import {
@@ -39,7 +39,10 @@ import {
   reconcilePersistedReservationRelease,
   reservationReleaseReconciliationRoute,
 } from "./localnet-release-recovery";
-import type { LocalnetResumeAction } from "./localnet-resume-controller";
+import {
+  authorizeLocalnetResumeCommand,
+  type LocalnetResumeAction,
+} from "./localnet-resume-controller";
 import {
   assertLocalnetRecoveryContextUnchanged,
   recoveryContextMatches,
@@ -82,14 +85,11 @@ const LocalnetPrivateIntentDesk = lazy(
   () => import("./LocalnetPrivateIntentDesk"),
 );
 
+import RfqRecoveryCard from "./RfqRecoveryCard";
+import { refreshLiveRfqAuthority } from "./rfq-authority";
+import type { WorkspaceLoadState } from "./workspace-load-state";
+
 type View = "new" | "active" | "activity" | "compatibility";
-export type WorkspaceLoadState =
-  | "loading"
-  | "ready"
-  | "stale/offline"
-  | "storage-unavailable"
-  | "local-deal-read-failed"
-  | "quarantined";
 
 export function rfqWorkspaceScopeKey(
   providerIndex: number,
@@ -153,21 +153,25 @@ export function RfqWorkspaceActiveBoundary(props: {
   loadedScope: string | undefined;
   currentScope: string | undefined;
   loadState: WorkspaceLoadState;
+  loadDetail?: string;
   busyRfqId?: string;
   onAction: (record: RfqLifecycleRecord, action: LocalnetResumeAction) => void;
   onRemove: (record: RfqLifecycleRecord) => void;
   onClearAll: () => void;
+  onRetryLoad?: () => void;
 }) {
   const actionsDisabled = !deriveWorkspaceContextReady(props);
   return (
     <RfqActiveList
       records={props.records}
       loadState={props.loadState}
+      loadDetail={props.loadDetail}
       busyRfqId={props.busyRfqId}
       actionsDisabled={actionsDisabled}
       onAction={props.onAction}
       onRemove={props.onRemove}
       onClearAll={props.onClearAll}
+      onRetryLoad={props.onRetryLoad}
     />
   );
 }
@@ -252,9 +256,22 @@ export default function RfqWorkspace() {
   const [loadedScope, setLoadedScope] = useState<string>();
   const [busyRfqId, setBusyRfqId] = useState<string>();
   const [recordError, setRecordError] = useState<string>();
+  const [loadDetail, setLoadDetail] = useState<string>();
+  const [reloadToken, setReloadToken] = useState(0);
   const operations = useRfqOperations();
   const currentScope = rfqWorkspaceScopeKey(providerIndex, chain, address);
+  const viewRegionRef = useRef<HTMLElement>(null);
+  const viewChangedRef = useRef(false);
+  const authorityRefreshesRef = useRef(new Map<string, number>());
+  const [, setAuthorityClock] = useState(0);
   useEffect(() => setPairId(requestedPair), [requestedPair]);
+  useEffect(() => {
+    if (!viewChangedRef.current) {
+      viewChangedRef.current = true;
+      return;
+    }
+    viewRegionRef.current?.focus();
+  }, [view]);
 
   const replaceRecord = (record: RfqLifecycleRecord) =>
     setRecords((current) =>
@@ -265,6 +282,7 @@ export default function RfqWorkspace() {
     );
 
   useEffect(() => {
+    authorityRefreshesRef.current.clear();
     setRecords([]);
     setLoadedScope(undefined);
     setBusyRfqId(undefined);
@@ -276,6 +294,7 @@ export default function RfqWorkspace() {
     const storage = createIndexedDbRfqStorage();
     setLoadState("loading");
     setRecordError(undefined);
+    setLoadDetail(undefined);
     void storage
       .list(chain, address)
       .then(async (rows) => {
@@ -340,14 +359,66 @@ export default function RfqWorkspace() {
       .catch((error: unknown) => {
         if (!active) return;
         setLoadState("storage-unavailable");
-        setRecordError(
+        setLoadDetail(
           error instanceof Error ? error.message : "IndexedDB is unavailable.",
         );
       });
     return () => {
       active = false;
     };
-  }, [address, chain, providerIndex]);
+  }, [address, chain, providerIndex, reloadToken]);
+
+  useEffect(() => {
+    if (
+      providerIndex !== LOCALNET_PROVIDER_INDEX ||
+      !address ||
+      !chain ||
+      !workspaceScopeIsReady(loadedScope, currentScope, loadState)
+    ) return;
+    let active = true;
+    const refresh = () => {
+      const now = Date.now();
+      // The live authority capability expires against wall time even between
+      // five-second verifier reads. Tick presentation once per second so an
+      // open tab cannot continue showing finality past validUntil.
+      if (
+        active &&
+        records.some(
+          (record) => record.state === "settled" || record.state === "refunded",
+        )
+      )
+        setAuthorityClock((current) => current + 1);
+      for (const record of records) {
+        const nextRefreshAt =
+          authorityRefreshesRef.current.get(record.rfqId) ?? 0;
+        if (
+          (record.state !== "settled" && record.state !== "refunded") ||
+          record.evidenceAuthority.status === "reorged" ||
+          record.evidenceAuthority.status === "quarantined" ||
+          nextRefreshAt > now
+        ) continue;
+        // Fence concurrent reads and retry both success and failure. Authority
+        // reads are verification-only and never submit or resubmit value.
+        authorityRefreshesRef.current.set(record.rfqId, now + 5_000);
+        void refreshLiveRfqAuthority(record, localnetRuntimeEpoch())
+          .then(async (next) => {
+            if (!active) return;
+            await createIndexedDbRfqStorage().save(next);
+            if (active) replaceRecord(next);
+          })
+          .catch(() => {
+            // A failed read remains non-authoritative. The one-second
+            // presentation clock above still demotes an expired live mark.
+          });
+      }
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 1_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [address, chain, currentScope, loadState, loadedScope, providerIndex, records]);
 
   async function persist(
     record: RfqLifecycleRecord,
@@ -717,6 +788,22 @@ export default function RfqWorkspace() {
     setBusyRfqId(record.rfqId);
     setRecordError(undefined);
     try {
+      const now = Math.floor(Date.now() / 1_000);
+      const stored = await createIndexedDbRfqStorage().load(record);
+      const durableRecord = stored
+        ? restoreRfqLifecycle(stored, {
+            chainId: record.chainId,
+            account: record.account,
+            now,
+          })
+        : undefined;
+      if (durableRecord) replaceRecord(durableRecord);
+      const currentRecord = authorizeLocalnetResumeCommand(
+        record,
+        durableRecord,
+        action,
+        now,
+      );
       if (
         action === "accept-and-fund" ||
         action === "request-maker-fill" ||
@@ -725,27 +812,29 @@ export default function RfqWorkspace() {
         const gate = gateRfqAction(
           operations,
           action === "accept-and-fund" ? "fund" : "fill",
-          record.selectedQuote?.solverId,
+          currentRecord.selectedQuote?.solverId,
         );
         if (!gate.allowed) throw new Error(gate.reason);
       }
-      if (action === "verify-funding") await verifyFunding(record);
+      if (action === "verify-funding") await verifyFunding(currentRecord);
       else if (["reconcile-fill", "reconcile-outcome"].includes(action))
-        await reconcile(record);
-      else if (action === "request-maker-fill") await requestFill(record);
-      else if (action === "retry-maker-fill") await retryMakerFill(record);
-      else if (action === "observe-expiry") await observeExpiry(record);
+        await reconcile(currentRecord);
+      else if (action === "request-maker-fill")
+        await requestFill(currentRecord);
+      else if (action === "retry-maker-fill")
+        await retryMakerFill(currentRecord);
+      else if (action === "observe-expiry") await observeExpiry(currentRecord);
       else if (action === "claim" || action === "refund")
-        await submitOutcome(record, action);
+        await submitOutcome(currentRecord, action);
       else if (action === "verify-reservation-release")
-        await verifyReservationRelease(record);
+        await verifyReservationRelease(currentRecord);
       else if (action === "retry-reservation-release")
-        await releaseRequest(record);
+        await releaseRequest(currentRecord);
       else if (
         action === "release-request-reservations" ||
         action === "decline-and-release"
       )
-        await releaseRequest(record);
+        await releaseRequest(currentRecord);
       else if (action === "request-fresh-quotes") window.location.hash = "new";
       else if (action === "accept-and-fund")
         throw new Error(
@@ -823,12 +912,21 @@ export default function RfqWorkspace() {
     loadState,
     records,
   });
+  function retryWorkspaceLoad() {
+    if (loadState === "stale/offline") {
+      document.getElementById("app20-session-control")?.focus();
+      return;
+    }
+    setReloadToken((token) => token + 1);
+  }
+
   return (
     <main className={styles.page}>
       <RfqEnvironmentBanner
         providerIndex={providerIndex}
         runtimeEpoch={localnetRuntimeEpoch()}
       />
+      <h1 className={styles.workspaceTitle}>Private RFQ</h1>
       <nav className={styles.deskSubnav} aria-label="RFQ workspace">
         <Link
           to="/rfq"
@@ -857,43 +955,51 @@ export default function RfqWorkspace() {
       {view === "compatibility" ? (
         <section>
           <strong>COMPATIBILITY BOUNDARY · NO SETTLEMENT</strong>
-          <h1>Cross-chain review moved</h1>
+          <h2>Cross-chain review moved</h2>
           <p>This bookmark cannot request or execute an RFQ.</p>
           <Link to="/cross-chain-review">Open dry cross-chain review</Link>
         </section>
       ) : null}
       {view === "active" ? (
-        <RfqWorkspaceActiveBoundary
-          records={records.filter(
-            (row) =>
-              !["settled", "refunded", "cancelled", "refused"].includes(
-                row.state,
-              ),
-          )}
-          providerIndex={providerIndex}
-          address={address}
-          chain={chain}
-          loadedScope={loadedScope}
-          currentScope={currentScope}
-          loadState={loadState}
-          busyRfqId={busyRfqId}
-          onAction={(record, action) => void runRecordAction(record, action)}
-          onRemove={(record) => void removeRecord(record)}
-          onClearAll={() => void clearAllRecords()}
-        />
-      ) : null}
-      {view === "activity" ? (
-        <>
-          <RfqActivity
-            records={records}
+        <section ref={viewRegionRef} tabIndex={-1} aria-label="Active RFQs">
+          <RfqWorkspaceActiveBoundary
+            records={records.filter((row) => !lifecycleMayForget(row))}
+            providerIndex={providerIndex}
+            address={address}
+            chain={chain}
+            loadedScope={loadedScope}
+            currentScope={currentScope}
+            loadState={loadState}
+            loadDetail={loadDetail}
+            busyRfqId={busyRfqId}
+            onAction={(record, action) => void runRecordAction(record, action)}
             onRemove={(record) => void removeRecord(record)}
             onClearAll={() => void clearAllRecords()}
+            onRetryLoad={retryWorkspaceLoad}
           />
-          <SettlementEvidencePanel />
-        </>
+        </section>
+      ) : null}
+      {view === "activity" ? (
+        <section ref={viewRegionRef} tabIndex={-1} aria-label="RFQ activity">
+          <RfqActivity
+            records={records}
+            loadState={loadState}
+            loadDetail={loadDetail}
+            onRemove={(record) => void removeRecord(record)}
+            onClearAll={() => void clearAllRecords()}
+            onRetryLoad={retryWorkspaceLoad}
+          />
+          <SettlementEvidencePanel records={records} />
+        </section>
       ) : null}
       {view === "new" ? (
-        <>
+        <section ref={viewRegionRef} tabIndex={-1} aria-label="New RFQ request">
+          <h2 className={styles.viewHeading}>New request</h2>
+          <RfqRecoveryCard
+            loadState={loadState}
+            detail={loadDetail}
+            onRetry={retryWorkspaceLoad}
+          />
           <section className={styles.privateWorkspace}>
             <aside
               className={styles.tradeTicket}
@@ -914,7 +1020,7 @@ export default function RfqWorkspace() {
                 </Suspense>
               ) : (
                 <section aria-label="Private RFQ unavailable">
-                  <h1>Private RFQ unavailable</h1>
+                  <h3>Private RFQ unavailable</h3>
                   <p>
                     {providerIndex === 2
                       ? "Sepolia RFQ is disabled. Production contracts, governed maker directory, custody, chain verifier, operators, funding, audit, and rollout evidence are unavailable."
@@ -939,28 +1045,29 @@ export default function RfqWorkspace() {
             {" · "}
             <Link to="/cross-chain-review">Cross-chain dry review</Link>
           </nav>
-        </>
+        </section>
       ) : null}
       <aside aria-label="Privacy boundaries">
         <h2>Who can observe what</h2>
         <ul>
           <li>
-            Hidden from the public chain before settlement: the RFQ is not a
-            public order. This does not establish that public and private
-            activity cannot be correlated.
+            <strong>Not published as a public order.</strong> No order book
+            carries this request. That is not the same as being unobservable:
+            public and private activity can still be correlated.
           </li>
           <li>
-            Disclosed to invited makers: pair, side, exact size, floor, and
-            expiry.
+            <strong>Invited makers learn the exact terms</strong> — pair, side,
+            exact size, floor, and expiry — before they quote.
           </li>
           <li>
-            Observed in this local devnet demo: shield/unshield, fees, legacy
-            escrow terms, timing, and OPEN amounts. A future approved
-            public-network design would expose its reviewed public fields.
+            <strong>Public in this local devnet demo:</strong> shield and
+            unshield legs, fees, legacy escrow terms, lifecycle timing, and OPEN
+            payout-note amounts. A future approved public-network design would
+            expose its own reviewed public fields.
           </li>
           <li>
-            Observable by services: request timing and fanout. Local quote
-            responses are plain request-scoped signed JSON.
+            <strong>Visible to services:</strong> request timing and maker
+            fanout. Local quote responses are plain request-scoped signed JSON.
           </li>
         </ul>
       </aside>

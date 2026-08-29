@@ -1658,6 +1658,47 @@ test("released and refunded terminals admit sibling market requests", async () =
   );
 });
 
+test("authority reorg quarantine durably reclaims the terminal market lease", async () => {
+  const { coordinator, path } = await fixture();
+  await selectWinner(coordinator);
+  const target = {
+    ...REQUEST,
+    dealId: REQUEST.rfqId,
+    reservationId: WINNER,
+    makerId: "maker-a",
+    fence: "7",
+    quoteDigest: QUOTE,
+  };
+  await fundExact(coordinator, target, "funding-authority-quarantine");
+  await coordinator.terminalize(target, "filled");
+  await coordinator.terminalize(target, "settled");
+  const quarantined = await coordinator.quarantineAuthority({
+    ...target,
+    authorityRevision: 1,
+    authorityReason: "canonical-membership-lost",
+  });
+  assert.equal(quarantined.state, "authority-quarantined");
+  assert.equal(
+    (await coordinator.quarantineAuthority({
+      ...target,
+      authorityRevision: 1,
+      authorityReason: "canonical-membership-lost",
+    })).state,
+    "authority-quarantined",
+  );
+  const restarted = createLocalnetReservationCoordinator(path);
+  assert.equal(restarted.listRequests()[0].state, "authority-quarantined");
+  await assert.rejects(
+    restarted.beginRequest({
+      ...REQUEST,
+      intentDigest: `0x${"c1".repeat(32)}`,
+      rfqId: "0xc1",
+      market: "0x1/0x2",
+    }),
+    /market lease/i,
+  );
+});
+
 for (const outcome of ["filled", "expired"]) {
   test(`${outcome} terminalizes the market lease and restart admits a sibling request`, async () => {
     const { coordinator, path } = await fixture();

@@ -31,6 +31,7 @@ const REQUEST_STATES = new Set([
   "expired",
   "refunded",
   "released",
+  "authority-quarantined",
 ]);
 const TERMINAL_REQUEST_STATES = new Set([
   "filled",
@@ -257,6 +258,15 @@ function validateRequest(value) {
             "abandonedFundingAttemptId",
           ),
         }),
+    ...(value.authorityRevision === undefined
+      ? {}
+      : {
+          authorityRevision: requireTimestamp(
+            value.authorityRevision,
+            "authorityRevision",
+          ),
+          authorityReason: requireText(value.authorityReason, "authorityReason"),
+        }),
     ...(value.settlementTerms === undefined
       ? {}
       : { settlementTerms: validateSettlementTerms(value.settlementTerms) }),
@@ -287,6 +297,7 @@ function validateRequest(value) {
       "settled",
       "expired",
       "refunded",
+      "authority-quarantined",
     ].includes(request.state) &&
     !request.selection
   )
@@ -735,8 +746,12 @@ export class LocalnetReservationCoordinator {
           record.intentDigest === digest &&
           !["released", "expired", "consumed"].includes(record.state),
       );
+      const allInvitedMakersRefused =
+        prior.makerPlans.length > 0 &&
+        prior.makerPlans.every((plan) => plan.state === "refused");
       const state =
-        prior.state === "release-pending" && !pending
+        !pending &&
+        (prior.state === "release-pending" || allInvitedMakersRefused)
           ? "released"
           : prior.state;
       const next = validateRequest({ ...prior, fanoutComplete: true, state });
@@ -911,6 +926,31 @@ export class LocalnetReservationCoordinator {
   async markSelected(input) {
     await this.beginSelection(input);
     return this.confirmSelection(input);
+  }
+
+  quarantineAuthority(input) {
+    return this.#serialize(() => {
+      const { request } = this.#exactRequest(input, "Authority quarantine");
+      const revision = requireTimestamp(input.authorityRevision, "authorityRevision");
+      const reason = requireText(input.authorityReason, "authorityReason");
+      if (request.state === "authority-quarantined") {
+        if (request.authorityRevision === revision && request.authorityReason === reason)
+          return request;
+        if (revision <= request.authorityRevision)
+          throw new Error("Authority quarantine revision must increase.");
+      } else if (!["filled", "settled", "expired", "refunded"].includes(request.state)) {
+        throw new Error("Only an observed terminal request can enter authority quarantine.");
+      }
+      const next = validateRequest({
+        ...request,
+        state: "authority-quarantined",
+        authorityRevision: revision,
+        authorityReason: reason,
+      });
+      this.#requests.set(request.intentDigest, next);
+      this.#persist();
+      return next;
+    });
   }
 
   #confirmedSelectionRecord(request, action) {

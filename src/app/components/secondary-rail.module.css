@@ -1,0 +1,61 @@
+.rail {
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  color: var(--shell-text);
+  background: var(--shell-bg);
+  font-family: var(--font-body), sans-serif;
+  font-size: 14px;
+}
+
+.railHeader {
+  display: grid;
+  gap: 8px;
+  border-bottom: 1px solid var(--shell-line);
+  padding: 16px;
+  background: var(--shell-panel);
+}
+
+.railHeader h1 {
+  margin: 0;
+  font-family: var(--font-reading), Georgia, serif;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+.railContext {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.railContext strong {
+  color: var(--shell-orange);
+}
+
+.railContext span {
+  color: var(--shell-muted);
+}
+
+.railSummary {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.railBack {
+  justify-self: start;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+@media (max-width: 580px) {
+  .railHeader h1 {
+    font-size: 22px;
+  }
+}

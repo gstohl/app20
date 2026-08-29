@@ -173,14 +173,7 @@ function formatDisplayedStrk(amount: bigint): string {
   return fraction ? `${whole}.${fraction} STRK` : `${whole} STRK`;
 }
 
-async function shieldedBalanceLabel(page: Page, walletRegion: Locator) {
-  const summary = page
-    .locator("summary")
-    .filter({ hasText: "Balances & funding" });
-  const details = summary.locator("xpath=..");
-  if ((await details.getAttribute("open")) === null) {
-    await summary.click();
-  }
+async function shieldedBalanceLabel(walletRegion: Locator) {
   const label = walletRegion.getByText(/^\d+(?:\.\d+)? STRK$/, {
     exact: true,
   });
@@ -339,6 +332,9 @@ test("all APP20 localnet journeys", async ({
     await page.getByRole("link", { name: "RFQ", exact: true }).click();
     await page.getByRole("link", { name: "Shield / unshield funding" }).click();
     await expect(page).toHaveURL(/\/funding$/);
+    await expect(
+      page.getByRole("heading", { name: "Shield / unshield" }),
+    ).toBeVisible();
     const walletRegion = page.getByRole("region", {
       name: "Wallet and shielded balance",
     });
@@ -350,7 +346,7 @@ test("all APP20 localnet journeys", async ({
       }),
     ).toBeVisible();
     const aliceBefore = parseDisplayedStrk(
-      await shieldedBalanceLabel(page, walletRegion),
+      await shieldedBalanceLabel(walletRegion),
     );
     const aliceAfter = formatDisplayedStrk(aliceBefore + 100000000000000000n);
     await walletRegion.getByRole("button", { name: /^Shield/ }).click();
@@ -375,13 +371,15 @@ test("all APP20 localnet journeys", async ({
     });
 
     // Bob needs STRK for the later offer acceptance and invoice payment.
-    // The identity switch stays in Mail's dev-only sidebar; RFQ keeps one
-    // shared wallet session control instead of duplicating that test chrome.
+    // The identity switch stays in Mail's dev-only sidebar. Return through
+    // RFQ's explicit separate-operation link to the canonical funding surface.
     await page.getByRole("link", { name: "Mailbox", exact: true }).click();
     await switchIdentity(page, config, "bob");
     await page.getByRole("link", { name: "RFQ", exact: true }).click();
+    await page.getByRole("link", { name: "Shield / unshield funding" }).click();
+    await expect(page).toHaveURL(/\/funding$/);
     const bobBefore = parseDisplayedStrk(
-      await shieldedBalanceLabel(page, walletRegion),
+      await shieldedBalanceLabel(walletRegion),
     );
     const bobAfter = formatDisplayedStrk(bobBefore + STRK_SCALE);
     await amountInput.fill("1");
@@ -520,9 +518,12 @@ test("all APP20 localnet journeys", async ({
       baseURL: BASE_URL,
       viewport: { width: 1_440, height: 900 },
     });
-    await unrelated.addInitScript(() => {
-      localStorage.setItem("app20/localnet-wallet/identity/v1", "bob");
-    });
+    await unrelated.addInitScript((runtimeEpoch) => {
+      localStorage.setItem(
+        `app20/localnet-wallet/identity/v1/${runtimeEpoch}`,
+        "bob",
+      );
+    }, config.runtimeEpoch);
     const wrongKeyPage = await unrelated.newPage();
     await wrongKeyPage.goto("/mail/inbox");
     await connectLocalnetWallet(wrongKeyPage);
@@ -589,9 +590,12 @@ test("all APP20 localnet journeys", async ({
       baseURL: BASE_URL,
       viewport: { width: 1_440, height: 900 },
     });
-    await fresh.addInitScript(() => {
-      localStorage.setItem("app20/localnet-wallet/identity/v1", "bob");
-    });
+    await fresh.addInitScript((runtimeEpoch) => {
+      localStorage.setItem(
+        `app20/localnet-wallet/identity/v1/${runtimeEpoch}`,
+        "bob",
+      );
+    }, config.runtimeEpoch);
     const payPage = await fresh.newPage();
     const requestedUrls: string[] = [];
     payPage.on("request", (outgoing) => requestedUrls.push(outgoing.url()));

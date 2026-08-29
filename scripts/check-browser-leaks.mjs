@@ -38,6 +38,7 @@ const forbiddenMarkers = [
   "VITE_LOCALNET_POOL_ADDRESS",
   "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
   "APP20_LOCALNET_DEV_WALLET_SENTINEL_7C91E2",
+  "APP20_LOCALNET_CHAIN_AUTHORITY_SERVER_ONLY_83F0A2",
   "/__app20_localnet_wallet",
   "@privy-io/node",
   "@app20/private-intents/hpke-open",

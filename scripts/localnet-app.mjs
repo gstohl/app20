@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -28,6 +28,13 @@ import {
 } from "../packages/private-intents/src/index.ts";
 import { localnetEconomicReview } from "../src/app/rfq/rfq-operations.ts";
 import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
+import { createLocalnetChainAuthority } from "./localnet-chain-authority.mjs";
+import { createLocalnetAuthorityReconciliationPipeline } from "./localnet-authority-reconciliation.mjs";
+import { LOCALNET_ESCROW_EVENT_ABI_DIGEST } from "./localnet-chain-decoder.mjs";
+import {
+  createLocalnetJsonRpc,
+  createLocalnetRpcReader,
+} from "./localnet-chain-reader.mjs";
 import {
   bindExpiryHttpTargetThroughCoordinator,
   terminalizeHttpTargetThroughCoordinator,
@@ -121,6 +128,24 @@ function readJsonFile(path) {
   } catch {
     return null;
   }
+}
+
+function persistReplacementMakerPid(makerId, pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  const state = readJsonFile(STATE_FILE);
+  if (!state || !Array.isArray(state.makers)) return;
+  let updated = false;
+  const makers = state.makers.map((maker) => {
+    if (maker?.makerId !== makerId) return maker;
+    updated = true;
+    return { ...maker, pid };
+  });
+  if (!updated) return;
+  writeFileSync(
+    STATE_FILE,
+    `${JSON.stringify({ ...state, makers }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
 }
 
 function removeRuntimeFiles() {
@@ -390,6 +415,10 @@ async function launchMakerNode(definition, context, authToken) {
             candidate.solverId === replacement.solverId
               ? replacement
               : candidate,
+          );
+          persistReplacementMakerPid(
+            replacement.solverId,
+            makerProcesses.get(replacement.solverId)?.pid,
           );
         })
         .catch((error) => {
@@ -705,6 +734,7 @@ async function deployEscrow(env, starknet) {
   if (!address) fail("App20Escrow deployment returned no address.");
   return {
     address,
+    classHash: declaration.class_hash,
     ticketClassHash: ticketDeclaration.class_hash,
     ticketDeclareTransactionHash: ticketDeclaration.transaction_hash,
     declareTransactionHash: declaration.transaction_hash,
@@ -1099,6 +1129,7 @@ async function startApi({
   env,
   helperAddress: _helperAddress,
   escrowAddress,
+  escrowClassHash,
   starknet,
   makerClients,
   controlToken,
@@ -1110,7 +1141,69 @@ async function startApi({
   const coordinator = createLocalnetReservationCoordinator(
     RESERVATION_COORDINATOR_JOURNAL,
   );
+  const authorityArtifact = Object.freeze({
+    runtimeEpoch: RUNTIME_EPOCH,
+    chainId: LOCALNET_CHAIN_ID,
+    escrowAddress: starknet.num.toHex(escrowAddress),
+    escrowClassHash: starknet.num.toHex(escrowClassHash),
+    abiDigest: LOCALNET_ESCROW_EVENT_ABI_DIGEST,
+  });
+  const authorityReaders = ["fixture-view-a", "fixture-view-b"].map((id) =>
+    createLocalnetRpcReader({
+      id,
+      artifact: authorityArtifact,
+      rpc: createLocalnetJsonRpc(devnet.url),
+    }),
+  );
+  let authorityPipelineFailed = false;
+  const chainAuthority = createLocalnetChainAuthority({
+    path: join(RUNTIME_LAYOUT.epochDir, "authority", "chain-authority.json"),
+    artifact: authorityArtifact,
+    readers: authorityReaders,
+    // Devnet has no finalized tag; latest accepted is the explicitly labelled fixture boundary.
+    finalityDepth: 0,
+    maxAgeSeconds: 30,
+  });
+  const quarantineAuthorityProjection = async (projection) => {
+    if (projection.status !== "reorged") return;
+    const requestRecord = coordinator
+      .listRequests()
+      .find(
+        (candidate) =>
+          candidate.rfqId === projection.rfqId &&
+          candidate.account === projection.account &&
+          candidate.chainId === projection.chainId,
+      );
+    if (!requestRecord?.selection) return;
+    await coordinator.quarantineAuthority({
+      intentDigest: requestRecord.intentDigest,
+      rfqId: requestRecord.rfqId,
+      account: requestRecord.account,
+      chainId: requestRecord.chainId,
+      dealId: requestRecord.rfqId,
+      reservationId: requestRecord.selection.reservationId,
+      makerId: requestRecord.selection.makerId,
+      fence: requestRecord.selection.fence,
+      quoteDigest: requestRecord.selection.quoteDigest,
+      authorityRevision: projection.revision,
+      authorityReason: "canonical-membership-lost",
+    });
+  };
   const releaseAttempt = async (attempt, reason) => {
+    const requestRecord = coordinator
+      .listRequests()
+      .find((candidate) => candidate.intentDigest === attempt.intentDigest);
+    const selected = requestRecord?.selection;
+    const hasDurableDeal = coordinator
+      .listDeals()
+      .some((candidate) => candidate.intentDigest === attempt.intentDigest);
+    if (
+      hasDurableDeal &&
+      selected?.reservationId === attempt.reservationId &&
+      selected.makerId === attempt.makerId
+    ) {
+      return false;
+    }
     const client = makerById.get(attempt.makerId);
     if (!client) return false;
     const result = await makerRequest(client, "/v1/release", {
@@ -1119,6 +1212,21 @@ async function startApi({
     });
     return result.released === true;
   };
+  const authorityReconciliation = createLocalnetAuthorityReconciliationPipeline(
+    {
+      chainAuthority,
+      coordinator,
+      makerClientForId: (makerId) => makerById.get(makerId),
+      requestMaker: makerRequest,
+      quarantineProjection: quarantineAuthorityProjection,
+      journalPath: join(
+        RUNTIME_LAYOUT.epochDir,
+        "authority",
+        "maker-reconciliation.json",
+      ),
+      runtimeEpoch: RUNTIME_EPOCH,
+    },
+  );
   function exactOwnerForObservation(target) {
     return resolveExactLocalnetReservationOwner({
       coordinator,
@@ -1179,7 +1287,6 @@ async function startApi({
     coordinator,
     makerById,
     reservationOwners,
-    release: releaseAttempt,
     observeEscrow: (dealId) => readLocalEscrowDeal(dealId, env, escrowAddress),
     validateFundedObservation: validateCanonicalFundedObservation,
     readTime: () => readDevnetTimestamp(devnet.url),
@@ -1251,6 +1358,22 @@ async function startApi({
       ...(durableTicket === undefined ? {} : { ticketAddress: durableTicket }),
     });
   }
+  await authorityReconciliation.recover();
+  authorityPipelineFailed = authorityReconciliation.hasUnresolvedAuthority();
+  const verifyAuthorityOrFailStop = async (input) => {
+    try {
+      const result = await authorityReconciliation.verifyAndReconcile(input);
+      // A successful projection cannot clear another binding's quarantine.
+      // The gate reopens only when the complete durable authority set is clean.
+      authorityPipelineFailed =
+        authorityReconciliation.hasUnresolvedAuthority();
+      return result.projection;
+    } catch (error) {
+      authorityPipelineFailed = true;
+      throw error;
+    }
+  };
+
   function browserSafeMakerStatus(client) {
     const available = makerProcesses.get(client.solverId)?.exitCode === null;
     return {
@@ -1268,6 +1391,10 @@ async function startApi({
   }
 
   function assertRfqStartAllowed(action) {
+    if (authorityPipelineFailed)
+      fail(
+        `${action} is blocked because local chain/maker reconciliation is fail-stopped; recovery remains verification-only.`,
+      );
     if (RFQ_OPERATIONS_CONTROL.mode !== "running") {
       fail(
         `${action} is blocked while RFQ operations are ${RFQ_OPERATIONS_CONTROL.mode}; claims and refunds remain enabled.`,
@@ -1304,7 +1431,9 @@ async function startApi({
         return;
       }
       if (request.method === "GET" && url.pathname === "/health") {
-        jsonResponse(response, 200, { result: { ok: true } });
+        jsonResponse(response, authorityPipelineFailed ? 503 : 200, {
+          result: { ok: !authorityPipelineFailed },
+        });
         return;
       }
       if (request.method === "GET" && url.pathname === "/config") {
@@ -1324,6 +1453,103 @@ async function startApi({
 
       const body = await readRequestBody(request);
       assertLocalnetRuntimeEpoch(url.pathname, body, RUNTIME_EPOCH);
+      if (url.pathname === "/rfq/authority/verify") {
+        const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
+        const rfqId = feltInput(body.rfqId, "rfqId", starknet);
+        const account = feltInput(body.account, "account", starknet);
+        const chainId = feltInput(body.chainId, "chainId", starknet);
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const requestRecord = coordinator
+          .listRequests()
+          .find((candidate) => candidate.intentDigest === intentDigest);
+        const dealRecord = coordinator
+          .listDeals()
+          .find((candidate) => candidate.intentDigest === intentDigest);
+        if (
+          !requestRecord ||
+          !dealRecord ||
+          requestRecord.rfqId !== rfqId ||
+          requestRecord.account !== account ||
+          requestRecord.chainId !== chainId ||
+          dealRecord.dealId !== dealId ||
+          dealRecord.rfqId !== rfqId ||
+          !requestRecord.selection ||
+          !requestRecord.market
+        )
+          fail("authority query does not match the durable RFQ coordinator.");
+        const terms =
+          requestRecord.ticketAuthorization?.settlementTerms ??
+          requestRecord.settlementTerms;
+        if (!terms)
+          fail("authority query has no durable exact settlement terms.");
+        const observedDeal = await readLocalEscrowDeal(
+          dealId,
+          env,
+          escrowAddress,
+        );
+        const outcome =
+          observedDeal.status === 3
+            ? "settled"
+            : observedDeal.status === 4
+              ? "refunded"
+              : undefined;
+        if (!outcome)
+          fail(
+            "authority query is verification-only until a terminal escrow status exists.",
+          );
+        const stages =
+          outcome === "settled"
+            ? ["fund", "fill", "claim"]
+            : ["fund", "timeout"];
+        const transactions = Object.fromEntries(
+          stages.map((stage) => [
+            stage,
+            feltInput(
+              body.transactions?.[stage],
+              `${stage} transaction`,
+              starknet,
+            ),
+          ]),
+        );
+        const commitmentDigest = `0x${createHash("sha256")
+          .update(
+            JSON.stringify({
+              intentDigest,
+              rfqId,
+              dealId,
+              selection: requestRecord.selection,
+              terms,
+            }),
+          )
+          .digest("hex")}`;
+        const query = {
+          runtimeEpoch: RUNTIME_EPOCH,
+          chainId,
+          account,
+          rfqId,
+          dealId,
+          intentDigest,
+          commitmentDigest,
+          reservationId: requestRecord.selection.reservationId,
+          reservationFence: requestRecord.selection.fence,
+          quoteDigest: requestRecord.selection.quoteDigest,
+          makerId: requestRecord.selection.makerId,
+          sellToken: terms.sellToken,
+          sellAmount: terms.sellAmount,
+          buyToken: terms.buyToken,
+          buyAmount: terms.buyAmount,
+          deadline: terms.deadline,
+          ticketAddress: terms.ticketAddress,
+          outcome,
+          transactions,
+        };
+        const projection = await verifyAuthorityOrFailStop({
+          query,
+          market: requestRecord.market,
+        });
+        jsonResponse(response, 200, { result: projection });
+        return;
+      }
       if (url.pathname === "/escrow/ensure-mail-ticket") {
         const dealId = feltInput(body.dealId, "dealId", starknet);
         const ticketAddress = await serializeOperation(
@@ -1427,6 +1653,24 @@ async function startApi({
                   ),
                 ),
             ),
+        });
+        const makerClient = makerById.get(exact.makerId);
+        if (!makerClient)
+          fail("selected maker is unavailable for durable settlement binding.");
+        await makerRequest(makerClient, "/v1/reconciliation/bind", {
+          target: {
+            reservationId: exact.reservationId,
+            intentDigest: exact.intentDigest,
+            fence: exact.fence,
+            quoteDigest: exact.quoteDigest,
+            dealId: exact.dealId,
+            sellToken: starknet.num.toHex(sellToken),
+            sellAmount: sellAmount.toString(),
+            buyToken: starknet.num.toHex(buyToken),
+            buyAmount: buyAmount.toString(),
+            deadline: body.deadline,
+            ticketAddress: result.ticketAddress,
+          },
         });
         jsonResponse(response, 200, { result });
         return;
@@ -1678,7 +1922,7 @@ async function startApi({
             "the selected quote belongs to a different or missing private RFQ.",
           );
         }
-        const { confirmed, unresolved } = await selectQuoteThroughCoordinator({
+        const { unresolved } = await selectQuoteThroughCoordinator({
           coordinator,
           intentDigest,
           reservationId: selectedReservationId,
@@ -2007,7 +2251,6 @@ async function startApi({
           ),
         };
         const expiry = await expiryHandler.expire(target);
-        reservationOwners.delete(reservationId);
         jsonResponse(response, 200, { result: expiry });
         return;
       }
@@ -2063,6 +2306,23 @@ async function startApi({
       );
     }
   });
+
+  const authorityMonitor = setInterval(() => {
+    void authorityReconciliation
+      .recover()
+      .then(() => {
+        authorityPipelineFailed =
+          authorityReconciliation.hasUnresolvedAuthority();
+      })
+      .catch(() => {
+        authorityPipelineFailed = true;
+        console.warn(
+          "Localnet chain/maker authority monitor fail-stopped; no operation was retried.",
+        );
+      });
+  }, 15_000);
+  authorityMonitor.unref();
+  server.once("close", () => clearInterval(authorityMonitor));
 
   return new Promise((resolveListen, rejectListen) => {
     server.once("error", rejectListen);
@@ -2208,6 +2468,7 @@ try {
     poolAddress: env.privacy.address,
     helperAddress: helper.address,
     escrowAddress: escrow.address,
+    escrowClassHash: escrow.classHash,
     tokenAddress: env.strk,
     counterTokenAddress: env.eth,
     usdcTokenAddress: env.usdc,
@@ -2232,6 +2493,7 @@ try {
     env,
     helperAddress: helper.address,
     escrowAddress: escrow.address,
+    escrowClassHash: escrow.classHash,
     starknet: runtime.starknet,
     makerClients: makers,
     controlToken: localnetControlToken,

@@ -16,6 +16,7 @@ export type LocalnetIdentity = {
 
 export type LocalnetConfig = {
   walletName: string;
+  runtimeEpoch: string;
   chainId: string;
   poolAddress: string;
   helperAddress: string;
@@ -65,10 +66,12 @@ export async function connectLocalnetWallet(
   options: { auditFocusReturn?: boolean } = {},
 ) {
   const trigger = page.getByRole("button", { name: "Connect wallet" });
-  if ((await trigger.count()) === 0) {
-    await expect(page.getByTitle("Disconnect")).toBeVisible();
+  const disconnect = page.getByTitle("Disconnect", { exact: true });
+  if ((await disconnect.count()) > 0) {
+    await expect(disconnect).toBeVisible();
     return;
   }
+  await expect(trigger).toBeVisible();
   await trigger.click();
   const dialog = page.getByRole("dialog", { name: "Connect a wallet" });
   await expect(dialog).toBeVisible();
@@ -84,7 +87,7 @@ export async function connectLocalnetWallet(
     await expect(dialog).toBeVisible();
   }
   await localnetOption.click();
-  await expect(page.getByTitle("Disconnect")).toBeVisible();
+  await expect(disconnect).toBeVisible();
 }
 
 export function readStorageSnapshot(page: Page): Promise<StorageSnapshot> {

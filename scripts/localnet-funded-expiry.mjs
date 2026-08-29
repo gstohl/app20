@@ -3,7 +3,6 @@ export async function runLocalnetFundedExpiry({
   target,
   deadline,
   bind,
-  release,
   readTime,
   advanceTime,
   observeExpired,
@@ -13,9 +12,6 @@ export async function runLocalnetFundedExpiry({
     throw new Error("Canonical expiry deadline is invalid.");
   const expiredAt = deadline + 1;
   await bind(target);
-  const released = await release(target);
-  if (!released?.released)
-    throw new Error("The selected maker reservation could not be released.");
   if ((await readTime()) < expiredAt) await advanceTime(expiredAt);
   const observed = await observeExpired(target);
   if (observed.status !== 1 || observed.deadline >= expiredAt)

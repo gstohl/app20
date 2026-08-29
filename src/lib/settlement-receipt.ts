@@ -159,6 +159,9 @@ function assertBinding(receipt: SettlementReceipt): void {
   }
   requireText(receipt.chainId, "chainId");
   requireFelt(receipt.escrowAddress, "escrowAddress");
+  if (receipt.evidenceKind === "chain" && receipt.escrowClassHash === undefined) {
+    throw new Error("Chain settlement receipts require an exact escrowClassHash.");
+  }
   if (receipt.escrowClassHash !== undefined) {
     requireFelt(receipt.escrowClassHash, "escrowClassHash");
   }

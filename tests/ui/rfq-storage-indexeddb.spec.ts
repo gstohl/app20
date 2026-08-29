@@ -224,6 +224,113 @@ test("real IndexedDB preserves hidden RFQ tombstones across tabs and reopen", as
   }
 });
 
+test("real IndexedDB synchronizes lifecycle rows and forget-wins tombstones across browser tabs", async ({
+  page,
+  context,
+}) => {
+  const epoch = "m11-real-two-tab";
+  const databaseName = "app20-rfq-resume";
+  const paddedAccount = `0x${"0".repeat(61)}abc`;
+
+  await page.goto("/");
+  const terminal = await page.evaluate(
+    async ({ databaseName, epoch, paddedAccount }) => {
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase(databaseName);
+        request.onsuccess = () => resolve();
+        request.onerror = () =>
+          reject(request.error ?? new Error("Could not reset test database."));
+        request.onblocked = () =>
+          reject(new Error("Test database is blocked."));
+      });
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      const lifecycleModule = await dynamicImport(
+        "/src/app/rfq/rfq-lifecycle.ts",
+      );
+      const storage = storageModule.createIndexedDbRfqStorage(epoch);
+      const record = lifecycleModule.createRfqLifecycleRecord({
+        chainId: "SN_SEPOLIA",
+        account: paddedAccount,
+        rfqId: "m11-two-tab-forget-wins",
+        state: "cancelled",
+        now: 700,
+      });
+      await storage.save(record);
+      return record;
+    },
+    { databaseName, epoch, paddedAccount },
+  );
+
+  const tabB = await context.newPage();
+  await tabB.goto("/");
+  const visibleInTabB = await tabB.evaluate(
+    async ({ epoch, paddedAccount }) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      return storageModule
+        .createIndexedDbRfqStorage(epoch)
+        .list("starknet:SN_SEPOLIA", paddedAccount);
+    },
+    { epoch, paddedAccount },
+  );
+  expect(visibleInTabB).toHaveLength(1);
+  expect(visibleInTabB[0]).toMatchObject({
+    rfqId: "m11-two-tab-forget-wins",
+    state: "cancelled",
+  });
+
+  await page.evaluate(
+    async ({ epoch, terminal }) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      await storageModule.createIndexedDbRfqStorage(epoch).remove(terminal);
+    },
+    { epoch, terminal },
+  );
+
+  const afterForget = await tabB.evaluate(
+    async ({ epoch, terminal }) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      const lifecycleModule = await dynamicImport(
+        "/src/app/rfq/rfq-lifecycle.ts",
+      );
+      const storage = storageModule.createIndexedDbRfqStorage(epoch);
+      const loaded = await storage.load(terminal);
+      const visible = await storage.list(terminal.chainId, terminal.account);
+      const stale = lifecycleModule.reviseRfqLifecycle(terminal, {
+        state: "cancel-pending",
+        updatedAt: 9_700,
+      });
+      try {
+        await storage.save(stale);
+        return { loaded, visible, staleSaveRejected: false };
+      } catch (error: unknown) {
+        return {
+          loaded,
+          visible,
+          staleSaveRejected: /forgotten RFQ ID/i.test(String(error)),
+        };
+      }
+    },
+    { epoch, terminal },
+  );
+
+  expect(afterForget.loaded).toBeUndefined();
+  expect(afterForget.visible).toEqual([]);
+  expect(afterForget.staleSaveRejected).toBe(true);
+  await tabB.close();
+});
+
 test("real IndexedDB canonicalizes every historical local-chain alias fail closed", async ({
   page,
 }) => {
@@ -281,7 +388,10 @@ test("real IndexedDB canonicalizes every historical local-chain alias fail close
           tx.oncomplete = () => {
             db.close();
             resolve(
-              keys.result.map((key, index) => [String(key), values.result[index]]),
+              keys.result.map((key, index) => [
+                String(key),
+                values.result[index],
+              ]),
             );
           };
           tx.onerror = () => reject(tx.error);
@@ -352,7 +462,6 @@ test("real IndexedDB canonicalizes every historical local-chain alias fail close
   }
 });
 
-
 test("real IndexedDB tombstones mismatched immutable targets and numeric RFQ aliases", async ({
   page,
 }) => {
@@ -405,7 +514,12 @@ test("real IndexedDB tombstones mismatched immutable targets and numeric RFQ ali
           const values = store.getAll();
           tx.oncomplete = () => {
             db.close();
-            resolve(keys.result.map((key, index) => [String(key), values.result[index]]));
+            resolve(
+              keys.result.map((key, index) => [
+                String(key),
+                values.result[index],
+              ]),
+            );
           };
           tx.onerror = () => reject(tx.error);
         };
@@ -492,7 +606,12 @@ test("real IndexedDB tombstones mismatched immutable targets and numeric RFQ ali
     await storage.remove(terminal);
     await putRaw(
       `app20/rfq-lifecycle/v2|${epoch}|QUIETLINE_LOCAL|0x0abc|0X01`,
-      { ...terminal, chainId: "QUIETLINE_LOCAL", account: "0x0abc", rfqId: "0X01" },
+      {
+        ...terminal,
+        chainId: "QUIETLINE_LOCAL",
+        account: "0x0abc",
+        rfqId: "0X01",
+      },
     );
 
     const visible = await storage.list(chainId, "0xabc");
@@ -532,7 +651,8 @@ test("real IndexedDB CAS persists an exact absent-to-canonical funding ticket tr
       const request = indexedDB.deleteDatabase("app20-rfq-resume");
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
-      request.onblocked = () => reject(new Error("IndexedDB reset was blocked."));
+      request.onblocked = () =>
+        reject(new Error("IndexedDB reset was blocked."));
     });
     const storage = storageModule.createIndexedDbRfqStorage(
       "indexeddb-absent-ticket-cas",

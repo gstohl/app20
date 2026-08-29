@@ -17,6 +17,13 @@ Server-only foundations for independently operated APP20 invited makers.
   execution, so concurrent fill calls cannot spend the same inventory. Unknown
   submission outcomes and crash-recovered in-flight attempts quarantine rather
   than release inventory.
+- Intent replay history is retained independently from capacity accounting.
+  Known expired/released inventory can become available again, while unknown or
+  authority-quarantined inventory stays locked across pruning and restart until
+  an exact, higher-revision authoritative terminal reconciliation releases it.
+- The authority quarantine operation is idempotent and binds the reservation,
+  intent, quote, selection fence, deal, assets, amounts, deadline, ticket,
+  outcome, authority digest, and authority revision before it changes capacity.
 - Offers and health responses expose no raw private balances or private keys.
 
 ## Localnet service

@@ -160,8 +160,10 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
 
   return (
     <section
+      id="app20-session-control"
       className={styles.session}
       aria-label="Wallet session"
+      tabIndex={-1}
       data-active-rail={session.rail.toLowerCase().replace(" ", "-")}
     >
       <div

@@ -22,8 +22,16 @@ const validFiles = {
   "workers/relay/src/index.ts":
     "export const RFQ_TRANSPORT_ENABLED = false as const;\n",
   "wrangler.jsonc": `{ // comments are permitted\n "vars": { "RFQ_TRANSPORT_ENABLED": "false" }\n}`,
-  "src/app/rfq/production-private-intents.ts":
-    "export const PRODUCTION_RFQ_TRANSPORT_ENABLED = false as const;\n",
+  "src/app/rfq/production-private-intents.ts": `
+    export const PRODUCTION_RFQ_TRANSPORT_ENABLED = false as const;
+    export const PRODUCTION_RFQ_CAN_AUTHORIZE_VALUE = false as const;
+    export const PRODUCTION_RFQ_PUBLIC_FALLBACK = false as const;
+  `,
+  "src/lib/settlement-receipt-chain.ts": `
+    export async function executeConfiguredChainVerifier(): Promise<number> {
+      throw new Error("Configured-chain receipt authority is unavailable until the runtime-provenanced server verifier is composed.");
+    }
+  `,
   "src/lib/sepolia-rfq-manifest.ts":
     "export function validateSepoliaRfqManifest(): boolean { return false; }\n",
   "src/lib/escrow-vnext.ts": `
@@ -102,6 +110,32 @@ test("AST checks reject comment/string decoys for every TypeScript release gate"
       export const PRODUCTION_RFQ_TRANSPORT_ENABLED = true as const;
     `,
       "PRODUCTION_RFQ_TRANSPORT_ENABLED",
+    ],
+    [
+      "src/app/rfq/production-private-intents.ts",
+      validFiles["src/app/rfq/production-private-intents.ts"].replace(
+        "PRODUCTION_RFQ_CAN_AUTHORIZE_VALUE = false",
+        "PRODUCTION_RFQ_CAN_AUTHORIZE_VALUE = true",
+      ),
+      "PRODUCTION_RFQ_CAN_AUTHORIZE_VALUE",
+    ],
+    [
+      "src/app/rfq/production-private-intents.ts",
+      validFiles["src/app/rfq/production-private-intents.ts"].replace(
+        "PRODUCTION_RFQ_PUBLIC_FALLBACK = false",
+        "PRODUCTION_RFQ_PUBLIC_FALLBACK = true",
+      ),
+      "PRODUCTION_RFQ_PUBLIC_FALLBACK",
+    ],
+    [
+      "src/lib/settlement-receipt-chain.ts",
+      `export async function executeConfiguredChainVerifier(): Promise<number> { return 1; }`,
+      "executeConfiguredChainVerifier",
+    ],
+    [
+      "src/lib/settlement-receipt-chain.ts",
+      `${validFiles["src/lib/settlement-receipt-chain.ts"]}\nexport function createConfiguredChainVerifier() { return {}; }`,
+      "constructor, composer, registration API",
     ],
     [
       "src/lib/sepolia-rfq-manifest.ts",

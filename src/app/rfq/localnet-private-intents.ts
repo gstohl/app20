@@ -7,8 +7,13 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import type { UnsignedSolverQuote } from "@app20/private-intents";
 import type {
   RfqFundingTicketAttemptTarget,
+  RfqLifecycleRecord,
   RfqReleaseAttemptTarget,
 } from "./rfq-lifecycle";
+import {
+  normalizeRfqAuthorityProjection,
+  type RfqAuthorityProjection,
+} from "./rfq-authority";
 import {
   buildEscrowClaimActions,
   buildEscrowTimeoutActions,
@@ -251,6 +256,41 @@ async function postLocalnet<TBody extends object>(
 export async function readLocalnetRfqOperationsStatus(): Promise<RfqOperationsStatus> {
   return normalizeRfqOperationsStatus(
     await getLocalnet("/rfq/operations/status"),
+  );
+}
+
+/** Candidate hashes are never authority; the server re-reads and decodes each one. */
+export async function readLocalnetRfqAuthority(
+  record: RfqLifecycleRecord,
+): Promise<RfqAuthorityProjection> {
+  if (
+    !record.requestDigest ||
+    !record.settlement ||
+    (record.state !== "settled" && record.state !== "refunded")
+  )
+    throw new Error("Only an observed terminal RFQ can request authority verification.");
+  const funding = record.attempts.funding?.transactionHash;
+  const fill = record.attempts.fill?.transactionHash;
+  const terminal =
+    record.state === "settled"
+      ? record.attempts.claim?.transactionHash
+      : record.attempts.refund?.transactionHash;
+  if (!funding || !terminal || (record.state === "settled" && !fill))
+    throw new Error(
+      "Exact lifecycle transaction candidates are incomplete; verification remains unavailable.",
+    );
+  return normalizeRfqAuthorityProjection(
+    await postLocalnet("/rfq/authority/verify", {
+      account: record.account,
+      chainId: record.chainId,
+      rfqId: record.rfqId,
+      dealId: record.settlement.dealId,
+      intentDigest: record.requestDigest,
+      transactions:
+        record.state === "settled"
+          ? { fund: funding, fill, claim: terminal }
+          : { fund: funding, timeout: terminal },
+    }),
   );
 }
 

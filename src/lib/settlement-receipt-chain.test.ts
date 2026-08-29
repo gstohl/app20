@@ -3,7 +3,7 @@ import { SETTLEMENT_RECEIPT_DOMAIN, settlementReceiptAuthority, verifyChainSettl
 import { assertCanonicalBlockNumberMembership, assertDecodedReceiptBinding, assertReviewedReceiptRpcOrigins, type ConfiguredChainReceiptManifest } from "./settlement-receipt-chain";
 const D = `0x${"11".repeat(32)}`;
 function receipt(): ChainSettlementReceipt { return { version: 1, domain: SETTLEMENT_RECEIPT_DOMAIN, chainId: "starknet:SN_SEPOLIA", escrowAddress: "0x1", escrowClassHash: "0x2", dealId: "0x3", claimTicketId: "0x4", intentDigest: D, commitmentDigest: D, directoryDigest: D, rfqDigest: D, settlementContextDigest: D, winningQuoteDigest: D, makerKeyId: "q1", directoryEpoch: 1, reservationId: D, reservationFence: 9n, registryRevision: "r1", inputAsset: "0x5", inputAmountBaseUnits: 6n, outputAsset: "0x7", outputAmountBaseUnits: 8n, outcome: "settled", evidenceKind: "chain", requiredFinality: "finalized", lifecycle: ["fund", "fill", "claim"].map((stage, index) => ({ stage: stage as "fund" | "fill" | "claim", transactionHash: `0x${10 + index}`, event: { blockHash: `0xb${index + 1}`, eventSelector: `0xe${index + 1}`, blockNumber: index + 1, transactionIndex: 0, eventIndex: 0 }, finality: "finalized" })) }; }
-function manifest(value: ChainSettlementReceipt): ConfiguredChainReceiptManifest { const origins = ["https://rpc-a.example", "https://rpc-b.example"]; return { chainId: value.chainId, escrowAddress: value.escrowAddress, escrowClassHash: value.escrowClassHash!, abiManifestDigest: D, abiBytes: "unwired", eventSelectors: { fund: "0xe1", fill: "0xe2", claim: "0xe3", timeout: "0xe4" }, requiredFinality: "finalized", rpcSpecVersion: "0.10.2", rpcQuorum: [{ label: "a", url: origins[0]! }, { label: "b", url: origins[1]! }], reviewedRpcOrigins: origins, validUntil: 1_900_000_000, decoder: { abiDigest: D, decode: () => value } }; }
+function manifest(value: ChainSettlementReceipt): ConfiguredChainReceiptManifest { const origins = ["https://rpc-a.example", "https://rpc-b.example"]; return { chainId: value.chainId, escrowAddress: value.escrowAddress, escrowClassHash: value.escrowClassHash!, abiManifestDigest: D, abiBytes: "unwired", eventSelectors: { fund: "0xe1", fill: "0xe2", claim: "0xe3", timeout: "0xe4" }, requiredFinality: "finalized", rpcSpecVersion: "0.10.2", rpcQuorum: [{ label: "a", url: origins[0]! }, { label: "b", url: origins[1]! }], reviewedRpcOrigins: origins, validUntil: 1_900_000_000, decoderIdentity: { abiDigest: D, generatedModuleDigest: D } }; }
 
 describe("configured-chain settlement receipt boundary", () => {
   it("has no public self-issuable verifier and keeps receipt authority disabled", async () => {
@@ -12,6 +12,8 @@ describe("configured-chain settlement receipt boundary", () => {
     const value = receipt();
     await expect(verifyChainSettlementReceipt(value, { verificationReference: "forged", verifier: {} as never })).rejects.toThrow(/authority is unavailable/);
     expect(settlementReceiptAuthority(value).authoritative).toBe(false);
+    const { escrowClassHash: _missing, ...withoutClass } = value;
+    expect(() => settlementReceiptAuthority(withoutClass as ChainSettlementReceipt)).toThrow(/escrowClassHash/);
   });
   it("requires an exact reviewed public-hostname origin set", () => {
     const base = manifest(receipt());

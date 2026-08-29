@@ -84,6 +84,46 @@ function assertExportedConst(parsed, path, name, expected, failures) {
   }
 }
 
+function assertExportedUnconditionalThrowFunction(
+  parsed,
+  path,
+  name,
+  message,
+  failures,
+) {
+  const matches = parsed.statements.filter(
+    (statement) =>
+      ts.isFunctionDeclaration(statement) &&
+      exported(statement) &&
+      statement.name?.text === name,
+  );
+  const body = matches.length === 1 ? matches[0].body : undefined;
+  const statement = body?.statements.length === 1 ? body.statements[0] : undefined;
+  const expression = statement && ts.isThrowStatement(statement)
+    ? unwrap(statement.expression)
+    : undefined;
+  if (
+    !expression ||
+    !ts.isNewExpression(expression) ||
+    !ts.isIdentifier(expression.expression) ||
+    expression.expression.text !== "Error" ||
+    expression.arguments?.length !== 1 ||
+    !exactLiteral(expression.arguments[0], message)
+  ) failures.push(`${path} must keep exported ${name} as one active unconditional reviewed throw.`);
+}
+
+function assertNoVerifierConstructionExports(parsed, path, failures) {
+  const forbidden = [];
+  for (const statement of parsed.statements) {
+    if (!exported(statement)) continue;
+    if (ts.isFunctionDeclaration(statement) && statement.name && /(?:create|compose|register).*configured.*verifier|configured.*verifier.*(?:create|compose|register)/i.test(statement.name.text))
+      forbidden.push(statement.name.text);
+    if (ts.isClassDeclaration(statement) && statement.name && /configured.*verifier/i.test(statement.name.text))
+      forbidden.push(statement.name.text);
+  }
+  if (forbidden.length) failures.push(`${path} must not export a configured-verifier constructor, composer, registration API, or class.`);
+}
+
 function assertUnconditionalFalseFunction(parsed, path, name, failures) {
   const matches = parsed.statements.filter(
     (statement) =>
@@ -302,13 +342,30 @@ export async function checkReleaseDeny(root = repositoryRoot) {
     failures,
   );
   if (productionText !== undefined) {
-    assertExportedConst(
-      sourceFile(productionPath, productionText, failures),
-      productionPath,
+    const parsed = sourceFile(productionPath, productionText, failures);
+    for (const name of [
       "PRODUCTION_RFQ_TRANSPORT_ENABLED",
-      false,
+      "PRODUCTION_RFQ_CAN_AUTHORIZE_VALUE",
+      "PRODUCTION_RFQ_PUBLIC_FALLBACK",
+    ]) assertExportedConst(parsed, productionPath, name, false, failures);
+  }
+
+  const receiptVerifierPath = "src/lib/settlement-receipt-chain.ts";
+  const receiptVerifierText = await checkedSource(
+    canonicalRoot,
+    receiptVerifierPath,
+    failures,
+  );
+  if (receiptVerifierText !== undefined) {
+    const parsed = sourceFile(receiptVerifierPath, receiptVerifierText, failures);
+    assertExportedUnconditionalThrowFunction(
+      parsed,
+      receiptVerifierPath,
+      "executeConfiguredChainVerifier",
+      "Configured-chain receipt authority is unavailable until the runtime-provenanced server verifier is composed.",
       failures,
     );
+    assertNoVerifierConstructionExports(parsed, receiptVerifierPath, failures);
   }
 
   const validatorPath = "src/lib/sepolia-rfq-manifest.ts";

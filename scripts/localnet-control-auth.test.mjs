@@ -76,6 +76,7 @@ test("prior runtime epochs reject every wallet, RFQ, and ticket sink before pars
     "/private-intents/converge",
     "/escrow/ensure-ticket",
     "/escrow/ensure-mail-ticket",
+    "/rfq/authority/verify",
   ];
   for (const path of paths) {
     assert.throws(

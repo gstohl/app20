@@ -31,6 +31,22 @@ test("artifact scanning rejects the stable localnet development-wallet sentinel"
   }
 });
 
+test("artifact scanning rejects the server-only chain-authority sentinel", async () => {
+  const { root, output } = await artifact(
+    'globalThis.authority="APP20_LOCALNET_CHAIN_AUTHORITY_SERVER_ONLY_83F0A2";',
+  );
+  try {
+    const result = spawnSync(process.execPath, [scanner, output], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(`${result.stdout}\n${result.stderr}`, /CHAIN_AUTHORITY_SERVER_ONLY/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("artifact scanning accepts a minimal clean browser artifact", async () => {
   const { root, output } = await artifact('globalThis.app20="public";');
   try {

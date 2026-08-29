@@ -17,7 +17,8 @@ export type ConfiguredChainReceiptManifest = Readonly<{
   /** Exact deployment-reviewed origins; no caller-selected endpoint is accepted. */
   reviewedRpcOrigins: readonly string[];
   validUntil: number;
-  decoder: Readonly<{ abiDigest: string; decode: (stage: SettlementStage, event: StarknetReceiptEvent) => ReceiptBinding }>;
+  /** Metadata only. The fixed generated decoder is a server import, never caller code. */
+  decoderIdentity: Readonly<{ abiDigest: string; generatedModuleDigest: string }>;
 }>;
 
 declare const RUNTIME_VERIFIER: unique symbol;

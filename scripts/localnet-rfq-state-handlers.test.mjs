@@ -391,7 +391,7 @@ for (const [status, terminalState] of [
     );
     assert.equal(exact.coordinator.listRequests()[0].state, terminalState);
     assert.equal(exact.releaseCalls(), releaseEffects);
-    assert.equal(releaseEffects, status === 4 ? 1 : 0);
+    assert.equal(releaseEffects, 0);
   });
 }
 

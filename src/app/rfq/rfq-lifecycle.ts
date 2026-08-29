@@ -1095,10 +1095,20 @@ function parseEvidenceAuthority(
     "quarantined",
   ];
   if (!statuses.includes(String(row.status))) throw new Error();
+  const persistedStatus = row.status as RfqEvidenceAuthority["status"];
+  const status =
+    persistedStatus === "authoritative" ? "stale" : persistedStatus;
+  // Browser storage is never the authority high-water source. Preserve a
+  // conservative blocking status, but reset its revision so a later
+  // runtime-bound verifier can supersede even a forged MAX_SAFE_INTEGER row.
+  nonNegativeInteger(row.revision, "authority revision");
   return Object.freeze({
-    status: row.status as RfqEvidenceAuthority["status"],
-    label: text(row.label, "authority label"),
-    revision: nonNegativeInteger(row.revision, "authority revision"),
+    status,
+    label:
+      status === "stale"
+        ? "Verification pending"
+        : text(row.label, "authority label"),
+    revision: 0,
     observedAt: timestamp(row.observedAt, "authority observedAt"),
   });
 }
@@ -1256,8 +1266,7 @@ export function restoreRfqLifecycle(
     }
     if (
       record.state === "reorged" &&
-      (record.evidenceAuthority.status !== "reorged" ||
-        record.evidenceAuthority.revision <= 0)
+      record.evidenceAuthority.status !== "reorged"
     ) {
       return reviseRfqLifecycle(record, {
         state: "quarantined",
@@ -1385,7 +1394,10 @@ export function rfqHasFundingEvidence(record: RfqLifecycleRecord): boolean {
 }
 
 export function lifecycleMayForget(record: RfqLifecycleRecord): boolean {
-  return ["settled", "refunded", "cancelled", "refused"].includes(record.state);
+  return (
+    ["settled", "refunded", "cancelled", "refused"].includes(record.state) &&
+    record.evidenceAuthority.status === "local-non-authoritative"
+  );
 }
 
 export function lifecycleMaySubmit(

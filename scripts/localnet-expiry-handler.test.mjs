@@ -78,8 +78,6 @@ async function fixture(failAt) {
   const makerById = new Map([
     ["maker-a", { solverId: "maker-a" }],
   ]);
-  let makerReleaseEffects = 0;
-  let makerReleased = false;
   let time = DEADLINE;
   let failed = false;
   const target = {
@@ -108,13 +106,6 @@ async function fixture(failAt) {
       coordinator,
       makerById,
       reservationOwners,
-      release: async () => {
-        if (!makerReleased) {
-          makerReleased = true;
-          makerReleaseEffects += 1;
-        }
-        return true;
-      },
       observeEscrow: async () => ({
         status: 1,
         legAToken: "0x1",
@@ -157,12 +148,11 @@ async function fixture(failAt) {
     },
     restart,
     target,
-    makerReleaseEffects: () => makerReleaseEffects,
   };
 }
 
-for (const barrier of ["bind", "release", "time", "terminal", "response"]) {
-  test(`production expiry handler retries after ${barrier} barrier with one maker release`, async () => {
+for (const barrier of ["bind", "time", "terminal", "response"]) {
+  test(`production expiry handler retries after ${barrier} barrier without maker release`, async () => {
     const exact = await fixture(barrier);
     assert.equal(exact.reservationOwners.size, 0);
     assert.equal(exact.handler.resolveOwner(exact.target)?.selected, true);
@@ -187,6 +177,6 @@ for (const barrier of ["bind", "release", "time", "terminal", "response"]) {
       expiredAt: DEADLINE + 1,
     });
     assert.equal(exact.coordinator.listRequests()[0].state, "expired");
-    assert.equal(exact.makerReleaseEffects(), 1);
+    assert.equal(exact.coordinator.list()[0].state, "selected");
   });
 }

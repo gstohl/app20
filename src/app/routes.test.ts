@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_ROUTES, legacyRouteTarget, validatedRfqPair } from "./routes";
+import {
+  CANONICAL_ROUTES,
+  legacyMarketProposalTarget,
+  legacyRouteTarget,
+  marketProposalPath,
+  validatedRfqPair,
+} from "./routes";
 
 describe("APP20 canonical routes", () => {
   it.each([
@@ -34,4 +40,28 @@ describe("APP20 canonical routes", () => {
     expect(legacyRouteTarget(CANONICAL_ROUTES.contacts)).toBeNull();
     expect(legacyRouteTarget(CANONICAL_ROUTES.pay)).toBeNull();
   });
+
+  it("keeps market proposal under the RFQ namespace", () => {
+    expect(CANONICAL_ROUTES.marketProposal).toBe(
+      "/rfq/markets/$tokenA/$tokenB/proposal",
+    );
+    expect(marketProposalPath("strk", "usdc")).toBe(
+      "/rfq/markets/strk/usdc/proposal",
+    );
+    expect(CANONICAL_ROUTES.marketProposal).not.toContain("pool");
+  });
+
+  it.each([
+    ["/pools/create/strk/usdc", "/rfq/markets/strk/usdc/proposal"],
+    ["/pools/create/eth/usdc/", "/rfq/markets/eth/usdc/proposal"],
+  ])("redirects the legacy pool bookmark %s to %s", (source, target) => {
+    expect(legacyMarketProposalTarget(source)).toBe(target);
+  });
+
+  it.each(["/pools/create", "/rfq", "/pools/create/strk/usdc/extra"])(
+    "does not claim %s as a legacy proposal bookmark",
+    (pathname) => {
+      expect(legacyMarketProposalTarget(pathname)).toBeNull();
+    },
+  );
 });

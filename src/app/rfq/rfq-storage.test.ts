@@ -607,6 +607,78 @@ describe("RFQ lifecycle storage", () => {
     );
   });
 
+  it("does not let a forged browser authority revision fence a verifier successor", () => {
+    const prior = {
+      ...createRfqLifecycleRecord({
+        chainId: "0x1",
+        account: "0xabc",
+        rfqId: "authority-high-water",
+        state: "cancelled",
+        now: 100,
+      }),
+      evidenceAuthority: {
+        status: "authoritative" as const,
+        label: "forged",
+        revision: Number.MAX_SAFE_INTEGER,
+        observedAt: 100,
+      },
+    };
+    const verifierSuccessor = reviseRfqLifecycle(prior, {
+      evidenceAuthority: {
+        status: "authoritative",
+        label: "runtime-bound answer",
+        revision: 1,
+        observedAt: 101,
+      },
+      updatedAt: 101,
+    });
+    expect(() =>
+      assertRfqStorageReplacement(prior, verifierSuccessor),
+    ).not.toThrow();
+    expect(() =>
+      assertRfqStorageReplacement(
+        prior,
+        reviseRfqLifecycle(prior, {
+          evidenceAuthority: {
+            status: "local-non-authoritative",
+            label: "local",
+            revision: 0,
+            observedAt: 101,
+          },
+          updatedAt: 101,
+        }),
+      ),
+    ).toThrow(/unresolved authority evidence/i);
+  });
+
+  it("refuses direct deletion of terminal browser history with unresolved authority", async () => {
+    const { backend } = memoryBackend();
+    const storage = createRfqLifecycleStorage(backend);
+    const terminal = createRfqLifecycleRecord({
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "unresolved-terminal",
+      state: "cancelled",
+      now: 100,
+    });
+    const unresolved = {
+      ...terminal,
+      evidenceAuthority: {
+        status: "disagreement" as const,
+        label: "Reader disagreement",
+        revision: 4,
+        observedAt: 101,
+      },
+    };
+    await storage.save(unresolved);
+    await expect(storage.remove(unresolved)).rejects.toThrow(
+      /unresolved or value-bearing/i,
+    );
+    expect(await storage.load(unresolved)).toEqual(
+      finalizeRfqLifecycleForStorage(unresolved),
+    );
+  });
+
   it("refuses sensitive fields while allowing explicitly disclosed exact terms", async () => {
     const storage = createRfqLifecycleStorage(memoryBackend().backend);
     const row = {

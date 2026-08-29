@@ -4,7 +4,6 @@ import {
   markFundingUnknownHttpTargetThroughCoordinator,
   observeFundedHttpTargetThroughCoordinator,
   prepareFundingHttpTargetThroughCoordinator,
-  releaseFundedHttpTargetThroughCoordinator,
   releaseHttpTargetThroughCoordinator,
   terminalizeHttpTargetThroughCoordinator,
 } from "./localnet-release-boundary.mjs";
@@ -170,17 +169,6 @@ export function createLocalnetRfqStateHandlers({
         return observed;
       }
       if (request?.state === "funded") {
-        const released = await releaseFundedHttpTargetThroughCoordinator({
-          coordinator,
-          target,
-          release,
-          now: now(),
-          reason: "exact timed-out escrow convergence",
-        });
-        if (!released.released)
-          throw new Error(
-            "Exact selected maker reservation remains unresolved.",
-          );
         await terminalizeHttpTargetThroughCoordinator({
           coordinator,
           target,
