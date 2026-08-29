@@ -26,10 +26,11 @@ yet. This is not a Mainnet value-moving release.
 
 | Rank | Feature | Route | Status |
 | --- | --- | --- | --- |
-| 1 | Private RFQ | `/rfq` | Localnet solicits two sealed USDC↔STRK makers with distinct processes, settlement accounts, quote keys, private-note inventories, and fsynced reservation WALs. APP20 verifies both signatures, selects deterministically, and proves crash recovery, lock, fill, claim, expiry refund, and insufficient-inventory refusal. No order book is published. Funding remains a distinct STRK20 rail. No production maker network is deployed |
+| 1 | Private RFQ | `/rfq` | Localnet solicits two sealed USDC↔STRK makers with distinct processes, settlement accounts, quote keys, private-note inventories, and fsynced reservation WALs. APP20 verifies both signatures, selects deterministically, and proves crash recovery, lock, fill, claim, expiry refund, and insufficient-inventory refusal. Every saved record carries an authority label separating a local observation from a chain-verified localnet outcome, and disagreement, reorg, or quarantine blocks its actions. No order book is published. Funding remains a distinct STRK20 rail. No production maker network is deployed |
 | 2 | Mailbox | `/mail/inbox` | On-chain ciphertext for letters, legacy OTC documents, receipts, and authenticated self-addressed contact snapshots. Mail is correspondence/evidence, never settlement authority |
 | 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase |
-| 4 | Secondary tools | `/rfq#intents`, `/pay` | Dry cross-chain review and unsigned payment links. No live 1Click submission or TEE execution |
+| 4 | Separate operations | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay` | Funding readiness, public send, dry cross-chain review, Privy recovery, and unsigned payment links. Each is its own route behind a shared `Not RFQ settlement authority` boundary. No live 1Click submission or TEE execution |
+| — | Read-only surfaces | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Browser-safe operations status, proposal-only market planning, and a non-executable pair handoff. None can deploy, fund, or settle |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
@@ -44,9 +45,10 @@ self-backup through Mail.
 The same wallet opens all three surfaces. A Counterparty can start a prefilled
 RFQ or encrypted letter; a settled local RFQ produces a lifecycle receipt and
 links back to Mailbox. Shield, private transfer, and unshield remain separate
-funding actions under **Balances & funding**.
+funding actions at `/funding`, which reports the wallet-declared STRK20 actions
+and canonical asset eligibility without probing private balances.
 
-Dry cross-chain Intents still share `/rfq`, but remain a public review rail
+Dry cross-chain Intents live at `/cross-chain-review`, a public review rail
 against NEAR 1Click. They have different signers, disclosure, and failure modes
 and are never merged into the private RFQ submit path.
 
@@ -244,7 +246,7 @@ development contract, not the production class. See
 
 ```mermaid
 flowchart LR
-    P0[Immutable source] --> P1[Pure models]
+    P0[Immutable attested source] --> P1[Pure models]
     P1 --> P2[Production-shaped localnet]
     P2 --> P3[Adversarial localnet]
     P3 --> P4[Independent review]
@@ -253,12 +255,16 @@ flowchart LR
     P6 --> P7[Capped production]
 
     D[Current state] --> P2
-    D -. dirty source .-> P0
+    D -. CI provenance, signing, independent reproduction .-> P0
     D -. HPKE, chain verifier, replicated storage .-> P3
 ```
 
 Passing a UI test cannot skip an earlier trust gate. Current evidence allows
-only the build-gated localnet demonstration and dry review. Detailed diagrams:
+only the build-gated localnet demonstration and dry review. The source is now
+committed with a recorded rollback target, a deterministic SBOM, lockfile
+integrity and source review, and byte-identical repeat builds; CI provenance,
+release signing, and reproduction by two independent builders remain open.
+Detailed diagrams:
 [`docs/APP20_PROCESS_DIAGRAMS.md`](docs/APP20_PROCESS_DIAGRAMS.md).
 
 ## Privacy
@@ -362,19 +368,50 @@ npm run build
 
 | Command | Scope |
 | --- | --- |
-| `npm test` | Application unit tests |
+| `npm test` | Application unit tests (108 files, 944 tests) |
 | `npm run test:packages` | Workspace packages |
-| `npm run test:ui` | Playwright localnet journeys |
+| `npm run test:ui` | 16 Playwright localnet journeys, including accessibility and 200% reflow |
+| `npm run test:supply-chain` | Lockfile integrity/source review and SBOM drift |
 | `npm run test:e2e:pool` | Real-pool mail harness |
+| `npm run check:csp` | Loads built routes under the CSP the Worker actually ships |
+| `npm run check:build-determinism` | Two isolated production builds, byte-compared |
+| `npm run sbom:generate` | Regenerates the deterministic CycloneDX SBOM |
 | `snforge test` | Mail helper contracts, from `cairo/` |
 
-`npm run build` includes a browser-leak scan.
+`npm run build` also enforces recorded per-chunk byte budgets, fails if a direct
+`eval` or Node builtin import reaches a browser chunk, scans for browser leaks,
+and re-checks the release-deny policy.
+
+### Supply chain and release evidence
+
+`docs/evidence/app20-sbom.cdx.json` is a CycloneDX 1.5 SBOM (755 components)
+derived only from `package-lock.json` with no network access, no wall-clock
+timestamp, and no random serial number, so it is byte-stable across runs. The
+dependency gate fails when a lock entry lacks an integrity hash, resolves to
+anything other than its own name-and-version-specific canonical registry
+tarball or the one reviewed vendored locator whose bytes are pinned by SHA-256,
+or when the committed SBOM drifts. Gate results are recorded in
+[`docs/APP20_RELEASE_GATES.md`](docs/APP20_RELEASE_GATES.md). These are
+self-reported single-machine checks, not CI provenance, a signature, or an
+independent reproduction.
+
+Security policy and private vulnerability reporting:
+[`SECURITY.md`](SECURITY.md). No independent security audit has been accepted.
 
 ## Deployment
 
 APP20 deploys as a Cloudflare Worker with assets, not a static Pages site.
 `wrangler.jsonc` names `app20.gstohl.com`. Do not deploy until Worker secrets
 are set with `wrangler secret put`.
+
+The Worker runs first and replaces asset security headers, so
+`workers/relay/src/headers.ts` is the single source of the shipped
+Content-Security-Policy; a static `_headers` file would never reach a browser.
+That policy omits `'unsafe-eval'`. One known consequence is recorded in
+`scripts/production-csp-known-violations.json`: `connect-src` does not allow
+`api.coingecko.com`, so the opt-in public price chart reports that candlesticks
+are unavailable on a deployed origin. `npm run check:csp` fails if that set of
+violations changes in either direction.
 
 Public browser variables:
 
