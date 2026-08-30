@@ -7,6 +7,12 @@ import {
 } from "../utils/constants";
 import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
 import {
+  createMailSenderAuth,
+  parseMailSenderAuth,
+  verifyMailSenderAuth,
+  type MailSenderAuth,
+} from "./mail-auth";
+import {
   createRequestId,
   isCanonicalStrkToken,
   isRandom32ByteId,
@@ -17,6 +23,9 @@ import {
 
 export const PAYMENT_LINK_PATH = "/pay";
 export const PAYMENT_LINK_VERSION = "app20p2" as const;
+export const SIGNED_PAYMENT_LINK_VERSION = "app20p3" as const;
+export const PAYMENT_LINK_SIGNATURE_DOMAIN =
+  "app20/payment-link-signature/v1" as const;
 export const MAX_PAYMENT_LINK_FRAGMENT_LENGTH = 2_048;
 export const DEFAULT_PAYMENT_LINK_EXPIRY_HOURS = "72";
 export const MAX_PAYMENT_LINK_EXPIRY_HOURS = 24 * 365;
@@ -32,6 +41,19 @@ export type PaymentLinkRequestInput = {
 export type PaymentLinkRequestOptions = {
   atSeconds?: number;
   requestId?: string;
+};
+
+export type PaymentLinkAuthenticity =
+  | { kind: "unsigned" }
+  | {
+      kind: "verified";
+      mailboxPublicKey: string;
+      authPublicKey: string;
+    };
+
+export type DecodedPaymentLink = {
+  request: PaymentRequestPayload;
+  authenticity: PaymentLinkAuthenticity;
 };
 
 const MAX_PAYMENT_LINK_PAYLOAD_BYTES = 1_450;
@@ -53,6 +75,13 @@ type EncodedPaymentRequest = [
   requester: string,
   chainId: string,
   invoiceId: string | null,
+];
+
+type EncodedPaymentLinkSignature = [
+  version: 1,
+  mailboxPublicKey: string,
+  authPublicKey: string,
+  signature: string,
 ];
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -226,6 +255,50 @@ export function digestPaymentLinkRequest(
   ).join("")}`;
 }
 
+function paymentLinkAuthSubject(request: PaymentRequestPayload): {
+  documentId: string;
+  conversationId: string;
+  inReplyTo: string;
+  body: string;
+} {
+  const normalized = normalizePaymentRequest(request);
+  return {
+    documentId: normalized.requestId,
+    conversationId: PAYMENT_LINK_SIGNATURE_DOMAIN,
+    inReplyTo: normalized.invoiceId ?? "",
+    body: digestPaymentLinkRequest(normalized),
+  };
+}
+
+/** Sign all canonical request terms with the requester's derived Mail auth key. */
+export function signPaymentLinkRequest(
+  request: PaymentRequestPayload,
+  mailboxSeed: Uint8Array,
+  mailboxPublicKey: Uint8Array,
+): MailSenderAuth {
+  return createMailSenderAuth(
+    mailboxSeed,
+    mailboxPublicKey,
+    paymentLinkAuthSubject(request),
+  );
+}
+
+/** Verify a Mail signature over the complete canonical payment request. */
+export function verifyPaymentLinkRequestSignature(
+  request: PaymentRequestPayload,
+  value: unknown,
+): PaymentLinkAuthenticity | null {
+  const auth = parseMailSenderAuth(value);
+  if (!auth || !verifyMailSenderAuth(auth, paymentLinkAuthSubject(request))) {
+    return null;
+  }
+  return {
+    kind: "verified",
+    mailboxPublicKey: auth.mailboxPublicKey,
+    authPublicKey: auth.authPublicKey,
+  };
+}
+
 /** Build one canonical, unsigned STRK request from user-entered link fields. */
 export function createPaymentLinkRequest(
   input: PaymentLinkRequestInput,
@@ -316,6 +389,36 @@ function requestFromTuple(value: unknown): PaymentRequestPayload {
   });
 }
 
+function signatureTuple(auth: MailSenderAuth): EncodedPaymentLinkSignature {
+  const normalized = parseMailSenderAuth(auth);
+  if (!normalized) throw new Error("Payment link Mail signature is malformed.");
+  return [
+    normalized.version,
+    normalized.mailboxPublicKey,
+    normalized.authPublicKey,
+    normalized.signature,
+  ];
+}
+
+function signatureFromTuple(value: unknown): MailSenderAuth | null {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    value[0] !== 1 ||
+    typeof value[1] !== "string" ||
+    typeof value[2] !== "string" ||
+    typeof value[3] !== "string"
+  ) {
+    return null;
+  }
+  return parseMailSenderAuth({
+    version: value[0],
+    mailboxPublicKey: value[1],
+    authPublicKey: value[2],
+    signature: value[3],
+  });
+}
+
 /**
  * Encode one unsigned payment request as a URL-safe fragment. The checksum
  * detects damaged links; it is deliberately not an authenticity proof.
@@ -337,10 +440,41 @@ export function encodePaymentLinkFragment(
   return fragment;
 }
 
-/** Decode and strictly validate an unsigned payment request URL fragment. */
-export function decodePaymentLinkFragment(
-  fragment: string,
-): PaymentRequestPayload {
+/** Encode a signed request. Neither the Mail seed nor any private key is serialized. */
+export function encodeSignedPaymentLinkFragment(
+  request: PaymentRequestPayload,
+  auth: MailSenderAuth,
+): string {
+  const payload = serializeRequest(request);
+  if (payload.length > MAX_PAYMENT_LINK_PAYLOAD_BYTES) {
+    throw new Error("Payment request is too large for a shareable link.");
+  }
+  const proof = textEncoder.encode(JSON.stringify(signatureTuple(auth)));
+  const fragment = `#${SIGNED_PAYMENT_LINK_VERSION}.${bytesToBase64Url(
+    payload,
+  )}.${bytesToBase64Url(checksum(payload))}.${bytesToBase64Url(proof)}`;
+  if (fragment.length > MAX_PAYMENT_LINK_FRAGMENT_LENGTH) {
+    throw new Error(
+      "Payment request is too large for a signed shareable link.",
+    );
+  }
+  return fragment;
+}
+
+/** Sign and encode a payment request using the requester's Mail identity. */
+export function createSignedPaymentLinkFragment(
+  request: PaymentRequestPayload,
+  mailboxSeed: Uint8Array,
+  mailboxPublicKey: Uint8Array,
+): string {
+  return encodeSignedPaymentLinkFragment(
+    request,
+    signPaymentLinkRequest(request, mailboxSeed, mailboxPublicKey),
+  );
+}
+
+/** Decode a legacy unsigned or Mail-signed link and report its authenticity. */
+export function decodePaymentLink(fragment: string): DecodedPaymentLink {
   if (typeof fragment !== "string" || !fragment.startsWith("#")) {
     throw new Error("Payment link fragment must start with #.");
   }
@@ -353,12 +487,16 @@ export function decodePaymentLinkFragment(
   const encoded = fragment.slice(1);
   const separator = encoded.indexOf(".");
   const version = separator === -1 ? encoded : encoded.slice(0, separator);
-  if (version !== PAYMENT_LINK_VERSION) {
+  if (
+    version !== PAYMENT_LINK_VERSION &&
+    version !== SIGNED_PAYMENT_LINK_VERSION
+  ) {
     throw new Error("Unsupported payment link version.");
   }
 
   const parts = encoded.split(".");
-  if (parts.length !== 3 || parts.some((part) => !part)) {
+  const expectedParts = version === SIGNED_PAYMENT_LINK_VERSION ? 4 : 3;
+  if (parts.length !== expectedParts || parts.some((part) => !part)) {
     throw new Error("Payment link fragment is malformed or truncated.");
   }
 
@@ -384,14 +522,46 @@ export function decodePaymentLinkFragment(
   if (!equalBytes(payload, serializeRequest(request))) {
     throw new Error("Payment link payload is not canonical.");
   }
-  return request;
+
+  if (version === PAYMENT_LINK_VERSION) {
+    return { request, authenticity: { kind: "unsigned" } };
+  }
+
+  let proofValue: unknown;
+  let proofBytes: Uint8Array;
+  try {
+    proofBytes = base64UrlToBytes(parts[3]);
+    proofValue = JSON.parse(fatalTextDecoder.decode(proofBytes));
+  } catch {
+    throw new Error(
+      "Payment link signature verification failed; the request must not be trusted.",
+    );
+  }
+  const auth = signatureFromTuple(proofValue);
+  const authenticity = verifyPaymentLinkRequestSignature(request, auth);
+  if (
+    !auth ||
+    !authenticity ||
+    !equalBytes(
+      proofBytes,
+      textEncoder.encode(JSON.stringify(signatureTuple(auth))),
+    )
+  ) {
+    throw new Error(
+      "Payment link signature verification failed; the request terms may have been tampered with.",
+    );
+  }
+  return { request, authenticity };
 }
 
-/** Build an absolute /pay URL with the request only in its fragment. */
-export function createPaymentLink(
-  request: PaymentRequestPayload,
-  baseUrl: string,
-): string {
+/** Decode and strictly validate a payment request URL fragment. */
+export function decodePaymentLinkFragment(
+  fragment: string,
+): PaymentRequestPayload {
+  return decodePaymentLink(fragment).request;
+}
+
+function paymentLinkUrl(fragment: string, baseUrl: string): string {
   let base: URL;
   try {
     base = new URL(baseUrl);
@@ -404,6 +574,27 @@ export function createPaymentLink(
 
   const url = new URL(PAYMENT_LINK_PATH, base.origin);
   url.search = "";
-  url.hash = encodePaymentLinkFragment(request).slice(1);
+  url.hash = fragment.slice(1);
   return url.toString();
+}
+
+/** Build an absolute /pay URL with the request only in its fragment. */
+export function createPaymentLink(
+  request: PaymentRequestPayload,
+  baseUrl: string,
+): string {
+  return paymentLinkUrl(encodePaymentLinkFragment(request), baseUrl);
+}
+
+/** Build an absolute Mail-signed /pay URL without exposing secret key material. */
+export function createSignedPaymentLink(
+  request: PaymentRequestPayload,
+  baseUrl: string,
+  mailboxSeed: Uint8Array,
+  mailboxPublicKey: Uint8Array,
+): string {
+  return paymentLinkUrl(
+    createSignedPaymentLinkFragment(request, mailboxSeed, mailboxPublicKey),
+    baseUrl,
+  );
 }

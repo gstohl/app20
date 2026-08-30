@@ -22,6 +22,7 @@ import {
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
+let standaloneAliceBackup = "";
 
 async function screenshot(page: Page, name: string, testInfo: TestInfo) {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
@@ -95,6 +96,27 @@ async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
     .first()
     .click();
   return backup;
+}
+
+async function restoreRegisteredKey(page: Page, backup: string) {
+  const setup = page.getByRole("button", {
+    name: "Load device key & register",
+  });
+  if ((await setup.count()) === 0) {
+    await page.getByRole("button", { name: "Compose", exact: true }).click();
+  }
+  await page.getByText("Restore from backup").click();
+  await page.getByLabel("Backup value").fill(backup);
+  await page.getByRole("button", { name: "Restore mailbox key" }).click();
+  await expect(setup).toHaveCount(0, { timeout: 60_000 });
+  const deleteDraft = page.getByRole("button", {
+    name: "Delete draft…",
+    exact: true,
+  });
+  if ((await deleteDraft.count()) > 0) {
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteDraft.click();
+  }
 }
 
 async function loadExistingKey(page: Page) {
@@ -199,28 +221,65 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(
     page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
   ).toBeVisible();
+
+  const generate = page.getByRole("button", {
+    name: "Generate payment link",
+  });
+  await expect(
+    page.getByText(
+      "Create or restore this wallet's Mail identity in the inbox first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(generate).toBeDisabled();
+  await expect(page.getByText("No transaction submitted")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Open APP20 Mail" }).click();
+  standaloneAliceBackup = await registerNewKey(
+    page,
+    "standalone-mail-identity-backup",
+    testInfo,
+  );
+  await page.getByRole("link", { name: "Pay", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(generate).toBeEnabled();
+
   await page.getByLabel("STRK requested").fill("0.125");
   await page.getByLabel("Expiry in hours").fill("24");
   await page.getByLabel("Memo (optional)").fill("Standalone link test");
-  await page.getByRole("button", { name: "Generate payment link" }).click();
+  const transactionRequestsBeforeGeneration = requestedUrls.filter((url) =>
+    /\/__app20_localnet_wallet\/(?:invoke|privacy)(?:\?|$)/.test(url),
+  ).length;
+  await generate.click();
 
   await expect(
     page.getByText("No transaction submitted", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByText("Mail signature verified", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/This Mail-signed request asks for\s+0\.125 STRK/),
+  ).toBeVisible();
   const linkCode = page
     .locator("code")
-    .filter({ hasText: `${BASE_URL}/pay#app20p2.` });
+    .filter({ hasText: `${BASE_URL}/pay#app20p3.` });
   const paymentLink = (await linkCode.innerText()).trim();
-  expect(paymentLink.startsWith(`${BASE_URL}/pay#app20p2.`)).toBeTruthy();
+  expect(paymentLink.startsWith(`${BASE_URL}/pay#app20p3.`)).toBeTruthy();
   await expect(
     page.locator('[aria-label="QR code for this payment link"]'),
   ).toBeVisible();
   expect(
-    requestedUrls.some((url) =>
-      url.includes("/__app20_localnet_wallet/privacy"),
+    requestedUrls.filter((url) =>
+      /\/__app20_localnet_wallet\/(?:invoke|privacy)(?:\?|$)/.test(url),
     ),
-  ).toBeFalsy();
-  expect(requestedUrls.some((url) => url.includes("#app20p2."))).toBeFalsy();
+  ).toHaveLength(transactionRequestsBeforeGeneration);
+  expect(requestedUrls.some((url) => url.includes("#"))).toBeFalsy();
   await screenshot(page, "standalone-payment-link-create", testInfo);
 
   const fresh = await browser.newContext({
@@ -234,9 +293,38 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(
     review.getByRole("heading", { name: "Review before anything moves." }),
   ).toBeVisible();
+  await expect(
+    review.getByRole("heading", { name: "Verified signed invoice" }),
+  ).toBeVisible();
+  await expect(
+    review.getByText("MAIL SIGNATURE VERIFIED", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    review.getByText(
+      "The request's Mail signature is valid and covers its asset, exact amount, recipient, memo, expiry, and network. Confirm the displayed Mail identity belongs to the requester if you do not already know it.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    review.getByText("Verified Mail signing key", { exact: true }),
+  ).toBeVisible();
   await expect(review.getByText(alice.address, { exact: true })).toBeVisible();
+  await expect(
+    review.getByText(/This Mail-signed request asks for\s+0\.125 STRK/),
+  ).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
-  expect(reviewRequests.some((url) => url.includes("#app20p2."))).toBeFalsy();
+  await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
+  await expect(
+    review.getByRole("button", {
+      name: "Continue to inbox to review & pay",
+    }),
+  ).toBeEnabled();
+  expect(reviewRequests.some((url) => url.includes("#"))).toBeFalsy();
+  expect(
+    reviewRequests.some((url) =>
+      url.includes("/__app20_localnet_wallet/privacy"),
+    ),
+  ).toBeFalsy();
   await screenshot(review, "standalone-payment-link-review", testInfo);
   await fresh.close();
 });
@@ -260,12 +348,18 @@ test("all APP20 localnet journeys", async ({
     await page.goto("/mail/inbox");
     await connectLocalnetWallet(page, { auditFocusReturn: true });
     await switchIdentity(page, config, "alice");
-    const aliceBackup = await registerNewKey(
-      page,
-      "01-alice-one-time-backup",
-      testInfo,
-    );
-    expect(aliceBackup).toHaveLength(71);
+    if (standaloneAliceBackup) {
+      expect(standaloneAliceBackup).toHaveLength(71);
+      await restoreRegisteredKey(page, standaloneAliceBackup);
+      await screenshot(page, "01-alice-one-time-backup", testInfo);
+    } else {
+      standaloneAliceBackup = await registerNewKey(
+        page,
+        "01-alice-one-time-backup",
+        testInfo,
+      );
+      expect(standaloneAliceBackup).toHaveLength(71);
+    }
 
     await switchIdentity(page, config, "bob");
     testInfo.annotations.push({
@@ -607,8 +701,28 @@ test("all APP20 localnet journeys", async ({
       payPage.getByText(alice.address, { exact: true }),
     ).toBeVisible();
     await expect(
-      payPage.getByText(/Payment links are unauthenticated instructions/),
+      payPage.getByRole("heading", {
+        name: "Unsigned invoice — requester not verified",
+      }),
     ).toBeVisible();
+    await expect(
+      payPage.getByText("UNVERIFIED LEGACY LINK", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      payPage.getByText(
+        "Unverified legacy link: its checksum detects accidental damage but does not stop anyone from rewriting the terms. Verify every term with the requester through another channel.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      payPage.getByText(
+        "Unverified: anyone can rewrite this address and issue a new checksum. Verify it out-of-band before paying.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      payPage.getByRole("heading", { name: "Verified signed invoice" }),
+    ).toHaveCount(0);
     await expect(
       payPage.getByRole("button", {
         name: "Continue to inbox to review & pay",

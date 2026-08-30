@@ -11,6 +11,7 @@ import { publicRecipientCount } from "@/lib/mail-recipient-count";
 import type { AliasRecord } from "@/lib/aliases";
 import { findAliasByAddress } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
+import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import {
   formatBaseUnits,
   parseAcceptPayload,
@@ -38,7 +39,10 @@ import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
 import ReceiptCard from "./ReceiptCard";
-import { replyAddressForMessage } from "@/lib/mail-correspondents";
+import {
+  replyAddressForConversation,
+  replyAddressForMessage,
+} from "@/lib/mail-correspondents";
 import type { MailAssignment } from "@/lib/mail-assignments";
 import {
   conversationFieldsFromPayload,
@@ -61,8 +65,10 @@ export type LocalMailMessage = {
   blockTimestamp?: number;
   eventIndex?: number;
   direction?: "incoming" | "outgoing";
-  /** Unsigned request imported from /pay; it has no MessagePosted evidence. */
+  /** Request imported from /pay; it has no MessagePosted evidence. */
   transport?: "payment_link";
+  /** Authenticity verified from the original payment-link fragment. */
+  linkAuthenticity?: PaymentLinkAuthenticity;
   recipientCount?: number;
   /** Device-local Sent recipients. Never inferred from sealed incoming mail. */
   recipients?: string[];
@@ -70,6 +76,8 @@ export type LocalMailMessage = {
   localCreatedAt?: number;
   localConversationId?: string;
   assignedAddress?: string;
+  /** Thread-only merge of the local Sent projection and its decrypted event. */
+  threadProvenance?: "device_sent_and_on_chain";
 };
 
 export type ThreadActionState = {
@@ -298,6 +306,7 @@ function ConversationControls({
   message,
   selfAddress,
   proof,
+  conversationAddress,
   onReply,
   onAssign,
   onProve,
@@ -305,6 +314,7 @@ function ConversationControls({
   message: LocalMailMessage;
   selfAddress: string;
   proof?: SenderProof;
+  conversationAddress?: string;
   onReply?: ThreadProps["onReply"];
   onAssign?: ThreadProps["onAssign"];
   onProve?: ThreadProps["onProve"];
@@ -316,6 +326,7 @@ function ConversationControls({
   const conversationId = conversationKeyForMessage(message);
   const claimed = replyAddressForMessage(message, selfAddress);
   const assigned = message.assignedAddress;
+  const responseAddress = claimed ?? assigned ?? conversationAddress;
   const canContinue = Boolean(onReply);
   const [assignInput, setAssignInput] = useState(assigned ?? "");
   return (
@@ -334,7 +345,7 @@ function ConversationControls({
           type="button"
           onClick={() =>
             onReply?.({
-              address: claimed ?? assigned,
+              address: responseAddress,
               conversationId,
               inReplyTo: fields.documentId ?? message.documentId ?? "",
             })
@@ -342,6 +353,13 @@ function ConversationControls({
         >
           Continue conversation
         </button>
+      ) : null}
+      {canContinue && !responseAddress ? (
+        <p>
+          Recipient cannot be prefilled because the sender is sealed and this
+          conversation has no single device-local recipient or local sender
+          assignment. Supply the counterparty address in the draft.
+        </p>
       ) : null}
       {message.direction !== "outgoing" && onAssign ? (
         <form
@@ -394,6 +412,8 @@ export default function Thread({
 }: ThreadProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusKey = messages.map((message) => message.id).join("|");
+  const conversationAddress =
+    replyAddressForConversation(messages, selfAddress) ?? undefined;
 
   useEffect(() => {
     if (!messages.length) return;
@@ -685,6 +705,7 @@ export default function Thread({
       <InvoiceCard
         request={request}
         alias={findAliasByAddress(aliases, request.requester)?.label}
+        linkAuthenticity={message.linkAuthenticity}
         status={payment?.status}
         paymentVerified={payment?.paymentVerified}
         unverifiedClaim={Boolean(payment?.counterpartyPaymentClaim)}
@@ -714,27 +735,37 @@ export default function Thread({
         <ol className={styles.threadList}>
           {messages.map((message) => {
             const paymentLink = message.transport === "payment_link";
-            const recipientCount = paymentLink
-              ? 0
-              : (message.recipientCount ??
-                publicRecipientCount(message.record));
             return (
               <li className={styles.message} key={message.id}>
                 <div className={styles.messageMeta}>
                   {paymentLink ? (
                     <>
-                      <span>Imported from unsigned payment link</span>
+                      <span>
+                        {message.linkAuthenticity?.kind === "verified"
+                          ? "Imported from verified Mail-signed payment link"
+                          : "Imported from unverified legacy payment link"}
+                      </span>
                       <span>No transaction submitted</span>
                     </>
                   ) : (
                     <>
                       <span>
-                        {message.direction === "outgoing" ? "Sent" : "Opened"} ·
-                        record {message.index}
+                        {message.threadProvenance === "device_sent_and_on_chain"
+                          ? "Sent locally · opened from on-chain evidence"
+                          : message.direction === "outgoing"
+                            ? "Sent"
+                            : "Opened"}
+                        {" · record "}
+                        {message.index}
                       </span>
                       <span>
-                        {recipientCount} recipient
-                        {recipientCount === 1 ? "" : "s"}
+                        {message.recipientCount ??
+                          publicRecipientCount(message.record)}{" "}
+                        recipient
+                        {(message.recipientCount ??
+                          publicRecipientCount(message.record)) === 1
+                          ? ""
+                          : "s"}
                         {message.blockNumber === undefined
                           ? " · posted"
                           : ` · block ${message.blockNumber}`}
@@ -744,16 +775,16 @@ export default function Thread({
                 </div>
                 {paymentLink ? (
                   <p className={styles.actionWarning} role="status">
-                    This unsigned request was imported from a URL fragment for
-                    local review. It is not a MessagePosted event, cannot
-                    authenticate the requester, and opening or importing it did
-                    not submit a payment.
+                    {message.linkAuthenticity?.kind === "verified"
+                      ? "This request's Mail signature was verified from the URL fragment and covers its exact terms. Confirm that the displayed Mail key belongs to the requester. It is not a MessagePosted event, and opening or importing it did not submit a payment."
+                      : "This unverified legacy request was imported from a URL fragment for local review. It is not a MessagePosted event, cannot authenticate the requester, and opening or importing it did not submit a payment."}
                   </p>
                 ) : null}
                 <ConversationControls
                   message={message}
                   selfAddress={selfAddress}
                   proof={proofs[message.id]}
+                  conversationAddress={conversationAddress}
                   onReply={onReply}
                   onAssign={onAssign}
                   onProve={onProve}
@@ -778,9 +809,11 @@ export default function Thread({
                 <span className={styles.localLabel}>
                   {paymentLink
                     ? "decoded from this tab's URL fragment"
-                    : message.direction === "outgoing"
-                      ? "sealed on this device"
-                      : "decrypted on this device"}
+                    : message.threadProvenance === "device_sent_and_on_chain"
+                      ? "device-local Sent copy matched to decrypted on-chain evidence"
+                      : message.direction === "outgoing"
+                        ? "sealed on this device"
+                        : "decrypted on this device"}
                 </span>
               </li>
             );

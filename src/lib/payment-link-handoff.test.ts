@@ -8,7 +8,7 @@ import {
   receiptForTransfer,
   type PaymentRequestPayload,
 } from "./otc";
-import { createPaymentLink, decodePaymentLinkFragment } from "./payment-link";
+import { createPaymentLink, encodePaymentLinkFragment } from "./payment-link";
 import { importPendingPaymentIntoMailbox } from "./payment-link-handoff";
 import { loadPendingPayment, storePendingPayment } from "./pending-payment";
 
@@ -46,13 +46,13 @@ describe("payment-link mailbox handoff", () => {
     const payer = "0xb0b";
 
     const link = createPaymentLink(request, "https://app20.example/");
-    const reviewed = decodePaymentLinkFragment(new URL(link).hash);
+    const fragment = new URL(link).hash;
 
     // /pay only stages the reviewed request. Opening the link creates no local
     // payment record and cannot submit or reserve a transfer.
-    storePendingPayment(session, reviewed);
+    storePendingPayment(session, fragment);
     expect(loadOtcState(local, chainId, payer).payments).toEqual({});
-    expect(loadPendingPayment(session)).toEqual(request);
+    expect(loadPendingPayment(session)?.request).toEqual(request);
 
     const imported = importPendingPaymentIntoMailbox(
       session,
@@ -129,12 +129,12 @@ describe("payment-link mailbox handoff", () => {
     const session = new MemoryStorage();
     const local = new MemoryStorage();
     const payer = "0xb0b";
-    storePendingPayment(session, request);
+    storePendingPayment(session, encodePaymentLinkFragment(request));
 
     expect(() =>
       importPendingPaymentIntoMailbox(session, local, "SN_MAIN", payer),
     ).toThrow(/another Starknet network.*remains pending/i);
-    expect(loadPendingPayment(session)).toEqual(request);
+    expect(loadPendingPayment(session)?.request).toEqual(request);
     expect(loadOtcState(local, "SN_MAIN", payer).payments).toEqual({});
 
     expect(
@@ -146,7 +146,7 @@ describe("payment-link mailbox handoff", () => {
   it("keeps the tab handoff when mailbox persistence fails", () => {
     const session = new MemoryStorage();
     const local = new MemoryStorage();
-    storePendingPayment(session, request);
+    storePendingPayment(session, encodePaymentLinkFragment(request));
     local.setItem = () => {
       throw new Error("storage denied");
     };
@@ -154,6 +154,6 @@ describe("payment-link mailbox handoff", () => {
     expect(() =>
       importPendingPaymentIntoMailbox(session, local, "SN_SEPOLIA", "0xb0b"),
     ).toThrow(/storage denied/i);
-    expect(loadPendingPayment(session)).toEqual(request);
+    expect(loadPendingPayment(session)?.request).toEqual(request);
   });
 });

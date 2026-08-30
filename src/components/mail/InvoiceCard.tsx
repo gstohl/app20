@@ -16,6 +16,7 @@ import {
   normalizePaymentLinkChainId,
   paymentLinkChainIdsEqual,
   paymentLinkNetworkLabel,
+  type PaymentLinkAuthenticity,
 } from "@/lib/payment-link";
 import { sanitizeUntrustedText } from "@/lib/text";
 import { ProvingProgress } from "./OperationProgress";
@@ -33,6 +34,8 @@ type InvoiceCardProps = {
   showPaymentActions?: boolean;
   showShareAction?: boolean;
   shareInitiallyOpen?: boolean;
+  shareLinkOverride?: string;
+  linkAuthenticity?: PaymentLinkAuthenticity;
   onPay?: () => void;
 };
 
@@ -48,6 +51,8 @@ export default function InvoiceCard({
   showPaymentActions = true,
   showShareAction = true,
   shareInitiallyOpen = false,
+  shareLinkOverride,
+  linkAuthenticity = { kind: "unsigned" },
   onPay,
 }: InvoiceCardProps) {
   const connectedChainId = useStoreWallet((state) => state.chain);
@@ -105,6 +110,11 @@ export default function InvoiceCard({
     Boolean(onPay);
   const canShare =
     isStrk && claimedPaymentAddress !== null && shareChainId !== null;
+  const mailSignatureVerified = linkAuthenticity.kind === "verified";
+  const signerFingerprint =
+    linkAuthenticity.kind === "verified"
+      ? `${linkAuthenticity.authPublicKey.slice(0, 12)}…${linkAuthenticity.authPublicKey.slice(-8)}`
+      : null;
 
   function requestForLink(): PaymentRequestPayload {
     if (!shareChainId) {
@@ -124,12 +134,16 @@ export default function InvoiceCard({
     request.requestId,
     request.requester,
     shareChainId,
+    shareLinkOverride,
   ]);
 
   useEffect(() => {
     if (!shareInitiallyOpen || !canShare) return;
     try {
-      setShareLink(createPaymentLink(requestForLink(), window.location.origin));
+      setShareLink(
+        shareLinkOverride ||
+          createPaymentLink(requestForLink(), window.location.origin),
+      );
       setShareMessage("");
       setShareOpen(true);
     } catch (error: unknown) {
@@ -139,7 +153,7 @@ export default function InvoiceCard({
           : "Mail could not create this payment link.",
       );
     }
-  }, [canShare, request, shareChainId, shareInitiallyOpen]);
+  }, [canShare, request, shareChainId, shareInitiallyOpen, shareLinkOverride]);
 
   function toggleShareLink() {
     if (shareOpen) {
@@ -150,6 +164,7 @@ export default function InvoiceCard({
     try {
       const link =
         shareLink ||
+        shareLinkOverride ||
         createPaymentLink(requestForLink(), window.location.origin);
       setShareLink(link);
       setShareMessage("");
@@ -186,7 +201,9 @@ export default function InvoiceCard({
             Payment request: {amount} {token.symbol}
           </span>
         </h3>
-        {unverifiedClaim || (status === "paid" && !paymentVerified) ? (
+        {mailSignatureVerified ? (
+          <span className={styles.proofStamp}>Mail signature verified</span>
+        ) : unverifiedClaim || (status === "paid" && !paymentVerified) ? (
           <span className={styles.proofStamp}>
             Unverified counterparty claim
           </span>
@@ -195,7 +212,9 @@ export default function InvoiceCard({
         ) : null}
       </div>
       <p className={styles.termsSentence}>
-        This unsigned message requests{" "}
+        {mailSignatureVerified
+          ? "This Mail-signed request asks for "
+          : "This unsigned message requests "}
         <strong>
           {amount} <bdi>{token.symbol}</bdi>
         </strong>
@@ -218,9 +237,20 @@ export default function InvoiceCard({
           </span>
         ) : null}
         <span>
-          verify this address out-of-band before paying — requests are not
-          sender-authenticated
+          {mailSignatureVerified
+            ? `The Mail signature protects this address and every displayed term from changes. Signer ${signerFingerprint}; confirm that signing key belongs to the requester if it is not already known.`
+            : "Unverified: anyone can rewrite this address and issue a new checksum. Verify it out-of-band before paying."}
         </span>
+        {linkAuthenticity.kind === "verified" ? (
+          <>
+            <strong>Verified Mail signing key</strong>
+            <code>{linkAuthenticity.authPublicKey}</code>
+            <span>
+              This exact key produced the valid signature. Its signed mailbox
+              identity claim is {linkAuthenticity.mailboxPublicKey}.
+            </span>
+          </>
+        ) : null}
       </div>
       <p className={styles.riskCopy}>
         <strong>
@@ -245,9 +275,9 @@ export default function InvoiceCard({
       ) : null}
       {canShare ? (
         <p className={styles.actionWarning}>
-          Mail does not globally mark an unsigned link paid. Local status
-          blocks a repeat only for this account in this browser profile; another
-          device can explicitly approve the same link again.
+          Mail does not globally mark a payment link paid. Local status blocks a
+          repeat only for this account in this browser profile; another device
+          can explicitly approve the same link again.
         </p>
       ) : null}
 
@@ -266,7 +296,11 @@ export default function InvoiceCard({
       ) : null}
       {showShareAction && shareOpen && shareLink ? (
         <div className={styles.addressProof}>
-          <strong>Unsigned payment link</strong>
+          <strong>
+            {mailSignatureVerified
+              ? "Mail-signed payment link"
+              : "Unverified unsigned payment link"}
+          </strong>
           <QRCodeSVG
             value={shareLink}
             size={220}
@@ -286,9 +320,9 @@ export default function InvoiceCard({
             Copy payment link
           </button>
           <span>
-            This link contains only the invoice fields shown here and is bound
-            to {requestNetwork}. It is not authenticated; verify the full
-            requester address out-of-band.
+            {mailSignatureVerified
+              ? `The verified Mail signature covers every invoice field shown here and binds the request to ${requestNetwork}. It does not by itself prove that the Mail key controls the requester wallet.`
+              : `This legacy link is bound to ${requestNetwork} but is not authenticated. Anyone can change its terms and recompute its checksum; verify the full requester address out-of-band.`}
           </span>
         </div>
       ) : null}
@@ -315,20 +349,19 @@ export default function InvoiceCard({
             ) : null
           ) : (
             <p className={styles.actionWarning}>
-              Non-STRK requests are display-only. Mail will not send
-              this token.
+              Non-STRK requests are display-only. Mail will not send this token.
             </p>
           )
         ) : (
           <p className={styles.actionWarning}>
-            Mail refuses this request: its STRK address has inconsistent
-            token metadata.
+            Mail refuses this request: its STRK address has inconsistent token
+            metadata.
           </p>
         )
       ) : (
         <p className={styles.actionWarning}>
-          Mail refuses this request: its requester is not a bounded
-          Starknet address.
+          Mail refuses this request: its requester is not a bounded Starknet
+          address.
         </p>
       )}
 

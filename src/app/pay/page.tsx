@@ -6,15 +6,22 @@ import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Str
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
-import { inspectMailVault } from "@/lib/mail-vault";
+import { deriveKeypair } from "@/lib/mail";
+import {
+  inspectMailVault,
+  unwrapMailSeed,
+  type MailVaultKind,
+} from "@/lib/mail-vault";
 import {
   DEFAULT_PAYMENT_LINK_EXPIRY_HOURS,
   MAX_PAYMENT_LINK_EXPIRY_HOURS,
   createPaymentLinkRequest,
-  decodePaymentLinkFragment,
+  createSignedPaymentLink,
+  decodePaymentLink,
   encodePaymentLinkFragment,
   paymentLinkChainIdsEqual,
   paymentLinkNetworkLabel,
+  type PaymentLinkAuthenticity,
 } from "@/lib/payment-link";
 import { loadPendingPayment, storePendingPayment } from "@/lib/pending-payment";
 import { paymentRequestIsExpired, type PaymentRequestPayload } from "@/lib/otc";
@@ -30,8 +37,11 @@ export default function PayPage() {
     () => typeof window !== "undefined" && window.location.hash.length > 0,
   );
   const [request, setRequest] = useState<PaymentRequestPayload | null>(null);
+  const [linkAuthenticity, setLinkAuthenticity] =
+    useState<PaymentLinkAuthenticity>({ kind: "unsigned" });
   const [decodeError, setDecodeError] = useState("");
-  const [hasLocalMailSeed, setHasLocalMailSeed] = useState(false);
+  const [mailVaultKind, setMailVaultKind] = useState<MailVaultKind>("missing");
+  const [mailPassphrase, setMailPassphrase] = useState("");
   const [handoffError, setHandoffError] = useState("");
   const [pendingConflict, setPendingConflict] = useState(false);
   const [amount, setAmount] = useState("0.1");
@@ -42,6 +52,7 @@ export default function PayPage() {
   const [createError, setCreateError] = useState("");
   const [generatedRequest, setGeneratedRequest] =
     useState<PaymentRequestPayload | null>(null);
+  const [generatedLink, setGeneratedLink] = useState("");
 
   useEffect(() => {
     function decodeCurrentFragment() {
@@ -53,15 +64,19 @@ export default function PayPage() {
 
       if (!reviewing) {
         setRequest(null);
+        setLinkAuthenticity({ kind: "unsigned" });
         setDecodeError("");
         return;
       }
 
       try {
-        setRequest(decodePaymentLinkFragment(fragment));
+        const decoded = decodePaymentLink(fragment);
+        setRequest(decoded.request);
+        setLinkAuthenticity(decoded.authenticity);
         setDecodeError("");
       } catch (error: unknown) {
         setRequest(null);
+        setLinkAuthenticity({ kind: "unsigned" });
         setDecodeError(
           error instanceof Error
             ? error.message
@@ -78,22 +93,23 @@ export default function PayPage() {
 
   useEffect(() => {
     if (!address || !chainId) {
-      setHasLocalMailSeed(false);
+      setMailVaultKind("missing");
+      setMailPassphrase("");
       return;
     }
 
     try {
-      setHasLocalMailSeed(
-        inspectMailVault(window.localStorage, chainId, address).kind !==
-          "missing",
+      setMailVaultKind(
+        inspectMailVault(window.localStorage, chainId, address).kind,
       );
     } catch {
-      setHasLocalMailSeed(false);
+      setMailVaultKind("missing");
     }
   }, [address, chainId]);
 
   useEffect(() => {
     setGeneratedRequest(null);
+    setGeneratedLink("");
     setCreateError("");
   }, [address, chainId, isStrk20Capable]);
 
@@ -104,21 +120,24 @@ export default function PayPage() {
   } else if (!isStrk20Capable) {
     readinessMessage =
       "The connected wallet does not expose the dapp-facing STRK20 API APP20 requires. No private payment can be submitted.";
-  } else if (hasLocalMailSeed) {
-    readinessMessage =
-      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
-  } else {
+  } else if (mailVaultKind === "missing") {
     readinessMessage =
       "This account is not onboarded in this browser. Continue to the inbox to create or restore and register its device mail key before paying.";
+  } else {
+    readinessMessage =
+      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
   }
 
   let creatorReadiness: string;
   if (!isConnected || !address || !chainId) {
     creatorReadiness =
       "Connect the privacy-enabled wallet and network that should receive the private STRK payment.";
+  } else if (isStrk20Capable && mailVaultKind === "missing") {
+    creatorReadiness =
+      "Create or restore this wallet's Mail identity in the inbox first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.";
   } else if (isStrk20Capable) {
     creatorReadiness =
-      "Ready to create an unsigned request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
+      "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
   } else {
     creatorReadiness =
       "This wallet does not expose APP20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
@@ -131,7 +150,7 @@ export default function PayPage() {
       const existing = loadPendingPayment(window.sessionStorage);
       const conflicts =
         existing !== null &&
-        encodePaymentLinkFragment(existing) !==
+        encodePaymentLinkFragment(existing.request) !==
           encodePaymentLinkFragment(request);
       if (conflicts && !replaceExisting) {
         setPendingConflict(true);
@@ -139,7 +158,7 @@ export default function PayPage() {
         return;
       }
 
-      storePendingPayment(window.sessionStorage, request);
+      storePendingPayment(window.sessionStorage, window.location.hash);
       setPendingConflict(false);
       void navigate({ to: "/mail/inbox" });
     } catch (error: unknown) {
@@ -151,12 +170,13 @@ export default function PayPage() {
     }
   }
 
-  function generatePaymentLink(event: React.FormEvent<HTMLFormElement>) {
+  async function generatePaymentLink(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreateError("");
 
     if (!isConnected || !address || !chainId) {
       setGeneratedRequest(null);
+      setGeneratedLink("");
       setCreateError(
         "Connect the wallet and network that should receive this payment.",
       );
@@ -164,35 +184,66 @@ export default function PayPage() {
     }
     if (!isStrk20Capable) {
       setGeneratedRequest(null);
+      setGeneratedLink("");
       setCreateError(
         "The connected wallet is not exposing the STRK20 API APP20 requires.",
       );
       return;
     }
 
+    let seed: Uint8Array | null = null;
+    let mailbox: ReturnType<typeof deriveKeypair> | null = null;
     try {
-      setGeneratedRequest(
-        createPaymentLinkRequest({
-          amount,
-          memo,
-          expiryHours,
-          requester: address,
-          chainId,
-        }),
+      const vault = inspectMailVault(window.localStorage, chainId, address);
+      if (vault.kind === "missing") {
+        throw new Error(
+          "Create or restore this wallet's Mail identity in the inbox before generating a signed link.",
+        );
+      }
+      if (vault.kind === "passphrase" && !mailPassphrase) {
+        throw new Error(
+          "Enter the mailbox vault passphrase to sign this link.",
+        );
+      }
+      seed =
+        vault.kind === "plaintext"
+          ? vault.seed
+          : await unwrapMailSeed(vault.record, mailPassphrase);
+      mailbox = deriveKeypair(seed);
+      const created = createPaymentLinkRequest({
+        amount,
+        memo,
+        expiryHours,
+        requester: address,
+        chainId,
+      });
+      const link = createSignedPaymentLink(
+        created,
+        window.location.origin,
+        seed,
+        mailbox.publicKey,
       );
+      setGeneratedRequest(created);
+      setGeneratedLink(link);
+      setMailPassphrase("");
     } catch (error: unknown) {
       setGeneratedRequest(null);
+      setGeneratedLink("");
       setCreateError(
         error instanceof Error
           ? error.message
           : "APP20 could not create this payment request.",
       );
+    } finally {
+      seed?.fill(0);
+      mailbox?.privateKey.fill(0);
     }
   }
 
   function updateCreatorField(setter: (value: string) => void, value: string) {
     setter(value);
     setGeneratedRequest(null);
+    setGeneratedLink("");
     setCreateError("");
   }
 
@@ -222,8 +273,8 @@ export default function PayPage() {
           </h1>
           <p>
             {hasFragment
-              ? "Payment links are unauthenticated instructions. APP20 decodes this invoice only from the URL fragment in your browser; the fragment is not sent in an HTTP request."
-              : "Create an unsigned STRK request without sending mail or touching the pool. The requester address, amount, memo, and expiry live in the URL fragment and are visible to anyone who receives the link."}
+              ? "APP20 verifies signed request terms in your browser. Legacy unsigned links remain visibly unverified. The URL fragment is not sent in an HTTP request."
+              : "Create a Mail-signed STRK request without sending mail or touching the pool. The recipient address, amount, memo, expiry, and signer identity are visible to anyone who receives the link."}
           </p>
         </header>
 
@@ -233,9 +284,28 @@ export default function PayPage() {
               className={styles.card}
               aria-labelledby="payment-link-title"
             >
+              <p className={styles.kicker}>
+                {linkAuthenticity.kind === "verified"
+                  ? "MAIL SIGNATURE VERIFIED"
+                  : "UNVERIFIED LEGACY LINK"}
+              </p>
               <h2 id="payment-link-title" className={styles.cardTitle}>
-                Unsigned invoice
+                {linkAuthenticity.kind === "verified"
+                  ? "Verified signed invoice"
+                  : "Unsigned invoice — requester not verified"}
               </h2>
+              <p
+                className={
+                  linkAuthenticity.kind === "verified"
+                    ? styles.notice
+                    : styles.actionWarning
+                }
+                role="status"
+              >
+                {linkAuthenticity.kind === "verified"
+                  ? "The request's Mail signature is valid and covers its asset, exact amount, recipient, memo, expiry, and network. Confirm the displayed Mail identity belongs to the requester if you do not already know it."
+                  : "Unverified legacy link: its checksum detects accidental damage but does not stop anyone from rewriting the terms. Verify every term with the requester through another channel."}
+              </p>
               <p className={styles.notice} role="status">
                 {readinessMessage}
               </p>
@@ -246,6 +316,7 @@ export default function PayPage() {
                 request={request}
                 showPaymentActions={false}
                 showShareAction={false}
+                linkAuthenticity={linkAuthenticity}
               />
               <p className={styles.actionWarning}>
                 Continuing stores this decoded request in this tab. It does not
@@ -313,7 +384,9 @@ export default function PayPage() {
             className={styles.card}
             aria-labelledby="payment-link-create-title"
           >
-            <p className={styles.kicker}>UNSIGNED REQUEST / NO TRANSACTION</p>
+            <p className={styles.kicker}>
+              MAIL-SIGNED REQUEST / NO TRANSACTION
+            </p>
             <h2 id="payment-link-create-title" className={styles.cardTitle}>
               Request private STRK
             </h2>
@@ -332,8 +405,9 @@ export default function PayPage() {
                 <strong>Requester address embedded in the link</strong>
                 <code>{address || "Connect a wallet"}</code>
                 <span>
-                  The link is not signed. The payer must verify this full
-                  address through another channel.
+                  The Mail signature will cover this full address and every
+                  request term. It does not by itself prove that the Mail key
+                  controls this wallet.
                 </span>
               </div>
               <label className={styles.field}>
@@ -366,6 +440,27 @@ export default function PayPage() {
                   hours.
                 </small>
               </label>
+              {mailVaultKind === "passphrase" ? (
+                <label className={`${styles.field} ${styles.paymentLinkWide}`}>
+                  Mail vault passphrase
+                  <input
+                    value={mailPassphrase}
+                    onChange={(event) => {
+                      setMailPassphrase(event.target.value);
+                      setGeneratedRequest(null);
+                      setGeneratedLink("");
+                      setCreateError("");
+                    }}
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                  />
+                  <small>
+                    Used only in this browser to unlock the Mail signing key;
+                    never included in the link.
+                  </small>
+                </label>
+              ) : null}
               <label className={`${styles.field} ${styles.paymentLinkWide}`}>
                 Memo (optional)
                 <textarea
@@ -385,16 +480,19 @@ export default function PayPage() {
               <p
                 className={`${styles.actionWarning} ${styles.paymentLinkWide}`}
               >
-                Shared links are reusable. APP20 cannot globally mark an
-                unsigned link paid, so another browser or device can explicitly
-                approve it again. Prefer an expiry and stop sharing fulfilled
-                links.
+                Shared links are reusable. APP20 cannot globally mark a signed
+                link paid, so another browser or device can explicitly approve
+                it again. Prefer an expiry and stop sharing fulfilled links.
               </p>
               <button
                 className={`${styles.primaryButton} ${styles.paymentLinkWide}`}
                 type="submit"
                 disabled={
-                  !isConnected || !address || !chainId || !isStrk20Capable
+                  !isConnected ||
+                  !address ||
+                  !chainId ||
+                  !isStrk20Capable ||
+                  mailVaultKind === "missing"
                 }
               >
                 {generatedRequest
@@ -416,7 +514,7 @@ export default function PayPage() {
                 <div className={styles.paymentLinkPreviewHeading}>
                   <div>
                     <p className={styles.kicker}>
-                      READY TO SHARE / STILL UNSIGNED
+                      READY TO SHARE / MAIL SIGNATURE VERIFIED
                     </p>
                     <h2 id="payment-link-preview-title">Review your link</h2>
                   </div>
@@ -427,6 +525,10 @@ export default function PayPage() {
                   request={generatedRequest}
                   showPaymentActions={false}
                   shareInitiallyOpen
+                  shareLinkOverride={generatedLink}
+                  linkAuthenticity={
+                    decodePaymentLink(new URL(generatedLink).hash).authenticity
+                  }
                 />
               </section>
             ) : null}

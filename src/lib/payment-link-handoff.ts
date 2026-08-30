@@ -22,8 +22,9 @@ export function importPendingPaymentIntoMailbox(
   selfAddress: string,
   at?: number,
 ): PaymentRecord | null {
-  const request = loadPendingPayment(sessionStorage);
-  if (!request) return null;
+  const pending = loadPendingPayment(sessionStorage);
+  if (!pending) return null;
+  const { request, authenticity } = pending;
   if (!request.chainId || !paymentLinkChainIdsEqual(request.chainId, chainId)) {
     throw new Error(
       "This payment link is bound to another Starknet network. Switch the wallet before importing it; the request remains pending.",
@@ -35,6 +36,7 @@ export function importPendingPaymentIntoMailbox(
     chainId,
     selfAddress,
     request,
+    authenticity,
     at,
   );
   clearPendingPayment(sessionStorage);

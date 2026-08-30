@@ -1,12 +1,15 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../utils/constants";
+import { deriveKeypair } from "./mail";
 import type { PaymentRequestPayload } from "./otc";
 import {
   MAX_PAYMENT_LINK_EXPIRY_HOURS,
   MAX_PAYMENT_LINK_FRAGMENT_LENGTH,
   createPaymentLink,
   createPaymentLinkRequest,
+  createSignedPaymentLinkFragment,
+  decodePaymentLink,
   decodePaymentLinkFragment,
   encodePaymentLinkFragment,
   normalizePaymentLinkChainId,
@@ -49,6 +52,14 @@ function fragmentForTuple(tuple: unknown): string {
   return `#app20p2.${bytesToBase64Url(payload)}.${bytesToBase64Url(
     sha256(checksumInput),
   )}`;
+}
+
+function signedFragmentForTuple(
+  tuple: unknown,
+  originalSignedFragment: string,
+): string {
+  const unsigned = fragmentForTuple(tuple).split(".");
+  return `#app20p3.${unsigned[1]}.${unsigned[2]}.${originalSignedFragment.split(".")[3]}`;
 }
 
 function tupleFromFragment(fragment: string): unknown[] {
@@ -145,6 +156,67 @@ describe("payment links", () => {
     expect(fragment).toMatch(/^#app20p2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
     expect(fragment).not.toContain("?");
     expect(decodePaymentLinkFragment(fragment)).toEqual(request);
+  });
+
+  it("creates and verifies a Mail-signed request", () => {
+    const seed = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+    const mailbox = deriveKeypair(seed);
+    const fragment = createSignedPaymentLinkFragment(
+      request,
+      seed,
+      mailbox.publicKey,
+    );
+
+    expect(fragment).toMatch(/^#app20p3\./);
+    expect(decodePaymentLink(fragment)).toEqual({
+      request,
+      authenticity: {
+        kind: "verified",
+        mailboxPublicKey: Array.from(mailbox.publicKey, (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join(""),
+        authPublicKey: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+    expect(fragment).not.toContain(
+      Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    );
+    mailbox.privateKey.fill(0);
+  });
+
+  it.each([
+    ["amount", 4, "999000000000000000"],
+    ["recipient", 7, "b0b"],
+    ["asset", 2, "1234"],
+    ["memo", 5, "Tampered memo"],
+    ["expiry", 6, 2_100_000_000],
+    ["chain", 8, "SN_MAIN"],
+  ])(
+    "refuses a signed request with a recomputed checksum after %s tampering",
+    (_label, tupleIndex, replacement) => {
+      const seed = Uint8Array.from({ length: 32 }, () => 7);
+      const mailbox = deriveKeypair(seed);
+      const signed = createSignedPaymentLinkFragment(
+        request,
+        seed,
+        mailbox.publicKey,
+      );
+      const tuple = tupleFromFragment(signed);
+      tuple[tupleIndex as number] = replacement;
+      const tampered = signedFragmentForTuple(tuple, signed);
+
+      expect(() => decodePaymentLink(tampered)).toThrow(
+        /signature verification failed|canonical STRK/i,
+      );
+      mailbox.privateKey.fill(0);
+    },
+  );
+
+  it("reports legacy unsigned links as unverified rather than verified", () => {
+    expect(decodePaymentLink(encodePaymentLinkFragment(request))).toEqual({
+      request,
+      authenticity: { kind: "unsigned" },
+    });
   });
 
   it("binds links to one supported Starknet network", () => {

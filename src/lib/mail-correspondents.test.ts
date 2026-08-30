@@ -3,6 +3,7 @@ import {
   claimedFinancialAddress,
   describeMailScanCursor,
   formatDeviceSentRecipients,
+  replyAddressForConversation,
   replyAddressForMessage,
   uniqueCanonicalAddresses,
 } from "./mail-correspondents";
@@ -47,6 +48,46 @@ describe("device-local correspondents", () => {
       ),
     ).toBeNull();
     expect(claimedFinancialAddress(incomingInvoice, "0xa11ce")).toBeNull();
+  });
+
+  it("uses the sole device-local Sent recipient for a sealed conversation", () => {
+    expect(
+      replyAddressForConversation(
+        [
+          {
+            direction: "outgoing",
+            recipients: ["0xb0b"],
+            envelope: { type: "text", payload: {} },
+          },
+          {
+            direction: "incoming",
+            envelope: { type: "text", payload: {} },
+          },
+        ],
+        "0xa11ce",
+      ),
+    ).toBe("0xb0b");
+  });
+
+  it("does not guess when a sealed conversation has no or multiple known recipients", () => {
+    expect(
+      replyAddressForConversation(
+        [{ direction: "incoming", envelope: { type: "text", payload: {} } }],
+        "0xa11ce",
+      ),
+    ).toBeNull();
+    expect(
+      replyAddressForConversation(
+        [
+          {
+            direction: "outgoing",
+            recipients: ["0xb0b", "0xca11"],
+            envelope: { type: "text", payload: {} },
+          },
+        ],
+        "0xa11ce",
+      ),
+    ).toBeNull();
   });
 
   it("describes an unused or paused scan cursor", () => {

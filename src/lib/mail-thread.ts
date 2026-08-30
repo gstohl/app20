@@ -60,6 +60,131 @@ export function conversationKeyForMessage(message: {
   );
 }
 
+type ThreadAssemblyMessage = {
+  id: string;
+  documentId?: string;
+  localConversationId?: string;
+  direction?: "incoming" | "outgoing";
+  index?: unknown;
+  record?: unknown;
+  transactionHash?: unknown;
+  blockNumber?: unknown;
+  blockTimestamp?: unknown;
+  eventIndex?: unknown;
+  threadProvenance?: "device_sent_and_on_chain";
+  envelope: { type: string; payload?: unknown };
+};
+
+function stableDocumentId(message: ThreadAssemblyMessage): string | undefined {
+  const fields = conversationFieldsFromPayload(
+    message.envelope.type,
+    message.envelope.type === "unsupported" ? null : message.envelope.payload,
+  );
+  return fields.documentId ?? parseConversationId(message.documentId);
+}
+
+function collapseSelfMailCopies<Message extends ThreadAssemblyMessage>(
+  messages: readonly Message[],
+): Message[] {
+  const collapsed: Message[] = [];
+  const positions = new Map<string, number>();
+
+  for (const message of messages) {
+    const documentId = stableDocumentId(message);
+    const position = documentId ? positions.get(documentId) : undefined;
+    if (position === undefined) {
+      collapsed.push(message);
+      if (documentId) positions.set(documentId, collapsed.length - 1);
+      continue;
+    }
+
+    const existing = collapsed[position];
+    const existingHasSentCopy =
+      existing.direction === "outgoing" ||
+      existing.threadProvenance === "device_sent_and_on_chain";
+    const messageHasSentCopy =
+      message.direction === "outgoing" ||
+      message.threadProvenance === "device_sent_and_on_chain";
+    if (existingHasSentCopy === messageHasSentCopy) {
+      // Never collapse two independently observed messages merely because
+      // their payloads (or bodies) happen to be equal.
+      collapsed.push(message);
+      continue;
+    }
+
+    const sent = (existingHasSentCopy ? existing : message) as Message;
+    const chain = (existingHasSentCopy ? message : existing) as Message;
+    collapsed[position] = {
+      ...chain,
+      ...sent,
+      id: sent.id,
+      documentId: sent.documentId ?? chain.documentId,
+      direction: "outgoing",
+      index: chain.index ?? sent.index,
+      record: chain.record ?? sent.record,
+      transactionHash: chain.transactionHash ?? sent.transactionHash,
+      blockNumber: chain.blockNumber ?? sent.blockNumber,
+      blockTimestamp: chain.blockTimestamp ?? sent.blockTimestamp,
+      eventIndex: chain.eventIndex ?? sent.eventIndex,
+      threadProvenance: "device_sent_and_on_chain",
+    } as Message;
+  }
+
+  return collapsed;
+}
+
+export function assembleConversation<Message extends ThreadAssemblyMessage>(
+  messagesNewestFirst: readonly Message[],
+  selectedMessageId: string | null,
+): Message[] {
+  if (!selectedMessageId) return [];
+  const selected = messagesNewestFirst.find(
+    (message) => message.id === selectedMessageId,
+  );
+  if (!selected) return [];
+  const conversationId = conversationKeyForMessage(selected);
+  const chronologicalFallback = collapseSelfMailCopies(
+    messagesNewestFirst
+      .filter(
+        (message) => conversationKeyForMessage(message) === conversationId,
+      )
+      .slice()
+      .reverse(),
+  );
+  const documentIds = new Set(
+    chronologicalFallback.flatMap((message) => {
+      const documentId = stableDocumentId(message);
+      return documentId ? [documentId] : [];
+    }),
+  );
+  const emittedDocumentIds = new Set<string>();
+  const remaining = [...chronologicalFallback];
+  const assembled: Message[] = [];
+  while (remaining.length) {
+    const readyIndex = remaining.findIndex((message) => {
+      const fields = conversationFieldsFromPayload(
+        message.envelope.type,
+        message.envelope.type === "unsupported"
+          ? null
+          : message.envelope.payload,
+      );
+      return (
+        !fields.inReplyTo ||
+        !documentIds.has(fields.inReplyTo) ||
+        emittedDocumentIds.has(fields.inReplyTo)
+      );
+    });
+    // Malformed reply cycles retain the honest mailbox-time fallback rather
+    // than dropping a locally substantiated record.
+    const index = readyIndex < 0 ? 0 : readyIndex;
+    const [message] = remaining.splice(index, 1);
+    assembled.push(message);
+    const documentId = stableDocumentId(message);
+    if (documentId) emittedDocumentIds.add(documentId);
+  }
+  return assembled;
+}
+
 export function nextConversationFields(parent?: {
   id: string;
   documentId?: string;

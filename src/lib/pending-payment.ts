@@ -1,46 +1,44 @@
-import type { PaymentRequestPayload } from "./otc";
-import {
-  decodePaymentLinkFragment,
-  encodePaymentLinkFragment,
-} from "./payment-link";
+import { decodePaymentLink, type DecodedPaymentLink } from "./payment-link";
 
-export const PENDING_PAYMENT_STORAGE_KEY =
-  "app20/pending-payment/v1";
+export const PENDING_PAYMENT_STORAGE_KEY = "app20/pending-payment/v1";
 
 export type PendingPaymentStorage = Pick<
-  Storage,
-  "getItem" | "setItem" | "removeItem"
+ Storage,
+ "getItem" | "setItem" | "removeItem"
 >;
 
-/** Replace the tab's one pending request after applying payment-link validation. */
+/**
+ * Replace the tab's one pending request after validating its complete link.
+ * Keeping the original fragment preserves a verified signature for the inbox;
+ * re-encoding only the request would silently downgrade it to unsigned.
+ */
 export function storePendingPayment(
-  storage: PendingPaymentStorage,
-  request: PaymentRequestPayload,
-): PaymentRequestPayload {
-  const encoded = encodePaymentLinkFragment(request);
-  const normalized = decodePaymentLinkFragment(encoded);
-  storage.setItem(PENDING_PAYMENT_STORAGE_KEY, encoded);
-  return normalized;
+ storage: PendingPaymentStorage,
+ fragment: string,
+): DecodedPaymentLink {
+ const decoded = decodePaymentLink(fragment);
+ storage.setItem(PENDING_PAYMENT_STORAGE_KEY, fragment);
+ return decoded;
 }
 
 /** Read without consuming. Corrupt or stale-format values are discarded. */
 export function loadPendingPayment(
-  storage: PendingPaymentStorage,
-): PaymentRequestPayload | null {
-  const encoded = storage.getItem(PENDING_PAYMENT_STORAGE_KEY);
-  if (encoded === null) return null;
+ storage: PendingPaymentStorage,
+): DecodedPaymentLink | null {
+ const encoded = storage.getItem(PENDING_PAYMENT_STORAGE_KEY);
+ if (encoded === null) return null;
 
-  try {
-    return decodePaymentLinkFragment(encoded);
-  } catch {
-    storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
-    return null;
-  }
+ try {
+  return decodePaymentLink(encoded);
+ } catch {
+  storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+  return null;
+ }
 }
 
 /** Remove any pending request from this tab. */
 export function clearPendingPayment(storage: PendingPaymentStorage): void {
-  storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+ storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
 }
 
 /**
@@ -48,15 +46,15 @@ export function clearPendingPayment(storage: PendingPaymentStorage): void {
  * malformed value or a throwing consumer cannot accidentally replay it.
  */
 export function consumePendingPayment(
-  storage: PendingPaymentStorage,
-): PaymentRequestPayload | null {
-  const encoded = storage.getItem(PENDING_PAYMENT_STORAGE_KEY);
-  if (encoded === null) return null;
-  storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
+ storage: PendingPaymentStorage,
+): DecodedPaymentLink | null {
+ const encoded = storage.getItem(PENDING_PAYMENT_STORAGE_KEY);
+ if (encoded === null) return null;
+ storage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
 
-  try {
-    return decodePaymentLinkFragment(encoded);
-  } catch {
-    return null;
-  }
+ try {
+  return decodePaymentLink(encoded);
+ } catch {
+  return null;
+ }
 }

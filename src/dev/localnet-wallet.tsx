@@ -179,7 +179,9 @@ export class App20LocalnetWallet implements WalletWithStarknetFeatures {
     payload: Record<string, unknown>,
   ): Promise<unknown> {
     if (!this.connected)
-      throw new Error("Connect the Localnet (dev) wallet before using account methods.");
+      throw new Error(
+        "Connect the Localnet (dev) wallet before using account methods.",
+      );
     const identity = this.selectedIdentity;
     this.activeIdentityRequests += 1;
     try {
@@ -274,9 +276,27 @@ async function readApiResponse(
     error?: string;
   };
   if (!response.ok || payload.error) {
-    throw new Error(
-      payload.error ?? `Localnet wallet HTTP ${response.status}.`,
-    );
+    const message = payload.error ?? `Localnet wallet HTTP ${response.status}.`;
+    const error = new Error(message) as Error & {
+      app20SubmissionOutcome?: "not-submitted";
+      code?: string;
+      httpStatus?: number;
+    };
+    if (
+      path === "/privacy" &&
+      response.status === 400 &&
+      /^Insufficient balance for token \S+: need \d+ more \(total available: \d+\)$/.test(
+        message,
+      )
+    ) {
+      // This exact local prover error is raised by note selection before the
+      // backend reaches devnet.executeOutside. Attest that narrow boundary so
+      // generic wallet failures remain unknown in the submission layer.
+      error.app20SubmissionOutcome = "not-submitted";
+      error.code = "APP20_LOCALNET_PRE_SUBMISSION_INSUFFICIENT_BALANCE";
+      error.httpStatus = response.status;
+    }
+    throw error;
   }
   return payload.result;
 }

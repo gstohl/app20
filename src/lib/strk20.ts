@@ -276,8 +276,7 @@ export async function detectStrk20Capability(
       typeof wallet.version === "string" ? wallet.version : undefined,
     walletApiVersions:
       walletApiResult.status === "fulfilled" ? walletApiResult.value : [],
-    specVersions:
-      specsResult.status === "fulfilled" ? specsResult.value : [],
+    specVersions: specsResult.status === "fulfilled" ? specsResult.value : [],
     account,
     declarationErrors: {
       ...(walletApiResult.status === "rejected"
@@ -310,7 +309,9 @@ export function formatStrk20CapabilityDiagnostic(
     `Version requirement: ${capability.versionSupported ? "met" : "not met"}`,
     `Overall support: ${capability.supported ? "supported" : "not supported"}`,
     ...(capability.declarationErrors.walletApi
-      ? [`walletApiVersions query error: ${capability.declarationErrors.walletApi}`]
+      ? [
+          `walletApiVersions query error: ${capability.declarationErrors.walletApi}`,
+        ]
       : []),
     ...(capability.declarationErrors.specs
       ? [`specVersions query error: ${capability.declarationErrors.specs}`]
@@ -363,6 +364,16 @@ export class Strk20NotSubmittedError extends Error {
   }
 }
 
+export class Strk20DeterministicSubmissionRejectedError extends Error {
+  constructor(reason: string, cause: unknown) {
+    super(
+      `${reason} No transaction was submitted. Shield funds first, then retry explicitly.`,
+      { cause },
+    );
+    this.name = "Strk20DeterministicSubmissionRejectedError";
+  }
+}
+
 export class Strk20WalletSubmissionUnknownError extends Error {
   constructor(cause: unknown) {
     super(
@@ -399,6 +410,29 @@ export class Strk20SubmissionCallbackError extends Error {
     this.name = "Strk20SubmissionCallbackError";
     this.transactionHash = transactionHash;
   }
+}
+
+const LOCALNET_INSUFFICIENT_BALANCE_CODE =
+  "APP20_LOCALNET_PRE_SUBMISSION_INSUFFICIENT_BALANCE";
+const INSUFFICIENT_BALANCE_MESSAGE =
+  /^Insufficient balance for token \S+: need \d+ more \(total available: \d+\)$/;
+
+/**
+ * The build-gated localnet wallet attaches this attestation only to the known
+ * HTTP 400 note-selection rejection raised before executeOutside is called.
+ * Unmarked wallet errors remain unknown even when their text looks similar.
+ */
+function deterministicPreSubmissionReason(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const candidate = error as Record<string, unknown>;
+  const message = candidate.message;
+  return candidate.app20SubmissionOutcome === "not-submitted" &&
+    candidate.code === LOCALNET_INSUFFICIENT_BALANCE_CODE &&
+    candidate.httpStatus === 400 &&
+    typeof message === "string" &&
+    INSUFFICIENT_BALANCE_MESSAGE.test(message)
+    ? message
+    : undefined;
 }
 
 function receiptValue(receipt: unknown): Record<string, unknown> | undefined {
@@ -505,6 +539,8 @@ export function transactionStateFromError(
   error: unknown,
 ): "reverted" | "unknown" | undefined {
   if (error instanceof Strk20NotSubmittedError) return "reverted";
+  if (error instanceof Strk20DeterministicSubmissionRejectedError)
+    return "reverted";
   if (error instanceof Strk20RevertedError) return "reverted";
   if (
     error instanceof Strk20WaitTimeoutError ||
@@ -558,6 +594,13 @@ export async function submitActions(
   try {
     submitted = await account.strk20InvokeTransaction(actions);
   } catch (error: unknown) {
+    const deterministicReason = deterministicPreSubmissionReason(error);
+    if (deterministicReason) {
+      throw new Strk20DeterministicSubmissionRejectedError(
+        deterministicReason,
+        error,
+      );
+    }
     throw new Strk20WalletSubmissionUnknownError(error);
   }
   const { transaction_hash: transactionHash } = submitted;
@@ -607,12 +650,10 @@ export function submitMail(
   { account, provider, policy, ...batch }: SubmitMailInput,
   options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(
-    account,
-    provider,
-    buildMailInvokeActions(batch),
-    { ...options, policy },
-  );
+  return submitActions(account, provider, buildMailInvokeActions(batch), {
+    ...options,
+    policy,
+  });
 }
 
 /** Submits one wallet batch containing a transfer, recovery note, and memo. */
@@ -620,12 +661,10 @@ export function submitMemoTransfer(
   { account, provider, policy, ...batch }: SubmitMemoTransferInput,
   options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(
-    account,
-    provider,
-    buildMemoTransferActions(batch),
-    { ...options, policy },
-  );
+  return submitActions(account, provider, buildMemoTransferActions(batch), {
+    ...options,
+    policy,
+  });
 }
 
 /** A single wallet call settles the STRK give leg and posts the accept memo. */
@@ -633,12 +672,112 @@ export function submitOtcAccept(
   { account, provider, policy, ...batch }: SubmitOtcAcceptInput,
   options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(
-    account,
-    provider,
-    buildOtcAcceptActions(batch),
-    { ...options, policy },
+  return submitActions(account, provider, buildOtcAcceptActions(batch), {
+    ...options,
+    policy,
+  });
+}
+
+/** Parse one token's exact private balance from the declared Wallet API shape. */
+export function readStrk20PrivateBalance(raw: unknown, token: string): bigint {
+  const value =
+    raw && typeof raw === "object" && "value" in raw
+      ? (raw as { value?: unknown }).value
+      : raw;
+  if (!Array.isArray(value)) {
+    throw new Error(
+      "The wallet returned an unfamiliar private-balance response.",
+    );
+  }
+
+  const expectedToken = num.toBigInt(token);
+  for (const entry of value) {
+    const tuple = Array.isArray(entry) ? entry : [];
+    const record =
+      entry && typeof entry === "object"
+        ? (entry as Record<string, unknown>)
+        : ({} as Record<string, unknown>);
+    const entryToken = record.token ?? record.token_address ?? tuple[0];
+    let matches = false;
+    try {
+      matches = num.toBigInt(String(entryToken)) === expectedToken;
+    } catch {
+      continue;
+    }
+    if (!matches) continue;
+
+    const amount = record.amount ?? record.balance ?? tuple[1];
+    try {
+      const parsed = num.toBigInt(String(amount));
+      if (parsed < 0n) throw new Error();
+      return parsed;
+    } catch {
+      throw new Error(
+        "The wallet returned an invalid private balance for STRK.",
+      );
+    }
+  }
+  return 0n;
+}
+
+export class Strk20PrivateBalanceUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      "The wallet's private STRK balance could not be verified. Nothing was submitted; check the wallet and retry.",
+      { cause },
+    );
+    this.name = "Strk20PrivateBalanceUnavailableError";
+  }
+}
+
+export class InsufficientPrivateStrkBalanceError extends Error {
+  readonly required: bigint;
+
+  constructor(required: bigint) {
+    super(
+      `Private STRK is insufficient for this batch, which requires ${required} base units. Shield STRK first, then retry explicitly. Nothing was submitted.`,
+    );
+    this.name = "InsufficientPrivateStrkBalanceError";
+    this.required = required;
+  }
+}
+
+function exactPositiveBaseUnits(amount: string | bigint): bigint {
+  if (typeof amount === "string" && !/^(?:0|[1-9]\d*)$/.test(amount)) {
+    throw new Error("Batch amounts must be decimal base-unit strings.");
+  }
+  const parsed = BigInt(amount);
+  if (parsed <= 0n) throw new Error("Batch amounts must be greater than zero.");
+  return parsed;
+}
+
+/**
+ * Fail closed before submission unless the wallet-declared private balance
+ * covers every withdrawal/transfer in the batch.
+ */
+export async function assertPrivateStrk20BatchBalance(
+  account: WalletAccountV6,
+  token: string,
+  amounts: readonly (string | bigint)[],
+): Promise<{ required: bigint; balance: bigint }> {
+  const required = amounts.reduce<bigint>(
+    (total, amount) => total + exactPositiveBaseUnits(amount),
+    0n,
   );
+  if (required <= 0n) throw new Error("A private batch must contain value.");
+
+  let balance: bigint;
+  try {
+    const raw = await account.strk20Balances([token]);
+    balance = readStrk20PrivateBalance(raw, token);
+  } catch (error: unknown) {
+    if (error instanceof InsufficientPrivateStrkBalanceError) throw error;
+    throw new Strk20PrivateBalanceUnavailableError(error);
+  }
+  if (balance < required) {
+    throw new InsufficientPrivateStrkBalanceError(required);
+  }
+  return { required, balance };
 }
 
 function errorDetails(error: unknown): string {

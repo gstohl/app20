@@ -16,6 +16,7 @@ import {
   type PaymentRecord,
   type PaymentRequestPayload,
 } from "@/lib/otc";
+import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import type { StoredSentMail } from "@/lib/sent-mail";
 import * as constants from "@/utils/constants";
 
@@ -136,7 +137,7 @@ export function mergeMailMessages(
   for (const message of incoming) byId.set(message.id, message);
 
   // When the same invoice later arrives as sealed mail, prefer its real
-  // MessagePosted evidence over the local unsigned-link projection.
+  // MessagePosted evidence over the local payment-link projection.
   const actualRequestIds = new Set(
     [...byId.values()].flatMap((message) =>
       message.transport === "payment_link"
@@ -175,6 +176,7 @@ export function storedSentToLocal(message: StoredSentMail): LocalMailMessage {
 export function paymentLinkToLocal(
   request: PaymentRequestPayload,
   updatedAt = Math.floor(Date.now() / 1_000),
+  linkAuthenticity: PaymentLinkAuthenticity = { kind: "unsigned" },
 ): LocalMailMessage {
   return {
     id: `payment-link:${request.requestId}`,
@@ -192,6 +194,7 @@ export function paymentLinkToLocal(
     transactionHash: "",
     direction: "incoming",
     transport: "payment_link",
+    linkAuthenticity,
     localCreatedAt: updatedAt * 1_000,
   };
 }

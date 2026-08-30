@@ -43,6 +43,10 @@ import { createLocalnetRfqStateHandlers } from "./localnet-rfq-state-handlers.mj
 import { requestLocalnetMaker } from "./localnet-maker-http.mjs";
 import { validateLocalnetDealObservation } from "./localnet-deal-validator.mjs";
 import { listBrowserSafeUnresolvedLocalnetDeals } from "./localnet-unresolved-deals.mjs";
+import {
+  createLocalnetPrivateBalanceFixture,
+  formatLocalnetPrivateBalanceSummary,
+} from "./localnet-user-fixture.mjs";
 import { runLocalnetSolve } from "./localnet-solve-handler.mjs";
 import { runLocalnetEnsureTicketRoute } from "./localnet-ticket-handler.mjs";
 import { selectQuoteThroughCoordinator } from "./localnet-selection-handler.mjs";
@@ -937,15 +941,17 @@ async function approveDeposits(identity, actions, env, starknet) {
   }
 }
 
-async function seedEscrowPrivateBalances(identities, env, starknet) {
+async function seedEscrowPrivateBalances(fixture, env, starknet) {
   // Alice and Bob remain user/demo identities. Independent maker processes seed
   // their own USDC and STRK notes after receiving public localnet fixtures.
-  for (const [identity, token, amount] of [
-    [identities.alice, env.strk, 10n * 10n ** 18n],
-    [identities.bob, env.eth, 10n * 10n ** 18n],
-  ]) {
+  // Every user fixture entry goes through the reviewed pool deposit/prove path.
+  for (const { identity, token, amountBaseUnits } of fixture) {
     const actions = [
-      { type: "deposit", token, amount: starknet.num.toHex(amount) },
+      {
+        type: "deposit",
+        token,
+        amount: starknet.num.toHex(amountBaseUnits),
+      },
     ];
     await approveDeposits(identity, actions, env, starknet);
     const prepared = await identity.prover.prove(actions);
@@ -2525,9 +2531,13 @@ try {
   }
   await fundMakerPublicUsdc(env, env.usdc, env.extraAccounts, runtime.starknet);
 
+  const privateBalanceFixture = createLocalnetPrivateBalanceFixture(
+    identities,
+    env,
+  );
   currentStage = "local user balance seed";
-  console.log("\n==> seeding Alice STRK and Bob Mail fixture balances");
-  await seedEscrowPrivateBalances(identities, env, runtime.starknet);
+  console.log("\n==> seeding Alice and Bob shielded local user balances");
+  await seedEscrowPrivateBalances(privateBalanceFixture, env, runtime.starknet);
 
   currentStage = "independent maker-node startup";
   console.log("\n==> starting independent WAL-backed maker custody processes");
@@ -2674,6 +2684,11 @@ try {
   console.log("  Private market:     USDC ↔ STRK · 1 STRK = 2 USDC fixture");
   console.log(`  Alice:              ${identities.alice.account.address}`);
   console.log(`  Bob:                ${identities.bob.account.address}`);
+  for (const fixtureLine of formatLocalnetPrivateBalanceSummary(
+    privateBalanceFixture,
+  )) {
+    console.log(fixtureLine);
+  }
   for (const maker of makers) {
     console.log(
       `  ${maker.solverId}: ${maker.settlementAccount} · WAL-backed process`,

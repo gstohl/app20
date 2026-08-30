@@ -108,6 +108,34 @@ export function replyAddressForMessage(
   return claimedFinancialAddress(message, selfAddress);
 }
 
+export function replyAddressForConversation(
+  messages: readonly {
+    direction?: "incoming" | "outgoing";
+    recipients?: readonly string[];
+    assignedAddress?: string;
+    envelope: { type: string; payload?: unknown };
+  }[],
+  selfAddress: string,
+): string | null {
+  const candidates: string[] = [];
+  for (const message of messages) {
+    if (message.direction === "outgoing") {
+      candidates.push(...(message.recipients ?? []));
+      continue;
+    }
+    const assigned = message.assignedAddress
+      ? canonicalizeKnownAddress(message.assignedAddress)
+      : null;
+    const claimed = replyAddressForMessage(message, selfAddress);
+    if (assigned) candidates.push(assigned);
+    if (claimed) candidates.push(claimed);
+  }
+  const counterparties = uniqueCanonicalAddresses(candidates).filter(
+    (candidate) => !selfAddress || !feltEquals(candidate, selfAddress),
+  );
+  return counterparties.length === 1 ? counterparties[0] : null;
+}
+
 export function describeMailScanCursor(cursor: {
   newestScannedBlock: number | null;
   oldestScannedBlock: number | null;

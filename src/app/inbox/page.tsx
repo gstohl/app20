@@ -92,7 +92,10 @@ import {
 import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
-import { paymentLinkChainIdsEqual } from "@/lib/payment-link";
+import {
+  paymentLinkChainIdsEqual,
+  type DecodedPaymentLink,
+} from "@/lib/payment-link";
 import { importPendingPaymentIntoMailbox } from "@/lib/payment-link-handoff";
 import {
   loadPendingPayment,
@@ -129,6 +132,7 @@ import {
 import {
   computeActionId,
   APP20_HELPER_FUNDING_BASE_UNITS,
+  assertPrivateStrk20BatchBalance,
   strk20ErrorMessage,
   submitActions,
   transactionHashFromError,
@@ -143,7 +147,7 @@ import {
   saveMailAssignment,
   type MailAssignment,
 } from "@/lib/mail-assignments";
-import { conversationKeyForMessage } from "@/lib/mail-thread";
+import { assembleConversation } from "@/lib/mail-thread";
 import { evaluateSenderProof, type SenderProof } from "@/lib/sender-proof";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
@@ -254,8 +258,8 @@ export default function InboxPage() {
   const [drafts, setDrafts] = useState<CompositeDraft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [pendingPaymentRequest, setPendingPaymentRequest] =
-    useState<PaymentRequestPayload | null>(null);
+  const [pendingPayment, setPendingPayment] =
+    useState<DecodedPaymentLink | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mobileSidebarMode, setMobileSidebarMode] = useState(false);
@@ -484,7 +488,11 @@ export default function InboxPage() {
               storedSentToLocal,
             ),
             ...paymentLinkRecords(storedOtc).map((payment) =>
-              paymentLinkToLocal(payment.request, payment.updatedAt),
+              paymentLinkToLocal(
+                payment.request,
+                payment.updatedAt,
+                payment.linkAuthenticity,
+              ),
             ),
           ],
         ),
@@ -518,10 +526,14 @@ export default function InboxPage() {
 
   useEffect(() => {
     try {
-      const request = loadPendingPayment(window.sessionStorage);
-      if (!request) return;
-      const message = paymentLinkToLocal(request);
-      setPendingPaymentRequest(request);
+      const pending = loadPendingPayment(window.sessionStorage);
+      if (!pending) return;
+      const message = paymentLinkToLocal(
+        pending.request,
+        undefined,
+        pending.authenticity,
+      );
+      setPendingPayment(pending);
       setMessages((current) => mergeMailMessages(current, [message]));
       setMailFolder("inbox");
       setMailboxFilter("invoices");
@@ -534,8 +546,8 @@ export default function InboxPage() {
   }, []);
 
   useEffect(() => {
-    if (!pendingPaymentRequest || !address || !chainId) return;
-    const actionKey = `payment:${pendingPaymentRequest.requestId}`;
+    if (!pendingPayment || !address || !chainId) return;
+    const actionKey = `payment:${pendingPayment.request.requestId}`;
     try {
       const imported = importPendingPaymentIntoMailbox(
         window.sessionStorage,
@@ -544,20 +556,26 @@ export default function InboxPage() {
         address,
       );
       if (!imported) {
-        setPendingPaymentRequest(null);
+        setPendingPayment(null);
         return;
       }
       setOtcState(expireStoredDeals(window.localStorage, chainId, address));
-      const message = paymentLinkToLocal(imported.request, imported.updatedAt);
+      const message = paymentLinkToLocal(
+        imported.request,
+        imported.updatedAt,
+        imported.linkAuthenticity,
+      );
       setMessages((current) => mergeMailMessages(current, [message]));
-      setPendingPaymentRequest(null);
+      setPendingPayment(null);
       setMailFolder("inbox");
       setMailboxFilter("invoices");
       setSelectedMessageId(message.id);
       setActionState(actionKey, {
         pending: false,
         message:
-          "Unsigned link imported for local review. No payment was submitted.",
+          imported.linkAuthenticity?.kind === "verified"
+            ? "Verified Mail-signed link imported for local review. No payment was submitted."
+            : "Unverified legacy link imported for local review. No payment was submitted.",
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -568,7 +586,7 @@ export default function InboxPage() {
             : "The payment link could not be imported. No payment was submitted.",
       });
     }
-  }, [address, chainId, pendingPaymentRequest]);
+  }, [address, chainId, pendingPayment]);
 
   useEffect(() => {
     if (mailFolder === "drafts") {
@@ -715,11 +733,18 @@ export default function InboxPage() {
     context: ReturnType<typeof requireActionContext>,
     action: string,
     amount: string,
+    privateBatchAmounts: readonly (string | bigint)[],
   ) {
     const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
     if (!poolAddress) {
       throw new Error("The STRK20 pool is not configured for this network.");
     }
+    context.policy();
+    await assertPrivateStrk20BatchBalance(
+      context.walletAccount,
+      constants.addrSTRK,
+      privateBatchAmounts,
+    );
     await authorizeStrk20ValueAction({
       provider: context.provider,
       poolAddress,
@@ -888,7 +913,11 @@ export default function InboxPage() {
               ...paymentLinkRecords(
                 expireStoredDeals(window.localStorage, chainId, address),
               ).map((payment) =>
-                paymentLinkToLocal(payment.request, payment.updatedAt),
+                paymentLinkToLocal(
+                  payment.request,
+                  payment.updatedAt,
+                  payment.linkAuthenticity,
+                ),
               ),
             ],
           )
@@ -1158,6 +1187,7 @@ export default function InboxPage() {
         context,
         "Back up contacts to encrypted Mail",
         APP20_HELPER_FUNDING_BASE_UNITS.toString(),
+        [APP20_HELPER_FUNDING_BASE_UNITS],
       );
       setActionState(actionKey, {
         pending: true,
@@ -1425,13 +1455,15 @@ export default function InboxPage() {
       refreshOtcState();
       setActionState(actionKey, {
         pending: true,
-        message: "Reading the live pool fee and public STRK balance…",
+        message:
+          "Checking the private batch balance, live pool fee, and public fee balance…",
         startedAt: Date.now(),
       });
       await authorizeValueAction(
         context,
         "Accept OTC private transfer",
         offer.give.amount,
+        [offer.give.amount, APP20_HELPER_FUNDING_BASE_UNITS],
       );
       setActionState(actionKey, {
         pending: true,
@@ -1649,13 +1681,15 @@ export default function InboxPage() {
       refreshOtcState();
       setActionState(actionKey, {
         pending: true,
-        message: "Reading the live pool fee and public STRK balance…",
+        message:
+          "Checking the private payment plus mail-helper funding, live pool fee, and public fee balance…",
         startedAt: Date.now(),
       });
       await authorizeValueAction(
         context,
         "Invoice private payment",
         payableRequest.amount,
+        [payableRequest.amount, APP20_HELPER_FUNDING_BASE_UNITS],
       );
       setActionState(actionKey, {
         pending: true,
@@ -1769,7 +1803,9 @@ export default function InboxPage() {
         providerIndex !== constants.LOCALNET_PROVIDER_INDEX ||
         !constants.localnetWalletEnabled
       ) {
-        throw new Error("Escrow fill is available only on build-gated localnet.");
+        throw new Error(
+          "Escrow fill is available only on build-gated localnet.",
+        );
       }
       const context = requireActionContext();
       if (!escrowAddress || !escrowEnabled) {
@@ -2063,26 +2099,21 @@ export default function InboxPage() {
   const filteredDrafts = drafts.filter((draft) =>
     draftMatchesFilter(draft, mailboxFilter),
   );
-  const annotatedMessages = filteredMessages.map((message) => ({
+  const allAnnotatedMessages = messages.map((message) => ({
     ...message,
     assignedAddress: assignments[message.id]?.address,
     localConversationId: assignments[message.id]?.conversationId,
   }));
+  const annotatedMessages = allAnnotatedMessages.filter((message) =>
+    filteredMessages.some((filtered) => filtered.id === message.id),
+  );
   const selectedMessage = annotatedMessages.find(
     (message) => message.id === selectedMessageId,
   );
-  const selectedConversationId = selectedMessage
-    ? conversationKeyForMessage(selectedMessage)
-    : null;
-  const conversationMessages = selectedConversationId
-    ? annotatedMessages
-        .filter(
-          (message) =>
-            conversationKeyForMessage(message) === selectedConversationId,
-        )
-        .slice()
-        .reverse()
-    : [];
+  const conversationMessages = assembleConversation(
+    allAnnotatedMessages,
+    selectedMessage?.id ?? null,
+  );
   const activeDraft = drafts.find((draft) => draft.id === selectedDraftId);
   const folderLabel =
     MAIL_FOLDERS.find((folder) => folder.id === mailFolder)?.label ?? "Inbox";
@@ -2198,7 +2229,7 @@ export default function InboxPage() {
       setReadMessageIds(new Set());
       setSelectedMessageId(null);
       setSelectedDraftId(null);
-      setPendingPaymentRequest(null);
+      setPendingPayment(null);
       setComposerOpen(false);
       setMobileDetailOpen(false);
       setMailFolder("inbox");

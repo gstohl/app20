@@ -63,6 +63,7 @@ import {
 import {
   computeActionId,
   APP20_HELPER_FUNDING_BASE_UNITS,
+  assertPrivateStrk20BatchBalance,
   strk20ErrorMessage,
   submitActions,
   submitMail,
@@ -745,11 +746,26 @@ export default function Compose({
       if ((document.payment || document.escrow) && !poolAddress) {
         throw new Error("The STRK20 pool is not configured for this network.");
       }
+      setSendState({
+        kind: "lookup",
+        message: document.payment
+          ? "Checking private STRK for the payment plus mail-helper funding…"
+          : "Checking private STRK for mail-helper funding…",
+        step: 1,
+        totalSteps: 1,
+      });
+      await assertPrivateStrk20BatchBalance(
+        walletAccount,
+        addrSTRK,
+        document.payment
+          ? [document.payment.transfer.amount, APP20_HELPER_FUNDING_BASE_UNITS]
+          : [APP20_HELPER_FUNDING_BASE_UNITS],
+      );
       if (document.payment && poolAddress) {
         setSendState({
           kind: "lookup",
           message:
-            "Reading the live pool fee and public STRK balance before the attached payment…",
+            "Reading the live pool fee and public fee balance before the attached payment…",
           step: 1,
           totalSteps: 1,
         });

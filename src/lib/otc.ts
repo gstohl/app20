@@ -1,4 +1,5 @@
 import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
+import type { PaymentLinkAuthenticity } from "./payment-link";
 import { sanitizeUntrustedText } from "./text";
 import { addrSTRK } from "./tokens";
 
@@ -96,8 +97,10 @@ export type PaymentRecord = {
   requestId: string;
   status: PaymentStatus;
   request: PaymentRequestPayload;
-  /** Present only when this unsigned request was explicitly imported from /pay. */
+  /** Present only when this request was explicitly imported from /pay. */
   origin?: "payment_link";
+  /** Verified while decoding the original link; unsigned when no proof exists. */
+  linkAuthenticity?: PaymentLinkAuthenticity;
   receipt?: ReceiptPayload;
   paymentOperation?: ValueOperationRecord;
   /** Legacy display/index fields; paymentOperation is the lifecycle authority. */
@@ -432,9 +435,7 @@ export function assertSettlesStrk(offer: OfferPayload): void {
 
 function assertPaysStrk(request: PaymentRequestPayload): void {
   if (!isCanonicalStrkToken(request.token)) {
-    throw new Error(
-      "Mail can pay only STRK with canonical invoice metadata.",
-    );
+    throw new Error("Mail can pay only STRK with canonical invoice metadata.");
   }
 }
 
@@ -969,6 +970,25 @@ export function releaseOtcAccept(
   return next;
 }
 
+function paymentLinkAuthenticitiesEqual(
+  left: PaymentLinkAuthenticity | undefined,
+  right: PaymentLinkAuthenticity | undefined,
+): boolean {
+  if (left?.kind !== right?.kind) return false;
+  if (
+    !left ||
+    !right ||
+    left.kind === "unsigned" ||
+    right.kind === "unsigned"
+  ) {
+    return true;
+  }
+  return (
+    left.mailboxPublicKey === right.mailboxPublicKey &&
+    left.authPublicKey === right.authPublicKey
+  );
+}
+
 function recordPaymentRequestWithOrigin(
   storage: StorageLike,
   chainId: string,
@@ -976,6 +996,7 @@ function recordPaymentRequestWithOrigin(
   request: PaymentRequestPayload,
   at: number,
   origin?: PaymentRecord["origin"],
+  linkAuthenticity?: PaymentLinkAuthenticity,
 ): PaymentRecord {
   const parsed = parsePaymentRequestPayload(request);
   if (!parsed) throw new Error("Invalid payment request payload.");
@@ -987,8 +1008,19 @@ function recordPaymentRequestWithOrigin(
         "Conflicting payment terms reuse an existing request id; the duplicate was rejected.",
       );
     }
-    if (origin === "payment_link" && existing.origin !== origin) {
-      const imported = { ...existing, origin };
+    if (
+      origin === "payment_link" &&
+      (existing.origin !== origin ||
+        !paymentLinkAuthenticitiesEqual(
+          existing.linkAuthenticity,
+          linkAuthenticity,
+        ))
+    ) {
+      const imported = {
+        ...existing,
+        origin,
+        ...(linkAuthenticity ? { linkAuthenticity } : {}),
+      };
       state.payments[parsed.requestId] = imported;
       saveOtcState(storage, chainId, selfAddress, state);
       return imported;
@@ -1000,6 +1032,7 @@ function recordPaymentRequestWithOrigin(
     status: paymentRequestIsExpired(parsed, at) ? "expired" : "requested",
     request: parsed,
     ...(origin ? { origin } : {}),
+    ...(linkAuthenticity ? { linkAuthenticity } : {}),
     updatedAt: at,
   };
   state.payments[parsed.requestId] = record;
@@ -1023,12 +1056,13 @@ export function recordPaymentRequest(
   );
 }
 
-/** Persist an explicitly reviewed unsigned-link request for mailbox rendering. */
+/** Persist an explicitly reviewed payment-link request for mailbox rendering. */
 export function recordPaymentLinkRequest(
   storage: StorageLike,
   chainId: string,
   selfAddress: string,
   request: PaymentRequestPayload,
+  linkAuthenticity: PaymentLinkAuthenticity,
   at = nowSeconds(),
 ): PaymentRecord {
   return recordPaymentRequestWithOrigin(
@@ -1038,6 +1072,7 @@ export function recordPaymentLinkRequest(
     request,
     at,
     "payment_link",
+    linkAuthenticity,
   );
 }
 
