@@ -172,7 +172,7 @@ export function FundingReadinessPanelView({
   return (
     <>
       <section
-        className="panel-frame"
+        className="panel-frame funding-readiness-panel"
         aria-labelledby="funding-readiness-title"
         style={{ margin: 16, padding: 16 }}
       >

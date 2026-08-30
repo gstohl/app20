@@ -207,7 +207,7 @@ export default function PayPage() {
     : null;
 
   return (
-    <div className={styles.page}>
+    <div className={`${styles.page} ${styles.payPage}`}>
       <main className={styles.shell}>
         <header className={styles.intro}>
           <p className={styles.eyebrow}>

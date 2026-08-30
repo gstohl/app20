@@ -21,9 +21,9 @@ const RECOVERY: Readonly<Partial<Record<WorkspaceLoadState, Recovery>>> =
     "local-deal-read-failed": {
       headline: "The local deal could not be re-read",
       detail:
-        "At least one saved RFQ could not be checked against the local chain, so its outcome is shown as unverified. Nothing was resubmitted.",
+        "A saved RFQ or the account-bound unresolved-deal discovery query could not be checked against the local chain. Affected outcomes remain unverified. Nothing was resubmitted.",
       context:
-        "Confirm the localnet services are still running, then retry. Reading only verifies; it never funds, fills, claims, or refunds.",
+        "Healthy saved records remain actionable. Confirm the localnet services are still running, then retry. Reading only verifies; it never funds, fills, claims, or refunds.",
       retryLabel: "Retry read",
     },
     "stale/offline": {

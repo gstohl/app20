@@ -85,6 +85,27 @@ describe("localnet resume controller", () => {
     );
   });
 
+  it("scopes a verifier failure to its row and offers only a read retry", () => {
+    const failed = {
+      ...record("funded"),
+      recoveryReadFailure: {
+        detail: "RPC timed out while reading deal 0x1.",
+        observedAt: NOW + 1,
+      },
+    };
+    expect(localnetResumeDecision(failed, NOW + 2)).toMatchObject({
+      action: "verify-deal",
+      label: "Retry deal verification",
+      disabled: false,
+    });
+    expect(localnetResumeDecision(failed, NOW + 2).reason).toContain(
+      "RPC timed out while reading deal 0x1.",
+    );
+    expect(localnetResumeDecision(record("claimable"), NOW + 2).action).toBe(
+      "claim",
+    );
+  });
+
   it("exposes only a user-triggered exact retry for persisted preparing fill", () => {
     const pending = beginRfqPhaseAttempt(
       record("funded"),

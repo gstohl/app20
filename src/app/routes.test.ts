@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CANONICAL_ROUTES,
   legacyMarketProposalTarget,
+  legacyRouteRedirect,
   legacyRouteTarget,
   marketProposalPath,
   validatedRfqPair,
@@ -16,6 +17,22 @@ describe("APP20 canonical routes", () => {
     ["/workflows", "/rfq"],
   ])("redirects %s to %s", (source, target) => {
     expect(legacyRouteTarget(source)).toBe(target);
+  });
+
+  it.each([
+    ["/inbox", "#thread", "/mail/inbox"],
+    ["/intents", "#review", "/cross-chain-review"],
+    ["/workflows", "#active", "/rfq"],
+  ])("preserves %s bookmark hash through its redirect", (source, hash, to) => {
+    expect(legacyRouteRedirect(source, hash)).toEqual({
+      to,
+      hash: hash.slice(1),
+    });
+  });
+
+  it("omits an empty redirect hash and rejects non-legacy paths", () => {
+    expect(legacyRouteRedirect("/inbox")).toEqual({ to: "/mail/inbox" });
+    expect(legacyRouteRedirect("/rfq", "#new")).toBeNull();
   });
 
   it("preserves only reviewed RFQ pair directions in handoff search state", () => {

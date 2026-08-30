@@ -8,6 +8,7 @@ import {
 export type LocalnetResumeAction =
   | "accept-and-fund"
   | "verify-funding"
+  | "verify-deal"
   | "request-maker-fill"
   | "retry-maker-fill"
   | "observe-expiry"
@@ -63,6 +64,13 @@ export function localnetResumeDecision(
   record: RfqLifecycleRecord,
   now: number,
 ): LocalnetResumeDecision {
+  if (record.recoveryReadFailure) {
+    return decision(
+      "verify-deal",
+      "Retry deal verification",
+      `The latest exact deal read failed: ${record.recoveryReadFailure.detail} This retry only reads and reconciles; it never submits a value-moving operation.`,
+    );
+  }
   if (
     record.state === "quarantined" &&
     record.requestDigest &&

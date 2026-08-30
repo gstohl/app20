@@ -86,6 +86,9 @@ describe("RFQ action boundary hardening", () => {
       "0xbbb",
     );
     expect(workspaceScopeIsReady(loadedA, loadedA, "ready")).toBe(true);
+    expect(
+      workspaceScopeIsReady(loadedA, loadedA, "local-deal-read-failed"),
+    ).toBe(true);
     expect(workspaceScopeIsReady(loadedA, currentB, "ready")).toBe(false);
     expect(workspaceScopeIsReady(currentB, currentB, "loading")).toBe(false);
     expect(
@@ -203,6 +206,72 @@ describe("RFQ action boundary hardening", () => {
         "ready",
       ),
     ).toMatch(/<button[^>]*disabled/);
+  });
+
+  it("keeps healthy rows actionable when another row has a scoped read failure", () => {
+    const valueRecord = (rfqId: string): RfqLifecycleRecord => ({
+      ...record("reviewing"),
+      rfqId,
+      state: "funded",
+      terms: { ...record("reviewing").terms!, buyAmount: "199" },
+      selectedQuote: {
+        version: "Quote V1",
+        solverId: "maker-a",
+        solverKey: "key-a",
+        nonce: `nonce-${rfqId}`,
+        reservationId: `reservation-${rfqId}`,
+        spreadBps: 20,
+        pricingProvenance: "fixture",
+        quotedAt: NOW,
+        quoteExpiresAt: NOW + 300,
+        reservationExpiresAt: NOW + 300,
+        buyAmount: "199",
+        intentDigest: DIGEST,
+        signature: "signature",
+        reservationFence: "1",
+        quoteDigest: `digest-${rfqId}`,
+      },
+      settlement: {
+        version: "Localnet V2",
+        escrowAddress: "0xe5c",
+        dealId: rfqId,
+        ticketAddress: "0x44",
+        deadline: NOW + 600,
+      },
+    });
+    const healthy = valueRecord("0x77");
+    const failed = {
+      ...valueRecord("0x2"),
+      recoveryReadFailure: {
+        detail: "RPC read timed out.",
+        observedAt: NOW + 1,
+      },
+    };
+    const scope = rfqWorkspaceScopeKey(
+      LOCALNET_PROVIDER_INDEX,
+      "0x1",
+      "0xabc",
+      "epoch-controlled",
+    );
+    const html = renderToStaticMarkup(
+      <RfqWorkspaceActiveBoundary
+        records={[healthy, failed]}
+        providerIndex={LOCALNET_PROVIDER_INDEX}
+        address="0xabc"
+        chain="0x1"
+        loadedScope={scope}
+        currentScope={scope}
+        loadState="local-deal-read-failed"
+        loadDetail="Discovery retry is available."
+        onAction={vi.fn()}
+        onRemove={vi.fn()}
+        onClearAll={vi.fn()}
+      />,
+    );
+    expect(html).toContain("Request maker fill");
+    expect(html).toContain("Retry deal verification");
+    expect(html).toContain("RPC read timed out.");
+    expect(html).not.toMatch(/<button[^>]*disabled/);
   });
 
   it("disables the actual Active action seam while records are stale or loading", () => {

@@ -484,6 +484,12 @@ a {
   background: var(--shell-panel);
 }
 
+.funding-readiness-panel dd,
+.funding-readiness-panel code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .panel-heading {
   display: grid;
   gap: 5px;
@@ -838,6 +844,16 @@ a {
   .lifecycle-strip li,
   .evidence-labels li {
     border-bottom: 1px solid var(--shell-line);
+  }
+  .app-tabs {
+    gap: 0;
+    overflow-x: visible;
+  }
+  .app-tabs a {
+    min-width: 0;
+    padding: 0 4px;
+    font-size: clamp(8px, 2.25vw, 9px);
+    letter-spacing: 0.03em;
   }
   .app-utilities .request-link {
     padding: 0 5px;

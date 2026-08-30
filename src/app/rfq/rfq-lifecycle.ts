@@ -125,7 +125,7 @@ export type RfqExactTerms = Readonly<{
   buySymbol: string;
   buyAddress: string;
   buyDecimals: number;
-  minBuyAmount: string;
+  minBuyAmount?: string;
   buyAmount?: string;
   rfqExpiresAt: number;
 }>;
@@ -211,6 +211,13 @@ export type RfqLifecycleRecord = Readonly<{
   reservationExpiresAt?: number;
   transactionHash?: string;
   reason?: string;
+  /** Convenience provenance only; never settlement or chain authority. */
+  recoverySource?: "server-derived";
+  /** A record-scoped verifier read failure; value actions stay verification-only. */
+  recoveryReadFailure?: Readonly<{
+    detail: string;
+    observedAt: number;
+  }>;
 }>;
 
 const STATES = new Set<RfqLifecycleState>([
@@ -785,7 +792,9 @@ function parseTerms(value: unknown): RfqExactTerms | undefined {
     buySymbol: text(row.buySymbol, "buySymbol", 32),
     buyAddress: text(row.buyAddress, "buyAddress"),
     buyDecimals,
-    minBuyAmount: decimal(row.minBuyAmount, "minBuyAmount", true),
+    ...(row.minBuyAmount === undefined
+      ? {}
+      : { minBuyAmount: decimal(row.minBuyAmount, "minBuyAmount", true) }),
     ...(row.buyAmount === undefined
       ? {}
       : { buyAmount: decimal(row.buyAmount, "buyAmount", true) }),
@@ -1252,6 +1261,23 @@ export function restoreRfqLifecycle(
       ...(row.reason === undefined
         ? {}
         : { reason: text(row.reason, "reason") }),
+      ...(row.recoverySource === "server-derived"
+        ? { recoverySource: "server-derived" as const }
+        : {}),
+      ...(row.recoveryReadFailure === undefined
+        ? {}
+        : {
+            recoveryReadFailure: Object.freeze({
+              detail: text(
+                (row.recoveryReadFailure as Record<string, unknown>).detail,
+                "recoveryReadFailure.detail",
+              ),
+              observedAt: timestamp(
+                (row.recoveryReadFailure as Record<string, unknown>).observedAt,
+                "recoveryReadFailure.observedAt",
+              ),
+            }),
+          }),
     };
     if (
       record.chainId !== canonicalRfqChainId(context.chainId) ||
@@ -1639,6 +1665,7 @@ export function reconcileRfqLifecycleWithLocalDeal(
       state,
       attempts,
       latestObservation,
+      recoveryReadFailure: undefined,
       updatedAt: now,
     });
   } catch (error: unknown) {

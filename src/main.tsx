@@ -22,7 +22,7 @@ import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
 import PrivyRecoveryPage from "@/app/recovery/privy/page";
 import CrossChainReviewPage from "@/app/cross-chain-review/page";
-import { CANONICAL_ROUTES } from "@/app/routes";
+import { CANONICAL_ROUTES, legacyRouteRedirect } from "@/app/routes";
 import "@/app/globals.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
@@ -36,6 +36,12 @@ function RootLayout() {
 }
 
 const rootRoute = createRootRoute({ component: RootLayout });
+
+function redirectLegacyRoute(pathname: string, locationHash: string): never {
+  const target = legacyRouteRedirect(pathname, locationHash);
+  if (!target) throw new Error(`Unknown legacy route: ${pathname}`);
+  throw redirect({ ...target, replace: true });
+}
 
 function ReadyMailPage() {
   return (
@@ -124,30 +130,19 @@ const rfqOperationsRoute = createRoute({
 const legacyVaultRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/vault",
-  beforeLoad: ({ location }) => {
-    const hash = location.hash.replace(/^#/, "");
-    throw redirect({
-      to: CANONICAL_ROUTES.rfq,
-      ...(hash ? { hash } : {}),
-      replace: true,
-    });
-  },
+  beforeLoad: ({ location }) => redirectLegacyRoute("/vault", location.hash),
 });
 
 const mailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/mail",
-  beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.mail, replace: true });
-  },
+  beforeLoad: ({ location }) => redirectLegacyRoute("/mail", location.hash),
 });
 
 const legacyInboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inbox",
-  beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.mail, replace: true });
-  },
+  beforeLoad: ({ location }) => redirectLegacyRoute("/inbox", location.hash),
 });
 
 const mailboxRoute = createRoute({
@@ -159,12 +154,7 @@ const mailboxRoute = createRoute({
 const intentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/intents",
-  beforeLoad: () => {
-    throw redirect({
-      to: CANONICAL_ROUTES.crossChainReview,
-      replace: true,
-    });
-  },
+  beforeLoad: ({ location }) => redirectLegacyRoute("/intents", location.hash),
 });
 
 const contactsRoute = createRoute({
@@ -176,9 +166,8 @@ const contactsRoute = createRoute({
 const workflowsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/workflows",
-  beforeLoad: () => {
-    throw redirect({ to: CANONICAL_ROUTES.rfq, replace: true });
-  },
+  beforeLoad: ({ location }) =>
+    redirectLegacyRoute("/workflows", location.hash),
 });
 
 const payRoute = createRoute({
@@ -187,10 +176,26 @@ const payRoute = createRoute({
   component: ReadyPaymentPage,
 });
 
-const fundingRoute = createRoute({ getParentRoute: () => rootRoute, path: "/funding", component: FundingPage });
-const sendRoute = createRoute({ getParentRoute: () => rootRoute, path: "/send", component: SendPage });
-const recoveryRoute = createRoute({ getParentRoute: () => rootRoute, path: "/recovery/privy", component: PrivyRecoveryPage });
-const crossChainReviewRoute = createRoute({ getParentRoute: () => rootRoute, path: "/cross-chain-review", component: CrossChainReviewPage });
+const fundingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/funding",
+  component: FundingPage,
+});
+const sendRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/send",
+  component: SendPage,
+});
+const recoveryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/recovery/privy",
+  component: PrivyRecoveryPage,
+});
+const crossChainReviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cross-chain-review",
+  component: CrossChainReviewPage,
+});
 
 const router = createRouter({
   routeTree: rootRoute.addChildren([

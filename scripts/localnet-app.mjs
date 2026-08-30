@@ -42,6 +42,7 @@ import {
 import { createLocalnetRfqStateHandlers } from "./localnet-rfq-state-handlers.mjs";
 import { requestLocalnetMaker } from "./localnet-maker-http.mjs";
 import { validateLocalnetDealObservation } from "./localnet-deal-validator.mjs";
+import { listBrowserSafeUnresolvedLocalnetDeals } from "./localnet-unresolved-deals.mjs";
 import { runLocalnetSolve } from "./localnet-solve-handler.mjs";
 import { runLocalnetEnsureTicketRoute } from "./localnet-ticket-handler.mjs";
 import { selectQuoteThroughCoordinator } from "./localnet-selection-handler.mjs";
@@ -987,7 +988,10 @@ function positiveBaseUnits(value, label, starknet) {
 }
 
 function feltInput(value, label, starknet) {
-  if (typeof value !== "string" || !/^0x[0-9a-f]{1,63}$/i.test(value)) {
+  if (
+    typeof value !== "string" ||
+    !/^0x(?:[0-9a-f]{1,63}|0[0-9a-f]{63})$/i.test(value)
+  ) {
     fail(`${label} must be a non-zero Starknet felt.`);
   }
   const parsed = starknet.num.toBigInt(value);
@@ -1390,13 +1394,13 @@ async function startApi({
       capacityBand: available ? "medium" : "unknown",
       eligible:
         available && keyValid && RFQ_OPERATIONS_CONTROL.mode === "running",
-      rationale: !keyValid
-        ? "Excluded because the published local fixture maker key expired."
-        : available
+      rationale: keyValid
+        ? available
           ? RFQ_OPERATIONS_CONTROL.mode === "running"
             ? "Eligible under the named localnet fixture policy; capacity is a coarse band, not inventory proof."
             : `Excluded while local operations are ${RFQ_OPERATIONS_CONTROL.mode}; recovery remains enabled.`
-          : "Excluded because this local maker process is unavailable.",
+          : "Excluded because this local maker process is unavailable."
+        : "Excluded because the published local fixture maker key expired.",
     };
   }
 
@@ -1486,6 +1490,45 @@ async function startApi({
 
       const body = await readRequestBody(request);
       assertLocalnetRuntimeEpoch(url.pathname, body, RUNTIME_EPOCH);
+      if (url.pathname === "/rfq/unresolved-deals") {
+        const account = feltInput(body.account, "account", starknet);
+        const chainId = feltInput(body.chainId, "chainId", starknet);
+        const sellToken = feltInput(body.sellToken, "sellToken", starknet);
+        const buyToken = feltInput(body.buyToken, "buyToken", starknet);
+        if (sellToken === buyToken)
+          fail(
+            "unresolved-deal discovery requires two different market tokens.",
+          );
+        const market = [sellToken.toLowerCase(), buyToken.toLowerCase()]
+          .sort()
+          .join("/");
+        const deals = await listBrowserSafeUnresolvedLocalnetDeals({
+          requests: coordinator.listRequests(),
+          deals: coordinator.listDeals(),
+          account,
+          chainId,
+          market,
+          escrowAddress: starknet.num.toHex(escrowAddress),
+          observeEscrow: (dealId) =>
+            readLocalEscrowDeal(dealId, env, escrowAddress),
+          validateObservation: (observed, terms, status) =>
+            validateLocalnetDealObservation(
+              observed,
+              terms,
+              status,
+              starknet.num.toBigInt,
+            ),
+        });
+        jsonResponse(response, 200, {
+          result: {
+            schema: "app20/localnet-unresolved-deals/v1",
+            environment: "localnet",
+            rawInventoryExposed: false,
+            deals,
+          },
+        });
+        return;
+      }
       if (url.pathname === "/rfq/authority/verify") {
         const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
         const rfqId = feltInput(body.rfqId, "rfqId", starknet);

@@ -50,6 +50,36 @@ export type LocalnetSolverOffer = {
   reservationExpiresAt: number;
 };
 
+export type LocalnetServerRecoveryDeal = Readonly<{
+  source: "localnet-coordinator-and-chain";
+  authority: "server-derived-resume-only";
+  account: string;
+  chainId: string;
+  market: string;
+  rfqId: string;
+  dealId: string;
+  intentDigest: string;
+  createdAt: number;
+  expiresAt: number;
+  fundingAttemptId: string;
+  selection: Readonly<{
+    solverId: string;
+    reservationId: string;
+    reservationFence: string;
+    quoteDigest: string;
+  }>;
+  terms: Readonly<{
+    sellToken: string;
+    sellAmount: string;
+    buyToken: string;
+    buyAmount: string;
+    deadline: number;
+    ticketAddress: string;
+  }>;
+  observation: Readonly<Record<string, unknown>>;
+  escrowAddress: string;
+}>;
+
 export type LocalnetIntentTerms = {
   account: string;
   chainId: string;
@@ -259,6 +289,79 @@ export async function readLocalnetRfqOperationsStatus(): Promise<RfqOperationsSt
   );
 }
 
+export async function readLocalnetUnresolvedDeals(input: {
+  account: string;
+  chainId: string;
+  sellToken: string;
+  buyToken: string;
+}): Promise<readonly LocalnetServerRecoveryDeal[]> {
+  const result = await postLocalnet("/rfq/unresolved-deals", input);
+  if (
+    result.schema !== "app20/localnet-unresolved-deals/v1" ||
+    result.environment !== "localnet" ||
+    result.rawInventoryExposed !== false ||
+    !Array.isArray(result.deals)
+  )
+    throw new Error(
+      "The local recovery service returned a malformed envelope.",
+    );
+  return Object.freeze(
+    result.deals.map((value) => {
+      const deal = asRecord(value);
+      const selection = asRecord(deal.selection);
+      const terms = asRecord(deal.terms);
+      if (
+        deal.source !== "localnet-coordinator-and-chain" ||
+        deal.authority !== "server-derived-resume-only"
+      )
+        throw new Error(
+          "The local recovery service omitted its authority label.",
+        );
+      const createdAt = asSafeInteger(deal.createdAt, "createdAt");
+      const expiresAt = asSafeInteger(deal.expiresAt, "expiresAt");
+      const deadline = asSafeInteger(terms.deadline, "deadline");
+      return Object.freeze({
+        source: deal.source,
+        authority: deal.authority,
+        account: asCanonicalAddress(deal.account, "account"),
+        chainId: asCanonicalAddress(deal.chainId, "chainId"),
+        market: asString(deal.market, "market"),
+        rfqId: asCanonicalAddress(deal.rfqId, "rfqId"),
+        dealId: asCanonicalAddress(deal.dealId, "dealId"),
+        intentDigest: asString(deal.intentDigest, "intentDigest"),
+        createdAt,
+        expiresAt,
+        fundingAttemptId: asString(deal.fundingAttemptId, "fundingAttemptId"),
+        selection: Object.freeze({
+          solverId: asString(selection.solverId, "solverId"),
+          reservationId: asString(selection.reservationId, "reservationId"),
+          reservationFence: asPositiveBigInt(
+            selection.reservationFence,
+            "reservationFence",
+          ).toString(),
+          quoteDigest: asString(selection.quoteDigest, "quoteDigest"),
+        }),
+        terms: Object.freeze({
+          sellToken: asCanonicalAddress(terms.sellToken, "sellToken"),
+          sellAmount: asPositiveBigInt(
+            terms.sellAmount,
+            "sellAmount",
+          ).toString(),
+          buyToken: asCanonicalAddress(terms.buyToken, "buyToken"),
+          buyAmount: asPositiveBigInt(terms.buyAmount, "buyAmount").toString(),
+          deadline,
+          ticketAddress: asCanonicalAddress(
+            terms.ticketAddress,
+            "ticketAddress",
+          ),
+        }),
+        observation: Object.freeze(asRecord(deal.observation)),
+        escrowAddress: asCanonicalAddress(deal.escrowAddress, "escrowAddress"),
+      });
+    }),
+  );
+}
+
 /** Candidate hashes are never authority; the server re-reads and decodes each one. */
 export async function readLocalnetRfqAuthority(
   record: RfqLifecycleRecord,
@@ -268,7 +371,9 @@ export async function readLocalnetRfqAuthority(
     !record.settlement ||
     (record.state !== "settled" && record.state !== "refunded")
   )
-    throw new Error("Only an observed terminal RFQ can request authority verification.");
+    throw new Error(
+      "Only an observed terminal RFQ can request authority verification.",
+    );
   const funding = record.attempts.funding?.transactionHash;
   const fill = record.attempts.fill?.transactionHash;
   const terminal =

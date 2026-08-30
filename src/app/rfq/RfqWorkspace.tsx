@@ -15,7 +15,9 @@ import {
   transactionStateFromError,
 } from "@/lib/strk20";
 import {
+  addrSTRK,
   LOCALNET_PROVIDER_INDEX,
+  localnetUsdcToken,
   myFrontendProviders,
 } from "@/utils/constants";
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -31,6 +33,7 @@ import {
   expireLocalnetPrivateIntent,
   readLocalnetEscrowDeal,
   readLocalnetRfqOperationsStatus,
+  readLocalnetUnresolvedDeals,
   releaseLocalnetRfqReservations,
 } from "./localnet-private-intents";
 import {
@@ -78,6 +81,7 @@ import {
 import { gateRfqAction, operationsAvailability } from "./rfq-operations";
 import { sameMarketRequestFence } from "./rfq-request-fence";
 import { recoverLocalnetPreparingFundingAfterEmptyObservation } from "./localnet-prewallet-recovery";
+import { rebuildServerDerivedRfqRecord } from "./localnet-server-recovery";
 import { useRfqOperations } from "./use-rfq-operations";
 import styles from "./rfq.module.css";
 
@@ -113,7 +117,9 @@ export function workspaceScopeIsReady(
   return Boolean(
     currentScope &&
       loadedScope === currentScope &&
-      (loadState === "ready" || loadState === "quarantined"),
+      (loadState === "ready" ||
+        loadState === "quarantined" ||
+        loadState === "local-deal-read-failed"),
   );
 }
 
@@ -300,7 +306,6 @@ export default function RfqWorkspace() {
       .then(async (rows) => {
         const now = Math.floor(Date.now() / 1_000);
         const restored: RfqLifecycleRecord[] = [];
-        let readFailed = false;
         for (const raw of rows) {
           let row = restoreRfqLifecycle(raw, {
             chainId: chain,
@@ -337,17 +342,82 @@ export default function RfqWorkspace() {
                   persistBrowser: (next) => storage.save(next),
                 },
               );
-            } catch {
-              readFailed = true;
+            } catch (error: unknown) {
+              const detail =
+                error instanceof Error && error.message.trim()
+                  ? error.message
+                  : "The exact local deal verifier returned an unknown failure.";
+              row = reviseRfqLifecycle(row, {
+                recoveryReadFailure: Object.freeze({
+                  detail,
+                  observedAt: Math.floor(Date.now() / 1_000),
+                }),
+                updatedAt: Math.floor(Date.now() / 1_000),
+              });
+              // Best effort makes the row-scoped verify-only fence durable. A
+              // failed save is still kept in memory and never broadens actions.
+              try {
+                await storage.save(row);
+              } catch {
+                // The explicit retry path validates the durable identity again.
+              }
             }
           }
           restored.push(row);
         }
+
+        let discoveryFailure: string | undefined;
+        if (providerIndex === LOCALNET_PROVIDER_INDEX) {
+          try {
+            const discovered = await readLocalnetUnresolvedDeals({
+              account: address,
+              chainId: chain,
+              sellToken: addrSTRK,
+              buyToken: localnetUsdcToken,
+            });
+            for (const deal of discovered) {
+              if (restored.some((row) => row.rfqId === deal.rfqId)) continue;
+              const rebuilt = rebuildServerDerivedRfqRecord(deal, {
+                account: address,
+                chainId: chain,
+                now: Math.floor(Date.now() / 1_000),
+                markets: [
+                  {
+                    pairId: "STRK_USDC",
+                    sell: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+                    buy: {
+                      symbol: "USDC",
+                      address: localnetUsdcToken,
+                      decimals: 6,
+                    },
+                  },
+                  {
+                    pairId: "USDC_STRK",
+                    sell: {
+                      symbol: "USDC",
+                      address: localnetUsdcToken,
+                      decimals: 6,
+                    },
+                    buy: { symbol: "STRK", address: addrSTRK, decimals: 18 },
+                  },
+                ],
+              });
+              await storage.save(rebuilt);
+              restored.push(rebuilt);
+            }
+          } catch (error: unknown) {
+            discoveryFailure =
+              error instanceof Error && error.message.trim()
+                ? error.message
+                : "The local unresolved-deal discovery read failed.";
+          }
+        }
         if (!active) return;
         setRecords(sortRecords(restored));
         setLoadedScope(rfqWorkspaceScopeKey(providerIndex, chain, address));
+        setLoadDetail(discoveryFailure);
         setLoadState(
-          readFailed
+          discoveryFailure
             ? "local-deal-read-failed"
             : restored.some((row) => row.state === "quarantined")
               ? "quarantined"
@@ -808,12 +878,28 @@ export default function RfqWorkspace() {
           })
         : undefined;
       if (durableRecord) replaceRecord(durableRecord);
-      const currentRecord = authorizeLocalnetResumeCommand(
-        record,
-        durableRecord,
-        action,
-        now,
-      );
+      const currentRecord =
+        action === "verify-deal" && record.recoveryReadFailure
+          ? (() => {
+              if (
+                !durableRecord ||
+                durableRecord.rfqId !== record.rfqId ||
+                durableRecord.account !== record.account ||
+                durableRecord.chainId !== record.chainId ||
+                durableRecord.storageRevision !== record.storageRevision ||
+                durableRecord.updatedAt !== record.updatedAt
+              )
+                throw new Error(
+                  "The RFQ record changed before deal verification. Reload and review it again.",
+                );
+              return durableRecord;
+            })()
+          : authorizeLocalnetResumeCommand(
+              record,
+              durableRecord,
+              action,
+              now,
+            );
       if (
         action === "accept-and-fund" ||
         action === "request-maker-fill" ||
@@ -827,7 +913,9 @@ export default function RfqWorkspace() {
         if (!gate.allowed) throw new Error(gate.reason);
       }
       if (action === "verify-funding") await verifyFunding(currentRecord);
-      else if (["reconcile-fill", "reconcile-outcome"].includes(action))
+      else if (
+        ["verify-deal", "reconcile-fill", "reconcile-outcome"].includes(action)
+      )
         await reconcile(currentRecord);
       else if (action === "request-maker-fill")
         await requestFill(currentRecord);
@@ -1010,7 +1098,11 @@ export default function RfqWorkspace() {
             detail={loadDetail}
             onRetry={retryWorkspaceLoad}
           />
-          <section className={styles.privateWorkspace}>
+          <section
+            className={`${styles.privateWorkspace} ${
+              executable ? "" : styles.publicMarketWorkspace
+            }`}
+          >
             <aside
               className={styles.tradeTicket}
               aria-label="Private RFQ ticket"
@@ -1022,9 +1114,10 @@ export default function RfqWorkspace() {
                     onPairChange={setPairId}
                     onLifecycleRecord={replaceRecord}
                     requestBlockedReason={
-                      workspaceContextReady
+                      workspaceContextReady &&
+                      loadState !== "local-deal-read-failed"
                         ? sameMarketRequestFence(records, pairId)
-                        : "RFQ resume storage must load successfully for the current account, wallet chain, and LOCAL provider before a new request."
+                        : "RFQ resume storage and unresolved-deal discovery must load successfully for the current account, wallet chain, and LOCAL provider before a new request."
                     }
                   />
                 </Suspense>

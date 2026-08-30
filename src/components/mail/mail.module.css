@@ -11,6 +11,16 @@
   font-family: var(--font-body), system-ui, sans-serif;
 }
 
+/* Payment requests reuse the mail visual language, but are a document rather
+   than a viewport-locked mailbox workspace. Keep every form action in the
+   normal page scroll range, including on narrow phones. */
+.page.payPage {
+  height: auto;
+  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  grid-template-rows: auto auto;
+  overflow: visible;
+}
+
 .nav {
   display: flex;
   align-items: center;

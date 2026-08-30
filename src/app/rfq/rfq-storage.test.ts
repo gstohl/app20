@@ -6,6 +6,7 @@ import {
   canonicalRfqChainId,
   createRfqLifecycleRecord,
   finalizeRfqLifecycleForStorage,
+  restoreRfqLifecycle,
   reviseRfqLifecycle,
   updateRfqPhaseAttempt,
   type RfqLifecycleRecord,
@@ -422,6 +423,79 @@ describe("RFQ lifecycle storage", () => {
         updatedAt: 103,
       }),
     ).toThrow(/stale lifecycle snapshot|exact predecessor/i);
+  });
+
+  it("accepts a post-reload settlement whose ticket field only moved in canonical parser order", () => {
+    const draft = fundingRecord("reload-settlement-order");
+    const preparing = beginRfqPhaseAttempt(
+      draft,
+      "funding",
+      "fund-reload",
+      101,
+      fundingTarget(draft),
+    );
+    const prior = finalizeRfqLifecycleForStorage(
+      reviseRfqLifecycle(preparing, {
+        settlement: {
+          ...preparing.settlement!,
+          ticketAddress: "0x44",
+        },
+        updatedAt: 101,
+      }),
+    );
+    const restored = restoreRfqLifecycle(prior, {
+      chainId: prior.chainId,
+      account: prior.account,
+      now: 102,
+    });
+    const successor = reviseRfqLifecycle(restored, { updatedAt: 102 });
+
+    expect(Object.keys(prior.settlement!)).toEqual([
+      "version",
+      "escrowAddress",
+      "dealId",
+      "deadline",
+      "ticketAddress",
+    ]);
+    expect(Object.keys(successor.settlement!)).toEqual([
+      "version",
+      "escrowAddress",
+      "dealId",
+      "ticketAddress",
+      "deadline",
+    ]);
+    expect(successor.settlement).toEqual(prior.settlement);
+    expect(() => assertRfqStorageReplacement(prior, successor)).not.toThrow();
+  });
+
+  it.each([
+    ["escrow address", { escrowAddress: "0x31" }],
+    ["deal ID", { dealId: "forged-deal" }],
+    ["ticket address", { ticketAddress: "0x45" }],
+    ["deadline", { deadline: 999 }],
+  ])("still rejects a forged settlement swap of its %s", (_label, patch) => {
+    const draft = fundingRecord("forged-settlement-swap");
+    const preparing = beginRfqPhaseAttempt(
+      draft,
+      "funding",
+      "fund-forgery",
+      101,
+      fundingTarget(draft),
+    );
+    const prior = finalizeRfqLifecycleForStorage(
+      reviseRfqLifecycle(preparing, {
+        settlement: { ...preparing.settlement!, ticketAddress: "0x44" },
+        updatedAt: 101,
+      }),
+    );
+    const forged = reviseRfqLifecycle(prior, {
+      settlement: { ...prior.settlement!, ...patch },
+      updatedAt: 102,
+    });
+
+    expect(() => assertRfqStorageReplacement(prior, forged)).toThrow(
+      /replacement of settlement identity/i,
+    );
   });
 
   it("atomically rejects funded A versus stale cancel B across tabs despite a newer timestamp", async () => {

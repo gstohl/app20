@@ -25,6 +25,13 @@ export function sameMarketRequestFence(
     )
       return true;
     if (record.terms?.pairId !== pairId) return false;
+    if (
+      record.recoverySource === "server-derived" &&
+      record.terms.minBuyAmount === undefined &&
+      record.state !== "settled" &&
+      record.state !== "refunded"
+    )
+      return true;
     const release = record.attempts["reservation-release"];
     return (
       (OPEN_REQUEST_STATES.has(record.state) &&

@@ -44,3 +44,14 @@ export function legacyRouteTarget(pathname: string): string | null {
       return null;
   }
 }
+
+/** TanStack redirect fields for a legacy route, retaining its bookmark hash. */
+export function legacyRouteRedirect(
+  pathname: string,
+  locationHash = "",
+): Readonly<{ to: string; hash?: string }> | null {
+  const to = legacyRouteTarget(pathname);
+  if (!to) return null;
+  const hash = locationHash.replace(/^#/, "");
+  return { to, ...(hash ? { hash } : {}) };
+}

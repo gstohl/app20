@@ -66,6 +66,8 @@ export default function RfqActiveCard({ record, now, busy = false, actionsDisabl
     </header>
     {record.terms ? <p className={styles.activeCardAmount}>{record.terms.sellAmount} base units {record.terms.sellSymbol} → {record.selectedQuote?.buyAmount ?? record.terms.buyAmount ?? "unselected"} base units {record.terms.buySymbol}</p> : null}
     <AuthorityStrip presentation={authority}/>
+    {record.recoverySource === "server-derived" ? <p><strong>Server-derived resume record · not chain-verified authority</strong></p> : null}
+    {record.recoveryReadFailure ? <p role="alert">Latest deal verification failed for this record: {record.recoveryReadFailure.detail}</p> : null}
     <RfqPhaseAction decision={next} busy={busy} onAction={onAction ? () => onAction(record, next.action) : undefined}/>
     {record.reason ? <p role={record.state === "quarantined" ? "alert" : undefined}>{record.reason}</p> : null}
     <details className={styles.activeCardDetails}>

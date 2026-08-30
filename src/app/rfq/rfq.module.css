@@ -506,6 +506,10 @@
   background: var(--shell-bg);
 }
 
+.publicMarketWorkspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .marketWorkspace {
   display: flex;
   min-width: 0;

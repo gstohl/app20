@@ -219,7 +219,7 @@ function isExactTicketPersistenceTransition(
     return false;
   const { ticketAddress: _priorTicket, ...priorCore } = priorSettlement;
   const { ticketAddress: nextTicket, ...nextCore } = nextSettlement;
-  if (!sameJson(priorCore, nextCore)) return false;
+  if (canonicalJson(priorCore) !== canonicalJson(nextCore)) return false;
   try {
     if (canonicalLocalRfqId(nextTicket) !== nextTicket || nextTicket === "0x0")
       return false;
@@ -312,11 +312,13 @@ export function assertRfqStorageReplacement(
         "RFQ storage rejected removal or replacement of selected quote identity.",
       );
   }
-  if (!isExactTicketPersistenceTransition(prior, replacement))
-    assertPreserved(
-      prior.settlement,
-      replacement.settlement,
-      "settlement identity",
+  if (
+    prior.settlement !== undefined &&
+    !isExactTicketPersistenceTransition(prior, replacement) &&
+    canonicalJson(prior.settlement) !== canonicalJson(replacement.settlement)
+  )
+    throw new Error(
+      "RFQ storage rejected removal or replacement of settlement identity.",
     );
   assertPreserved(
     prior.requestDigest,
@@ -346,7 +348,9 @@ export function assertRfqStorageReplacement(
     prior.evidenceAuthority.status !== "local-non-authoritative" &&
     replacement.evidenceAuthority.status === "local-non-authoritative"
   )
-    throw new Error("RFQ storage rejected removal of unresolved authority evidence.");
+    throw new Error(
+      "RFQ storage rejected removal of unresolved authority evidence.",
+    );
   // Browser-persisted revision numbers are not a trusted authority high-water.
   // A runtime-bound verifier may replace a forged large number with its lower
   // server-owned revision, while the conservative status rule above keeps
