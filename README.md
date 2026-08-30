@@ -407,11 +407,14 @@ are set with `wrangler secret put`.
 The Worker runs first and replaces asset security headers, so
 `workers/relay/src/headers.ts` is the single source of the shipped
 Content-Security-Policy; a static `_headers` file would never reach a browser.
-That policy omits `'unsafe-eval'`. One known consequence is recorded in
-`scripts/production-csp-known-violations.json`: `connect-src` does not allow
-`api.coingecko.com`, so the opt-in public price chart reports that candlesticks
-are unavailable on a deployed origin. `npm run check:csp` fails if that set of
-violations changes in either direction.
+That policy omits `'unsafe-eval'`. Its only third-party origin is
+`https://api.coingecko.com`, declared in code rather than runtime configuration
+so that widening it stays a security decision; the browser reaches it only after
+the user opts into public market context, and that request discloses the user's
+IP and timing to that third party. `npm run check:csp` loads eight built routes
+through the real Worker handler and fails if the observed violation set changes
+in either direction against `scripts/production-csp-known-violations.json`,
+which is currently empty.
 
 Public browser variables:
 

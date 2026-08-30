@@ -1049,7 +1049,7 @@ export default function RfqWorkspace() {
           <nav aria-label="Separate operations">
             <Link to="/funding">Shield / unshield funding</Link>
             {" · "}
-            <Link to="/send">Public send</Link>
+            <Link to="/send">Public send · unavailable</Link>
             {" · "}
             <Link to="/mail/inbox">Mail · coordination only</Link>
             {" · "}
