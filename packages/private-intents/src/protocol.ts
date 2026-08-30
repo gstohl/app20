@@ -966,19 +966,99 @@ export async function acceptEncryptedRfqEnvelope(
   });
 }
 
-function assertReservation(reservation: MakerReservationV1): void {
-  if (reservation.version !== 1 || reservation.domain !== RESERVATION_DOMAIN) {
+const RESERVATION_STATES = new Set<unknown>([
+  "reserved",
+  "selected",
+  "filling",
+  "released",
+  "consumed",
+  "expired",
+  "quarantined",
+]);
+const REQUIRED_RESERVATION_FIELDS = new Set([
+  "version",
+  "domain",
+  "reservationId",
+  "makerId",
+  "intentDigest",
+  "rfqDigest",
+  "asset",
+  "amountBaseUnits",
+  "createdAt",
+  "expiresAt",
+  "updatedAt",
+  "fence",
+  "state",
+]);
+const OPTIONAL_RESERVATION_FIELDS = new Set([
+  "selectedQuoteDigest",
+  "settlementAttemptId",
+  "settlementTransactionHash",
+  "terminalReason",
+]);
+
+function isUnknownRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Runtime validation for reservations decoded from an untrusted store. */
+export function assertMakerReservation(
+  value: unknown,
+): asserts value is MakerReservationV1 {
+  if (!isUnknownRecord(value)) {
+    throw new MakerProtocolError("Maker reservation must be an object.");
+  }
+  for (const field of REQUIRED_RESERVATION_FIELDS) {
+    if (!(field in value)) {
+      throw new MakerProtocolError(`Maker reservation ${field} is required.`);
+    }
+  }
+  for (const field of Object.keys(value)) {
+    if (
+      !REQUIRED_RESERVATION_FIELDS.has(field) &&
+      !OPTIONAL_RESERVATION_FIELDS.has(field)
+    ) {
+      throw new MakerProtocolError(
+        `Maker reservation field ${field} is unsupported.`,
+      );
+    }
+  }
+  if (value.version !== 1 || value.domain !== RESERVATION_DOMAIN) {
     throw new MakerProtocolError("Only maker reservation v1 is supported.");
   }
-  requireDigest(reservation.reservationId, "reservationId");
-  requireText(reservation.makerId, "makerId");
-  requireDigest(reservation.intentDigest, "intentDigest");
-  requireDigest(reservation.rfqDigest, "rfqDigest");
-  requireFelt(reservation.asset, "asset");
-  requirePositiveU256(reservation.amountBaseUnits, "amountBaseUnits");
-  const createdAt = requireTimestamp(reservation.createdAt, "createdAt");
-  const expiresAt = requireTimestamp(reservation.expiresAt, "expiresAt");
-  const updatedAt = requireTimestamp(reservation.updatedAt, "updatedAt");
+  if (!RESERVATION_STATES.has(value.state)) {
+    throw new MakerProtocolError("Maker reservation state is invalid.");
+  }
+  if (typeof value.reservationId !== "string")
+    throw new MakerProtocolError("reservationId must be a string.");
+  if (typeof value.makerId !== "string")
+    throw new MakerProtocolError("makerId must be a string.");
+  if (typeof value.intentDigest !== "string")
+    throw new MakerProtocolError("intentDigest must be a string.");
+  if (typeof value.rfqDigest !== "string")
+    throw new MakerProtocolError("rfqDigest must be a string.");
+  if (typeof value.asset !== "string")
+    throw new MakerProtocolError("asset must be a string.");
+  if (typeof value.amountBaseUnits !== "bigint")
+    throw new MakerProtocolError("amountBaseUnits must be a bigint.");
+  if (typeof value.createdAt !== "number")
+    throw new MakerProtocolError("createdAt must be a number.");
+  if (typeof value.expiresAt !== "number")
+    throw new MakerProtocolError("expiresAt must be a number.");
+  if (typeof value.updatedAt !== "number")
+    throw new MakerProtocolError("updatedAt must be a number.");
+  if (typeof value.fence !== "bigint")
+    throw new MakerProtocolError("fence must be a bigint.");
+
+  requireDigest(value.reservationId, "reservationId");
+  requireText(value.makerId, "makerId");
+  requireDigest(value.intentDigest, "intentDigest");
+  requireDigest(value.rfqDigest, "rfqDigest");
+  requireFelt(value.asset, "asset");
+  requirePositiveU256(value.amountBaseUnits, "amountBaseUnits");
+  const createdAt = requireTimestamp(value.createdAt, "createdAt");
+  const expiresAt = requireTimestamp(value.expiresAt, "expiresAt");
+  const updatedAt = requireTimestamp(value.updatedAt, "updatedAt");
   if (
     expiresAt <= createdAt ||
     expiresAt - createdAt > MAX_RESERVATION_LIFETIME_SECONDS ||
@@ -988,34 +1068,48 @@ function assertReservation(reservation: MakerReservationV1): void {
       "Reservation timestamps are inconsistent or exceed 24 hours.",
     );
   }
-  if (reservation.fence <= 0n || reservation.fence > MAX_U256) {
+  if (value.fence <= 0n || value.fence > MAX_U256) {
     throw new MakerProtocolError(
       "Reservation fence must be a positive u256 value.",
     );
   }
+  const selectedQuoteDigest = value.selectedQuoteDigest;
+  const settlementAttemptId = value.settlementAttemptId;
+  const settlementTransactionHash = value.settlementTransactionHash;
+  const terminalReason = value.terminalReason;
   if (
-    reservation.state === "selected" ||
-    reservation.state === "filling" ||
-    reservation.state === "consumed"
-  ) {
-    requireDigest(reservation.selectedQuoteDigest ?? "", "selectedQuoteDigest");
+    selectedQuoteDigest !== undefined &&
+    typeof selectedQuoteDigest !== "string"
+  )
+    throw new MakerProtocolError("selectedQuoteDigest must be a string.");
+  if (
+    settlementAttemptId !== undefined &&
+    typeof settlementAttemptId !== "string"
+  )
+    throw new MakerProtocolError("settlementAttemptId must be a string.");
+  if (
+    settlementTransactionHash !== undefined &&
+    typeof settlementTransactionHash !== "string"
+  )
+    throw new MakerProtocolError("settlementTransactionHash must be a string.");
+  if (terminalReason !== undefined && typeof terminalReason !== "string")
+    throw new MakerProtocolError("terminalReason must be a string.");
+
+  const state = value.state;
+  if (state === "selected" || state === "filling" || state === "consumed") {
+    requireDigest(selectedQuoteDigest ?? "", "selectedQuoteDigest");
   }
-  if (reservation.state === "filling" || reservation.state === "consumed") {
-    requireDigest(reservation.settlementAttemptId ?? "", "settlementAttemptId");
+  if (state === "filling" || state === "consumed") {
+    requireDigest(settlementAttemptId ?? "", "settlementAttemptId");
   }
-  if (reservation.state === "consumed") {
-    requireFelt(
-      reservation.settlementTransactionHash ?? "",
-      "settlementTransactionHash",
-    );
+  if (state === "consumed") {
+    requireFelt(settlementTransactionHash ?? "", "settlementTransactionHash");
   }
   if (
-    (reservation.state === "released" || reservation.state === "quarantined") &&
-    !reservation.terminalReason?.trim()
+    (state === "released" || state === "quarantined") &&
+    !terminalReason?.trim()
   ) {
-    throw new MakerProtocolError(
-      `${reservation.state} reservation requires a reason.`,
-    );
+    throw new MakerProtocolError(`${state} reservation requires a reason.`);
   }
 }
 
@@ -1050,7 +1144,7 @@ export function createMakerReservation(
     fence: requirePositiveU256(input.fence, "fence"),
     state: "reserved",
   };
-  assertReservation(reservation);
+  assertMakerReservation(reservation);
   return reservation;
 }
 
@@ -1058,7 +1152,7 @@ export function transitionMakerReservation(
   reservation: MakerReservationV1,
   command: ReservationCommand,
 ): MakerReservationV1 {
-  assertReservation(reservation);
+  assertMakerReservation(reservation);
   if (command.expectedFence !== reservation.fence) {
     throw new MakerProtocolError("Reservation fence is stale.");
   }
@@ -1175,14 +1269,104 @@ export function transitionMakerReservation(
       );
     }
   }
-  assertReservation(next);
+  assertMakerReservation(next);
   return next;
+}
+
+/**
+ * Shared compare-and-swap lifecycle contract used by every reservation store.
+ */
+export function assertMakerReservationMutation(
+  current: MakerReservationV1 | undefined,
+  next: MakerReservationV1,
+  expectedFence: bigint | null,
+): void {
+  assertMakerReservation(next);
+  if (!current) {
+    if (
+      expectedFence !== null ||
+      next.state !== "reserved" ||
+      next.updatedAt !== next.createdAt ||
+      next.selectedQuoteDigest !== undefined ||
+      next.settlementAttemptId !== undefined ||
+      next.settlementTransactionHash !== undefined ||
+      next.terminalReason !== undefined
+    ) {
+      throw new MakerProtocolError(
+        "Reservation create compare-and-swap failed.",
+      );
+    }
+    return;
+  }
+  assertMakerReservation(current);
+  if (expectedFence === null || current.fence !== expectedFence) {
+    throw new MakerProtocolError(
+      "Reservation fence compare-and-swap failed: stale fence.",
+    );
+  }
+  if (
+    current.reservationId !== next.reservationId ||
+    current.makerId !== next.makerId ||
+    current.intentDigest !== next.intentDigest ||
+    current.rfqDigest !== next.rfqDigest ||
+    current.asset !== next.asset ||
+    current.amountBaseUnits !== next.amountBaseUnits ||
+    current.createdAt !== next.createdAt ||
+    current.expiresAt !== next.expiresAt
+  ) {
+    throw new MakerProtocolError("Reservation immutable fields changed.");
+  }
+  const common = { expectedFence: current.fence, at: next.updatedAt } as const;
+  let expected: MakerReservationV1;
+  switch (next.state) {
+    case "selected":
+      expected = transitionMakerReservation(current, {
+        kind: "select",
+        ...common,
+        quoteDigest: next.selectedQuoteDigest ?? "",
+      });
+      break;
+    case "released":
+      expected = transitionMakerReservation(current, {
+        kind: "release",
+        ...common,
+        reason: next.terminalReason ?? "",
+      });
+      break;
+    case "expired":
+      expected = transitionMakerReservation(current, {
+        kind: "expire",
+        ...common,
+      });
+      break;
+    case "quarantined":
+      expected = transitionMakerReservation(current, {
+        kind: "quarantine",
+        ...common,
+        reason: next.terminalReason ?? "",
+      });
+      break;
+    case "filling":
+    case "consumed":
+      throw new MakerProtocolError(
+        "Value-moving transitions require the durable idempotency-attempt API.",
+      );
+    case "reserved":
+      throw new MakerProtocolError(
+        "An existing reservation cannot transition to reserved.",
+      );
+  }
+  if (canonicalMakerReservation(expected) !== canonicalMakerReservation(next)) {
+    throw new MakerProtocolError(
+      "Reservation transition does not match the lifecycle.",
+    );
+  }
 }
 
 export function canonicalMakerReservation(
   reservation: MakerReservationV1,
 ): string {
-  assertReservation(reservation);
+  assertMakerReservation(reservation);
   return JSON.stringify({
     amountBaseUnits: reservation.amountBaseUnits.toString(),
     asset: requireFelt(reservation.asset, "asset"),

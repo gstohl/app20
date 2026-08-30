@@ -15,11 +15,13 @@
   },
   "imports": {
     "#directory-delivery": "./src/directory-delivery.ts",
+    "#economic-policy": "./src/economic-policy.ts",
     "#hpke": "./src/hpke.ts",
     "#index": "./src/index.ts",
     "#operations": "./src/operations.ts",
     "#protocol": "./src/protocol.ts",
     "#quote-v2": "./src/quote-v2.ts",
+    "#reservation-codec": "./src/reservation-codec.ts",
     "#replay": "./src/replay.ts"
   },
   "scripts": {

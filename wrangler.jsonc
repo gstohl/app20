@@ -23,6 +23,10 @@
       {
         "name": "RELAY_GATE",
         "class_name": "RelayGateDurableObject"
+      },
+      {
+        "name": "RESERVATION_LEDGER",
+        "class_name": "ReservationLedgerDurableObject"
       }
     ]
   },
@@ -30,6 +34,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["RelayGateDurableObject"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["ReservationLedgerDurableObject"]
     }
   ],
   "vars": {

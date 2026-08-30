@@ -1,7 +1,4 @@
-import {
-  bootstrapQuotaSubject,
-  handlePrivacyBootstrap,
-} from "./bootstrap.ts";
+import { bootstrapQuotaSubject, handlePrivacyBootstrap } from "./bootstrap.ts";
 import { errorResponse } from "./errors.ts";
 import { DurableAtomicGate, RelayGateDurableObject } from "./gate.ts";
 import { spaSecurityHeaders } from "./headers.ts";
@@ -10,12 +7,17 @@ import { requireSameOrigin } from "./origin.ts";
 import { relayRpc } from "./rpc.ts";
 import { handleRfq } from "./rfq.ts";
 import { RfqReplayDurableObject } from "./rfq-replay-do.ts";
+import { ReservationLedgerDurableObject } from "./reservation-ledger-do.ts";
 import { expireOhttpSessionCookie } from "./session.ts";
 import type { RelayDependencies, RelayEnv } from "./types.ts";
 
 export { issueOhttpSession, requireOhttpSession } from "./session.ts";
 export { spaSecurityHeaders } from "./headers.ts";
-export { RelayGateDurableObject, RfqReplayDurableObject };
+export {
+  RelayGateDurableObject,
+  ReservationLedgerDurableObject,
+  RfqReplayDurableObject,
+};
 export type { AtomicGate, RelayEnv, SpaSecurityConfig } from "./types.ts";
 
 // Localnet-final policy is immutable in application code. Checked-in or
@@ -29,10 +31,7 @@ function configuredOrigins(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-async function serveAsset(
-  request: Request,
-  env: RelayEnv,
-): Promise<Response> {
+async function serveAsset(request: Request, env: RelayEnv): Promise<Response> {
   if (!env.ASSETS) {
     return Response.json(
       { error: "Not found." },
@@ -84,8 +83,7 @@ export function createRelayHandler(overrides: Partial<RelayDependencies> = {}) {
         });
       }
       if (path === "/api/privacy/bootstrap") {
-        const gate =
-          dependencies.gate ?? new DurableAtomicGate(env.RELAY_GATE);
+        const gate = dependencies.gate ?? new DurableAtomicGate(env.RELAY_GATE);
         const lease = await gate.acquire({
           subject: await bootstrapQuotaSubject(request, env),
           service: "privy-bootstrap",

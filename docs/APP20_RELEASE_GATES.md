@@ -12,7 +12,7 @@ Historical machine-readable checkpoint: [`evidence/app20-release-evidence-2026-0
 
 | Gate | Result | Evidence or blocker |
 | --- | --- | --- |
-| Immutable baseline | **Partial local evidence; release blocked** | The parent baseline is committed at `e4084f301a3d4f4ade312d443b8a00e65f674871`, with rollback target `4e32ef1ceb932610a0fd98ff56f37ef25464816c`. This validated change set was uncommitted at capture time. Its lockfile/SBOM and repeat-build checks are local evidence only; the delivering commit, CI provenance, release signature, and independent-builder reproduction remain absent |
+| Immutable baseline | **Pipeline specified; no successful-run evidence; release blocked** | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) specifies locked dependency installation and the existing `typecheck`, `typecheck:packages`, `test:all`, `build`, `check:csp`, and `check:build-determinism` gates. It also creates a Wrangler dry-run bundle from the shipping Worker entry point. It then compares SHA-256 manifests covering the frontend, workspace package output, Worker bundle, and deployment configuration from Ubuntu 24.04 and Ubuntu 22.04 with the same pinned Node version. Only a `main` push that passes both jobs proceeds to GitHub build-provenance attestations for the complete release bundle and committed SBOM plus Sigstore keyless bundle signing. No successful workflow run, attestation, or signature is recorded in this repository, so this row is not closed. The runner comparison is a second GitHub-hosted runner environment, not reproduction by two independent builders, and it does not establish audit acceptance or production authorization |
 | Pure protocol models | **Pass for app-code scope** | Strict schemas/tests cover preflight, receipts/disclosure, RFQ/directory/transport/reservations, negotiation/channels, risk/operations, checkout/webhooks, dry cross-chain, and advisory automation |
 | Localnet maker demonstration | **Pass** | Two separately configured maker processes, private inventories, distinct devnet settlement identities, `0600` hash-chain WALs, full RFQ digest binding, and SIGKILL recovery passed |
 | Production transport/custody | **Blocked** | Dormant app-code primitives exist, but browser publication and Worker `/api/rfq/*` routing are immutable-off. External review, independent operators, HSM/KMS custody, replicated reservation ledger, and production reconciliation evidence remain absent |
@@ -53,6 +53,41 @@ Current capture (2026-08-29):
 - `git diff --check`: passed. Staged files: none at capture time. Cairo status/diff: none.
 
 These are self-reported local checks over an uncommitted change set on one machine, not an immutable attested checkpoint, independent reproduction, independent audit, or production release attestation.
+
+## CI release-integrity specification
+
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) runs the repository's existing gates without changing their semantics. The first Ubuntu 24.04 job runs `npm ci`, then invokes `npm run typecheck`, `npm run typecheck:packages`, `npm run test:all`, `npm run build`, `npm run check:csp`, and `npm run check:build-determinism`. After the application build, it runs `wrangler deploy --dry-run --outdir release-worker`. This is Wrangler's real compile-and-check path without upload; it bundles the configured shipping entry point, `workers/relay/src/index.ts`. Wrangler also writes an informational README containing the generation time; the workflow explicitly removes that non-deployed metadata before hashing.
+
+The resulting single release archive covers all repository-produced deployable content and configuration used by `npm run deploy:cf`: the emitted Vite frontend under `release-artifacts/app`, `packages/privy/dist`, every remaining Wrangler-produced Worker output under `release-artifacts/worker`, and the exact `wrangler.jsonc` deployment descriptor under `release-artifacts/deployment`. Its sorted SHA-256 manifest covers every file in that set. The archive also carries the manifest, the committed-SBOM digest, and the committed SBOM. A second job checks out the same `github.sha`, uses the same pinned Node version on Ubuntu 22.04, repeats both `npm run build` and the Wrangler dry run, and fails if any frontend, package, Worker, or deployment-descriptor file hash differs.
+
+This is deliberately named a **second runner environment**, not an independent-builder reproduction. Both jobs are controlled by one GitHub Actions workflow and platform. Matching results would provide useful cross-image evidence, but not organizational independence, independent review, audit acceptance, or production authorization. The dry run does not upload or deploy anything. The signed archive therefore covers the complete application artifact set that the repository produces for Cloudflare, but does not prove that Cloudflare accepted or deployed it, that live Cloudflare bindings or route state match the descriptor, or that any deployment is authorized or safe for production.
+
+For a push to `main` only, and only after both build jobs pass, the workflow:
+
+1. uses GitHub OIDC and `actions/attest-build-provenance` to attest the complete frontend-plus-Worker release archive and the checked-out committed `docs/evidence/app20-sbom.cdx.json`; the GitHub provenance binds subjects to the workflow's exact `github.sha`;
+2. confirms that the SBOM hash carried from the build job matches the SBOM in the exact checked-out commit;
+3. uses Cosign's GitHub OIDC keyless flow to sign that same complete release archive and emits a `.sigstore.json` verification bundle; and
+4. retains the release archive, signing bundle, complete emitted-file manifest, and committed-SBOM digest as workflow artifacts.
+
+There is no long-lived signing key. The signing identity is the `main`-branch workflow identity. After downloading the two files from a successful `app20-signed-release-<commit>` workflow artifact, a third party can verify the keyless signature with:
+
+```bash
+SHA=<exact-40-character-commit-sha>
+cosign verify-blob \
+  --bundle "app20-release-${SHA}.tar.gz.sigstore.json" \
+  --certificate-identity "https://github.com/gstohl/app20/.github/workflows/ci.yml@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  "app20-release-${SHA}.tar.gz"
+```
+
+The GitHub build-provenance attestations can separately be checked with GitHub CLI, against the repository identity:
+
+```bash
+gh attestation verify "app20-release-${SHA}.tar.gz" --repo gstohl/app20
+gh attestation verify docs/evidence/app20-sbom.cdx.json --repo gstohl/app20
+```
+
+The second command requires the exact committed SBOM file from that commit. These commands specify how evidence from a future successful run is verified; their presence does not mean a run has occurred or passed. GitHub Actions cannot be executed in this local environment, so the workflow itself was not run here; no new CI provenance or signature has been verified.
 
 ## Version drift
 

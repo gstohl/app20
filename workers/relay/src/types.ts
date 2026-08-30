@@ -60,6 +60,8 @@ export interface RelayEnv {
   /** Checked-in policy marker only; application code cannot enable transport. */
   RFQ_TRANSPORT_ENABLED?: "false";
   RFQ_REPLAY?: DurableObjectNamespaceLike;
+  /** Dormant internal binding; the Worker fetch handler exposes no route. */
+  RESERVATION_LEDGER?: DurableObjectNamespaceLike;
   RFQ_DIRECTORY_JSON?: string;
   RFQ_MAKER_AUTH?: string;
   RFQ_TAKER_CAPABILITY_SECRET?: string;

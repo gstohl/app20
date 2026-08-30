@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app20.example/schemas/token-candidate-v1.json",
+  "title": "APP20 untrusted token identity candidate",
+  "description": "Input to read-only collection of untrusted RPC-reported fields. This schema does not assert that verification occurred, and a candidate is never runtime token configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "chain",
+    "chainId",
+    "proposedAddress",
+    "expectedSymbol",
+    "expectedName",
+    "expectedDecimals",
+    "claimProvenance",
+    "reviewerIdentity",
+    "reviewDate",
+    "verified"
+  ],
+  "properties": {
+    "chain": {
+      "enum": ["mainnet", "sepolia"]
+    },
+    "chainId": {
+      "enum": [
+        "0x534e5f4d41494e",
+        "0x534e5f5345504f4c4941"
+      ]
+    },
+    "proposedAddress": {
+      "description": "A non-zero Starknet felt after a human supplies a candidate. The literal placeholder is allowed only for the checked-in example and is refused by the verifier.",
+      "oneOf": [
+        {
+          "const": "<REPLACE_WITH_REVIEWED_STARKNET_TOKEN_ADDRESS>"
+        },
+        {
+          "type": "string",
+          "anyOf": [
+            {
+              "pattern": "^0x[0-9a-fA-F]{1,62}$"
+            },
+            {
+              "pattern": "^0x[0-7][0-9a-fA-F]{62}$"
+            }
+          ],
+          "not": {
+            "pattern": "^0x0+$"
+          }
+        }
+      ]
+    },
+    "expectedSymbol": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "expectedName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "expectedDecimals": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "claimProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceUrl", "claim", "accessedAt"],
+      "properties": {
+        "sourceUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://"
+        },
+        "claim": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "accessedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "reviewerIdentity": {
+      "description": "Identity of the human who reviewed the claim provenance, or null while unreviewed.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": ".*\\S.*",
+          "maxLength": 256
+        }
+      ]
+    },
+    "reviewDate": {
+      "description": "Date-time of the human provenance review, or null while unreviewed.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "verified": {
+      "description": "Must remain false: an untrusted single-RPC report cannot establish verification, and the evidence collector never modifies this field.",
+      "const": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "chain": {
+            "const": "mainnet"
+          }
+        },
+        "required": ["chain"]
+      },
+      "then": {
+        "properties": {
+          "chainId": {
+            "const": "0x534e5f4d41494e"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "chain": {
+            "const": "sepolia"
+          }
+        },
+        "required": ["chain"]
+      },
+      "then": {
+        "properties": {
+          "chainId": {
+            "const": "0x534e5f5345504f4c4941"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "proposedAddress": {
+            "const": "<REPLACE_WITH_REVIEWED_STARKNET_TOKEN_ADDRESS>"
+          }
+        },
+        "required": ["proposedAddress"]
+      },
+      "then": {
+        "properties": {
+          "reviewerIdentity": {
+            "const": null
+          },
+          "reviewDate": {
+            "const": null
+          },
+          "verified": {
+            "const": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "reviewerIdentity": {
+            "type": "null"
+          }
+        },
+        "required": ["reviewerIdentity"]
+      },
+      "then": {
+        "properties": {
+          "reviewDate": {
+            "const": null
+          },
+          "verified": {
+            "const": false
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reviewDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "chain": "sepolia",
+  "chainId": "0x534e5f5345504f4c4941",
+  "proposedAddress": "<REPLACE_WITH_REVIEWED_STARKNET_TOKEN_ADDRESS>",
+  "expectedSymbol": "EXAMPLE",
+  "expectedName": "Non-real documentation placeholder",
+  "expectedDecimals": 0,
+  "claimProvenance": {
+    "sourceUrl": "https://example.invalid/non-real-token-claim",
+    "claim": "EXAMPLE ONLY: this is not a token identity claim and must be replaced from reviewed provenance.",
+    "accessedAt": "2000-01-01T00:00:00.000Z"
+  },
+  "reviewerIdentity": null,
+  "reviewDate": null,
+  "verified": false
+}

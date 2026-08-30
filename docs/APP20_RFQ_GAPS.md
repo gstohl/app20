@@ -105,7 +105,7 @@ APP20 privately solicits a bounded set of approved makers for exact USDC↔STRK 
 - **P0-14 — No independent maker operators.** Localnet child processes are not independent legal, personnel, infrastructure, network, or failure domains.
 - **P0-15 — No production key custody.** `packages/maker-node/src/production-ports.ts` intentionally supplies no HSM/KMS adapter for quote, HPKE, or settlement keys; authenticated administration, dual control, rotation, revocation, transaction policy, and compromise recovery are missing.
 - **P0-16 — Reservation and replay state are not production durable.** Local WAL/PID locking and in-memory stores need replicated CAS/serializable fencing, idempotent attempt IDs, backup/PITR, retention, cross-region failover, split-brain resistance, and restored high-water/reconciliation evidence.
-- **P0-17 — RFQ relay/DO transport is undeployed.** Dormant Worker/Durable Object code has no production bindings, restore/failover proof, monitoring, or rollout authority.
+- **P0-17 — RFQ relay/DO transport is undeployed.** A ReservationLedgerDurableObject binding is declared but remains dormant with no route and transport immutable-off; restore/failover proof, monitoring, and rollout authority are absent.
 - **P0-18 — Capability issuance is undefined.** Maker/taker identity proof, root-key custody, issuance auditing, nonce/replay policy, rotation overlap, revocation, rate limits, and service authentication have no approved production design.
 - **P0-19 — HPKE is not production-operational.** The RFC 9180 primitives need independent review, an HSM/KMS recipient-key resolver, end-to-end production-shaped tests, key lifecycle drills, and a decision on whether maker quotes must also be end-to-end encrypted from the relay.
 

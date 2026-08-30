@@ -24,6 +24,7 @@ import {
   digestPrivateRfq,
   digestSolverQuoteV2,
   createMakerReservation,
+  decodeStoredMakerReservation,
   transitionMakerReservation,
   type MakerReservationV1,
   type PrivateRfqV1,
@@ -408,143 +409,34 @@ function serializeStored(record: StoredMakerReservation): StoredWire {
 }
 
 function deserializeStored(wire: StoredWire): StoredMakerReservation {
-  const reservation = {
-    ...wire.reservation,
-    amountBaseUnits: BigInt(wire.reservation.amountBaseUnits),
-    fence: BigInt(wire.reservation.fence),
-  } as MakerReservationV1;
-  canonicalMakerReservation(reservation);
-  const record: StoredMakerReservation = {
-    reservation,
-    nonce: requireHex32(wire.nonce, "nonce"),
-    solverId: requireText(wire.solverId, "solverId"),
-    solverKey: requireText(wire.solverKey, "solverKey"),
-    spreadBps: wire.spreadBps,
-    sellToken: requireText(wire.sellToken, "sellToken"),
-    sellAmount: requireAmount(BigInt(wire.sellAmount), "sellAmount"),
-    buyToken: requireText(wire.buyToken, "buyToken"),
-    grossBuyAmount: requireAmount(
-      BigInt(wire.grossBuyAmount),
-      "grossBuyAmount",
-    ),
-    buyAmount: requireAmount(BigInt(wire.buyAmount), "buyAmount"),
-    minBuyAmount: requireAmount(BigInt(wire.minBuyAmount), "minBuyAmount"),
-    rfqExpiresAt: requireTimestamp(wire.rfqExpiresAt, "rfqExpiresAt"),
-    pricingProvenance: requireText(wire.pricingProvenance, "pricingProvenance"),
-    ...(wire.signedCanonical === undefined
-      ? {}
-      : { signedCanonical: wire.signedCanonical }),
-    ...(wire.signature === undefined ? {} : { signature: wire.signature }),
-    ...(wire.quoteDigest === undefined
-      ? {}
-      : { quoteDigest: requireHex32(wire.quoteDigest, "quoteDigest") }),
-    ...(wire.settlementDealId === undefined
-      ? {}
-      : {
-          settlementDealId: requireText(
-            wire.settlementDealId,
-            "settlementDealId",
-          ).toLowerCase(),
-        }),
-    ...(wire.settlementDeadline === undefined
-      ? {}
-      : {
-          settlementDeadline: requireTimestamp(
-            wire.settlementDeadline,
-            "settlementDeadline",
-          ),
-        }),
-    ...(wire.settlementTicketAddress === undefined
-      ? {}
-      : {
-          settlementTicketAddress: requireText(
-            wire.settlementTicketAddress,
-            "settlementTicketAddress",
-          ).toLowerCase(),
-        }),
+  return decodeStoredMakerReservation({
+    ...wire,
+    reservation: {
+      ...wire.reservation,
+      amountBaseUnits: BigInt(wire.reservation.amountBaseUnits),
+      fence: BigInt(wire.reservation.fence),
+    },
+    sellAmount: BigInt(wire.sellAmount),
+    grossBuyAmount: BigInt(wire.grossBuyAmount),
+    buyAmount: BigInt(wire.buyAmount),
+    minBuyAmount: BigInt(wire.minBuyAmount),
     ...(wire.authorityQuarantine === undefined
       ? {}
       : {
           authorityQuarantine: {
-            attemptId: requireText(
-              wire.authorityQuarantine.attemptId,
-              "authority quarantine attemptId",
-            ),
-            authorityDigest: requireHex32(
-              wire.authorityQuarantine.authorityDigest,
-              "authority quarantine authorityDigest",
-            ),
-            authorityRevision: requireTimestamp(
-              wire.authorityQuarantine.authorityRevision,
-              "authority quarantine authorityRevision",
-            ),
-            outcome: wire.authorityQuarantine.outcome,
-            reason: wire.authorityQuarantine.reason,
+            ...wire.authorityQuarantine,
             selectionFence: BigInt(wire.authorityQuarantine.selectionFence),
-            quarantinedAt: requireTimestamp(
-              wire.authorityQuarantine.quarantinedAt,
-              "authority quarantine quarantinedAt",
-            ),
           },
         }),
     ...(wire.terminalReconciliation === undefined
       ? {}
       : {
           terminalReconciliation: {
-            attemptId: requireText(
-              wire.terminalReconciliation.attemptId,
-              "terminal reconciliation attemptId",
-            ),
-            authorityDigest: requireHex32(
-              wire.terminalReconciliation.authorityDigest,
-              "terminal reconciliation authorityDigest",
-            ),
-            authorityRevision: requireTimestamp(
-              wire.terminalReconciliation.authorityRevision,
-              "terminal reconciliation authorityRevision",
-            ),
-            outcome: wire.terminalReconciliation.outcome,
+            ...wire.terminalReconciliation,
             selectionFence: BigInt(wire.terminalReconciliation.selectionFence),
-            reconciledAt: requireTimestamp(
-              wire.terminalReconciliation.reconciledAt,
-              "terminal reconciliation reconciledAt",
-            ),
           },
         }),
-  };
-  if (
-    record.authorityQuarantine &&
-    ((record.authorityQuarantine.outcome !== "settled" &&
-      record.authorityQuarantine.outcome !== "refunded") ||
-      (record.authorityQuarantine.reason !== "authority-disagreement" &&
-        record.authorityQuarantine.reason !== "authority-reorged") ||
-      record.authorityQuarantine.selectionFence <= 0n)
-  ) {
-    throw new MakerNodeError(
-      "Persisted authority quarantine metadata is invalid.",
-    );
-  }
-  if (
-    record.terminalReconciliation &&
-    ((record.terminalReconciliation.outcome !== "settled" &&
-      record.terminalReconciliation.outcome !== "refunded") ||
-      record.terminalReconciliation.selectionFence <= 0n)
-  ) {
-    throw new MakerNodeError(
-      "Persisted terminal reconciliation metadata is invalid.",
-    );
-  }
-  if (
-    (record.signedCanonical === undefined) !==
-      (record.signature === undefined) ||
-    (record.signedCanonical === undefined) !==
-      (record.quoteDigest === undefined)
-  ) {
-    throw new MakerNodeError(
-      "Persisted quote signature fields are incomplete.",
-    );
-  }
-  return record;
+  });
 }
 
 function canonicalWalEntry(

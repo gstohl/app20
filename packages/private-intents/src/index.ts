@@ -32,7 +32,8 @@ const MAX_U256 = (1n << 256n) - 1n;
 const MIN_INTENT_ID_LENGTH = 32;
 const ECDSA_PARAMS = { name: "ECDSA", namedCurve: "P-256" } as const;
 const ECDSA_SIGN = { name: "ECDSA", hash: "SHA-256" } as const;
-const P256_ORDER = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+const P256_ORDER =
+  0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
 const P256_HALF_ORDER = P256_ORDER >> 1n;
 
 export type StarknetPool =
@@ -315,12 +316,15 @@ export async function signCanonicalQuote(
   canonical: string,
   privateKey: CryptoKey,
 ): Promise<string> {
-  const bytes = new Uint8Array(await crypto.subtle.sign(
-    ECDSA_SIGN,
-    privateKey,
-    new TextEncoder().encode(canonical),
-  ));
-  if (bytes.byteLength !== 64) throw new PrivateIntentError("P-256 signer returned a non-raw signature.");
+  const bytes = new Uint8Array(
+    await crypto.subtle.sign(
+      ECDSA_SIGN,
+      privateKey,
+      new TextEncoder().encode(canonical),
+    ),
+  );
+  if (bytes.byteLength !== 64)
+    throw new PrivateIntentError("P-256 signer returned a non-raw signature.");
   const s = BigInt(`0x${bytesToHex(bytes.slice(32))}`);
   const canonicalS = s > P256_HALF_ORDER ? P256_ORDER - s : s;
   const normalized = `${bytesToHex(bytes.slice(0, 32))}${canonicalS.toString(16).padStart(64, "0")}`;
@@ -747,9 +751,11 @@ export function planRestock(
   return { netExposure, orders, deferred };
 }
 
+export * from "#economic-policy";
 export * from "#operations";
 export * from "#protocol";
 export * from "#directory-delivery";
 export * from "#hpke";
 export * from "#quote-v2";
+export * from "#reservation-codec";
 export * from "#replay";
