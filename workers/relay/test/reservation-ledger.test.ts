@@ -8,9 +8,11 @@ import {
 import type { ReservationLedgerDurableObject } from "../src/reservation-ledger-do.ts";
 import {
   createReservationLedgerHarness as durableObject,
+  restartReservationLedgerHarness,
 } from "./reservation-ledger-harness.ts";
 
 const RESERVATION_ID = `0x${"11".repeat(32)}`;
+const SECOND_RESERVATION_ID = `0x${"aa".repeat(32)}`;
 const INTENT_DIGEST = `0x${"22".repeat(32)}`;
 const RFQ_DIGEST = `0x${"33".repeat(32)}`;
 const QUOTE_DIGEST = `0x${"44".repeat(32)}`;
@@ -54,6 +56,40 @@ async function post(
       body: encode(body),
     }),
   );
+}
+
+type LedgerSnapshot = {
+  revision: number;
+  highWater: string;
+  records: Array<{
+    reservation: { state: string; fence: Record<string, string> };
+  }>;
+};
+
+async function snapshot(
+  target: ReservationLedgerDurableObject,
+): Promise<LedgerSnapshot> {
+  const response = await target.fetch(
+    new Request("https://reservation-ledger.invalid/snapshot"),
+  );
+  const body = await response.text();
+  assert.equal(response.status, 200, body);
+  return JSON.parse(body) as LedgerSnapshot;
+}
+
+function newReservation(reservationId: string, fence: bigint) {
+  return createMakerReservation({
+    reservationId,
+    makerId: reservationId === RESERVATION_ID ? "maker-a" : "maker-b",
+    intentDigest: INTENT_DIGEST,
+    rfqDigest: RFQ_DIGEST,
+    asset: "0x123",
+    amountBaseUnits:
+      reservationId === RESERVATION_ID ? 12345678901234567890n : 1n,
+    createdAt: NOW,
+    expiresAt: NOW + 300,
+    fence,
+  });
 }
 
 async function createAndSelect(target: ReservationLedgerDurableObject) {
@@ -298,4 +334,256 @@ test("pending recovery rolls back atomically if durable state is inconsistent", 
   assert.equal(first.sql.records.get(RESERVATION_ID)?.state, "filling");
   assert.equal(first.sql.attempts.get(ATTEMPT_ID)?.status, "pending");
   assert.equal(first.sql.metadata.revision, 3);
+});
+
+// Restore / failover / resume evidence. These tests prove in-repo Durable Object
+// SQLite semantics. A single Cloudflare account is one administrative domain, so
+// this strengthens durability evidence without closing P0-16 or the P1-04 / P1-06
+// partials. There is no operator-controlled PITR, retention, cross-region failover,
+// or independently administered replica in this repository.
+
+test("crash restoration reloads committed records and high-water from persisted SQLite", async () => {
+  const first = durableObject();
+  await createAndSelect(first.target);
+  const beforeCrash = await snapshot(first.target);
+  assert.equal(beforeCrash.revision, 2);
+  assert.equal(beforeCrash.highWater, "2");
+  assert.equal(beforeCrash.records.length, 1);
+  assert.equal(beforeCrash.records[0]?.reservation.state, "selected");
+  assert.deepEqual(beforeCrash.records[0]?.reservation.fence, {
+    $app20BigInt: "2",
+  });
+
+  const restarted = restartReservationLedgerHarness(first.sql);
+  assert.notEqual(restarted.sql, first.sql);
+  const restored = await snapshot(restarted.target);
+  assert.deepEqual(restored, beforeCrash);
+  assert.equal(restarted.sql.metadata.revision, 2);
+  assert.equal(restarted.sql.metadata.high_water, "2");
+  assert.equal(restarted.sql.records.get(RESERVATION_ID)?.state, "selected");
+});
+
+test("fence high-water stays monotonic across a crash restart", async () => {
+  const first = durableObject();
+  await createAndSelect(first.target);
+  const restarted = restartReservationLedgerHarness(first.sql);
+
+  const reused = await post(restarted.target, "/commit", {
+    expectedRevision: 2,
+    mutations: [
+      {
+        record: stored(newReservation(SECOND_RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(reused.status, 409);
+  assert.match(await reused.text(), /next durable high-water token/i);
+
+  const collision = await post(restarted.target, "/commit", {
+    expectedRevision: 2,
+    mutations: [
+      {
+        record: stored(newReservation(SECOND_RESERVATION_ID, 2n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(collision.status, 409);
+  assert.match(await collision.text(), /next durable high-water token/i);
+
+  const accepted = await post(restarted.target, "/commit", {
+    expectedRevision: 2,
+    mutations: [
+      {
+        record: stored(newReservation(SECOND_RESERVATION_ID, 3n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(accepted.status, 200, await accepted.text());
+  const restored = await snapshot(restarted.target);
+  assert.equal(restored.revision, 3);
+  assert.equal(restored.highWater, "3");
+  assert.equal(first.sql.metadata.high_water, "2");
+});
+
+test("duplicate attempt IDs replay the original consumed outcome after crash restoration", async () => {
+  const first = durableObject();
+  await createAndSelect(first.target);
+  assert.equal(
+    (await post(first.target, "/attempt/begin", attempt)).status,
+    201,
+  );
+  const completion = {
+    ...attempt,
+    at: NOW + 3,
+    outcome: { kind: "consumed", transactionHash: "0x1234" },
+  };
+  assert.equal(
+    (await post(first.target, "/attempt/complete", completion)).status,
+    200,
+  );
+
+  const restarted = restartReservationLedgerHarness(first.sql);
+  const replayComplete = await post(restarted.target, "/attempt/complete", {
+    ...completion,
+    outcome: { kind: "unknown", reason: "must not replace original" },
+  });
+  assert.equal(replayComplete.status, 200);
+  assert.deepEqual(
+    ((await replayComplete.json()) as { outcome: unknown }).outcome,
+    { kind: "consumed", transactionHash: "0x1234" },
+  );
+
+  const replayBegin = await post(restarted.target, "/attempt/begin", attempt);
+  assert.equal(replayBegin.status, 200);
+  assert.deepEqual(
+    ((await replayBegin.json()) as { outcome: unknown }).outcome,
+    { kind: "consumed", transactionHash: "0x1234" },
+  );
+  const restored = await snapshot(restarted.target);
+  assert.equal(restored.records[0]?.reservation.state, "consumed");
+});
+
+test("duplicate begin of a pending attempt after restart quarantines and never reclaims", async () => {
+  const first = durableObject();
+  await createAndSelect(first.target);
+  assert.equal(
+    (await post(first.target, "/attempt/begin", attempt)).status,
+    201,
+  );
+
+  const restarted = restartReservationLedgerHarness(first.sql);
+  const replay = await post(restarted.target, "/attempt/begin", attempt);
+  assert.equal(replay.status, 200);
+  const body = (await replay.json()) as {
+    kind: string;
+    outcome: { kind: string; reason: string };
+  };
+  assert.equal(body.kind, "replay");
+  assert.equal(body.outcome.kind, "unknown");
+  assert.match(body.outcome.reason, /unknown outcome/i);
+
+  const restored = await snapshot(restarted.target);
+  assert.equal(restored.records[0]?.reservation.state, "quarantined");
+  assert.equal(restarted.sql.attempts.get(ATTEMPT_ID)?.status, "completed");
+  const reclaim = await post(restarted.target, "/attempt/begin", attempt);
+  assert.equal(reclaim.status, 200);
+  assert.deepEqual(
+    ((await reclaim.json()) as { outcome: unknown }).outcome,
+    body.outcome,
+  );
+});
+
+test("explicit release remains durable across crash restoration and cannot be rewritten", async () => {
+  const first = durableObject();
+  const selected = await createAndSelect(first.target);
+  const released = transitionMakerReservation(selected, {
+    kind: "release",
+    expectedFence: selected.fence,
+    at: NOW + 2,
+    reason: "cancelled",
+  });
+  const releaseResponse = await post(first.target, "/commit", {
+    expectedRevision: 2,
+    mutations: [{ record: stored(released), expectedFence: "2" }],
+  });
+  assert.equal(releaseResponse.status, 200, await releaseResponse.text());
+
+  const restarted = restartReservationLedgerHarness(first.sql);
+  const restored = await snapshot(restarted.target);
+  assert.equal(restored.records[0]?.reservation.state, "released");
+  assert.equal(restored.highWater, "3");
+
+  const resurrected = {
+    ...released,
+    state: "selected" as const,
+    updatedAt: NOW + 3,
+    fence: 4n,
+    terminalReason: undefined,
+  };
+  const rewrite = await post(restarted.target, "/commit", {
+    expectedRevision: 3,
+    mutations: [{ record: stored(resurrected), expectedFence: "3" }],
+  });
+  assert.equal(rewrite.status, 409);
+  assert.match(
+    await rewrite.text(),
+    /terminal reservation state cannot transition/i,
+  );
+  assert.equal(
+    (await snapshot(restarted.target)).records[0]?.reservation.state,
+    "released",
+  );
+});
+
+test("a storage write failure mid-commit rolls back atomically and remains retryable", async () => {
+  const { target, sql } = durableObject();
+  sql.failAfterSuccessfulMutations(1);
+  const failed = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(failed.status, 503);
+  assert.match(await failed.text(), /storage write failed/i);
+  assert.equal(sql.metadata.revision, 0);
+  assert.equal(sql.metadata.high_water, "0");
+  assert.equal(sql.records.size, 0);
+
+  const retry = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(retry.status, 200, await retry.text());
+  assert.equal(sql.metadata.revision, 1);
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "reserved");
+});
+
+test("a storage write failure mid-attempt does not claim the reservation", async () => {
+  const { target, sql } = durableObject();
+  await createAndSelect(target);
+  sql.failAfterSuccessfulMutations(1);
+  const failed = await post(target, "/attempt/begin", attempt);
+  assert.equal(failed.status, 503);
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "selected");
+  assert.equal(sql.attempts.size, 0);
+  assert.equal(sql.metadata.revision, 2);
+
+  const retry = await post(target, "/attempt/begin", attempt);
+  assert.equal(retry.status, 201, await retry.text());
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "filling");
+  assert.equal(sql.attempts.get(ATTEMPT_ID)?.status, "pending");
+});
+
+test("a storage write failure mid-completion leaves the attempt pending and does not consume", async () => {
+  const { target, sql } = durableObject();
+  await createAndSelect(target);
+  assert.equal((await post(target, "/attempt/begin", attempt)).status, 201);
+  sql.failAfterSuccessfulMutations(1);
+  const completion = {
+    ...attempt,
+    at: NOW + 3,
+    outcome: { kind: "consumed", transactionHash: "0x1234" },
+  };
+  const failed = await post(target, "/attempt/complete", completion);
+  assert.equal(failed.status, 503);
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "filling");
+  assert.equal(sql.attempts.get(ATTEMPT_ID)?.status, "pending");
+  assert.equal(sql.attempts.get(ATTEMPT_ID)?.outcome_json, null);
+
+  const retry = await post(target, "/attempt/complete", completion);
+  assert.equal(retry.status, 200, await retry.text());
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "consumed");
+  assert.equal(sql.attempts.get(ATTEMPT_ID)?.status, "completed");
 });

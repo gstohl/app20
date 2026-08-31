@@ -92,8 +92,20 @@ function jsonParse<T>(value: string): T {
   }) as T;
 }
 
+// Mirrors the jsonStringify replacer without a stringify/parse round trip, so
+// BigInt-bearing records become plain JSON that Response.json can serialize.
 function wire(value: unknown): JsonValue {
-  return JSON.parse(jsonStringify(value)) as JsonValue;
+  if (typeof value === "bigint") return { $app20BigInt: value.toString() };
+  if (Array.isArray(value)) return value.map(wire);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== undefined && typeof item !== "function")
+        .map(([key, item]) => [key, wire(item)]),
+    );
+  if (value === undefined || typeof value === "function")
+    throw new Error("Reservation ledger cannot serialize a non-JSON value.");
+  return value as JsonValue;
 }
 
 function metadata(sql: SqlStorage): MetadataRow {
@@ -206,8 +218,44 @@ function conflict(message: string): Response {
 }
 
 /**
+ * Thrown by the in-repo SQLite mock when a persisted write fails. Production
+ * Durable Object storage would surface a platform error instead; both must
+ * abort the transaction rather than commit a partial reservation transition.
+ */
+export const RESERVATION_LEDGER_STORAGE_WRITE_FAILED =
+  "Reservation ledger storage write failed.";
+
+function isStorageWriteFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message === RESERVATION_LEDGER_STORAGE_WRITE_FAILED
+  );
+}
+
+function transactionFailure(error: unknown, fallback: string): Response {
+  if (isStorageWriteFailure(error)) {
+    return noStoreJson(
+      { error: RESERVATION_LEDGER_STORAGE_WRITE_FAILED },
+      { status: 503 },
+    );
+  }
+  return conflict(error instanceof Error ? error.message : fallback);
+}
+
+/**
  * Dormant SQLite Durable Object for maker reservation authority. It is exported
  * for a binding only; the relay fetch handler deliberately has no route to it.
+ * Transport stays immutable-off and this class is not activated as a live
+ * service in this slice.
+ *
+ * Durability posture (honest): process restart against persisted SQLite
+ * proves crash restoration, fence monotonicity, idempotent attempt replay,
+ * and atomic rollback when a storage write fails mid-transition. Cloudflare
+ * Durable Object SQLite still lives in a single Cloudflare account, which is
+ * one administrative domain. That is not independently administered backup,
+ * operator-controlled PITR, retention, cross-region failover, or split-brain
+ * resistance. This strengthens in-repo durability evidence; it does not make
+ * P0-16 or the P1-04 / P1-06 partials closable.
  */
 export class ReservationLedgerDurableObject {
   private readonly state: LedgerState;
@@ -234,8 +282,8 @@ export class ReservationLedgerDurableObject {
 
   async fetch(request: Request): Promise<Response> {
     await this.ready;
-    const path = new URL(request.url).pathname;
     try {
+      const path = new URL(request.url).pathname;
       if (request.method === "GET" && path === "/snapshot")
         return this.snapshot();
       if (request.method === "POST" && path === "/commit") {
@@ -345,11 +393,7 @@ export class ReservationLedgerDurableObject {
       });
       return noStoreJson({ committed: true, revision: result.revision });
     } catch (error) {
-      return conflict(
-        error instanceof Error
-          ? error.message
-          : "Reservation commit conflicted.",
-      );
+      return transactionFailure(error, "Reservation commit conflicted.");
     }
   }
 
@@ -456,9 +500,7 @@ export class ReservationLedgerDurableObject {
         status: result.kind === "claimed" ? 201 : 200,
       });
     } catch (error) {
-      return conflict(
-        error instanceof Error ? error.message : "Attempt claim conflicted.",
-      );
+      return transactionFailure(error, "Attempt claim conflicted.");
     }
   }
 
@@ -527,11 +569,7 @@ export class ReservationLedgerDurableObject {
       });
       return noStoreJson({ recovered });
     } catch (error) {
-      return conflict(
-        error instanceof Error
-          ? error.message
-          : "Pending attempt recovery conflicted.",
-      );
+      return transactionFailure(error, "Pending attempt recovery conflicted.");
     }
   }
 
@@ -623,11 +661,7 @@ export class ReservationLedgerDurableObject {
       });
       return noStoreJson(result);
     } catch (error) {
-      return conflict(
-        error instanceof Error
-          ? error.message
-          : "Attempt completion conflicted.",
-      );
+      return transactionFailure(error, "Attempt completion conflicted.");
     }
   }
 }

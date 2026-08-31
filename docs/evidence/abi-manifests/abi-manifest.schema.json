@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app20.example/schemas/abi-manifest-v1.json",
+  "title": "APP20 pinned ABI manifest",
+  "description": "Input to the pinned-ABI decoder generator. A manifest is never runtime configuration. The checked-in test fixture is not canonical ABI and does not close P0-21.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "classification",
+    "warning",
+    "canonicalProductionAbi",
+    "runtimeAllowed",
+    "productionEligible",
+    "p0_07_canonical_abi_present",
+    "p0_21_status",
+    "chainId",
+    "contractAddress",
+    "classHash",
+    "deploymentBlock",
+    "abiBytes",
+    "abiDigest",
+    "selectors",
+    "eventLayouts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "app20/abi-manifest/v1"
+    },
+    "classification": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{8,64}$"
+    },
+    "warning": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "canonicalProductionAbi": {
+      "type": "boolean"
+    },
+    "runtimeAllowed": {
+      "type": "boolean"
+    },
+    "productionEligible": {
+      "type": "boolean"
+    },
+    "p0_07_canonical_abi_present": {
+      "type": "boolean"
+    },
+    "p0_21_status": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "chainId": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]+$"
+    },
+    "contractAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]+$"
+    },
+    "classHash": {
+      "type": "string",
+      "pattern": "^0x[0-9a-f]+$"
+    },
+    "deploymentBlock": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "abiBytes": {
+      "type": "string",
+      "minLength": 1
+    },
+    "abiDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "selectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fund", "fill", "claim", "timeout"],
+      "properties": {
+        "fund": { "type": "string", "pattern": "^0x[0-9a-f]+$" },
+        "fill": { "type": "string", "pattern": "^0x[0-9a-f]+$" },
+        "claim": { "type": "string", "pattern": "^0x[0-9a-f]+$" },
+        "timeout": { "type": "string", "pattern": "^0x[0-9a-f]+$" }
+      }
+    },
+    "eventLayouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fund", "fill", "claim", "timeout"],
+      "properties": {
+        "fund": { "$ref": "#/$defs/eventLayout" },
+        "fill": { "$ref": "#/$defs/eventLayout" },
+        "claim": { "$ref": "#/$defs/eventLayout" },
+        "timeout": { "$ref": "#/$defs/eventLayout" }
+      }
+    }
+  },
+  "$defs": {
+    "abiField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "decodedName", "kind"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "decodedName": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" },
+        "kind": { "enum": ["felt", "u128", "u64"] }
+      }
+    },
+    "eventLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "keys", "data"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]*$" },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/abiField" }
+        },
+        "data": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/abiField" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "schema": "app20/abi-manifest/v1",
+  "classification": "p0-21-generator-test-fixture",
+  "warning": "TEST FIXTURE ONLY. This is not canonical App20Escrow or App20Claim ABI, not a deployment identity, and not production-eligible. P0-21 remains open until P0-07 supplies real ABI.",
+  "canonicalProductionAbi": false,
+  "runtimeAllowed": false,
+  "productionEligible": false,
+  "p0_07_canonical_abi_present": false,
+  "p0_21_status": "open",
+  "chainId": "0x545354",
+  "contractAddress": "0xab1",
+  "classHash": "0xc1a55",
+  "deploymentBlock": 1,
+  "abiBytes": "{\"contract\":\"App20PinnedAbiDecoderGeneratorTestFixture\",\"version\":1,\"events\":{\"FixtureFunded\":{\"keys\":[\"deal_id\"],\"data\":[\"sell_token\",\"sell_amount\",\"buy_token\",\"buy_amount\"]},\"FixtureFilled\":{\"keys\":[\"deal_id\"],\"data\":[\"sell_token\",\"sell_amount\",\"buy_token\",\"buy_amount\"]},\"FixtureClaimed\":{\"keys\":[\"deal_id\"],\"data\":[\"token\",\"amount\"]},\"FixtureTimedOut\":{\"keys\":[\"deal_id\"],\"data\":[\"token\",\"amount\"]}}}",
+  "abiDigest": "sha256:21f01cf768957c1911a58149c1dc6fb3a21e7e50c0c19c180e384d6bb70603ae",
+  "selectors": {
+    "fund": "0x4861210c9ef587161736fdcd29da8b30335ec907b1e32cf4190f9eaa15f39be",
+    "fill": "0x42cdd4e712665f417aefd3d7f9ab978ead51403930ffa4d6a7365af182f2b9d",
+    "claim": "0x107b43604e1b1503a46bc265830880481610afda0084eb00402c96d93688a0a",
+    "timeout": "0x4f546021cf10b4bcfbb9b60a6a632436a5ed7c599db18e21a932687cea80e68"
+  },
+  "eventLayouts": {
+    "fund": {
+      "name": "FixtureFunded",
+      "keys": [
+        {
+          "name": "deal_id",
+          "decodedName": "dealId",
+          "kind": "felt"
+        }
+      ],
+      "data": [
+        {
+          "name": "sell_token",
+          "decodedName": "sellToken",
+          "kind": "felt"
+        },
+        {
+          "name": "sell_amount",
+          "decodedName": "sellAmount",
+          "kind": "u128"
+        },
+        {
+          "name": "buy_token",
+          "decodedName": "buyToken",
+          "kind": "felt"
+        },
+        {
+          "name": "buy_amount",
+          "decodedName": "buyAmount",
+          "kind": "u128"
+        }
+      ]
+    },
+    "fill": {
+      "name": "FixtureFilled",
+      "keys": [
+        {
+          "name": "deal_id",
+          "decodedName": "dealId",
+          "kind": "felt"
+        }
+      ],
+      "data": [
+        {
+          "name": "sell_token",
+          "decodedName": "sellToken",
+          "kind": "felt"
+        },
+        {
+          "name": "sell_amount",
+          "decodedName": "sellAmount",
+          "kind": "u128"
+        },
+        {
+          "name": "buy_token",
+          "decodedName": "buyToken",
+          "kind": "felt"
+        },
+        {
+          "name": "buy_amount",
+          "decodedName": "buyAmount",
+          "kind": "u128"
+        }
+      ]
+    },
+    "claim": {
+      "name": "FixtureClaimed",
+      "keys": [
+        {
+          "name": "deal_id",
+          "decodedName": "dealId",
+          "kind": "felt"
+        }
+      ],
+      "data": [
+        {
+          "name": "token",
+          "decodedName": "token",
+          "kind": "felt"
+        },
+        {
+          "name": "amount",
+          "decodedName": "amount",
+          "kind": "u128"
+        }
+      ]
+    },
+    "timeout": {
+      "name": "FixtureTimedOut",
+      "keys": [
+        {
+          "name": "deal_id",
+          "decodedName": "dealId",
+          "kind": "felt"
+        }
+      ],
+      "data": [
+        {
+          "name": "token",
+          "decodedName": "token",
+          "kind": "felt"
+        },
+        {
+          "name": "amount",
+          "decodedName": "amount",
+          "kind": "u128"
+        }
+      ]
+    }
+  }
+}

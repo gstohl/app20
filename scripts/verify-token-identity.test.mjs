@@ -320,9 +320,7 @@ test("pins the validated address so a rebinding lookup cannot change the connect
     {
       lookupImpl: async () => {
         dnsLookups += 1;
-        return dnsLookups === 1
-          ? [{ address: "93.184.216.34", family: 4 }]
-          : [{ address: "127.0.0.1", family: 4 }];
+        return [{ address: "93.184.216.34", family: 4 }];
       },
       fetchImpl: async (url, init) => {
         const pinned = await new Promise((resolveLookup, reject) => {
@@ -338,13 +336,40 @@ test("pins the validated address so a rebinding lookup cannot change the connect
   );
 
   assert.equal(result.rpcReportedMatch, true);
-  assert.equal(dnsLookups, 1);
+  assert.ok(dnsLookups >= 2);
   assert.deepEqual(connectedAddresses, [
     { address: "93.184.216.34", family: 4 },
     { address: "93.184.216.34", family: 4 },
     { address: "93.184.216.34", family: 4 },
     { address: "93.184.216.34", family: 4 },
   ]);
+});
+
+test("refuses when DNS re-resolution no longer points at the pinned public address", async () => {
+  let dnsLookups = 0;
+  let fetched = false;
+  await assert.rejects(
+    verifyTokenIdentity(reviewedCandidate, "https://rpc.example.invalid", {
+      lookupImpl: async () => {
+        dnsLookups += 1;
+        return dnsLookups === 1
+          ? [{ address: "93.184.216.34", family: 4 }]
+          : [{ address: "127.0.0.1", family: 4 }];
+      },
+      fetchImpl: async () => {
+        fetched = true;
+        return new Response(
+          JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x1" }),
+          { status: 200 },
+        );
+      },
+    }),
+    (error) =>
+      error instanceof VerificationRefusal &&
+      /public IP addresses/.test(error.message),
+  );
+  assert.equal(fetched, true);
+  assert.ok(dnsLookups >= 2);
 });
 
 test("CLI uses a non-success status and explicit untrusted wording for an RPC-reported match", async () => {

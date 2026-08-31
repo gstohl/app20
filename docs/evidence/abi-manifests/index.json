@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "scope": "pinned-abi-decoder-generator-evidence-only",
+  "runtimeAllowed": false,
+  "productionEligible": false,
+  "canonicalAbiPresent": false,
+  "generatedDecoderPresent": false,
+  "p0_21_status": "open",
+  "blockedUntil": "P0-07 canonical ABI and deployment identity",
+  "schema": {
+    "path": "docs/evidence/abi-manifests/abi-manifest.schema.json",
+    "sha256": "29c24d2d97e53da348a9eae2d73063d18d85cf7c99c5b46b3761447fd69e5855"
+  },
+  "records": [
+    {
+      "path": "docs/evidence/abi-manifests/p0-21-generator-test-fixture.json",
+      "sha256": "78dfe723dcc53ae240bd3397a04884ca44900f1dcfb06616449aaf0de2c9c510",
+      "classification": "p0-21-generator-test-fixture",
+      "canonicalProductionAbi": false
+    }
+  ]
+}

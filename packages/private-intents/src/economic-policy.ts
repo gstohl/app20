@@ -214,6 +214,26 @@ function recognizedAction(value: unknown): value is RfqEconomicAction {
   );
 }
 
+function isReviewedTokenDirection(
+  sellTokenId: string,
+  buyTokenId: string,
+): boolean {
+  return (
+    (sellTokenId === RFQ_REVIEWED_SELL_TOKEN_ID &&
+      buyTokenId === RFQ_REVIEWED_BUY_TOKEN_ID) ||
+    (sellTokenId === RFQ_REVIEWED_BUY_TOKEN_ID &&
+      buyTokenId === RFQ_REVIEWED_SELL_TOKEN_ID)
+  );
+}
+
+function reviewedTokenDecimals(tokenId: string): number | undefined {
+  if (tokenId === RFQ_REVIEWED_SELL_TOKEN_ID)
+    return RFQ_REVIEWED_SELL_TOKEN_DECIMALS;
+  if (tokenId === RFQ_REVIEWED_BUY_TOKEN_ID)
+    return RFQ_REVIEWED_BUY_TOKEN_DECIMALS;
+  return undefined;
+}
+
 function isRecoveryAction(
   action: RfqEconomicAction,
 ): action is "claim" | "timeout" | "refund" {
@@ -387,8 +407,7 @@ export function evaluateRfqEconomicPolicy(
       );
     }
     if (
-      reference.sellTokenId !== RFQ_REVIEWED_SELL_TOKEN_ID ||
-      reference.buyTokenId !== RFQ_REVIEWED_BUY_TOKEN_ID
+      !isReviewedTokenDirection(reference.sellTokenId, reference.buyTokenId)
     ) {
       reasons.push(
         reason(
@@ -398,8 +417,9 @@ export function evaluateRfqEconomicPolicy(
       );
     }
     if (
-      reference.sellTokenDecimals !== RFQ_REVIEWED_SELL_TOKEN_DECIMALS ||
-      reference.buyTokenDecimals !== RFQ_REVIEWED_BUY_TOKEN_DECIMALS
+      reference.sellTokenDecimals !==
+        reviewedTokenDecimals(reference.sellTokenId) ||
+      reference.buyTokenDecimals !== reviewedTokenDecimals(reference.buyTokenId)
     ) {
       reasons.push(
         reason(
@@ -481,8 +501,7 @@ export function evaluateRfqEconomicPolicy(
       );
     }
     if (
-      proposal.sellTokenId !== RFQ_REVIEWED_SELL_TOKEN_ID ||
-      proposal.buyTokenId !== RFQ_REVIEWED_BUY_TOKEN_ID ||
+      !isReviewedTokenDirection(proposal.sellTokenId, proposal.buyTokenId) ||
       (reference !== undefined &&
         (proposal.sellTokenId !== reference.sellTokenId ||
           proposal.buyTokenId !== reference.buyTokenId))
@@ -495,8 +514,10 @@ export function evaluateRfqEconomicPolicy(
       );
     }
     if (
-      proposal.sellTokenDecimals !== RFQ_REVIEWED_SELL_TOKEN_DECIMALS ||
-      proposal.buyTokenDecimals !== RFQ_REVIEWED_BUY_TOKEN_DECIMALS ||
+      proposal.sellTokenDecimals !==
+        reviewedTokenDecimals(proposal.sellTokenId) ||
+      proposal.buyTokenDecimals !==
+        reviewedTokenDecimals(proposal.buyTokenId) ||
       (reference !== undefined &&
         (proposal.sellTokenDecimals !== reference.sellTokenDecimals ||
           proposal.buyTokenDecimals !== reference.buyTokenDecimals))
@@ -595,15 +616,23 @@ export function evaluateRfqEconomicPolicy(
         );
       }
 
-      // Convert the reference quote quantity into six-decimal USDC with exact
-      // integer arithmetic. The reviewed pair currently has six quote-token
-      // decimals, but retaining the scale equation prevents unit confusion.
-      const quoteTokenScale = 10n ** BigInt(reference.buyTokenDecimals);
-      const usdcNumerator = referenceBuy * RFQ_USDC_BASE_UNITS;
-      if (usdcNumerator % quoteTokenScale === 0n) {
-        derivedUsdcEquivalentBaseUnits = usdcNumerator / quoteTokenScale;
+      // Convert the USDC leg of either reviewed direction into six-decimal
+      // USDC with exact integer arithmetic. Using the buy leg unconditionally
+      // would understate reverse USDC→STRK trades because STRK has 18 decimals.
+      const usdcAmount =
+        reference.buyTokenId === RFQ_REVIEWED_BUY_TOKEN_ID
+          ? referenceBuy
+          : reference.grossSellAmountBaseUnits;
+      const usdcDecimals =
+        reference.buyTokenId === RFQ_REVIEWED_BUY_TOKEN_ID
+          ? reference.buyTokenDecimals
+          : reference.sellTokenDecimals;
+      const usdcTokenScale = 10n ** BigInt(usdcDecimals);
+      const usdcNumerator = usdcAmount * RFQ_USDC_BASE_UNITS;
+      if (usdcNumerator % usdcTokenScale === 0n) {
+        derivedUsdcEquivalentBaseUnits = usdcNumerator / usdcTokenScale;
         if (
-          proposal.usdcEquivalentBaseUnits * quoteTokenScale !==
+          proposal.usdcEquivalentBaseUnits * usdcTokenScale !==
           usdcNumerator
         ) {
           reasons.push(
@@ -615,7 +644,7 @@ export function evaluateRfqEconomicPolicy(
         }
         if (
           usdcNumerator >
-          RFQ_PER_TRADE_CAP_USDC_BASE_UNITS * quoteTokenScale
+          RFQ_PER_TRADE_CAP_USDC_BASE_UNITS * usdcTokenScale
         ) {
           reasons.push(
             reason(

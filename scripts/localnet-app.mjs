@@ -28,6 +28,14 @@ import {
 } from "../packages/private-intents/src/index.ts";
 import { localnetEconomicReview } from "../src/app/rfq/rfq-operations.ts";
 import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
+import {
+  RFQ_MAX_QUOTE_TTL_SECONDS,
+  createLocalnetRfqEconomics,
+  deriveLocalnetReferenceBuyAmount,
+  formatRfqEconomicRefusal,
+  localnetPairTokenIds,
+  reservedBuyAmountFromGross,
+} from "./localnet-rfq-economics.mjs";
 import { createLocalnetChainAuthority } from "./localnet-chain-authority.mjs";
 import { createLocalnetAuthorityReconciliationPipeline } from "./localnet-authority-reconciliation.mjs";
 import { LOCALNET_ESCROW_EVENT_ABI_DIGEST } from "./localnet-chain-decoder.mjs";
@@ -86,7 +94,7 @@ const WALLET_PROXY_PATH = "/__app20_localnet_wallet";
 const RPC_PROXY_PATH = "/__app20_localnet_rpc";
 const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
 const MAX_REQUEST_BYTES = 1_000_000;
-const LOCALNET_QUOTE_RESERVATION_SECONDS = 10 * 60;
+const LOCALNET_QUOTE_RESERVATION_SECONDS = RFQ_MAX_QUOTE_TTL_SECONDS;
 const RFQ_OPERATIONS_STATUS_SCHEMA = "app20/rfq-operations-status/v1";
 const RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS = 30;
 const RFQ_OPERATIONS_STARTED_AT = Math.floor(Date.now() / 1_000);
@@ -116,6 +124,16 @@ const MAKER_NODE_PORT_B = Number(
 
 function fail(message) {
   throw new Error(`APP20 localnet: ${message}`);
+}
+
+function isLocalnetMakerDecline(error) {
+  return /inventory|no output|below the intent floor|cannot cover/i.test(
+    String(error),
+  );
+}
+
+function isLocalnetEconomicPolicyRefusal(error) {
+  return /RFQ economic policy/i.test(String(error));
 }
 
 function isProcessAlive(pid) {
@@ -1152,6 +1170,7 @@ async function startApi({
   const coordinator = createLocalnetReservationCoordinator(
     RESERVATION_COORDINATOR_JOURNAL,
   );
+  const rfqEconomics = createLocalnetRfqEconomics();
   const authorityArtifact = Object.freeze({
     runtimeEpoch: RUNTIME_EPOCH,
     chainId: LOCALNET_CHAIN_ID,
@@ -1848,6 +1867,32 @@ async function startApi({
               : "the named localnet economic policy rejected this RFQ.",
           );
         }
+        const { sellTokenId, buyTokenId } = localnetPairTokenIds(direction);
+        const referenceBuyAmount = deriveLocalnetReferenceBuyAmount({
+          sellTokenId,
+          buyTokenId,
+          sellAmountBaseUnits: sellAmount,
+        });
+        if (referenceBuyAmount === undefined) {
+          fail(
+            "RFQ economic policy refused request: REFERENCE_UNAVAILABLE. No exact localnet reference can be derived from the requested amounts.",
+          );
+        }
+        const requestEconomics = rfqEconomics.evaluate({
+          action: "request",
+          decisionAt: now,
+          makerId: "localnet-request",
+          sellTokenId,
+          buyTokenId,
+          requestedSellAmountBaseUnits: sellAmount,
+          offeredSellAmountBaseUnits: sellAmount,
+          offeredBuyAmountBaseUnits: referenceBuyAmount,
+          quoteTtlSeconds: RFQ_MAX_QUOTE_TTL_SECONDS,
+          referenceObservedAt: now,
+        });
+        if (!requestEconomics.allowed) {
+          fail(formatRfqEconomicRefusal(requestEconomics));
+        }
         const recomputedIntentDigest = await digestPrivateSwapIntent({
           version: 1,
           intentId: rfqId,
@@ -1911,6 +1956,34 @@ async function startApi({
                 minBuyAmount: minBuyAmount.toString(),
               });
               const offer = result.offer;
+              const decisionAt = Math.floor(Date.now() / 1_000);
+              const offeredBuyAmount = reservedBuyAmountFromGross(
+                BigInt(offer.grossBuyAmount),
+                offer.spreadBps,
+              );
+              const quoteEconomics = rfqEconomics.evaluate({
+                action: "quote",
+                decisionAt,
+                makerId: client.solverId,
+                sellTokenId,
+                buyTokenId,
+                requestedSellAmountBaseUnits: sellAmount,
+                offeredSellAmountBaseUnits: sellAmount,
+                offeredBuyAmountBaseUnits: offeredBuyAmount,
+                quoteTtlSeconds: offer.reservationExpiresAt - decisionAt,
+                referenceObservedAt: now,
+              });
+              if (!quoteEconomics.allowed) {
+                try {
+                  await makerRequest(client, "/v1/release", {
+                    reservationId: offer.reservationId,
+                    reason: formatRfqEconomicRefusal(quoteEconomics),
+                  });
+                } catch {
+                  // Inventory remains locked until TTL; fail closed rather than retry.
+                }
+                throw new Error(formatRfqEconomicRefusal(quoteEconomics));
+              }
               const registered = await coordinator.register(
                 {
                   intentDigest,
@@ -1919,14 +1992,21 @@ async function startApi({
                   expiresAt: offer.reservationExpiresAt,
                 },
                 releaseAttempt,
-                Math.floor(Date.now() / 1_000),
+                decisionAt,
               );
+              if (
+                registered.state === "reserved" &&
+                quoteEconomics.derivedUsdcEquivalentBaseUnits !== undefined
+              ) {
+                rfqEconomics.commit(
+                  client.solverId,
+                  quoteEconomics.derivedUsdcEquivalentBaseUnits,
+                  decisionAt,
+                );
+              }
               return { ...result, registered };
             } catch (error) {
-              const declined =
-                /inventory|no output|below the intent floor|cannot cover/i.test(
-                  String(error),
-                );
+              const declined = isLocalnetMakerDecline(error);
               if (declined) {
                 await coordinator.markFanoutRefused(
                   intentDigest,
@@ -1939,15 +2019,21 @@ async function startApi({
         );
         const offers = [];
         const cohort = [];
+        const policyRefusals = [];
         for (const [index, outcome] of outcomes.entries()) {
           const client = makerClients[index];
           if (outcome.status === "rejected") {
-            const declined =
-              /inventory|no output|below the intent floor|cannot cover/i.test(
-                String(outcome.reason),
-              );
+            const declined = isLocalnetMakerDecline(outcome.reason);
+            const policyRefusal = isLocalnetEconomicPolicyRefusal(
+              outcome.reason,
+            );
+            const refusalMessage =
+              outcome.reason instanceof Error
+                ? outcome.reason.message
+                : String(outcome.reason);
+            if (policyRefusal) policyRefusals.push(refusalMessage);
             console.warn(
-              `Invited maker ${client.solverId} declined the browser-safe local request.`,
+              `Invited maker ${client.solverId} declined the browser-safe local request: ${refusalMessage}`,
             );
             cohort.push({
               makerId: client.solverId,
@@ -1957,9 +2043,11 @@ async function startApi({
               invitationStatus: declined ? "refused" : "unavailable",
               capacityBand: declined ? "none" : "unknown",
               eligible: false,
-              rationale: declined
-                ? "Excluded because the maker refused the exact clip under its local fixture capacity policy."
-                : "Excluded because a safe maker response was unavailable for this request.",
+              rationale: policyRefusal
+                ? `Excluded because the reviewed RFQ economic policy refused this quote: ${refusalMessage}`
+                : declined
+                  ? "Excluded because the maker refused the exact clip under its local fixture capacity policy."
+                  : "Excluded because a safe maker response was unavailable for this request.",
             });
             continue;
           }
@@ -1992,6 +2080,9 @@ async function startApi({
           });
         }
         await coordinator.completeRequestFanout(intentDigest);
+        if (offers.length === 0 && policyRefusals.length > 0) {
+          fail(policyRefusals.join(" "));
+        }
         jsonResponse(response, 200, { result: { offers, cohort } });
         return;
       }

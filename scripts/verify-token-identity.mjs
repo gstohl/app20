@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 
-import { lookup as dnsLookup } from "node:dns/promises";
 import { lstat, readFile } from "node:fs/promises";
-import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
 import { resolve } from "node:path";
-import { Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { hash } from "starknet";
+import {
+  DEFAULT_MAX_RESPONSE_BYTES,
+  DEFAULT_TIMEOUT_MS,
+  EgressFailure,
+  EgressRefusal,
+  assertHttpsUrl,
+  createEgressSession,
+} from "./egress-policy.mjs";
 
 const MAX_RECORD_BYTES = 64 * 1024;
-const MAX_RESPONSE_BYTES = 64 * 1024;
-const DEFAULT_TIMEOUT_MS = 10_000;
 const PLACEHOLDER_ADDRESS = "<REPLACE_WITH_REVIEWED_STARKNET_TOKEN_ADDRESS>";
 const CHAIN_IDS = Object.freeze({
   mainnet: "0x534e5f4d41494e",
@@ -38,6 +40,22 @@ const SELECTORS = Object.freeze({
 
 export class VerificationRefusal extends Error {}
 export class VerificationFailure extends Error {}
+
+function rethrowVerification(error) {
+  if (
+    error instanceof VerificationRefusal ||
+    error instanceof VerificationFailure
+  ) {
+    throw error;
+  }
+  if (error instanceof EgressRefusal) {
+    throw new VerificationRefusal(error.message);
+  }
+  if (error instanceof EgressFailure) {
+    throw new VerificationFailure(error.message);
+  }
+  throw error;
+}
 
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -70,210 +88,11 @@ function validDateTime(value) {
 }
 
 function httpsUrl(value, label) {
-  let url;
   try {
-    url = new URL(value);
-  } catch {
-    throw new VerificationRefusal(`${label} must be an absolute HTTPS URL`);
+    return assertHttpsUrl(value, label);
+  } catch (error) {
+    rethrowVerification(error);
   }
-  if (
-    url.protocol !== "https:" ||
-    !url.hostname ||
-    url.username ||
-    url.password
-  ) {
-    throw new VerificationRefusal(
-      `${label} must use an HTTPS origin without embedded credentials`,
-    );
-  }
-  return url;
-}
-
-function ipv4Value(address) {
-  return address
-    .split(".")
-    .reduce((value, octet) => (value << 8n) | BigInt(octet), 0n);
-}
-
-function ipv6Value(address) {
-  let input = address.toLowerCase();
-  if (input.includes(".")) {
-    const separator = input.lastIndexOf(":");
-    const ipv4 = ipv4Value(input.slice(separator + 1));
-    input = `${input.slice(0, separator)}:${(ipv4 >> 16n).toString(16)}:${(
-      ipv4 & 0xffffn
-    ).toString(16)}`;
-  }
-  const halves = input.split("::");
-  const left = halves[0] ? halves[0].split(":") : [];
-  const right = halves.length === 2 && halves[1] ? halves[1].split(":") : [];
-  const words =
-    halves.length === 2
-      ? [...left, ...Array(8 - left.length - right.length).fill("0"), ...right]
-      : left;
-  return words.reduce(
-    (value, word) => (value << 16n) | BigInt(`0x${word || "0"}`),
-    0n,
-  );
-}
-
-function ipv4InCidr(value, base, prefix) {
-  const shift = 32n - BigInt(prefix);
-  return value >> shift === ipv4Value(base) >> shift;
-}
-
-function ipv6InCidr(value, base, prefix) {
-  const shift = 128n - BigInt(prefix);
-  return value >> shift === ipv6Value(base) >> shift;
-}
-
-function isPublicAddress(address) {
-  const family = isIP(address);
-  if (family === 4) {
-    const value = ipv4Value(address);
-    const refused = [
-      ["0.0.0.0", 8],
-      ["10.0.0.0", 8],
-      ["100.64.0.0", 10],
-      ["127.0.0.0", 8],
-      ["169.254.0.0", 16],
-      ["172.16.0.0", 12],
-      ["192.0.0.0", 24],
-      ["192.0.2.0", 24],
-      ["192.88.99.0", 24],
-      ["192.168.0.0", 16],
-      ["198.18.0.0", 15],
-      ["198.51.100.0", 24],
-      ["203.0.113.0", 24],
-      ["224.0.0.0", 4],
-      ["240.0.0.0", 4],
-    ];
-    return !refused.some(([base, prefix]) => ipv4InCidr(value, base, prefix));
-  }
-  if (family === 6) {
-    const value = ipv6Value(address);
-    // Start with global unicast, then exclude the special-purpose blocks that
-    // sit inside 2000::/3. Everything outside global unicast (including
-    // unspecified, loopback, mapped/compatible, translation, ULA, link-local,
-    // multicast, and reserved space) is refused by the first condition.
-    if (value >> 125n !== 1n) return false;
-    const refused = [
-      ["2001::", 23], // IETF protocol assignments, including Teredo/ORCHID
-      ["2001:2::", 48], // benchmarking
-      ["2001:20::", 28], // non-routeable ORCHIDv2 identifiers
-      ["2001:db8::", 32], // documentation
-      ["2002::", 16], // deprecated 6to4 can encapsulate a private IPv4 target
-      ["3fff::", 20], // documentation
-    ];
-    return !refused.some(([base, prefix]) => ipv6InCidr(value, base, prefix));
-  }
-  return false;
-}
-
-function normalizedHostname(url) {
-  return url.hostname.startsWith("[") && url.hostname.endsWith("]")
-    ? url.hostname.slice(1, -1)
-    : url.hostname;
-}
-
-async function abortableLookup(lookupImpl, hostname, signal) {
-  let onAbort;
-  const aborted = new Promise((_, reject) => {
-    onAbort = () => reject(new VerificationFailure("RPC request timed out"));
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-  try {
-    return await Promise.race([
-      lookupImpl(hostname, { all: true, verbatim: true }),
-      aborted,
-    ]);
-  } finally {
-    signal.removeEventListener("abort", onAbort);
-  }
-}
-
-async function resolvePublicEndpoint(url, lookupImpl, signal) {
-  const hostname = normalizedHostname(url);
-  const literalFamily = isIP(hostname);
-  let answers;
-  if (literalFamily) {
-    answers = [{ address: hostname, family: literalFamily }];
-  } else {
-    try {
-      answers = await abortableLookup(lookupImpl, hostname, signal);
-    } catch (error) {
-      if (error instanceof VerificationFailure) throw error;
-      throw new VerificationFailure(
-        `RPC hostname resolution failed: ${error.message}`,
-      );
-    }
-  }
-  if (!Array.isArray(answers) || answers.length === 0) {
-    throw new VerificationFailure(
-      "RPC hostname resolution returned no addresses",
-    );
-  }
-  for (const answer of answers) {
-    const family = isIP(answer?.address ?? "");
-    if (
-      (family !== 4 && family !== 6) ||
-      (answer.family !== undefined && Number(answer.family) !== family) ||
-      !isPublicAddress(answer.address)
-    ) {
-      throw new VerificationRefusal(
-        "RPC URL must resolve exclusively to public IP addresses",
-      );
-    }
-  }
-  return Object.freeze({
-    address: answers[0].address,
-    family: isIP(answers[0].address),
-  });
-}
-
-function pinnedLookup(endpoint) {
-  return (_hostname, options, callback) => {
-    if (options?.all) {
-      callback(null, [{ address: endpoint.address, family: endpoint.family }]);
-    } else {
-      callback(null, endpoint.address, endpoint.family);
-    }
-  };
-}
-
-function pinnedHttpsFetch(url, init) {
-  return new Promise((resolveResponse, reject) => {
-    const request = httpsRequest(url, {
-      method: init.method,
-      headers: init.headers,
-      signal: init.signal,
-      lookup: init.lookup,
-      // Never reuse a process-global socket that may predate validation.
-      agent: false,
-    });
-    request.on("response", (response) => {
-      const headers = new Headers();
-      for (const [name, value] of Object.entries(response.headers)) {
-        if (Array.isArray(value)) {
-          for (const item of value) headers.append(name, item);
-        } else if (value !== undefined) {
-          headers.set(name, value);
-        }
-      }
-      resolveResponse({
-        status: response.statusCode ?? 0,
-        ok:
-          response.statusCode !== undefined &&
-          response.statusCode >= 200 &&
-          response.statusCode < 300,
-        headers,
-        body: Readable.toWeb(response),
-      });
-    });
-    request.on("error", reject);
-    if (init.body) request.write(init.body);
-    request.end();
-  });
 }
 
 function parseFelt(value, label) {
@@ -374,88 +193,26 @@ export function validateCandidateRecord(record) {
   });
 }
 
-function responseTextFromChunks(chunks, total) {
-  const joined = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder("utf-8", { fatal: true }).decode(joined);
-}
-
-async function boundedResponseText(response, maximum) {
-  const declared = response.headers.get("content-length");
-  if (
-    declared !== null &&
-    (!/^\d+$/.test(declared) || Number(declared) > maximum)
-  ) {
-    throw new VerificationFailure(
-      "RPC response exceeds the response-size limit",
-    );
-  }
-  if (!response.body) throw new VerificationFailure("RPC response has no body");
-  const reader = response.body.getReader();
-  const chunks = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maximum) {
-        await reader.cancel();
-        throw new VerificationFailure(
-          "RPC response exceeds the response-size limit",
-        );
-      }
-      chunks.push(value);
-    }
-  } catch (error) {
-    if (error instanceof VerificationFailure) throw error;
-    throw new VerificationFailure(
-      `RPC response could not be read: ${error.message}`,
-    );
-  }
-  try {
-    return responseTextFromChunks(chunks, total);
-  } catch {
-    throw new VerificationFailure("RPC response is not valid UTF-8");
-  }
-}
-
-async function rpcRequest(rpcUrl, method, params, id, options) {
+async function rpcRequest(method, params, id, session) {
   let response;
   try {
-    response = await options.fetchImpl(rpcUrl, {
+    response = await session.request({
       method: "POST",
-      redirect: "manual",
-      signal: options.signal,
       headers: {
         "content-type": "application/json",
         accept: "application/json",
       },
       body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
-      // The default HTTPS transport consumes this callback. Supplying it to
-      // injected test transports also makes the connection pin observable.
-      lookup: options.lookup,
     });
   } catch (error) {
-    if (options.signal.aborted) {
-      throw new VerificationFailure("RPC request timed out");
-    }
-    throw new VerificationFailure(`RPC request failed: ${error.message}`);
-  }
-  if (response.status >= 300 && response.status < 400) {
-    throw new VerificationFailure("RPC redirect refused");
+    rethrowVerification(error);
   }
   if (!response.ok) {
     throw new VerificationFailure(`RPC returned HTTP ${response.status}`);
   }
-  const text = await boundedResponseText(response, options.maxResponseBytes);
   let body;
   try {
-    body = JSON.parse(text);
+    body = JSON.parse(response.text);
   } catch {
     throw new VerificationFailure("RPC response is not valid JSON");
   }
@@ -561,36 +318,22 @@ export async function verifyTokenIdentity(record, rpcUrlInput, options = {}) {
   const candidate = validateCandidateRecord(record);
   const rpcUrl = httpsUrl(rpcUrlInput, "RPC URL");
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxResponseBytes = options.maxResponseBytes ?? MAX_RESPONSE_BYTES;
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 1) {
-    throw new VerificationRefusal("timeout must be a positive integer");
-  }
-  if (!Number.isInteger(maxResponseBytes) || maxResponseBytes < 1) {
-    throw new VerificationRefusal(
-      "response-size limit must be a positive integer",
-    );
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const maxResponseBytes =
+    options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  let session;
   try {
-    const endpoint = await resolvePublicEndpoint(
-      rpcUrl,
-      options.lookupImpl ?? dnsLookup,
-      controller.signal,
-    );
-    const requestOptions = {
-      fetchImpl: options.fetchImpl ?? pinnedHttpsFetch,
-      signal: controller.signal,
+    session = await createEgressSession(rpcUrl, {
+      kind: "RPC",
+      timeoutMs,
       maxResponseBytes,
-      lookup: pinnedLookup(endpoint),
-    };
-    const actualChainId = await rpcRequest(
-      rpcUrl,
-      "starknet_chainId",
-      [],
-      1,
-      requestOptions,
-    );
+      lookupImpl: options.lookupImpl,
+      fetchImpl: options.fetchImpl,
+    });
+  } catch (error) {
+    rethrowVerification(error);
+  }
+  try {
+    const actualChainId = await rpcRequest("starknet_chainId", [], 1, session);
     if (
       parseFelt(actualChainId, "RPC chain id") !==
       parseFelt(candidate.chainId, "candidate chain id")
@@ -601,25 +344,22 @@ export async function verifyTokenIdentity(record, rpcUrlInput, options = {}) {
     }
 
     const symbolResult = await rpcRequest(
-      rpcUrl,
       "starknet_call",
       callParams(candidate.proposedAddress, SELECTORS.symbol),
       2,
-      requestOptions,
+      session,
     );
     const nameResult = await rpcRequest(
-      rpcUrl,
       "starknet_call",
       callParams(candidate.proposedAddress, SELECTORS.name),
       3,
-      requestOptions,
+      session,
     );
     const decimalsResult = await rpcRequest(
-      rpcUrl,
       "starknet_call",
       callParams(candidate.proposedAddress, SELECTORS.decimals),
       4,
-      requestOptions,
+      session,
     );
     const actual = Object.freeze({
       symbol: decodeTokenText(symbolResult, "symbol"),
@@ -659,7 +399,7 @@ export async function verifyTokenIdentity(record, rpcUrlInput, options = {}) {
       recordModified: false,
     });
   } finally {
-    clearTimeout(timer);
+    session.close();
   }
 }
 

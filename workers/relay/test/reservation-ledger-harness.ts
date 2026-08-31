@@ -1,5 +1,8 @@
 import type { MakerReservationV1 } from "@app20/private-intents";
-import { ReservationLedgerDurableObject } from "../src/reservation-ledger-do.ts";
+import {
+  ReservationLedgerDurableObject,
+  RESERVATION_LEDGER_STORAGE_WRITE_FAILED,
+} from "../src/reservation-ledger-do.ts";
 
 type Metadata = { revision: number; high_water: string };
 type RecordRow = {
@@ -17,15 +20,66 @@ type AttemptRow = {
   outcome_json: string | null;
 };
 
-/** Minimal in-memory SQLite behavior for exercising the actual DO class. */
+export type ReservationLedgerPersistedSnapshot = {
+  metadata: Metadata;
+  records: Map<string, RecordRow>;
+  attempts: Map<string, AttemptRow>;
+};
+
+function isSchemaQuery(query: string): boolean {
+  return (
+    query.startsWith("CREATE TABLE IF NOT EXISTS reservation_ledger_") ||
+    query.startsWith("INSERT OR IGNORE INTO reservation_ledger_metadata")
+  );
+}
+
+function isPersistedMutation(query: string): boolean {
+  return (
+    query.startsWith("INSERT INTO reservation_ledger_records") ||
+    query.startsWith("UPDATE reservation_ledger_metadata") ||
+    query.startsWith("INSERT INTO reservation_ledger_attempts") ||
+    query.startsWith("UPDATE reservation_ledger_attempts")
+  );
+}
+
+/**
+ * In-memory SQLite stand-in for the dormant reservation ledger Durable Object.
+ *
+ * `transactionSync` models atomic commit/rollback. It is not a no-op wrapper
+ * around the callback: a thrown write or conflict restores the pre-transaction
+ * snapshot, so a mid-transition failure cannot leak a partial fence, record, or
+ * attempt row.
+ *
+ * This is single-process evidence of Durable Object SQLite semantics inside one
+ * Cloudflare account (one administrative domain). It is not operator-controlled
+ * PITR, independently administered backup, or cross-region failover.
+ */
 export class ReservationLedgerTestSql {
   metadata: Metadata = { revision: 0, high_water: "0" };
   records = new Map<string, RecordRow>();
   attempts = new Map<string, AttemptRow>();
+  private mutationsUntilWriteFailure: number | null = null;
+
+  /**
+   * Fail the Nth subsequent persisted mutation (0 = the next write). Schema
+   * bootstrap statements are not counted; only reservation/attempt/metadata
+   * writes that participate in a ledger transition are.
+   */
+  failAfterSuccessfulMutations(count: number): void {
+    if (!Number.isSafeInteger(count) || count < 0) {
+      throw new Error(
+        "failAfterSuccessfulMutations count must be a non-negative integer.",
+      );
+    }
+    this.mutationsUntilWriteFailure = count;
+  }
 
   exec<T>(query: string, ...bindings: unknown[]): Iterable<T> & { one(): T } {
+    if (isPersistedMutation(query)) this.assertWritable();
     let output: unknown[] = [];
-    if (query.startsWith("SELECT revision, high_water")) {
+    if (isSchemaQuery(query)) {
+      output = [];
+    } else if (query.startsWith("SELECT revision, high_water")) {
       output = [this.metadata];
     } else if (
       query.startsWith("SELECT reservation_id, record_json") &&
@@ -78,6 +132,8 @@ export class ReservationLedgerTestSql {
         row.status = "completed";
         row.outcome_json = String(bindings[0]);
       }
+    } else {
+      throw new Error(`Unhandled reservation-ledger SQL: ${query}`);
     }
     const cursor = output as unknown as Iterable<T> & { one(): T };
     Object.defineProperty(cursor, "one", {
@@ -86,11 +142,7 @@ export class ReservationLedgerTestSql {
     return cursor;
   }
 
-  snapshot(): {
-    metadata: Metadata;
-    records: Map<string, RecordRow>;
-    attempts: Map<string, AttemptRow>;
-  } {
+  snapshot(): ReservationLedgerPersistedSnapshot {
     return {
       metadata: { ...this.metadata },
       records: new Map(
@@ -102,10 +154,23 @@ export class ReservationLedgerTestSql {
     };
   }
 
-  restore(snapshot: ReturnType<ReservationLedgerTestSql["snapshot"]>): void {
-    this.metadata = snapshot.metadata;
-    this.records = snapshot.records;
-    this.attempts = snapshot.attempts;
+  restore(snapshot: ReservationLedgerPersistedSnapshot): void {
+    this.metadata = { ...snapshot.metadata };
+    this.records = new Map(
+      [...snapshot.records].map(([key, row]) => [key, { ...row }]),
+    );
+    this.attempts = new Map(
+      [...snapshot.attempts].map(([key, row]) => [key, { ...row }]),
+    );
+  }
+
+  private assertWritable(): void {
+    if (this.mutationsUntilWriteFailure === null) return;
+    if (this.mutationsUntilWriteFailure === 0) {
+      this.mutationsUntilWriteFailure = null;
+      throw new Error(RESERVATION_LEDGER_STORAGE_WRITE_FAILED);
+    }
+    this.mutationsUntilWriteFailure -= 1;
   }
 }
 
@@ -115,15 +180,24 @@ export function createReservationLedgerHarness(
   sql: ReservationLedgerTestSql;
   target: ReservationLedgerDurableObject;
 } {
+  let transactionDepth = 0;
   const storage = {
     sql,
     transactionSync: <T>(callback: () => T): T => {
+      if (transactionDepth !== 0) {
+        throw new Error(
+          "Reservation ledger storage does not nest transactionSync.",
+        );
+      }
+      transactionDepth += 1;
       const before = sql.snapshot();
       try {
         return callback();
       } catch (error) {
         sql.restore(before);
         throw error;
+      } finally {
+        transactionDepth -= 1;
       }
     },
   };
@@ -136,4 +210,16 @@ export function createReservationLedgerHarness(
     sql,
     target: new ReservationLedgerDurableObject(state),
   };
+}
+
+/**
+ * Crash/failover restart: a new Durable Object instance is constructed from a
+ * copy of persisted SQLite rows, not from the live in-memory object identity.
+ */
+export function restartReservationLedgerHarness(
+  source: ReservationLedgerTestSql,
+): ReturnType<typeof createReservationLedgerHarness> {
+  const sql = new ReservationLedgerTestSql();
+  sql.restore(source.snapshot());
+  return createReservationLedgerHarness(sql);
 }
