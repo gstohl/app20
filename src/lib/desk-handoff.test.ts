@@ -131,3 +131,51 @@ describe("private desk session handoff", () => {
     ).toBeNull();
   });
 });
+
+describe("invoice desk handoff", () => {
+  const requestId = `0x${"ab".repeat(32)}`;
+  const handoff = {
+    requestId: requestId.toUpperCase().replace("0X", "0x"),
+    payee: "0xb0b",
+    buyToken: "0x5",
+    targetBuyBaseUnits: "100000000",
+    memo: "  invoice 7  ",
+    returnTo: "/mail/inbox",
+  };
+
+  it("stores normalized invoice terms and consumes them once for the same scope", async () => {
+    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import("./desk-handoff");
+    const storage = makeStorage();
+    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
+    const consumed = consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 2_000);
+    expect(consumed).toEqual({
+      requestId,
+      payee: "0x0000000000000000000000000000000000000000000000000000000000000b0b",
+      buyToken: "0x0000000000000000000000000000000000000000000000000000000000000005",
+      targetBuyBaseUnits: "100000000",
+      memo: "invoice 7",
+      returnTo: "/mail/inbox",
+    });
+    expect(consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 2_000)).toBeNull();
+  });
+
+  it("rejects other scopes, expiry, and malformed terms", async () => {
+    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import("./desk-handoff");
+    const storage = makeStorage();
+    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
+    expect(consumeInvoiceDeskHandoff(storage, { account: "0xb0b", chainId: CHAIN }, 2_000)).toBeNull();
+    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
+    expect(consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 1_000 + 5 * 60_000 + 1)).toBeNull();
+    for (const bad of [
+      { ...handoff, requestId: "0x12" },
+      { ...handoff, targetBuyBaseUnits: "0" },
+      { ...handoff, targetBuyBaseUnits: "1.5" },
+      { ...handoff, returnTo: "https://evil.invalid/" },
+      { ...handoff, returnTo: "//evil.invalid/" },
+      { ...handoff, payee: "not-an-address" },
+      { ...handoff, memo: "x".repeat(513) },
+    ]) {
+      expect(() => storeInvoiceDeskHandoff(storage, bad, { account: ALICE, chainId: CHAIN }, 1_000)).toThrow();
+    }
+  });
+});
