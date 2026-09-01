@@ -134,6 +134,14 @@ import {
   makerFillAttemptTarget,
   retryPersistedMakerFill,
 } from "./localnet-maker-fill-recovery";
+import {
+  assertRfqQuoteScopeMatches,
+  RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
+  rfqQuoteScopeMatches,
+  RfqQuoteScopeInvalidatedError,
+  type CurrentRfqQuoteScope,
+  type RfqQuoteRequestScope,
+} from "./rfq-quote-scope";
 
 function consumeAccountScopedQuoteNonce(
   account: string,
@@ -242,6 +250,11 @@ type InvitationReview = Readonly<{
 }>;
 
 type FlowPhase = "quote" | "lock" | "fill" | "claim" | "expire" | "refund";
+
+type ActiveQuoteRequest = Readonly<{
+  token: symbol;
+  scope: RfqQuoteRequestScope;
+}>;
 
 type FlowState =
   | { kind: "idle" }
@@ -385,6 +398,13 @@ export default function LocalnetPrivateIntentDesk({
   const quoteComparisonRef = useRef<HTMLElement>(null);
   const finalReviewRef = useRef<HTMLElement>(null);
   const quoteFocusPendingRef = useRef(false);
+  const quoteScopeRef = useRef<CurrentRfqQuoteScope>({
+    account: address,
+    chainId: chain,
+    providerIndex,
+  });
+  quoteScopeRef.current = { account: address, chainId: chain, providerIndex };
+  const activeQuoteRequestRef = useRef<ActiveQuoteRequest | null>(null);
   const [preflightObservedAt] = useState(() => Math.floor(Date.now() / 1_000));
   const [preflightNow, setPreflightNow] = useState(preflightObservedAt);
   const working = flow.kind === "working";
@@ -488,8 +508,27 @@ export default function LocalnetPrivateIntentDesk({
   }, [initialPairId]);
 
   useEffect(() => {
+    const activeRequest = activeQuoteRequestRef.current;
+    const scopeInvalidated = Boolean(
+      activeRequest &&
+        !rfqQuoteScopeMatches(activeRequest.scope, quoteScopeRef.current),
+    );
+    if (scopeInvalidated) activeQuoteRequestRef.current = null;
     invalidateQuote();
+    if (scopeInvalidated) {
+      setFlow({
+        kind: "error",
+        message: RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
+      });
+    }
   }, [address, chain, providerIndex]);
+
+  useEffect(
+    () => () => {
+      activeQuoteRequestRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!requotePending || requestBlockedReason) return;
@@ -548,14 +587,30 @@ export default function LocalnetPrivateIntentDesk({
     });
   }
 
-  async function persistLifecycle(record: RfqLifecycleRecord) {
+  function assertActiveQuoteRequest(request: ActiveQuoteRequest) {
+    if (activeQuoteRequestRef.current?.token !== request.token)
+      throw new RfqQuoteScopeInvalidatedError();
+    assertRfqQuoteScopeMatches(request.scope, quoteScopeRef.current);
+  }
+
+  async function persistLifecycle(
+    record: RfqLifecycleRecord,
+    quoteRequest?: ActiveQuoteRequest,
+  ) {
+    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
     await createIndexedDbRfqStorage().save(record);
+    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
     setLifecycleRecord(record);
     onLifecycleRecord?.(record);
   }
 
-  const authorizeLifecycle = async (record: RfqLifecycleRecord) => {
+  const authorizeLifecycle = async (
+    record: RfqLifecycleRecord,
+    quoteRequest?: ActiveQuoteRequest,
+  ) => {
+    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
     const authorized = await createIndexedDbRfqStorage().authorize(record);
+    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
     setLifecycleRecord(authorized);
     onLifecycleRecord?.(authorized);
     return authorized;
@@ -563,6 +618,7 @@ export default function LocalnetPrivateIntentDesk({
 
   async function releasePreFundingRecord(
     record: RfqLifecycleRecord,
+    quoteRequest?: ActiveQuoteRequest,
   ): Promise<RfqLifecycleRecord> {
     const started = snapshotLocalnetRecoveryContext(record);
     const pending = preparePreFundingReservationRelease(
@@ -570,17 +626,19 @@ export default function LocalnetPrivateIntentDesk({
       createLocalnetIntentId(),
       Math.floor(Date.now() / 1_000),
     );
-    await persistLifecycle(pending);
+    await persistLifecycle(pending, quoteRequest);
     return reconcilePersistedReservationRelease(pending, {
       releaseRequestReservations: releaseLocalnetRfqReservations,
       expireFundedSettlement: expireLocalnetPrivateIntent,
       persist: async (next) => {
-        await persistLifecycle(next);
+        await persistLifecycle(next, quoteRequest);
         return next;
       },
-      authorize: authorizeLifecycle,
-      beforeSubmit: () =>
-        assertLocalnetRecoveryContextUnchanged(started, record),
+      authorize: (next) => authorizeLifecycle(next, quoteRequest),
+      beforeSubmit: () => {
+        if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
+        assertLocalnetRecoveryContextUnchanged(started, record);
+      },
       now: () => Math.floor(Date.now() / 1_000),
     });
   }
@@ -660,6 +718,22 @@ export default function LocalnetPrivateIntentDesk({
   async function buildQuote() {
     let offers: readonly LocalnetSolverOffer[] = [];
     let requestingRecord: RfqLifecycleRecord | null = null;
+    if (!address || !chain) {
+      setFlow({
+        kind: "error",
+        message: "The connected wallet context is unavailable.",
+      });
+      return;
+    }
+    const quoteRequest: ActiveQuoteRequest = Object.freeze({
+      token: Symbol("rfq-quote-request"),
+      scope: Object.freeze({
+        account: address,
+        chainId: chain,
+        providerIndex,
+      }),
+    });
+    activeQuoteRequestRef.current = quoteRequest;
     setFlow({
       kind: "working",
       phase: "quote",
@@ -787,11 +861,10 @@ export default function LocalnetPrivateIntentDesk({
         expiresAt: invitationReview.expiresAt,
       };
       const intentDigest = await digestPrivateSwapIntent(intent);
-      if (!address || !chain)
-        throw new Error("The connected wallet context is unavailable.");
+      assertActiveQuoteRequest(quoteRequest);
       const draftRecord = createRfqLifecycleRecord({
-        chainId: chain,
-        account: address,
+        chainId: quoteRequest.scope.chainId,
+        account: quoteRequest.scope.account,
         rfqId: intent.intentId,
         now,
         requestDigest: intentDigest,
@@ -809,8 +882,8 @@ export default function LocalnetPrivateIntentDesk({
         },
       });
       requestingRecord = transitionRfqLifecycle(draftRecord, "requesting", now);
-      await persistLifecycle(requestingRecord);
-      const quoteRequest = await requestLocalnetSolverQuotes({
+      await persistLifecycle(requestingRecord, quoteRequest);
+      const quoteResponse = await requestLocalnetSolverQuotes({
         account: draftRecord.account,
         chainId: draftRecord.chainId,
         rfqId: draftRecord.rfqId,
@@ -829,8 +902,9 @@ export default function LocalnetPrivateIntentDesk({
           binding: invitationReview.cohortBinding,
         },
       });
-      offers = quoteRequest.offers;
-      setLatestCohort(quoteRequest.cohort);
+      assertActiveQuoteRequest(quoteRequest);
+      offers = quoteResponse.offers;
+      setLatestCohort(quoteResponse.cohort);
       if (offers.length === 0)
         throw new Error("No private maker inventory can cover this RFQ.");
       const signedQuotes: SolverQuote[] = [];
@@ -916,13 +990,14 @@ export default function LocalnetPrivateIntentDesk({
           reservationExpiresAt: selectedQuote.reservationExpiresAt,
         },
       );
-      await persistLifecycle(quotedRecord);
+      await persistLifecycle(quotedRecord, quoteRequest);
+      assertActiveQuoteRequest(quoteRequest);
       quoteFocusPendingRef.current = true;
       setQuoted({
         intent,
         quote: selectedQuote,
         quotes: signedQuotes,
-        cohort: quoteRequest.cohort,
+        cohort: quoteResponse.cohort,
         directory: Object.freeze({
           epoch: invitationReview.directoryEpoch,
           checkpoint: invitationReview.directoryCheckpoint,
@@ -934,12 +1009,29 @@ export default function LocalnetPrivateIntentDesk({
       });
       setReviewing(false);
       setFlow({ kind: "idle" });
+      if (activeQuoteRequestRef.current?.token === quoteRequest.token)
+        activeQuoteRequestRef.current = null;
     } catch (error: unknown) {
-      if (requestingRecord?.state === "requesting") {
-        await releasePreFundingRecord(requestingRecord).catch(() => undefined);
+      const scopeInvalidated =
+        error instanceof RfqQuoteScopeInvalidatedError ||
+        !rfqQuoteScopeMatches(quoteRequest.scope, quoteScopeRef.current) ||
+        activeQuoteRequestRef.current?.token !== quoteRequest.token;
+      if (!scopeInvalidated && requestingRecord?.state === "requesting") {
+        await releasePreFundingRecord(requestingRecord, quoteRequest).catch(
+          () => undefined,
+        );
       }
-      const message = errorMessage(error);
-      const refused = isInventoryRefusal(message);
+      const stillCurrent =
+        activeQuoteRequestRef.current?.token === quoteRequest.token;
+      const nowInvalidated =
+        scopeInvalidated ||
+        !rfqQuoteScopeMatches(quoteRequest.scope, quoteScopeRef.current);
+      if (stillCurrent) activeQuoteRequestRef.current = null;
+      if (!stillCurrent) return;
+      const message = nowInvalidated
+        ? RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE
+        : errorMessage(error);
+      const refused = !nowInvalidated && isInventoryRefusal(message);
       setQuoted(null);
       setFlow(
         refused ? { kind: "refused", message } : { kind: "error", message },

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useActiveStarknetSession } from "@/app/active-session";
 import { storeDeskHandoff } from "@/lib/desk-handoff";
+import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
@@ -280,8 +281,9 @@ export default function ContactsPage() {
         running in this browser profile can still read an unlocked book. For
         cross-device recovery, Mailbox can post a self-addressed encrypted
         snapshot: connect the same wallet and restore the mailbox recovery
-        phrase. Wallet possession alone cannot decrypt it. On-chain ciphertext,
-        size, timing, and helper activity remain public and cannot be deleted.
+        phrase. Wallet possession alone cannot decrypt it. {" "}
+        {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} On-chain ciphertext, size,
+        timing, and helper activity remain public and cannot be deleted.
       </p>
     </main>
   );

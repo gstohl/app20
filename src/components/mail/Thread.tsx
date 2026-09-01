@@ -7,6 +7,7 @@ import {
 } from "@/lib/composite";
 import type { DecodedMail } from "@/lib/envelope";
 import type { EncryptedMailRecord } from "@/lib/mail";
+import { MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE } from "@/lib/mail-authority-copy";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
 import type { AliasRecord } from "@/lib/aliases";
 import { findAliasByAddress } from "@/lib/aliases";
@@ -776,7 +777,7 @@ export default function Thread({
                 {paymentLink ? (
                   <p className={styles.actionWarning} role="status">
                     {message.linkAuthenticity?.kind === "verified"
-                      ? "This request's Mail signature was verified from the URL fragment and covers its exact terms. Confirm that the displayed Mail key belongs to the requester. It is not a MessagePosted event, and opening or importing it did not submit a payment."
+                      ? `${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE} This request came from a URL fragment, not a MessagePosted event, and opening or importing it did not submit a payment.`
                       : "This unverified legacy request was imported from a URL fragment for local review. It is not a MessagePosted event, cannot authenticate the requester, and opening or importing it did not submit a payment."}
                   </p>
                 ) : null}

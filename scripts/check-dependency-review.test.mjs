@@ -2,10 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   compareSbomBytes,
+  compareThirdPartyNoticesBytes,
   isReviewedResolvedSource,
+  reviewLicensePolicy,
   reviewLockfile,
 } from "./check-dependency-review.mjs";
-import { generateSbom, serializeSbom } from "./generate-sbom.mjs";
+import {
+  UNKNOWN_LICENSE,
+  generateSbom,
+  serializeSbom,
+} from "./generate-sbom.mjs";
+import { serializeThirdPartyNotices } from "./generate-third-party-notices.mjs";
 
 function lockfile() {
   return {
@@ -26,16 +33,19 @@ function lockfile() {
         version: "1.0.0",
         resolved: "https://registry.npmjs.org/alpha/-/alpha-1.0.0.tgz",
         integrity: `sha512-${Buffer.alloc(64, 1).toString("base64")}`,
+        license: "MIT",
       },
       "node_modules/alpha/node_modules/beta": {
         version: "2.0.0",
         resolved: "https://registry.npmjs.org/beta/-/beta-2.0.0.tgz",
         integrity: `sha256-${Buffer.alloc(32, 2).toString("base64")}`,
+        license: "Apache-2.0",
       },
       "node_modules/dependent/node_modules/alpha": {
         version: "0.9.0",
         resolved: "https://registry.npmjs.org/alpha/-/alpha-0.9.0.tgz",
         integrity: `sha512-${Buffer.alloc(64, 4).toString("base64")}`,
+        license: "MIT OR Apache-2.0",
       },
       "node_modules/alpha-alias": {
         name: "real-alpha",
@@ -43,11 +53,13 @@ function lockfile() {
         resolved:
           "https://registry.npmjs.org/real-alpha/-/real-alpha-4.0.0.tgz",
         integrity: `sha512-${Buffer.alloc(64, 5).toString("base64")}`,
+        license: "SEE LICENSE IN LICENSE.md",
       },
       "node_modules/gamma": {
         version: "3.0.0",
         resolved: "https://registry.npmjs.org/gamma/-/gamma-3.0.0.tgz",
         integrity: `sha384-${Buffer.alloc(48, 3).toString("base64")}`,
+        license: "ISC",
         dev: true,
       },
       "node_modules/@app20/local": {
@@ -190,6 +202,11 @@ test("SBOM generation is byte-stable and records required dependency classificat
   assert.equal(property(beta, "app20:dependencyRelationship"), "transitive");
   assert.equal(property(beta, "app20:dependencyScope"), "runtime");
   assert.equal(property(gamma, "app20:dependencyScope"), "development");
+  assert.deepEqual(alpha.licenses, [{ license: { id: "MIT" } }]);
+  assert.deepEqual(oldAlpha.licenses, [{ expression: "MIT OR Apache-2.0" }]);
+  assert.deepEqual(aliasedAlpha.licenses, [
+    { license: { name: "SEE LICENSE IN LICENSE.md" } },
+  ]);
   assert.equal(alpha.hashes[0].alg, "SHA-512");
   assert.equal(
     property(alpha, "app20:resolvedRegistry"),
@@ -201,11 +218,95 @@ test("SBOM generation is byte-stable and records required dependency classificat
   );
 });
 
-test("pure SBOM byte comparison detects drift", () => {
+test("license policy rejects drift and bounds known unknowns", () => {
+  const reviewedLockfile = lockfile();
+  const baseline = {
+    schemaVersion: 1,
+    licenses: Object.fromEntries(
+      generateSbom(reviewedLockfile).components.map((component) => [
+        component.purl,
+        component.licenses[0].expression ??
+          component.licenses[0].license.id ??
+          component.licenses[0].license.name,
+      ]),
+    ),
+  };
+  const exceptions = { schemaVersion: 1, knownUnknownLicenses: [] };
+  assert.deepEqual(
+    reviewLicensePolicy(reviewedLockfile, baseline, exceptions),
+    [],
+  );
+
+  const changed = structuredClone(reviewedLockfile);
+  changed.packages["node_modules/alpha"].license = "ISC";
+  assert.match(
+    reviewLicensePolicy(changed, baseline, exceptions).join("\n"),
+    /license changed from MIT to ISC/,
+  );
+
+  const unknown = structuredClone(reviewedLockfile);
+  delete unknown.packages["node_modules/alpha"].license;
+  const unknownBaseline = structuredClone(baseline);
+  unknownBaseline.licenses["pkg:npm/alpha@1.0.0"] = UNKNOWN_LICENSE;
+  assert.match(
+    reviewLicensePolicy(unknown, unknownBaseline, exceptions).join("\n"),
+    /unreviewed unknown license/,
+  );
+
+  const bounded = {
+    schemaVersion: 1,
+    knownUnknownLicenses: [
+      {
+        purl: "pkg:npm/alpha@1.0.0",
+        reason: "Published metadata omits a license declaration.",
+        resolution: "Replace the package or obtain release-specific proof.",
+      },
+    ],
+  };
+  assert.deepEqual(reviewLicensePolicy(unknown, unknownBaseline, bounded), []);
+  assert.match(
+    reviewLicensePolicy(reviewedLockfile, baseline, bounded).join("\n"),
+    /exception is stale.*declares MIT/,
+  );
+});
+
+test("generated deployable notices cover every redistributed OFL font", () => {
+  const fontLockfile = {
+    packages: Object.fromEntries(
+      [
+        "@fontsource-variable/newsreader",
+        "@fontsource-variable/source-sans-3",
+        "@fontsource/ibm-plex-mono",
+      ].map((name) => [
+        `node_modules/${name}`,
+        { version: "5.3.0", license: "OFL-1.1" },
+      ]),
+    ),
+  };
+  const notices = serializeThirdPartyNotices(fontLockfile);
+  assert.match(notices, /@fontsource-variable\/newsreader@5\.3\.0/);
+  assert.match(notices, /@fontsource-variable\/source-sans-3@5\.3\.0/);
+  assert.match(notices, /@fontsource\/ibm-plex-mono@5\.3\.0/);
+  assert.match(notices, /SIL OPEN FONT LICENSE Version 1\.1/);
+
+  fontLockfile.packages["node_modules/@fontsource/ibm-plex-mono"].version =
+    "5.4.0";
+  assert.throws(
+    () => serializeThirdPartyNotices(fontLockfile),
+    /must be reviewed before regenerating notices/,
+  );
+});
+
+test("committed artifact byte comparisons detect drift", () => {
   const generated = serializeSbom(lockfile());
   assert.deepEqual(compareSbomBytes(generated, generated), []);
   assert.match(
     compareSbomBytes(`${generated} `, generated).join("\n"),
     /does not byte-match/,
+  );
+  assert.deepEqual(compareThirdPartyNoticesBytes("notice", "notice"), []);
+  assert.match(
+    compareThirdPartyNoticesBytes("notice ", "notice").join("\n"),
+    /notices do not byte-match/,
   );
 });

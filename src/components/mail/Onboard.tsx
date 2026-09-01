@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
+import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import {
   inspectMailVault,
   persistPlaintextSeed,
@@ -368,11 +369,14 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       <p className={styles.finePrint}>
         <strong>You choose the device risk.</strong> Default stores the raw
         32-byte mailbox seed in this browser profile. Anyone with this profile
-        can read retained mail. Optional passphrase wrap encrypts that seed at
-        rest; Mail then cannot open the mailbox until you unlock this session. A
-        wallet signature cannot be the wrap key — Ready signatures are not a
-        stable secret. The eight-group backup is still the only recovery if you
-        forget the passphrase or clear this profile.
+        can read your Mail correspondence and create payment requests that
+        display as verified from you. Optional passphrase wrap encrypts that
+        seed at rest; Mail then cannot open the mailbox or use its signing key
+        until you unlock this session. A wallet signature cannot be the wrap key
+        — Ready signatures are not a stable secret. The eight-group backup is
+        still the only recovery if you forget the passphrase or clear this
+        profile, and APP20 currently cannot revoke the Mail key if that backup
+        is compromised.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
@@ -465,9 +469,9 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           <strong>Back up now — this phrase is shown once</strong>
           <code>{backupPhrase}</code>
           <p>
-            Anyone with this phrase can read mail encrypted to this key. Store
-            it offline; Mail does not upload it. If you chose a passphrase, this
-            backup is still required when you forget it.
+            {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} Store it secret and offline;
+            Mail does not upload it. If you chose a passphrase, this backup is
+            still required when you forget it.
           </p>
           <button
             className={styles.secondaryButton}
@@ -512,7 +516,10 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             />
             <small>
               Paste exactly eight groups of eight hexadecimal characters. Choose
-              plaintext or passphrase wrap above before restoring.
+              plaintext or passphrase wrap above before restoring. Whoever has
+              this value can read your Mail correspondence and create payment
+              requests that display as verified from you; APP20 currently cannot
+              revoke the key if it is compromised.
             </small>
           </label>
           {restoreNeedsConfirmation ? (

@@ -8,6 +8,10 @@ import InvoiceCard from "@/components/mail/InvoiceCard";
 import styles from "@/components/mail/mail.module.css";
 import { deriveKeypair } from "@/lib/mail";
 import {
+  MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE,
+  MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE,
+} from "@/lib/mail-authority-copy";
+import {
   inspectMailVault,
   unwrapMailSeed,
   type MailVaultKind,
@@ -274,7 +278,7 @@ export default function PayPage() {
           <p>
             {hasFragment
               ? "APP20 verifies signed request terms in your browser. Legacy unsigned links remain visibly unverified. The URL fragment is not sent in an HTTP request."
-              : "Create a Mail-signed STRK request without sending mail or touching the pool. The recipient address, amount, memo, expiry, and signer identity are visible to anyone who receives the link."}
+              : "Create a Mail-signed STRK request without sending mail or touching the pool. The recipient address, amount, memo, expiry, and Mail signing keys are visible to anyone who receives the link."}
           </p>
         </header>
 
@@ -291,7 +295,7 @@ export default function PayPage() {
               </p>
               <h2 id="payment-link-title" className={styles.cardTitle}>
                 {linkAuthenticity.kind === "verified"
-                  ? "Verified signed invoice"
+                  ? "Mail-key signature verified — person not verified"
                   : "Unsigned invoice — requester not verified"}
               </h2>
               <p
@@ -303,7 +307,7 @@ export default function PayPage() {
                 role="status"
               >
                 {linkAuthenticity.kind === "verified"
-                  ? "The request's Mail signature is valid and covers its asset, exact amount, recipient, memo, expiry, and network. Confirm the displayed Mail identity belongs to the requester if you do not already know it."
+                  ? MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE
                   : "Unverified legacy link: its checksum detects accidental damage but does not stop anyone from rewriting the terms. Verify every term with the requester through another channel."}
               </p>
               <p className={styles.notice} role="status">
@@ -392,6 +396,9 @@ export default function PayPage() {
             </h2>
             <p className={styles.notice} role="status">
               {creatorReadiness}
+            </p>
+            <p className={styles.actionWarning} role="status">
+              {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
             </p>
             {isConnected && !isStrk20Capable && strk20Capability ? (
               <Strk20CapabilityDiagnostic capability={strk20Capability} />

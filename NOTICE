@@ -1,3 +1,9 @@
+APP20's deployable static artifact includes THIRD_PARTY_NOTICES.txt. That
+generated file contains the copyright notices and SIL Open Font License 1.1
+terms for the redistributed Newsreader, Source Sans 3, and IBM Plex Mono font
+binaries. Its package versions and license declarations are checked against
+package-lock.json during dependency review.
+
 APP20 includes source and assets adapted from the STRK20 Starter Kit
 (https://github.com/Akashneelesh/strk20-starter-kit), which was bootstrapped
 from PhilippeR26/Starknet-WalletAccount.

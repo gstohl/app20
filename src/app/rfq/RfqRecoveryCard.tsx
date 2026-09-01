@@ -15,7 +15,7 @@ const RECOVERY: Readonly<Partial<Record<WorkspaceLoadState, Recovery>>> =
       detail:
         "This browser refused the local database, so past requests cannot be listed. Nothing on the local chain changed and no maker reservation was touched.",
       context:
-        "Private windows, cleared site data, and blocked storage all cause this. Reload after allowing site data, or continue with a new request.",
+        "Private windows, cleared site data, and blocked storage all cause this. New requests stay blocked until saved-history and unresolved-deal checks succeed. Allow site data, then retry the read or reload this page.",
       retryLabel: "Retry read",
     },
     "local-deal-read-failed": {

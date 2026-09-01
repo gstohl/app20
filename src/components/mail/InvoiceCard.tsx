@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { canonicalizeStarknetAddress } from "@/lib/addresses";
+import { MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE } from "@/lib/mail-authority-copy";
 import {
   formatBaseUnits,
   hasConsistentTokenMetadata,
@@ -202,7 +203,7 @@ export default function InvoiceCard({
           </span>
         </h3>
         {mailSignatureVerified ? (
-          <span className={styles.proofStamp}>Mail signature verified</span>
+          <span className={styles.proofStamp}>Mail key signature verified</span>
         ) : unverifiedClaim || (status === "paid" && !paymentVerified) ? (
           <span className={styles.proofStamp}>
             Unverified counterparty claim
@@ -213,7 +214,7 @@ export default function InvoiceCard({
       </div>
       <p className={styles.termsSentence}>
         {mailSignatureVerified
-          ? "This Mail-signed request asks for "
+          ? "This Mail-key-signed request asks for "
           : "This unsigned message requests "}
         <strong>
           {amount} <bdi>{token.symbol}</bdi>
@@ -238,7 +239,7 @@ export default function InvoiceCard({
         ) : null}
         <span>
           {mailSignatureVerified
-            ? `The Mail signature protects this address and every displayed term from changes. Signer ${signerFingerprint}; confirm that signing key belongs to the requester if it is not already known.`
+            ? `The valid signature covers this address and every displayed term. Displayed Mail key ${signerFingerprint}.`
             : "Unverified: anyone can rewrite this address and issue a new checksum. Verify it out-of-band before paying."}
         </span>
         {linkAuthenticity.kind === "verified" ? (
@@ -246,12 +247,18 @@ export default function InvoiceCard({
             <strong>Verified Mail signing key</strong>
             <code>{linkAuthenticity.authPublicKey}</code>
             <span>
-              This exact key produced the valid signature. Its signed mailbox
-              identity claim is {linkAuthenticity.mailboxPublicKey}.
+              This exact key produced the valid signature. The message also
+              claims mailbox encryption key {linkAuthenticity.mailboxPublicKey};
+              neither key proves a person or wallet identity.
             </span>
           </>
         ) : null}
       </div>
+      {mailSignatureVerified ? (
+        <p className={styles.actionWarning} role="status">
+          {MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE}
+        </p>
+      ) : null}
       <p className={styles.riskCopy}>
         <strong>
           {amount} <bdi>{token.symbol}</bdi> moves now, privately.
@@ -321,7 +328,7 @@ export default function InvoiceCard({
           </button>
           <span>
             {mailSignatureVerified
-              ? `The verified Mail signature covers every invoice field shown here and binds the request to ${requestNetwork}. It does not by itself prove that the Mail key controls the requester wallet.`
+              ? `The valid Mail-key signature covers every invoice field shown here and binds the request to ${requestNetwork}. ${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE}`
               : `This legacy link is bound to ${requestNetwork} but is not authenticated. Anyone can change its terms and recompute its checksum; verify the full requester address out-of-band.`}
           </span>
         </div>

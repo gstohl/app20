@@ -4,6 +4,10 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  generateThirdPartyNoticesFile,
+  serializeThirdPartyNotices,
+} from "./generate-third-party-notices.mjs";
 
 export const DEFAULT_LOCKFILE_PATH = "package-lock.json";
 export const DEFAULT_SBOM_PATH = "docs/evidence/app20-sbom.cdx.json";
@@ -94,6 +98,24 @@ export function resolvedPackageName(path, entry) {
     : packageNameFromPath(path);
 }
 
+export const UNKNOWN_LICENSE = "NOASSERTION";
+
+export function declaredLicense(entry) {
+  return typeof entry?.license === "string" && entry.license.trim() !== ""
+    ? entry.license.trim()
+    : UNKNOWN_LICENSE;
+}
+
+export function cycloneDxLicenses(license) {
+  if (license === UNKNOWN_LICENSE || license.startsWith("SEE LICENSE IN ")) {
+    return [{ license: { name: license } }];
+  }
+  if (/\s(?:AND|OR|WITH)\s|[()]/.test(license)) {
+    return [{ expression: license }];
+  }
+  return [{ license: { id: license } }];
+}
+
 function rootComponent(lockfile) {
   const root = lockfile.packages?.[""] ?? {};
   const name = root.name ?? lockfile.name;
@@ -126,15 +148,17 @@ export function generateSbom(lockfile) {
     }
     const integrity = parseIntegrity(entry.integrity);
     const purl = npmPurl(name, entry.version);
+    const license = declaredLicense(entry);
     const developmentOnly = entry.dev === true || entry.devOptional === true;
     const existing = merged.get(purl);
     if (
       existing &&
       (existing.integrity.source !== integrity.source ||
-        existing.resolved !== entry.resolved)
+        existing.resolved !== entry.resolved ||
+        existing.license !== license)
     ) {
       throw new Error(
-        `${purl} has inconsistent lockfile sources or integrity hashes.`,
+        `${purl} has inconsistent lockfile sources, integrity hashes, or license declarations.`,
       );
     }
     if (existing) {
@@ -149,6 +173,7 @@ export function generateSbom(lockfile) {
       purl,
       integrity,
       resolved: entry.resolved,
+      license,
       direct,
       runtime: !developmentOnly,
       paths: [path],
@@ -166,6 +191,7 @@ export function generateSbom(lockfile) {
       version: dependency.version,
       purl: dependency.purl,
       scope: dependency.runtime ? "required" : "excluded",
+      licenses: cycloneDxLicenses(dependency.license),
       hashes: [
         {
           alg: dependency.integrity.algorithm,
@@ -233,12 +259,15 @@ export async function generateSbomFile(
   const lockfile = JSON.parse(await readFile(lockfilePath, "utf8"));
   const sbom = generateSbom(lockfile);
   const serialized = `${JSON.stringify(sbom, null, 2)}\n`;
+  serializeThirdPartyNotices(lockfile);
   await writeFile(outputPath, serialized, "utf8");
+  const notices = await generateThirdPartyNoticesFile(lockfile);
   return {
     outputPath,
     bytes: Buffer.byteLength(serialized),
     components: sbom.components.length,
     sha256: createHash("sha256").update(serialized).digest("hex"),
+    notices,
   };
 }
 
@@ -253,5 +282,8 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
   const result = await generateSbomFile(lockfilePath, outputPath);
   console.log(
     `CycloneDX 1.5 SBOM: wrote ${result.components} components (${result.bytes} bytes, sha256 ${result.sha256}) to ${result.outputPath}`,
+  );
+  console.log(
+    `Third-party notices: wrote ${result.notices.packages} redistributed packages (${result.notices.bytes} bytes) to ${result.notices.outputPath}`,
   );
 }

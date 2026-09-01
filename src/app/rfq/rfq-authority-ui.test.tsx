@@ -293,6 +293,10 @@ describe("storage recovery", () => {
     expect(markup).toContain("Saved RFQ history could not be opened");
     expect(markup).toContain("Retry read");
     expect(markup).toContain("no maker reservation was touched");
+    expect(markup).toContain(
+      "New requests stay blocked until saved-history and unresolved-deal checks succeed",
+    );
+    expect(markup).not.toContain("continue with a new request");
   });
 
   it("asks for the bound wallet instead of failing silently offline", () => {

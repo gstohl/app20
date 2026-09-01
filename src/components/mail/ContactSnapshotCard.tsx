@@ -1,3 +1,4 @@
+import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import styles from "./mail.module.css";
 
 type ContactSnapshotCardProps = {
@@ -26,8 +27,9 @@ export default function ContactSnapshotCard({
       </p>
       <p className={styles.riskCopy}>
         Connect the same wallet and restore the mailbox recovery phrase first.
-        The wallet identifies the mailbox; it cannot decrypt contacts by itself.
-        Mail is evidence and storage, never settlement authority.
+        The wallet identifies the mailbox; it cannot decrypt contacts by itself. {" "}
+        {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} Mail is evidence and storage,
+        never settlement authority.
       </p>
       {onMerge ? (
         <div className={styles.sheetActions}>

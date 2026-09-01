@@ -22,7 +22,7 @@ import {
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
-let standaloneAliceBackup = "";
+let sharedBobBackup = "";
 
 async function screenshot(page: Page, name: string, testInfo: TestInfo) {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
@@ -210,13 +210,14 @@ test("creates a standalone payment link without an on-chain action", async ({
 }, testInfo) => {
   test.setTimeout(3 * 60_000);
   const config = await readLocalnetConfig(request);
-  const alice = localnetIdentity(config, "alice");
+  const signer = localnetIdentity(config, "bob");
   const requestedUrls: string[] = [];
   page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
 
   await page.goto("/mail/inbox");
   await selectLocalNetwork(page);
   await connectLocalnetWallet(page);
+  await switchIdentity(page, config, "bob");
   await page.getByRole("link", { name: "Pay", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
@@ -235,11 +236,18 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(page.getByText("No transaction submitted")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Open APP20 Mail" }).click();
-  standaloneAliceBackup = await registerNewKey(
-    page,
-    "standalone-mail-identity-backup",
-    testInfo,
-  );
+  if (sharedBobBackup) {
+    expect(sharedBobBackup).toHaveLength(71);
+    await restoreRegisteredKey(page, sharedBobBackup);
+    await screenshot(page, "standalone-mail-identity-restored", testInfo);
+  } else {
+    sharedBobBackup = await registerNewKey(
+      page,
+      "standalone-mail-identity-backup",
+      testInfo,
+    );
+    expect(sharedBobBackup).toHaveLength(71);
+  }
   await page.getByRole("link", { name: "Pay", exact: true }).click();
   await expect(
     page.getByText(
@@ -261,10 +269,10 @@ test("creates a standalone payment link without an on-chain action", async ({
     page.getByText("No transaction submitted", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Mail signature verified", { exact: true }),
+    page.getByText("Mail key signature verified", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(/This Mail-signed request asks for\s+0\.125 STRK/),
+    page.getByText(/This Mail-key-signed request asks for\s+0\.125 STRK/),
   ).toBeVisible();
   const linkCode = page
     .locator("code")
@@ -294,23 +302,26 @@ test("creates a standalone payment link without an on-chain action", async ({
     review.getByRole("heading", { name: "Review before anything moves." }),
   ).toBeVisible();
   await expect(
-    review.getByRole("heading", { name: "Verified signed invoice" }),
+    review.getByRole("heading", {
+      name: "Mail-key signature verified — person not verified",
+    }),
   ).toBeVisible();
   await expect(
     review.getByText("MAIL SIGNATURE VERIFIED", { exact: true }),
   ).toBeVisible();
-  await expect(
-    review.getByText(
-      "The request's Mail signature is valid and covers its asset, exact amount, recipient, memo, expiry, and network. Confirm the displayed Mail identity belongs to the requester if you do not already know it.",
-      { exact: true },
-    ),
-  ).toBeVisible();
+  const signatureLimitNotices = review.getByText(
+    "A valid Mail signature proves only that the exact displayed message was signed by the displayed Mail key. It does not prove who signed it or that they control the named wallet. APP20 currently cannot revoke a compromised Mail key, so anyone with the recovery phrase can create requests that pass this check. Confirm the person and wallet through a trusted channel before paying.",
+    { exact: true },
+  );
+  await expect(signatureLimitNotices).toHaveCount(2);
+  await expect(signatureLimitNotices.first()).toBeVisible();
+  await expect(signatureLimitNotices.last()).toBeVisible();
   await expect(
     review.getByText("Verified Mail signing key", { exact: true }),
   ).toBeVisible();
-  await expect(review.getByText(alice.address, { exact: true })).toBeVisible();
+  await expect(review.getByText(signer.address, { exact: true })).toBeVisible();
   await expect(
-    review.getByText(/This Mail-signed request asks for\s+0\.125 STRK/),
+    review.getByText(/This Mail-key-signed request asks for\s+0\.125 STRK/),
   ).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
   await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
@@ -348,27 +359,28 @@ test("all APP20 localnet journeys", async ({
     await page.goto("/mail/inbox");
     await connectLocalnetWallet(page, { auditFocusReturn: true });
     await switchIdentity(page, config, "alice");
-    if (standaloneAliceBackup) {
-      expect(standaloneAliceBackup).toHaveLength(71);
-      await restoreRegisteredKey(page, standaloneAliceBackup);
-      await screenshot(page, "01-alice-one-time-backup", testInfo);
-    } else {
-      standaloneAliceBackup = await registerNewKey(
-        page,
-        "01-alice-one-time-backup",
-        testInfo,
-      );
-      expect(standaloneAliceBackup).toHaveLength(71);
-    }
+    const aliceBackup = await registerNewKey(
+      page,
+      "01-alice-one-time-backup",
+      testInfo,
+    );
+    expect(aliceBackup).toHaveLength(71);
 
     await switchIdentity(page, config, "bob");
-    testInfo.annotations.push({
-      type: "bob-backup",
-      description: await registerNewKey(
+    if (sharedBobBackup) {
+      expect(sharedBobBackup).toHaveLength(71);
+      await restoreRegisteredKey(page, sharedBobBackup);
+    } else {
+      sharedBobBackup = await registerNewKey(
         page,
         "02-bob-one-time-backup",
         testInfo,
-      ),
+      );
+      expect(sharedBobBackup).toHaveLength(71);
+    }
+    testInfo.annotations.push({
+      type: "bob-backup",
+      description: sharedBobBackup,
     });
     await screenshot(page, "03-bob-onboarded", testInfo);
   });

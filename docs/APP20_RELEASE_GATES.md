@@ -2,7 +2,7 @@
 
 **Current verdict: not release-ready (`releaseReady: false`).** The allowed product surface is the build-gated localnet demonstration plus dry review. Historical Sepolia proof deployments exist, but no canonical production deployment is configured or authorized and no review, operator, custody, quorum, or soak evidence exists. Production RFQ transport, RFQ execution, and authoritative receipts are immutable-off. No source-writing approval authorizes deployment, Mainnet value movement, live cross-chain funding, cap increases, or production agent authority.
 
-The canonical definitive goals, non-goals, and production-gap inventory is [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md).
+The canonical definitive goals, non-goals, and production-gap inventory is [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md). The engineering-only, code-derived data-flow and retention map is [`APP20_DATA_FLOW_RETENTION_DISCLOSURE.md`](APP20_DATA_FLOW_RETENTION_DISCLOSURE.md); it is not a privacy policy or legal acceptance, and P0-34 remains open.
 
 Current local evidence: [`evidence/app20-release-evidence-2026-08-29.json`](evidence/app20-release-evidence-2026-08-29.json), with its deterministic CycloneDX SBOM at [`evidence/app20-sbom.cdx.json`](evidence/app20-sbom.cdx.json). The committed parent baseline is `e4084f301a3d4f4ade312d443b8a00e65f674871`, with rollback target `4e32ef1ceb932610a0fd98ff56f37ef25464816c`; this change set was uncommitted at capture time and its eventual delivering commit can only be attested externally. This remains self-reported local evidence, not CI provenance, a release signature, independent reproduction, an audit, or production authorization.
 

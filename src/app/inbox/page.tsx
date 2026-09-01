@@ -71,6 +71,7 @@ import {
   projectEncryptedMailSize,
   publicKeyFromFelts,
 } from "@/lib/mail";
+import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import {
   MAIL_SCAN_CHUNK_SIZE,
   MAIL_SCAN_MAX_PAGES,
@@ -1216,8 +1217,7 @@ export default function InboxPage() {
       });
       setStorageNotice({
         kind: "ok",
-        message:
-          "Contact plaintext never left this browser. The chain received mailbox ciphertext; wallet plus mailbox recovery phrase are required to decrypt it.",
+        message: `Contact plaintext never left this browser. The chain received mailbox ciphertext; wallet plus mailbox recovery phrase are required to decrypt it. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -2200,7 +2200,7 @@ export default function InboxPage() {
   function forgetThisDevice() {
     if (
       !window.confirm(
-        "Forget this device and clear every mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again.",
+        `Forget this device and clear every mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
       )
     ) {
       return;
@@ -2236,7 +2236,7 @@ export default function InboxPage() {
       setMailboxFilter("all");
       setStorageNotice({
         kind: "ok",
-        message: `Forgot this device: removed ${removed.length} local mailbox record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted mail.`,
+        message: `Forgot this device: removed ${removed.length} local mailbox record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted mail. That backup can also recreate the Mail signing key used for payment requests, and APP20 currently cannot revoke it if compromised.`,
       });
     } catch (error: unknown) {
       setStorageNotice({
@@ -2560,7 +2560,7 @@ export default function InboxPage() {
             <p>
               Post a self-addressed encrypted snapshot. The same wallet locates
               it; the mailbox recovery phrase decrypts it. Wallet alone is not
-              enough.
+              enough. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
             </p>
             <button
               className={styles.secondaryButton}

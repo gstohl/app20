@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "knownUnknownLicenses": [
+    {
+      "purl": "pkg:npm/%40metamask/eth-json-rpc-provider@1.0.1",
+      "reason": "The exact published package metadata has no license declaration and the published tarball has no license file; the current upstream repository license is not release-specific evidence.",
+      "resolution": "Replace the dependency or obtain a release-specific license attestation from the publisher."
+    },
+    {
+      "purl": "pkg:npm/%40metamask/sdk-communication-layer@0.33.1",
+      "reason": "The exact published package metadata has no license declaration; bundled custom ConsenSys terms have not been legally classified as a declared package license.",
+      "resolution": "Obtain publisher clarification and legal review of the release-specific bundled terms, or replace the dependency."
+    },
+    {
+      "purl": "pkg:npm/%40metamask/sdk-install-modal-web@0.32.1",
+      "reason": "The exact published package metadata has no license declaration; bundled custom ConsenSys terms have not been legally classified as a declared package license.",
+      "resolution": "Obtain publisher clarification and legal review of the release-specific bundled terms, or replace the dependency."
+    },
+    {
+      "purl": "pkg:npm/%40metamask/sdk@0.33.1",
+      "reason": "The exact published package metadata has no license declaration; bundled custom ConsenSys terms have not been legally classified as a declared package license.",
+      "resolution": "Obtain publisher clarification and legal review of the release-specific bundled terms, or replace the dependency."
+    },
+    {
+      "purl": "pkg:npm/%40privy-io/api-base@1.9.5",
+      "reason": "The exact published package metadata has no license declaration; a bundled Apache-2.0 text exists but has not been confirmed as the package's declared license.",
+      "resolution": "Obtain publisher confirmation or a legal determination that the bundled text governs this exact package release."
+    },
+    {
+      "purl": "pkg:npm/xmlhttprequest-ssl@2.1.2",
+      "reason": "The exact published package metadata has no license declaration; a bundled MIT-form text exists but has not been confirmed as the package's declared license.",
+      "resolution": "Obtain publisher confirmation or a legal determination that the bundled text governs this exact package release."
+    }
+  ]
+}
