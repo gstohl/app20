@@ -154,7 +154,17 @@ export default function InvoiceCard({
           : "Mail could not create this payment link.",
       );
     }
-  }, [canShare, request, shareChainId, shareInitiallyOpen, shareLinkOverride]);
+  }, [
+    canShare,
+    request.amount,
+    request.expiresAt,
+    request.memo,
+    request.requestId,
+    request.requester,
+    shareChainId,
+    shareInitiallyOpen,
+    shareLinkOverride,
+  ]);
 
   function toggleShareLink() {
     if (shareOpen) {

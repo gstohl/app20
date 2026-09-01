@@ -7,18 +7,28 @@ on:
       - main
   workflow_dispatch:
 
+# Superseded pull-request pushes cancel their in-flight runs; main-branch runs
+# always finish so attestation and signing evidence is never truncated.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Every action is pinned to a full commit SHA so a moved tag cannot change the
 # code executed by this workflow. The adjacent comment records the reviewed tag.
 permissions:
   contents: read
 
 env:
-  NODE_VERSION: 22.14.0
+  # Node 24 LTS is the workspace support floor: packages/privy declares
+  # engines >=24 and workers/relay runs TypeScript test files directly under
+  # node --test, which needs the default type stripping absent from 22.14.
+  NODE_VERSION: 24.12.0
 
 jobs:
   verify:
     name: Existing release gates and first build (Ubuntu 24.04)
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -34,6 +44,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Build workspace outputs required by application imports
+        run: npm run build:packages
       - name: Typecheck application
         run: npm run typecheck
       - name: Typecheck packages
@@ -98,6 +110,7 @@ jobs:
     name: Compare second runner environment (Ubuntu 22.04)
     needs: verify
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -155,6 +168,7 @@ jobs:
       - verify
       - reproduce-second-runner
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write

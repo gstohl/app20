@@ -12,6 +12,20 @@
  * values", not P0-11/P0-12 closure. Public-network RFQ stays disabled.
  */
 
+import { randomBytes } from "node:crypto";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
 import {
   RFQ_APP20_FEE_BPS,
   RFQ_ECONOMIC_POLICY_ID,
@@ -32,10 +46,33 @@ import {
 
 const BPS_SCALE = 10_000n;
 const DAILY_WINDOW_SECONDS = 24 * 60 * 60;
+const ACCOUNTING_JOURNAL_DOMAIN = "app20/localnet-rfq-accounting/v1";
 const STRK_SCALE = 10n ** 18n;
 const USDC_SCALE = 10n ** 6n;
 const LOCALNET_USDC_PER_STRK = 2n;
 const RECOVERY_ACTIONS = new Set(["claim", "timeout", "refund"]);
+
+function journalText(value, label) {
+  if (typeof value !== "string" || !value.trim() || value.includes("\0"))
+    throw new Error(`${label} must be non-empty text without a NUL byte.`);
+  return value;
+}
+
+function journalCommitment(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("RFQ accounting journal commitment is invalid.");
+  const amount = value.usdcEquivalentBaseUnits;
+  if (typeof amount !== "string" || !/^[1-9][0-9]*$/.test(amount))
+    throw new Error("RFQ accounting journal amount is invalid.");
+  if (!Number.isSafeInteger(value.committedAt) || value.committedAt <= 0)
+    throw new Error("RFQ accounting journal commitment time is invalid.");
+  return Object.freeze({
+    commitmentId: journalText(value.commitmentId, "commitmentId"),
+    makerId: journalText(value.makerId, "makerId"),
+    usdcEquivalentBaseUnits: BigInt(amount),
+    committedAt: value.committedAt,
+  });
+}
 
 export const LOCALNET_RFQ_ECONOMICS_DELTA =
   "specified → enforced on localnet with unapproved default values";
@@ -176,12 +213,17 @@ export function formatRfqEconomicRefusal(decision) {
   return `RFQ economic policy ${policyId} refused ${action}: ${codes}. ${messages}`.trim();
 }
 
-function dailyWindow(decisionAt) {
-  const startsAt = decisionAt - (decisionAt % DAILY_WINDOW_SECONDS);
+function trailingWindow(decisionAt) {
+  // Policy timestamps are whole seconds and accounting windows are half-open.
+  // Shifting the end one second past the decision represents (t - 24h, t]
+  // exactly: a commitment made exactly 86,400 seconds ago has expired, while
+  // one made 86,399 seconds ago is still counted.
+  const endsAt = decisionAt + 1;
+  const startsAt = endsAt - DAILY_WINDOW_SECONDS;
   return {
-    windowId: `localnet-risk-day-${startsAt}`,
+    windowId: `localnet-risk-trailing-24h-${startsAt}-${endsAt}`,
     startsAt,
-    endsAt: startsAt + DAILY_WINDOW_SECONDS,
+    endsAt,
   };
 }
 
@@ -333,23 +375,144 @@ export function createLocalnetRfqEconomics(options = {}) {
 
   let marketState =
     options.marketState === "suspended" ? "suspended" : "active";
-  let activeWindowId;
-  const makerCommitted = new Map();
-  let marketCommitted = marketSeed;
+  const accountingPath =
+    options.accountingPath === undefined
+      ? undefined
+      : journalText(options.accountingPath, "accountingPath");
+  const commitmentTimes = [];
+  const commitmentBuckets = new Map();
+  let commitmentsById = new Map();
+  let failed = false;
 
-  function ensureWindow(decisionAt) {
-    const window = dailyWindow(decisionAt);
-    if (activeWindowId !== window.windowId) {
-      activeWindowId = window.windowId;
-      makerCommitted.clear();
-      marketCommitted = marketSeed;
-    }
-    return window;
+  function assertAvailable() {
+    if (failed)
+      throw new Error(
+        "RFQ accounting is fail-stopped after uncertain persistence.",
+      );
   }
 
-  function makerUsage(makerId) {
-    if (!makerCommitted.has(makerId)) makerCommitted.set(makerId, makerSeed);
-    return makerCommitted.get(makerId);
+  function firstTimeAtOrAfter(timestamp) {
+    let low = 0;
+    let high = commitmentTimes.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (commitmentTimes[middle] < timestamp) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function indexCommitment(commitment) {
+    let bucket = commitmentBuckets.get(commitment.committedAt);
+    if (!bucket) {
+      bucket = { market: 0n, byMaker: new Map() };
+      commitmentBuckets.set(commitment.committedAt, bucket);
+      const insertion = firstTimeAtOrAfter(commitment.committedAt);
+      commitmentTimes.splice(insertion, 0, commitment.committedAt);
+    }
+    bucket.market += commitment.usdcEquivalentBaseUnits;
+    bucket.byMaker.set(
+      commitment.makerId,
+      (bucket.byMaker.get(commitment.makerId) ?? 0n) +
+        commitment.usdcEquivalentBaseUnits,
+    );
+  }
+
+  function serializeCommitments(candidate) {
+    const commitments = [...candidate.values()]
+      .sort(
+        (left, right) =>
+          left.committedAt - right.committedAt ||
+          left.commitmentId.localeCompare(right.commitmentId),
+      )
+      .map((commitment) => ({
+        commitmentId: commitment.commitmentId,
+        makerId: commitment.makerId,
+        usdcEquivalentBaseUnits: commitment.usdcEquivalentBaseUnits.toString(),
+        committedAt: commitment.committedAt,
+      }));
+    return `${JSON.stringify(
+      { domain: ACCOUNTING_JOURNAL_DOMAIN, commitments },
+      null,
+      2,
+    )}\n`;
+  }
+
+  function persistCommitments(candidate) {
+    if (!accountingPath) return;
+    const directory = dirname(accountingPath);
+    let temporary;
+    let renamed = false;
+    try {
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      temporary = `${accountingPath}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+      options.faultInjector?.("before-write");
+      writeFileSync(temporary, serializeCommitments(candidate), {
+        mode: 0o600,
+        flag: "wx",
+      });
+      options.faultInjector?.("after-write");
+      const file = openSync(temporary, "r");
+      try {
+        fsyncSync(file);
+      } finally {
+        closeSync(file);
+      }
+      options.faultInjector?.("after-file-fsync");
+      renameSync(temporary, accountingPath);
+      renamed = true;
+      chmodSync(accountingPath, 0o600);
+      options.faultInjector?.("after-rename");
+      const directoryFile = openSync(directory, "r");
+      try {
+        fsyncSync(directoryFile);
+      } finally {
+        closeSync(directoryFile);
+      }
+      options.faultInjector?.("after-directory-fsync");
+    } catch (error) {
+      failed = true;
+      if (!renamed && temporary && existsSync(temporary)) {
+        try {
+          unlinkSync(temporary);
+        } catch {
+          // The accounting instance is fail-stopped; cleanup is best effort.
+        }
+      }
+      throw new Error(
+        "RFQ accounting persistence became uncertain; accounting is fail-stopped.",
+        { cause: error },
+      );
+    }
+  }
+
+  if (accountingPath && existsSync(accountingPath)) {
+    let journal;
+    try {
+      journal = JSON.parse(readFileSync(accountingPath, "utf8"));
+    } catch (error) {
+      throw new Error("RFQ accounting journal is not valid JSON.", {
+        cause: error,
+      });
+    }
+    if (
+      !journal ||
+      typeof journal !== "object" ||
+      Array.isArray(journal) ||
+      journal.domain !== ACCOUNTING_JOURNAL_DOMAIN ||
+      !Array.isArray(journal.commitments)
+    ) {
+      throw new Error("RFQ accounting journal has an invalid schema.");
+    }
+    for (const raw of journal.commitments) {
+      const commitment = journalCommitment(raw);
+      if (commitmentsById.has(commitment.commitmentId))
+        throw new Error(
+          "RFQ accounting journal repeats a commitment identity.",
+        );
+      commitmentsById.set(commitment.commitmentId, commitment);
+      indexCommitment(commitment);
+    }
   }
 
   function snapshotAccounting(
@@ -357,7 +520,20 @@ export function createLocalnetRfqEconomics(options = {}) {
     makerId,
     marketId = RFQ_REVIEWED_MARKET_ID,
   ) {
-    const window = ensureWindow(decisionAt);
+    assertAvailable();
+    const window = trailingWindow(decisionAt);
+    let makerCommittedUsdcBaseUnits = makerSeed;
+    let marketCommittedUsdcBaseUnits = marketSeed;
+    const endIndex = firstTimeAtOrAfter(window.endsAt);
+    for (
+      let index = firstTimeAtOrAfter(window.startsAt);
+      index < endIndex;
+      index += 1
+    ) {
+      const bucket = commitmentBuckets.get(commitmentTimes[index]);
+      marketCommittedUsdcBaseUnits += bucket.market;
+      makerCommittedUsdcBaseUnits += bucket.byMaker.get(makerId) ?? 0n;
+    }
     return freezeAccounting({
       windowId: window.windowId,
       marketId,
@@ -365,8 +541,8 @@ export function createLocalnetRfqEconomics(options = {}) {
       startsAt: window.startsAt,
       endsAt: window.endsAt,
       observedAt: decisionAt,
-      makerCommittedUsdcBaseUnits: makerUsage(makerId),
-      marketCommittedUsdcBaseUnits: marketCommitted,
+      makerCommittedUsdcBaseUnits,
+      marketCommittedUsdcBaseUnits,
     });
   }
 
@@ -408,16 +584,56 @@ export function createLocalnetRfqEconomics(options = {}) {
     });
   }
 
-  function commit(makerId, usdcEquivalentBaseUnits, decisionAt) {
+  function commit(makerId, usdcEquivalentBaseUnits, decisionAt, commitmentId) {
+    assertAvailable();
+    const canonicalMakerId = journalText(makerId, "Committed makerId");
     if (
       typeof usdcEquivalentBaseUnits !== "bigint" ||
       usdcEquivalentBaseUnits <= 0n
     ) {
       throw new Error("Committed USDC equivalent must be a positive bigint.");
     }
-    ensureWindow(decisionAt);
-    makerCommitted.set(makerId, makerUsage(makerId) + usdcEquivalentBaseUnits);
-    marketCommitted += usdcEquivalentBaseUnits;
+    if (!Number.isSafeInteger(decisionAt) || decisionAt <= 0) {
+      throw new Error("Commitment time must be a positive safe integer.");
+    }
+    const canonicalCommitmentId =
+      commitmentId === undefined
+        ? undefined
+        : journalText(commitmentId, "commitmentId");
+    if (accountingPath && canonicalCommitmentId === undefined) {
+      throw new Error("Durable RFQ accounting requires a commitment identity.");
+    }
+    if (canonicalCommitmentId !== undefined) {
+      const prior = commitmentsById.get(canonicalCommitmentId);
+      if (prior) {
+        if (
+          prior.makerId !== canonicalMakerId ||
+          prior.usdcEquivalentBaseUnits !== usdcEquivalentBaseUnits
+        ) {
+          throw new Error(
+            "Commitment identity was reused with different economic terms.",
+          );
+        }
+        return;
+      }
+    }
+    const commitment = Object.freeze({
+      ...(canonicalCommitmentId === undefined
+        ? {}
+        : { commitmentId: canonicalCommitmentId }),
+      makerId: canonicalMakerId,
+      usdcEquivalentBaseUnits,
+      committedAt: decisionAt,
+    });
+    if (canonicalCommitmentId !== undefined) {
+      const candidate = new Map(commitmentsById).set(
+        canonicalCommitmentId,
+        commitment,
+      );
+      persistCommitments(candidate);
+      commitmentsById = candidate;
+    }
+    indexCommitment(commitment);
   }
 
   return Object.freeze({

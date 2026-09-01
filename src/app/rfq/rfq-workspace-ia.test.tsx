@@ -142,6 +142,13 @@ describe("RFQ workspace information architecture", () => {
     expect(desk).toContain("window.setInterval(tick, 1_000)");
     expect(desk).not.toContain("30_000");
   });
+
+  it("does not tick the whole workspace every second to demote live authority", () => {
+    expect(workspace).not.toContain("setAuthorityClock");
+    expect(workspace).toContain("recordsRef.current");
+    expect(workspace).toContain("window.setInterval(refresh, 5_000)");
+    expect(workspace).not.toContain("window.setInterval(refresh, 1_000)");
+  });
 });
 
 describe("maker cohort layout", () => {
@@ -256,8 +263,10 @@ describe("final review hierarchy", () => {
     expect(markup).toContain("Copy Quote ID 0x01");
     expect(markup).toContain("Copy Reservation ID res-1");
     expect(markup).toContain("Local reference · not settlement authority");
-    expect(markup).toContain("aria-label=\"Copy RFQ ID 0x77; authority:");
-    expect(markup).toContain("aria-label=\"Copy Quote ID 0x01; authority:");
-    expect(markup).toContain("aria-label=\"Copy Reservation ID res-1; authority:");
+    expect(markup).toContain('aria-label="Copy RFQ ID 0x77; authority:');
+    expect(markup).toContain('aria-label="Copy Quote ID 0x01; authority:');
+    expect(markup).toContain(
+      'aria-label="Copy Reservation ID res-1; authority:',
+    );
   });
 });

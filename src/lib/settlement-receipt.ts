@@ -112,7 +112,7 @@ function requireDigest(value: string, label: string): string {
 }
 
 function requirePositiveU256(value: bigint, label: string): bigint {
-  if (value <= 0n || value > MAX_U256) {
+  if (typeof value !== "bigint" || value <= 0n || value > MAX_U256) {
     throw new Error(`${label} must be a positive u256 value.`);
   }
   return value;
@@ -159,8 +159,13 @@ function assertBinding(receipt: SettlementReceipt): void {
   }
   requireText(receipt.chainId, "chainId");
   requireFelt(receipt.escrowAddress, "escrowAddress");
-  if (receipt.evidenceKind === "chain" && receipt.escrowClassHash === undefined) {
-    throw new Error("Chain settlement receipts require an exact escrowClassHash.");
+  if (
+    receipt.evidenceKind === "chain" &&
+    receipt.escrowClassHash === undefined
+  ) {
+    throw new Error(
+      "Chain settlement receipts require an exact escrowClassHash.",
+    );
   }
   if (receipt.escrowClassHash !== undefined) {
     requireFelt(receipt.escrowClassHash, "escrowClassHash");
@@ -262,7 +267,10 @@ function canonicalBinding(receipt: SettlementReceipt) {
   return {
     chainId: requireText(receipt.chainId, "chainId"),
     claimTicketId: requireFelt(receipt.claimTicketId, "claimTicketId"),
-    commitmentDigest: requireDigest(receipt.commitmentDigest, "commitmentDigest"),
+    commitmentDigest: requireDigest(
+      receipt.commitmentDigest,
+      "commitmentDigest",
+    ),
     dealId: requireFelt(receipt.dealId, "dealId"),
     directoryDigest: requireDigest(receipt.directoryDigest, "directoryDigest"),
     directoryEpoch: receipt.directoryEpoch,
@@ -288,7 +296,10 @@ function canonicalBinding(receipt: SettlementReceipt) {
     reservationFence: receipt.reservationFence.toString(),
     reservationId: requireDigest(receipt.reservationId, "reservationId"),
     rfqDigest: requireDigest(receipt.rfqDigest, "rfqDigest"),
-    settlementContextDigest: requireDigest(receipt.settlementContextDigest, "settlementContextDigest"),
+    settlementContextDigest: requireDigest(
+      receipt.settlementContextDigest,
+      "settlementContextDigest",
+    ),
     version: receipt.version,
     winningQuoteDigest: requireDigest(
       receipt.winningQuoteDigest,
@@ -321,7 +332,10 @@ export function canonicalSettlementReceipt(receipt: SettlementReceipt): string {
         blockHash: requireFelt(item.event.blockHash, `${item.stage} blockHash`),
         blockNumber: item.event.blockNumber,
         eventIndex: item.event.eventIndex,
-        eventSelector: requireFelt(item.event.eventSelector, `${item.stage} eventSelector`),
+        eventSelector: requireFelt(
+          item.event.eventSelector,
+          `${item.stage} eventSelector`,
+        ),
         transactionIndex: item.event.transactionIndex,
       },
       finality: item.finality,
@@ -388,7 +402,10 @@ export async function verifyChainSettlementReceipt(
     "receipt verificationReference",
   );
   const cloned = structuredClone(receipt);
-  const verifiedAt = await executeConfiguredChainVerifier(input.verifier, cloned);
+  const verifiedAt = await executeConfiguredChainVerifier(
+    input.verifier,
+    cloned,
+  );
   requireUnixSeconds(verifiedAt, "receipt verifiedAt");
   const verified = deepFreeze({
     [VERIFIED_CHAIN_RECEIPT]: true as const,
@@ -411,7 +428,9 @@ export function invalidateVerifiedChainSettlementReceipt(
   value: VerifiedChainSettlementReceipt,
 ): void {
   if (!VERIFIED_CHAIN_RECEIPTS.has(value)) {
-    throw new Error("Only a configured-chain verified receipt can be invalidated.");
+    throw new Error(
+      "Only a configured-chain verified receipt can be invalidated.",
+    );
   }
   INVALIDATED_CHAIN_RECEIPTS.add(value);
 }
@@ -429,10 +448,17 @@ export function settlementReceiptAuthority(
   ) {
     const verified = value as VerifiedChainSettlementReceipt;
     if (INVALIDATED_CHAIN_RECEIPTS.has(verified)) {
-      return { authoritative: false, reason: "Configured-chain verification was invalidated by reorg or canonical-membership loss." };
+      return {
+        authoritative: false,
+        reason:
+          "Configured-chain verification was invalidated by reorg or canonical-membership loss.",
+      };
     }
     if (now >= verified.expiresAt) {
-      return { authoritative: false, reason: "Configured-chain verification is stale and must be refreshed." };
+      return {
+        authoritative: false,
+        reason: "Configured-chain verification is stale and must be refreshed.",
+      };
     }
     return {
       authoritative: true,

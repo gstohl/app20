@@ -38,4 +38,17 @@ describe("Starknet asset primitives", () => {
       parseTokenAmount((2n ** 128n).toString(), { decimals: 0 }),
     ).toThrow(/u128/);
   });
+
+  it("rejects unbounded felt and decimal strings before BigInt conversion", () => {
+    expect(() => canonicalizeStarknetFelt(`1${"0".repeat(256)}`)).toThrow(
+      /bounded Starknet felt/,
+    );
+    expect(() => canonicalizeStarknetFelt(`${" ".repeat(256)}1`)).toThrow(
+      /bounded Starknet felt/,
+    );
+    expect(() =>
+      parseTokenAmount(`1${"0".repeat(512)}`, { decimals: 0 }),
+    ).toThrow(/plain-decimal/);
+    expect(starknetFeltEquals(`1${"0".repeat(256)}`, "1")).toBe(false);
+  });
 });

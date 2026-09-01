@@ -1,7 +1,4 @@
-import {
-  parseEscrowFundPayload,
-  type EscrowFundPayload,
-} from "./escrow";
+import { parseEscrowFundPayload, type EscrowFundPayload } from "./escrow";
 import {
   parseAcceptPayload,
   parseOfferPayload,
@@ -95,7 +92,7 @@ export function parseCompositePayload(value: unknown): CompositePayload | null {
   const inReplyTo = parseConversationId(value.inReplyTo);
   const senderAuth = parseMailSenderAuth(value.senderAuth);
   return {
-    documentId: value.documentId,
+    documentId: value.documentId.toLowerCase(),
     body,
     attachments,
     ...(conversationId ? { conversationId } : {}),

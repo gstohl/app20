@@ -2,6 +2,8 @@ export const STRK_DECIMALS = 18;
 export const STRK_SCALE = 10n ** BigInt(STRK_DECIMALS);
 export const DEFAULT_STRK_AMOUNT = "0.1";
 export const STRK_AMOUNT_STORAGE_PREFIX = "app20/value-amount/v1";
+/** Reject unbounded amount strings before allocating a BigInt. */
+export const MAX_STRK_AMOUNT_INPUT_LENGTH = 96;
 
 const DECIMAL_AMOUNT = /^(\d+)(?:\.(\d+))?$/;
 
@@ -11,6 +13,9 @@ type StorageWriter = Pick<Storage, "setItem">;
 /** Parse a human STRK amount without ever passing through a JS number. */
 export function parseStrkAmount(value: string): bigint {
   const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_STRK_AMOUNT_INPUT_LENGTH) {
+    throw new Error("Enter a positive decimal STRK amount.");
+  }
   const match = DECIMAL_AMOUNT.exec(trimmed);
   if (!match) {
     throw new Error("Enter a positive decimal STRK amount.");

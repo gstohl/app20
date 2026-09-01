@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import styles from "./rfq.module.css";
 
 export const LOCAL_IDENTIFIER_AUTHORITY =
@@ -28,6 +28,13 @@ export default function CopyableId({
     const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
         "idle",
     );
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
     const short = shorten(value);
     const accessibleName = `Copy ${label} ${value}; authority: ${authority}`;
     return (
@@ -42,8 +49,12 @@ export default function CopyableId({
                 aria-label={accessibleName}
                 onClick={() => {
                     void navigator.clipboard.writeText(value).then(
-                        () => setCopyState("copied"),
-                        () => setCopyState("failed"),
+                        () => {
+                            if (mountedRef.current) setCopyState("copied");
+                        },
+                        () => {
+                            if (mountedRef.current) setCopyState("failed");
+                        },
                     );
                 }}
             >

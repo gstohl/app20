@@ -36,10 +36,41 @@ export interface NetworkPolicyDecision {
     | "unreviewed-wallet-standard"
     | "localnet-adapter-only"
     | "localnet-not-live"
-    | "build-only";
+    | "build-only"
+    | "unrecognized-policy-input";
   reason?: string;
 }
 
+const PRIVACY_NETWORKS = new Set<PrivacyNetwork>([
+  "mainnet",
+  "sepolia",
+  "localnet",
+]);
+const PRIVACY_ADAPTERS = new Set<PrivacyAdapterKind>([
+  "ready",
+  "wallet-standard",
+  "privy",
+  "localnet",
+]);
+const PRIVACY_OPERATIONS = new Set<PrivacyOperation>([
+  "connect",
+  "public-read",
+  "private-read",
+  "register",
+  "public-send",
+  "shield",
+  "private-transfer",
+  "private-swap",
+  "unshield",
+  "mail",
+  "mail-with-transfer",
+  "private-rfq",
+]);
+const PRIVACY_SUBMISSION_MODES = new Set<PrivacySubmissionMode>([
+  "live",
+  "build-only",
+]);
+const MAX_WALLET_FEATURE_ID_LENGTH = 64;
 const NON_SUBMITTING_OPERATIONS = new Set<PrivacyOperation>([
   "connect",
   "public-read",
@@ -57,6 +88,23 @@ const NON_SUBMITTING_OPERATIONS = new Set<PrivacyOperation>([
 export function evaluateNetworkPolicy(
   input: NetworkPolicyInput,
 ): NetworkPolicyDecision {
+  if (
+    input === null ||
+    typeof input !== "object" ||
+    !PRIVACY_NETWORKS.has(input.network) ||
+    !PRIVACY_ADAPTERS.has(input.adapter) ||
+    !PRIVACY_OPERATIONS.has(input.operation) ||
+    (input.submissionMode !== undefined &&
+      !PRIVACY_SUBMISSION_MODES.has(input.submissionMode))
+  ) {
+    return {
+      allowed: false,
+      submittable: false,
+      code: "unrecognized-policy-input",
+      reason: "Privacy network policy input is not a reviewed enumeration.",
+    };
+  }
+
   if (input.network !== "localnet" && input.operation === "private-rfq") {
     return {
       allowed: false,
@@ -155,6 +203,13 @@ function normalizeWalletId(value: string): string {
 const READY_WALLET_FEATURE_IDS = new Set(["ready", "argentx"]);
 
 export function isReadyWalletFeatureId(id: string): boolean {
+  if (
+    typeof id !== "string" ||
+    id.length === 0 ||
+    id.length > MAX_WALLET_FEATURE_ID_LENGTH
+  ) {
+    return false;
+  }
   return READY_WALLET_FEATURE_IDS.has(normalizeWalletId(id));
 }
 

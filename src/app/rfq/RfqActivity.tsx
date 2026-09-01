@@ -1,5 +1,4 @@
 "use client";
-import { rfqAuthorityPresentation } from "./rfq-authority";
 import CopyableId, {
   LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY,
   LOCAL_IDENTIFIER_AUTHORITY,
@@ -9,8 +8,82 @@ import { lifecycleMayForget, type RfqLifecycleRecord } from "./rfq-lifecycle";
 import { RFQ_STORAGE_DISCLOSURE } from "./rfq-storage";
 import { AuthorityStrip } from "./RfqAuthorityStrip";
 import RfqRecoveryCard from "./RfqRecoveryCard";
+import { useRfqAuthorityPresentation } from "./ui/use-rfq-authority-presentation";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 import styles from "./rfq.module.css";
+
+function RfqActivityRecord({
+  record,
+  onRemove,
+}: {
+  record: RfqLifecycleRecord;
+  onRemove?: (record: RfqLifecycleRecord) => void;
+}) {
+  const heading = record.terms
+    ? `${record.terms.sellSymbol} → ${record.terms.buySymbol}`
+    : "Quarantined legacy RFQ";
+  const authority = useRfqAuthorityPresentation(record);
+  const dealAuthority =
+    authority.status === "authoritative"
+      ? LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY
+      : LOCAL_IDENTIFIER_AUTHORITY;
+  return (
+    <article
+      className={styles.activityRecord}
+      aria-labelledby={`activity-${record.rfqId}-title`}
+    >
+      <h3 id={`activity-${record.rfqId}-title`}>
+        {heading} · {rfqStateLabel(record.state)}
+      </h3>
+      {record.terms ? (
+        <p className={styles.activityAmount}>
+          {record.terms.sellAmount} base units {record.terms.sellSymbol} →{" "}
+          {record.selectedQuote?.buyAmount ??
+            record.terms.buyAmount ??
+            "unselected"}{" "}
+          base units {record.terms.buySymbol}
+        </p>
+      ) : null}
+      <AuthorityStrip presentation={authority} />
+      <p className={styles.activityIds}>
+        <CopyableId value={record.rfqId} label="RFQ ID" />
+        {record.selectedQuote ? (
+          <>
+            {" "}
+            · <CopyableId value={record.selectedQuote.nonce} label="Quote ID" />{" "}
+            ·{" "}
+            <CopyableId
+              value={record.selectedQuote.reservationId}
+              label="Reservation ID"
+            />
+          </>
+        ) : null}
+        {record.settlement ? (
+          <>
+            {" "}
+            ·{" "}
+            <CopyableId
+              value={record.settlement.dealId}
+              label="Deal ID"
+              authority={dealAuthority}
+            />
+          </>
+        ) : null}
+      </p>
+      <small>
+        Last local observation{" "}
+        {record.latestObservation?.observedAt
+          ? new Date(record.latestObservation.observedAt * 1_000).toISOString()
+          : "never"}
+      </small>
+      {onRemove && lifecycleMayForget(record) ? (
+        <button type="button" onClick={() => onRemove(record)}>
+          Forget browser history for {heading}
+        </button>
+      ) : null}
+    </article>
+  );
+}
 
 export default function RfqActivity({
   records,
@@ -49,75 +122,9 @@ export default function RfqActivity({
         <p role="status">Loading your saved RFQ history…</p>
       ) : null}
       {records.length ? (
-        records.map((row) => {
-          const heading = row.terms
-            ? `${row.terms.sellSymbol} → ${row.terms.buySymbol}`
-            : "Quarantined legacy RFQ";
-          const authority = rfqAuthorityPresentation(row);
-          const dealAuthority =
-            authority.status === "authoritative"
-              ? LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY
-              : LOCAL_IDENTIFIER_AUTHORITY;
-          return (
-            <article
-              key={row.rfqId}
-              className={styles.activityRecord}
-              aria-labelledby={`activity-${row.rfqId}-title`}
-            >
-              <h3 id={`activity-${row.rfqId}-title`}>
-                {heading} · {rfqStateLabel(row.state)}
-              </h3>
-              {row.terms ? (
-                <p className={styles.activityAmount}>
-                  {row.terms.sellAmount} base units {row.terms.sellSymbol} →{" "}
-                  {row.selectedQuote?.buyAmount ??
-                    row.terms.buyAmount ??
-                    "unselected"}{" "}
-                  base units {row.terms.buySymbol}
-                </p>
-              ) : null}
-              <AuthorityStrip presentation={authority} />
-              <p className={styles.activityIds}>
-                <CopyableId value={row.rfqId} label="RFQ ID" />
-                {row.selectedQuote ? (
-                  <>
-                    {" "}
-                    · <CopyableId value={row.selectedQuote.nonce} label="Quote ID" />{" "}
-                    ·{" "}
-                    <CopyableId
-                      value={row.selectedQuote.reservationId}
-                      label="Reservation ID"
-                    />
-                  </>
-                ) : null}
-                {row.settlement ? (
-                  <>
-                    {" "}
-                    ·{" "}
-                    <CopyableId
-                      value={row.settlement.dealId}
-                      label="Deal ID"
-                      authority={dealAuthority}
-                    />
-                  </>
-                ) : null}
-              </p>
-              <small>
-                Last local observation{" "}
-                {row.latestObservation?.observedAt
-                  ? new Date(
-                      row.latestObservation.observedAt * 1_000,
-                    ).toISOString()
-                  : "never"}
-              </small>
-              {onRemove && lifecycleMayForget(row) ? (
-                <button type="button" onClick={() => onRemove(row)}>
-                  Forget browser history for {heading}
-                </button>
-              ) : null}
-            </article>
-          );
-        })
+        records.map((row) => (
+          <RfqActivityRecord key={row.rfqId} record={row} onRemove={onRemove} />
+        ))
       ) : loadState === "ready" ? (
         <p>No saved RFQ history for this wallet and chain yet.</p>
       ) : null}

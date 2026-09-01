@@ -258,10 +258,12 @@ describe("localnet private-intent adapter", () => {
           epoch: 0,
           checkpoint: "local-fixture-checkpoint-v1",
           validUntil: 1_800_000_030,
-          makers: [{
-            makerId: "app20-localnet-solver",
-            keyId: "app20-localnet-solver/ecdsa-p256-v1",
-          }],
+          makers: [
+            {
+              makerId: "app20-localnet-solver",
+              keyId: "app20-localnet-solver/ecdsa-p256-v1",
+            },
+          ],
           binding: "bound-cohort",
         },
       }),
@@ -380,6 +382,59 @@ describe("localnet private-intent adapter", () => {
         quoteExpiresAt: 2,
       }),
     ).rejects.toThrow(/different quote payload/i);
+    vi.unstubAllGlobals();
+  });
+
+  it("cancels an in-flight quote request when the caller aborts", async () => {
+    const controller = new AbortController();
+    let observed: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: string, init?: RequestInit) => {
+        observed = init?.signal ?? undefined;
+        return new Promise((_, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => {
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true },
+          );
+        });
+      }),
+    );
+    const pending = requestLocalnetSolverQuotes({
+      account: "0xabc",
+      chainId: "0x1",
+      rfqId: "0x77",
+      intentDigest: `0x${"aa".repeat(32)}`,
+      createdAt: 1_800_000_000,
+      expiresAt: 1_800_000_300,
+      sellToken: STRK,
+      sellAmount: 1_000n,
+      buyToken: ETH,
+      minBuyAmount: 90n,
+      cohort: {
+        epoch: 0,
+        checkpoint: "local-fixture-checkpoint-v1",
+        validUntil: 1_800_000_030,
+        makers: [
+          {
+            makerId: "app20-localnet-solver",
+            keyId: "app20-localnet-solver/ecdsa-p256-v1",
+          },
+        ],
+        binding: "bound-cohort",
+      },
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    expect(observed?.aborted).toBe(false);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(observed?.aborted).toBe(true);
     vi.unstubAllGlobals();
   });
 });

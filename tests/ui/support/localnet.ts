@@ -1,10 +1,33 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  expect,
+  request as playwrightRequest,
+  test as base,
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  type ConsoleMessage,
+  type Page,
+  type Request,
+  type Response,
+} from "@playwright/test";
 
-export const BASE_URL =
-  process.env.APP20_TEST_BASE_URL ?? "http://127.0.0.1:5173";
+export { expect };
+export type {
+  APIRequestContext,
+  Browser,
+  BrowserContext,
+  Locator,
+  Page,
+  TestInfo,
+} from "@playwright/test";
+
+export const BASE_URL = (
+  process.env.APP20_TEST_BASE_URL ?? "http://127.0.0.1:5173"
+).replace(/\/+$/, "");
 export const LOCALNET_WALLET_API = `${BASE_URL}/__app20_localnet_wallet`;
 
 const LOCALNET_WALLET_NAME = "Localnet (dev)";
+const MAX_FAILURE_EVENTS = 50;
 
 export type LocalnetIdentityId = "alice" | "bob";
 
@@ -32,6 +55,126 @@ export type StorageSnapshot = {
   session: Record<string, string | null>;
 };
 
+type LocalnetTestFixtures = {
+  localnetConfig: LocalnetConfig;
+  failureEvidence: void;
+};
+
+type LocalnetWorkerFixtures = {
+  workerLocalnetConfig: LocalnetConfig;
+};
+
+function withoutFragment(value: string) {
+  try {
+    const url = new URL(value);
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return value.split("#", 1)[0];
+  }
+}
+
+function retainBounded(values: string[], value: string) {
+  if (values.length < MAX_FAILURE_EVENTS) values.push(value);
+}
+
+/**
+ * Shared UI-test fixtures keep immutable localnet configuration worker-scoped,
+ * while Playwright continues to provide a fresh browser context per test.
+ */
+export const test = base.extend<LocalnetTestFixtures, LocalnetWorkerFixtures>({
+  workerLocalnetConfig: [
+    async ({}, use) => {
+      const request = await playwrightRequest.newContext({ baseURL: BASE_URL });
+      try {
+        await use(await readLocalnetConfig(request));
+      } finally {
+        await request.dispose();
+      }
+    },
+    { scope: "worker" },
+  ],
+  localnetConfig: async ({ workerLocalnetConfig }, use) => {
+    await use(workerLocalnetConfig);
+  },
+  failureEvidence: [
+    async ({ page }, use, testInfo) => {
+      const consoleErrors: string[] = [];
+      const pageErrors: string[] = [];
+      const failedRequests: string[] = [];
+      const errorResponses: string[] = [];
+      const onConsole = (message: ConsoleMessage) => {
+        if (message.type() === "error")
+          retainBounded(consoleErrors, message.text());
+      };
+      const onPageError = (error: Error) => {
+        retainBounded(pageErrors, error.stack ?? error.message);
+      };
+      const onRequestFailed = (request: Request) => {
+        retainBounded(
+          failedRequests,
+          `${request.method()} ${withoutFragment(request.url())}: ${request.failure()?.errorText ?? "request failed"}`,
+        );
+      };
+      const onResponse = (response: Response) => {
+        if (response.status() >= 400)
+          retainBounded(
+            errorResponses,
+            `${response.status()} ${response.request().method()} ${withoutFragment(response.url())}`,
+          );
+      };
+
+      page.on("console", onConsole);
+      page.on("pageerror", onPageError);
+      page.on("requestfailed", onRequestFailed);
+      page.on("response", onResponse);
+      await use();
+
+      let routeCleanupError: unknown;
+      try {
+        // Route callbacks can still be fetching when the assertion body ends.
+        // Waiting here keeps their real errors visible without racing context
+        // teardown (and prevents a closed page from manufacturing a failure).
+        await page.unrouteAll({ behavior: "wait" });
+      } catch (error) {
+        routeCleanupError = error;
+        retainBounded(
+          pageErrors,
+          error instanceof Error
+            ? (error.stack ?? error.message)
+            : String(error),
+        );
+      } finally {
+        page.off("console", onConsole);
+        page.off("pageerror", onPageError);
+        page.off("requestfailed", onRequestFailed);
+        page.off("response", onResponse);
+      }
+
+      if (routeCleanupError || testInfo.status !== testInfo.expectedStatus) {
+        await testInfo.attach("browser-failure-summary", {
+          body: Buffer.from(
+            `${JSON.stringify(
+              {
+                pageUrl: withoutFragment(page.url()),
+                consoleErrors,
+                pageErrors,
+                failedRequests,
+                errorResponses,
+              },
+              null,
+              2,
+            )}\n`,
+          ),
+          contentType: "application/json",
+        });
+      }
+      if (routeCleanupError) throw routeCleanupError;
+    },
+    { auto: true },
+  ],
+});
+
 export async function readLocalnetConfig(
   request: APIRequestContext,
 ): Promise<LocalnetConfig> {
@@ -57,7 +200,9 @@ export function localNetworkToggle(page: Page) {
 
 export async function selectLocalNetwork(page: Page) {
   const toggle = localNetworkToggle(page);
-  await toggle.click();
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-pressed")) !== "true")
+    await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 }
 
@@ -88,6 +233,69 @@ export async function connectLocalnetWallet(
   }
   await localnetOption.click();
   await expect(disconnect).toBeVisible();
+}
+
+export async function activateLocalnet(
+  page: Page,
+  options: {
+    auditFocusReturn?: boolean;
+    identity?: LocalnetIdentityId;
+  } = {},
+) {
+  await selectLocalNetwork(page);
+  if (options.identity) {
+    const selector = page.locator(
+      `[data-localnet-identity="${options.identity}"]`,
+    );
+    if ((await selector.getAttribute("aria-pressed")) !== "true")
+      await selector.click();
+    await expect(selector).toHaveAttribute("aria-pressed", "true");
+  }
+  await connectLocalnetWallet(page, {
+    auditFocusReturn: options.auditFocusReturn,
+  });
+}
+
+export async function openLocalnetPage(
+  page: Page,
+  path: string,
+  options: {
+    auditFocusReturn?: boolean;
+    identity?: LocalnetIdentityId;
+  } = {},
+) {
+  await page.goto(path);
+  await activateLocalnet(page, options);
+}
+
+export async function newIsolatedLocalnetContext(
+  browser: Browser,
+  options: {
+    config?: LocalnetConfig;
+    identity?: LocalnetIdentityId;
+  } = {},
+): Promise<BrowserContext> {
+  if (options.identity && !options.config)
+    throw new Error("A localnet config is required to preselect an identity.");
+  const context = await browser.newContext({
+    baseURL: BASE_URL,
+    viewport: { width: 1_440, height: 900 },
+  });
+  if (options.identity && options.config) {
+    await context.addInitScript(
+      ({ runtimeEpoch, identity }) => {
+        localStorage.setItem(
+          `app20/localnet-wallet/identity/v1/${runtimeEpoch}`,
+          identity,
+        );
+      },
+      {
+        runtimeEpoch: options.config.runtimeEpoch,
+        identity: options.identity,
+      },
+    );
+  }
+  return context;
 }
 
 export function readStorageSnapshot(page: Page): Promise<StorageSnapshot> {

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ec } from "starknet";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -72,5 +75,69 @@ describe("BrowserStrk20Client", () => {
         address: "0x1",
       }),
     ).toThrow("does not match");
+  });
+});
+
+const FORBIDDEN_RUNTIME = [
+  "@privy-io/node",
+  "node:http",
+  "node:crypto",
+  "node:fs",
+  "node:net",
+  "node:child_process",
+];
+
+function stripComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function valueSpecifiers(source: string): string[] {
+  const text = stripComments(source);
+  const specifiers: string[] = [];
+  const fromImport =
+    /\b(?:import|export)(\s+type)?\s+[\s\S]*?\s+from\s+["']([^"']+)["']/g;
+  for (const match of text.matchAll(fromImport)) {
+    if (!match[1]) specifiers.push(match[2]!);
+  }
+  for (const match of text.matchAll(/\bimport\s+["']([^"']+)["']/g)) {
+    specifiers.push(match[1]!);
+  }
+  for (const match of text.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)) {
+    specifiers.push(match[1]!);
+  }
+  return specifiers;
+}
+
+describe("browser bundle boundary", () => {
+  it("does not import Node Privy or server-only modules at runtime", () => {
+    const entry = fileURLToPath(new URL("../src/browser.ts", import.meta.url));
+    const seen = new Set<string>();
+    const queue = [entry];
+    const specifiers: string[] = [];
+    while (queue.length > 0) {
+      const file = queue.pop()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const source = readFileSync(file, "utf8");
+      for (const specifier of valueSpecifiers(source)) {
+        specifiers.push(specifier);
+        if (!specifier.startsWith(".")) continue;
+        const resolved = isAbsolute(specifier)
+          ? specifier
+          : join(dirname(file), specifier);
+        const candidate = resolved.endsWith(".ts")
+          ? resolved
+          : resolved.replace(/\.js$/, ".ts");
+        queue.push(candidate);
+      }
+    }
+
+    expect(specifiers).not.toEqual(expect.arrayContaining(FORBIDDEN_RUNTIME));
+    expect([...seen].some((file) => file.endsWith("/proxy/server.ts"))).toBe(
+      false,
+    );
+    expect([...seen].some((file) => file.endsWith("/privy.ts"))).toBe(false);
   });
 });

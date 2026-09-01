@@ -1,18 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  LOCALNET_WALLET_API,
+  connectLocalnetWallet,
   expect,
+  localNetworkToggle,
+  localnetIdentity,
+  selectLocalNetwork,
   test,
   type APIRequestContext,
   type Locator,
-} from "@playwright/test";
-import {
-  LOCALNET_WALLET_API,
-  connectLocalnetWallet,
-  localNetworkToggle,
-  localnetIdentity,
-  readLocalnetConfig,
-  selectLocalNetwork,
 } from "./support/localnet";
 
 async function quote(
@@ -202,9 +199,9 @@ test("RFQ operations dashboard and endpoint expose only browser-safe localnet st
 test("APP20 clears both USDC↔STRK directions and refunds on localnet", async ({
   page,
   request,
+  localnetConfig: config,
 }) => {
   test.setTimeout(15 * 60_000);
-  const config = await readLocalnetConfig(request);
   expect(BigInt(config.usdcTokenAddress)).toBeGreaterThan(0n);
 
   await page.goto("/vault#desk");
@@ -309,9 +306,9 @@ test("APP20 clears both USDC↔STRK directions and refunds on localnet", async (
   });
   await page.getByRole("link", { name: "Activity", exact: true }).click();
   await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expect(
-    page.getByText("Finalized on the configured chain"),
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText("Finalized on the configured chain")).toBeVisible(
+    { timeout: 60_000 },
+  );
   await expect(
     page.getByRole("heading", {
       name: "Terminal lifecycle finalized locally",
@@ -342,9 +339,9 @@ test("APP20 clears both USDC↔STRK directions and refunds on localnet", async (
   ).toBeVisible({ timeout: 15_000 });
 
   authorityMode = "authoritative";
-  await expect(
-    page.getByText("Finalized on the configured chain"),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Finalized on the configured chain")).toBeVisible(
+    { timeout: 15_000 },
+  );
   await expect(
     page.getByRole("heading", { name: "Needs reconciliation" }),
   ).toHaveCount(0);
@@ -451,16 +448,14 @@ test("APP20 clears both USDC↔STRK directions and refunds on localnet", async (
 test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, and reload without resubmission", async ({
   page,
   context,
-  request,
+  localnetConfig: config,
 }) => {
   test.setTimeout(3 * 60_000);
-  const config = await readLocalnetConfig(request);
   const account = localnetIdentity(config, "alice").address;
   const rfqId = "0x7a11";
 
   await page.goto("/rfq#activity");
-  if ((await localNetworkToggle(page).getAttribute("aria-pressed")) !== "true")
-    await selectLocalNetwork(page);
+  await selectLocalNetwork(page);
   await connectLocalnetWallet(page);
 
   const seeded = await page.evaluate(
@@ -468,12 +463,8 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       const dynamicImport = new Function("path", "return import(path)") as (
         path: string,
       ) => Promise<any>;
-      const lifecycle = await dynamicImport(
-        "/src/app/rfq/rfq-lifecycle.ts",
-      );
-      const storageModule = await dynamicImport(
-        "/src/app/rfq/rfq-storage.ts",
-      );
+      const lifecycle = await dynamicImport("/src/app/rfq/rfq-lifecycle.ts");
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
       const fillRecovery = await dynamicImport(
         "/src/app/rfq/localnet-maker-fill-recovery.ts",
       );
@@ -624,11 +615,8 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
   );
   expect(seeded.runtimeEpoch).toMatch(/^[0-9a-f]{32}$/);
 
-  let authorityMode:
-    | "authoritative"
-    | "outage"
-    | "disagreement"
-    | "reorged" = "authoritative";
+  let authorityMode: "authoritative" | "outage" | "disagreement" | "reorged" =
+    "authoritative";
   let authorityRevision = 100;
   let valueMutationRequests = 0;
   const valueMutationPaths = [
@@ -679,8 +667,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
           status: authorityMode,
           revision: authorityRevision,
           observedAt,
-          validUntil:
-            observedAt + (authorityMode === "authoritative" ? 2 : 30),
+          validUntil: observedAt + (authorityMode === "authoritative" ? 2 : 30),
         },
       }),
     });
@@ -717,9 +704,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       const dynamicImport = new Function("path", "return import(path)") as (
         path: string,
       ) => Promise<any>;
-      const storageModule = await dynamicImport(
-        "/src/app/rfq/rfq-storage.ts",
-      );
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
       const rows = await storageModule
         .createIndexedDbRfqStorage()
         .list(chainId, account);
@@ -738,11 +723,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
 
   const secondPage = await context.newPage();
   await secondPage.goto("/rfq#activity");
-  if (
-    (await localNetworkToggle(secondPage).getAttribute("aria-pressed")) !==
-    "true"
-  )
-    await selectLocalNetwork(secondPage);
+  await selectLocalNetwork(secondPage);
   await connectLocalnetWallet(secondPage);
   for (const candidate of [page, secondPage]) {
     await expect(
@@ -778,9 +759,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       const dynamicImport = new Function("path", "return import(path)") as (
         path: string,
       ) => Promise<any>;
-      const storageModule = await dynamicImport(
-        "/src/app/rfq/rfq-storage.ts",
-      );
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
       const storage = storageModule.createIndexedDbRfqStorage();
       const rows = await storage.list(chainId, account);
       const record = rows.find(
@@ -811,9 +790,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
     const dynamicImport = new Function("path", "return import(path)") as (
       path: string,
     ) => Promise<any>;
-    const storageModule = await dynamicImport(
-      "/src/app/rfq/rfq-storage.ts",
-    );
+    const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
     try {
       await storageModule.createIndexedDbRfqStorage().save(record);
       return "accepted";
@@ -821,7 +798,9 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       return error instanceof Error ? error.message : String(error);
     }
   }, staleSnapshot);
-  expect(staleSaveResult).toMatch(/stale lifecycle snapshot|exact predecessor/i);
+  expect(staleSaveResult).toMatch(
+    /stale lifecycle snapshot|exact predecessor/i,
+  );
 
   await secondPage.getByRole("link", { name: "Active", exact: true }).click();
   await expect(

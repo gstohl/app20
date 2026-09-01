@@ -161,6 +161,37 @@ describe("PrivyProxyProofProvider", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("aborts a retry delay instead of waiting out backoff", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            error: { code: -32005, message: "busy" },
+          }),
+          { status: 503 },
+        ),
+      )
+      .mockResolvedValueOnce(successResponse());
+    const provider = createPrivyProxyProofProvider(base(), POOL, {
+      url: "https://proxy.example/rpc",
+      tenantId: "tenant-demo",
+      accessToken: "token",
+      abortSignal: controller.signal,
+      fetch: fetchMock,
+      retry: { maxRetries: 1, baseDelayMs: 30_000 },
+    });
+
+    const proving = provider.prove({}, 123);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    controller.abort(new Error("cancelled"));
+    await expect(proving).rejects.toThrow("cancelled");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("composes caller cancellation with its timeout", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(

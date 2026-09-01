@@ -313,3 +313,9 @@
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
+
+@media (max-width: 580px) {
+  .sidebarWalletActions {
+    grid-template-columns: 1fr;
+  }
+}

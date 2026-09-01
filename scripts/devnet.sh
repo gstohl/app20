@@ -5,6 +5,15 @@ CONTAINER_NAME="${APP20_DEVNET_CONTAINER:-app20-devnet}"
 IMAGE="${APP20_DEVNET_IMAGE:-docker.io/shardlabs/starknet-devnet-rs@sha256:2733f463816b4028a77e33cea2f55fbbdeb36dcacb4331d886d921361bd07bcf}"
 PORT="${APP20_DEVNET_PORT:-5050}"
 RPC_URL="http://127.0.0.1:${PORT}"
+STARTED_CONTAINER=false
+
+cleanup_failed_start() {
+  local status=$?
+  if [[ ${status} -ne 0 && "${STARTED_CONTAINER}" == "true" ]]; then
+    docker rm --force "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_failed_start EXIT
 
 rpc_ready() {
   curl --fail --silent --show-error \
@@ -49,9 +58,11 @@ docker run --detach \
   "${IMAGE}" \
   --port 5050 \
   --seed 0 >/dev/null
+STARTED_CONTAINER=true
 
 for _attempt in $(seq 1 60); do
   if rpc_ready 2>/dev/null; then
+    STARTED_CONTAINER=false
     echo "APP20 devnet ready at ${RPC_URL}."
     exit 0
   fi

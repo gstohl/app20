@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   LOCALNET_SECONDARY_SOLVER_KEY_ID,
   LOCALNET_SOLVER_KEY_ID,
@@ -42,5 +42,26 @@ describe("localnet quote authority", () => {
     expect(
       LOCALNET_SOLVER_PUBLIC_JWKS[LOCALNET_SECONDARY_SOLVER_KEY_ID]?.d,
     ).toBeUndefined();
+  });
+
+  it("imports each solver public key once across concurrent verifiers", async () => {
+    vi.resetModules();
+    const { verifyLocalnetSolverQuote: verifyFresh } = await import(
+      "./localnet-quote-authority"
+    );
+    const importKey = vi.spyOn(globalThis.crypto.subtle, "importKey");
+    await Promise.all([
+      verifyFresh(CANONICAL_FIXTURE, SIGNATURE_FIXTURE, LOCALNET_SOLVER_KEY_ID),
+      verifyFresh(CANONICAL_FIXTURE, SIGNATURE_FIXTURE, LOCALNET_SOLVER_KEY_ID),
+    ]);
+    const afterWarm = importKey.mock.calls.length;
+    expect(afterWarm).toBeGreaterThan(0);
+    await verifyFresh(
+      CANONICAL_FIXTURE,
+      SIGNATURE_FIXTURE,
+      LOCALNET_SOLVER_KEY_ID,
+    );
+    expect(importKey.mock.calls.length).toBe(afterWarm);
+    importKey.mockRestore();
   });
 });

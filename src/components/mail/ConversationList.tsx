@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
 import { parseCompositePayload } from "@/lib/composite";
@@ -18,60 +19,17 @@ import {
   parseEscrowTimeoutPayload,
 } from "@/lib/escrow";
 import { formatDeviceSentRecipients } from "@/lib/mail-correspondents";
+import {
+  mailMessageDateTime,
+  mailboxMatchesFilter,
+  mailMessageTimestampMs,
+  type MailboxFilter,
+} from "@/app/inbox/mailbox-model";
 import type { LocalMailMessage } from "./Thread";
 import styles from "./mail.module.css";
 
-export type MailboxFilter = "all" | "letters" | "deals" | "invoices" | "escrow";
-
-function attachmentCategory(
-  type: "payment" | "offer" | "payment_request" | "escrow_fund",
-): Exclude<MailboxFilter, "all"> {
-  if (type === "payment_request") return "invoices";
-  if (type === "escrow_fund") return "escrow";
-  return "deals";
-}
-
-function mailboxCategory(
-  message: LocalMailMessage,
-): Exclude<MailboxFilter, "all"> {
-  if (message.envelope.type === "composite") {
-    const composite = parseCompositePayload(message.envelope.payload);
-    if (composite?.body.trim()) return "letters";
-    const first = composite?.attachments[0];
-    return first ? attachmentCategory(first.type) : "letters";
-  }
-  switch (message.envelope.type) {
-    case "text":
-    case "contact_snapshot":
-      return "letters";
-    case "payment_request":
-      return "invoices";
-    case "escrow_fund":
-    case "escrow_fill":
-    case "escrow_claim":
-    case "escrow_timeout":
-      return "escrow";
-    default:
-      return "deals";
-  }
-}
-
-/** Composite documents can appear under every matching secondary label. */
-export function mailboxMatchesFilter(
-  message: LocalMailMessage,
-  filter: MailboxFilter,
-): boolean {
-  if (filter === "all") return true;
-  if (message.envelope.type !== "composite") {
-    return mailboxCategory(message) === filter;
-  }
-  const composite = parseCompositePayload(message.envelope.payload);
-  if (!composite) return false;
-  if (filter === "letters" && composite.body.trim()) return true;
-  return composite.attachments.some(
-    (attachment) => attachmentCategory(attachment.type) === filter,
-  );
-}
+export type { MailboxFilter };
+export { mailboxMatchesFilter };
 
 function envelopeLabel(message: LocalMailMessage): string {
   switch (message.envelope.type) {
@@ -264,25 +222,31 @@ function messagePreview(message: LocalMailMessage): string {
   }
 }
 
-function messageTime(message: LocalMailMessage): string {
-  const milliseconds =
-    message.localCreatedAt ??
-    (message.blockTimestamp === undefined
-      ? undefined
-      : message.blockTimestamp * 1_000);
-  if (milliseconds === undefined) return "—";
+function messageTime(message: LocalMailMessage): {
+  label: string;
+  dateTime?: string;
+} {
+  const dateTime = mailMessageDateTime(message);
+  const milliseconds = mailMessageTimestampMs(message);
+  if (milliseconds === undefined) return { label: "—" };
   const date = new Date(milliseconds);
   const today = new Date();
   if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    return {
+      label: new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date),
+      dateTime,
+    };
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
+  return {
+    label: new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(date),
+    dateTime,
+  };
 }
 
 type ConversationListProps = {
@@ -296,7 +260,7 @@ type ConversationListProps = {
   onSelect: (messageId: string) => void;
 };
 
-export default function ConversationList({
+function ConversationList({
   messages,
   selectedMessageId,
   readMessageIds,
@@ -337,6 +301,9 @@ export default function ConversationList({
             const unread =
               message.direction !== "outgoing" &&
               !readMessageIds.has(message.id);
+            const posted = messageTime(message);
+            const preview = messagePreview(message);
+            const kind = envelopeLabel(message);
             return (
               <li key={message.id}>
                 <button
@@ -345,6 +312,7 @@ export default function ConversationList({
                   }`}
                   type="button"
                   aria-current={selected ? "true" : undefined}
+                  aria-label={`${unread ? "Unread. " : ""}${correspondent.primary}. ${kind}. ${preview}`}
                   onClick={() => onSelect(message.id)}
                 >
                   <span className={styles.conversationTopline}>
@@ -356,15 +324,11 @@ export default function ConversationList({
                         <small>{correspondent.detail}</small>
                       ) : null}
                     </span>
-                    <time>{messageTime(message)}</time>
+                    <time dateTime={posted.dateTime}>{posted.label}</time>
                   </span>
-                  <span className={styles.conversationPreview}>
-                    {messagePreview(message)}
-                  </span>
+                  <span className={styles.conversationPreview}>{preview}</span>
                   <span className={styles.conversationMeta}>
-                    <em className={styles.typeBadge}>
-                      {envelopeLabel(message)}
-                    </em>
+                    <em className={styles.typeBadge}>{kind}</em>
                     <span
                       className={
                         unread ? styles.unreadIndicator : styles.readIndicator
@@ -406,3 +370,5 @@ export default function ConversationList({
     </section>
   );
 }
+
+export default memo(ConversationList);

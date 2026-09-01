@@ -312,6 +312,15 @@ export function createPinnedHttpsFetch(options = {}) {
   };
 }
 
+async function cancelReadable(readable) {
+  if (!readable || typeof readable.cancel !== "function") return;
+  try {
+    await readable.cancel();
+  } catch {
+    // Preserve the policy refusal that caused cancellation.
+  }
+}
+
 function responseTextFromChunks(chunks, total) {
   const joined = new Uint8Array(total);
   let offset = 0;
@@ -329,6 +338,7 @@ export async function readBoundedResponseText(response, maximum, messages) {
     declared !== null &&
     (!/^\d+$/.test(declared) || Number(declared) > maximum)
   ) {
+    await cancelReadable(response.body);
     throw new EgressFailure(errors.sizeLimit);
   }
   if (!response.body) throw new EgressFailure(errors.noBody);
@@ -340,15 +350,15 @@ export async function readBoundedResponseText(response, maximum, messages) {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > maximum) {
-        await reader.cancel();
-        throw new EgressFailure(errors.sizeLimit);
-      }
+      if (total > maximum) throw new EgressFailure(errors.sizeLimit);
       chunks.push(value);
     }
   } catch (error) {
+    await cancelReadable(reader);
     if (error instanceof EgressFailure) throw error;
     throw new EgressFailure(errors.readFailed(error.message));
+  } finally {
+    reader.releaseLock();
   }
   try {
     return responseTextFromChunks(chunks, total);
@@ -426,12 +436,11 @@ export async function createEgressSession(urlInput, options = {}) {
             messages,
           });
         } catch (error) {
-          if (response.body && typeof response.body.cancel === "function") {
-            await response.body.cancel().catch(() => {});
-          }
+          await cancelReadable(response.body);
           throw error;
         }
         if (response.status >= 300 && response.status < 400) {
+          await cancelReadable(response.body);
           throw new EgressFailure(messages.redirect);
         }
         const text = await readBoundedResponseText(

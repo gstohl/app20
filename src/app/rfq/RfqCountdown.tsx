@@ -1,38 +1,38 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
+import { rfqCountdownView } from "./ui/rfq-countdown-view";
+import { useRfqPresentationClock } from "./ui/rfq-presentation-clock";
 
-export default function RfqCountdown({ expiresAt, onExpire }: { expiresAt: number; onExpire?: () => void }) {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1_000));
+export default function RfqCountdown({
+  expiresAt,
+  onExpire,
+  now,
+}: {
+  expiresAt: number;
+  onExpire?: () => void;
+  now?: number;
+}) {
+  const clock = useRfqPresentationClock(now === undefined);
+  const current = now ?? clock;
   const expiredRef = useRef(false);
+  const onExpireRef = useRef(onExpire);
+  onExpireRef.current = onExpire;
+  const view = rfqCountdownView(expiresAt, current);
 
   useEffect(() => {
     expiredRef.current = false;
-    const tick = () => setNow(Math.floor(Date.now() / 1_000));
-    tick();
-    const delay = Math.max(0, 1_000 - (Date.now() % 1_000));
-    let interval: number | undefined;
-    const timeout = window.setTimeout(() => {
-      tick();
-      interval = window.setInterval(tick, 1_000);
-    }, delay);
-    return () => {
-      window.clearTimeout(timeout);
-      if (interval !== undefined) window.clearInterval(interval);
-    };
   }, [expiresAt]);
 
-  const remaining = Math.max(0, expiresAt - now);
   useEffect(() => {
-    if (remaining === 0 && !expiredRef.current) {
+    if (view.remaining === 0 && !expiredRef.current) {
       expiredRef.current = true;
-      onExpire?.();
+      onExpireRef.current?.();
     }
-  }, [onExpire, remaining]);
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
+  }, [expiresAt, view.remaining]);
+
   return (
-    <span role="timer" aria-live={remaining === 0 || remaining === 60 ? "polite" : "off"}>
-      {new Date(expiresAt * 1_000).toISOString()} · {remaining ? `${minutes}m ${seconds}s remaining` : "expired"}
+    <span role="timer" aria-live={view.ariaLive}>
+      {view.iso} · {view.label}
     </span>
   );
 }

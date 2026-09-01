@@ -156,6 +156,7 @@ describe("APP20 canonical intents", () => {
     ["amount", "01"],
     ["minimumOutput", "-1"],
     ["maximumFee", "1.5"],
+    ["amount", `1${"0".repeat(78)}`],
   ] as const)("rejects non-canonical %s base units", (field, value) => {
     expect(() =>
       canonicalizeCrossChainIntent(intent({ [field]: value })),

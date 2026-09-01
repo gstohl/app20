@@ -50,7 +50,7 @@ import {
   type EncryptedMailRecord,
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
-import { createMailSenderAuth } from "@/lib/mail-auth";
+import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { randomConversationId } from "@/lib/mail-thread";
 import {
@@ -115,6 +115,14 @@ type SendState = {
   startedAt?: number;
   step?: number;
   totalSteps?: number;
+};
+
+/** Length-stable stand-in used only for ciphertext budget preflight. */
+export const COMPOSE_PREVIEW_SENDER_AUTH: MailSenderAuth = {
+  version: 1,
+  mailboxPublicKey: "0".repeat(64),
+  authPublicKey: "0".repeat(64),
+  signature: "0".repeat(128),
 };
 
 type ComposePreflight = {
@@ -320,15 +328,24 @@ export default function Compose({
   const recipientInputRef = useRef<HTMLTextAreaElement>(null);
   const [aliases, setAliases] = useState<AliasRecord[]>([]);
   const [sendState, setSendState] = useState<SendState>({ kind: "idle" });
+  const submitEpochRef = useRef(0);
+  const mailboxFromSeed = useMemo(
+    () => (mailSeed ? deriveKeypair(mailSeed) : null),
+    [mailSeed],
+  );
 
   useEffect(() => {
+    submitEpochRef.current += 1;
     draftRef.current = initialDraft;
     setDraft(initialDraft);
     setSendState({ kind: "idle" });
     const frame = requestAnimationFrame(() =>
       recipientInputRef.current?.focus(),
     );
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      submitEpochRef.current += 1;
+      cancelAnimationFrame(frame);
+    };
   }, [initialDraft.id]);
 
   useEffect(() => {
@@ -509,6 +526,7 @@ export default function Compose({
   function buildDocument(
     recipientAddress: string,
     ticketAddress?: string,
+    preview = false,
   ): {
     type: EnvelopeType;
     payload: unknown;
@@ -563,15 +581,20 @@ export default function Compose({
     }
     const conversationId = draft.conversationId || randomConversationId();
     const inReplyTo = draft.inReplyTo || "";
-    let senderAuth: ReturnType<typeof createMailSenderAuth> | undefined;
+    let senderAuth: MailSenderAuth | undefined;
     if (mailSeed) {
-      const mailbox = deriveKeypair(mailSeed);
-      senderAuth = createMailSenderAuth(mailSeed, mailbox.publicKey, {
-        documentId: draft.documentId,
-        conversationId,
-        inReplyTo,
-        body: draft.body,
-      });
+      senderAuth = preview
+        ? COMPOSE_PREVIEW_SENDER_AUTH
+        : createMailSenderAuth(
+            mailSeed,
+            (mailboxFromSeed ?? deriveKeypair(mailSeed)).publicKey,
+            {
+              documentId: draft.documentId,
+              conversationId,
+              inReplyTo,
+              body: draft.body,
+            },
+          );
     }
     const conversationFields = {
       documentId: draft.documentId,
@@ -605,71 +628,86 @@ export default function Compose({
     };
   }
 
-  let preflight: ComposePreflight | null = null;
-  let preflightIssue = "";
-  try {
-    const recipients = resolvedRecipients();
-    if (hasAnyAttachment && recipients.length !== 1) {
-      throw new Error(
-        "Attachments require exactly one counterparty; body-only messages may have multiple recipients.",
-      );
-    }
-    const document = buildDocument(recipients[0]);
-    const plaintextBytes = envelopeByteLength(document.type, document.payload);
-    const size = projectEncryptedMailSize(plaintextBytes, recipients.length);
-    let maxRecipientsForCurrentDocument = 0;
-    for (let count = 1; count <= MAX_MULTI_RECIPIENTS; count += 1) {
-      if (projectEncryptedMailSize(plaintextBytes, count).fits) {
-        maxRecipientsForCurrentDocument = count;
+  const { preflight, preflightIssue } = useMemo(() => {
+    let nextPreflight: ComposePreflight | null = null;
+    let nextIssue = "";
+    try {
+      const recipients = resolvedRecipients();
+      if (hasAnyAttachment && recipients.length !== 1) {
+        throw new Error(
+          "Attachments require exactly one counterparty; body-only messages may have multiple recipients.",
+        );
       }
-    }
-    const valueMoves: string[] = [];
-    if (document.payment) {
-      valueMoves.push(
-        `${formatBaseUnits(document.payment.transfer.amount, 18)} STRK (${document.payment.transfer.amount} base units) privately to ${document.payment.transfer.to} in the message transaction`,
+      const document = buildDocument(recipients[0], undefined, true);
+      const plaintextBytes = envelopeByteLength(
+        document.type,
+        document.payload,
       );
+      const size = projectEncryptedMailSize(plaintextBytes, recipients.length);
+      let maxRecipientsForCurrentDocument = 0;
+      for (let count = 1; count <= MAX_MULTI_RECIPIENTS; count += 1) {
+        if (projectEncryptedMailSize(plaintextBytes, count).fits) {
+          maxRecipientsForCurrentDocument = count;
+        }
+      }
+      const valueMoves: string[] = [];
+      if (document.payment) {
+        valueMoves.push(
+          `${formatBaseUnits(document.payment.transfer.amount, 18)} STRK (${document.payment.transfer.amount} base units) privately to ${document.payment.transfer.to} in the message transaction`,
+        );
+      }
+      if (document.escrow) {
+        valueMoves.push(
+          `${formatBaseUnits(document.escrow.legA.amount, 18)} STRK (${document.escrow.legA.amount} base units) deposited into escrow ${document.escrow.escrowAddress} before the message transaction`,
+        );
+      }
+      const noValueAttachments = document.composite
+        ? document.composite.attachments
+            .filter(
+              (attachment) =>
+                attachment.type === "offer" ||
+                attachment.type === "payment_request",
+            )
+            .map((attachment) =>
+              attachment.type === "offer"
+                ? "OTC offer: terms only; sending does not settle it"
+                : "Invoice: request only; sending does not pay it",
+            )
+        : [];
+      const transactions = document.escrow ? 2 : 1;
+      nextPreflight = {
+        recipientCount: recipients.length,
+        plaintextBytes,
+        ciphertextFelts: size.ciphertextFelts,
+        maxCiphertextFelts: size.maxCiphertextFelts,
+        maxPlaintextBytes: size.maxPlaintextBytes,
+        maxRecipientsForCurrentDocument,
+        fits: size.fits,
+        walletPrompts: transactions,
+        transactions,
+        valueMoves,
+        noValueAttachments,
+      };
+      if (!size.fits) {
+        nextIssue = `Remove at least ${plaintextBytes - size.maxPlaintextBytes} encoded byte${plaintextBytes - size.maxPlaintextBytes === 1 ? "" : "s"}; nothing can be submitted at this size.`;
+      }
+    } catch (error: unknown) {
+      nextIssue =
+        error instanceof Error
+          ? error.message
+          : "Complete the message fields to calculate its exact ciphertext budget.";
     }
-    if (document.escrow) {
-      valueMoves.push(
-        `${formatBaseUnits(document.escrow.legA.amount, 18)} STRK (${document.escrow.legA.amount} base units) deposited into escrow ${document.escrow.escrowAddress} before the message transaction`,
-      );
-    }
-    const noValueAttachments = document.composite
-      ? document.composite.attachments
-          .filter(
-            (attachment) =>
-              attachment.type === "offer" ||
-              attachment.type === "payment_request",
-          )
-          .map((attachment) =>
-            attachment.type === "offer"
-              ? "OTC offer: terms only; sending does not settle it"
-              : "Invoice: request only; sending does not pay it",
-          )
-      : [];
-    const transactions = document.escrow ? 2 : 1;
-    preflight = {
-      recipientCount: recipients.length,
-      plaintextBytes,
-      ciphertextFelts: size.ciphertextFelts,
-      maxCiphertextFelts: size.maxCiphertextFelts,
-      maxPlaintextBytes: size.maxPlaintextBytes,
-      maxRecipientsForCurrentDocument,
-      fits: size.fits,
-      walletPrompts: transactions,
-      transactions,
-      valueMoves,
-      noValueAttachments,
-    };
-    if (!size.fits) {
-      preflightIssue = `Remove at least ${plaintextBytes - size.maxPlaintextBytes} encoded byte${plaintextBytes - size.maxPlaintextBytes === 1 ? "" : "s"}; nothing can be submitted at this size.`;
-    }
-  } catch (error: unknown) {
-    preflightIssue =
-      error instanceof Error
-        ? error.message
-        : "Complete the message fields to calculate its exact ciphertext budget.";
-  }
+    return { preflight: nextPreflight, preflightIssue: nextIssue };
+  }, [
+    aliases,
+    draft,
+    escrowAddress,
+    escrowEnabled,
+    hasAnyAttachment,
+    mailSeed,
+    mailboxFromSeed,
+    senderAddress,
+  ]);
 
   const sendDisabled =
     Boolean(disabledReason) || sendPending || preflight?.fits === false;
@@ -683,6 +721,8 @@ export default function Compose({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitEpoch = submitEpochRef.current;
+    const isCurrentSubmit = () => submitEpoch === submitEpochRef.current;
     if (
       !helperAddress ||
       !walletAccount ||
@@ -1004,18 +1044,6 @@ export default function Compose({
             options,
           );
       transactionHashes.push(mailResult.transactionHash);
-      setSendState({
-        kind: "ok",
-        message:
-          steps.length === 2
-            ? "Escrow funding and the composite document are confirmed in two transactions."
-            : document.payment
-              ? "The composite document and private STRK payment are confirmed in one transaction."
-              : `The document is confirmed for ${recipientAddresses.length} recipient${recipientAddresses.length === 1 ? "" : "s"}.`,
-        transactionHashes,
-        step: steps.length,
-        totalSteps: steps.length,
-      });
       onSent({
         documentId: draft.documentId,
         draftId: draft.id,
@@ -1028,6 +1056,19 @@ export default function Compose({
         recipientCount: recipientAddresses.length,
         recipients: recipientAddresses,
         deliveryState: "confirmed",
+      });
+      if (!isCurrentSubmit()) return;
+      setSendState({
+        kind: "ok",
+        message:
+          steps.length === 2
+            ? "Escrow funding and the composite document are confirmed in two transactions."
+            : document.payment
+              ? "The composite document and private STRK payment are confirmed in one transaction."
+              : `The document is confirmed for ${recipientAddresses.length} recipient${recipientAddresses.length === 1 ? "" : "s"}.`,
+        transactionHashes,
+        step: steps.length,
+        totalSteps: steps.length,
       });
     } catch (error: unknown) {
       const outcome = transactionStateFromError(error);
@@ -1071,14 +1112,16 @@ export default function Compose({
           : escrowReservation?.transactionHash
             ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Mail will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
             : base;
-      setSendState({
-        kind: "error",
-        message,
-        transactionHashes: [
-          ...(fundConfirmedHash ? [fundConfirmedHash] : []),
-          ...(documentSubmittedHash ? [documentSubmittedHash] : []),
-        ],
-      });
+      if (isCurrentSubmit()) {
+        setSendState({
+          kind: "error",
+          message,
+          transactionHashes: [
+            ...(fundConfirmedHash ? [fundConfirmedHash] : []),
+            ...(documentSubmittedHash ? [documentSubmittedHash] : []),
+          ],
+        });
+      }
     }
   }
 
@@ -1176,6 +1219,7 @@ export default function Compose({
                     key={type}
                     type="button"
                     disabled={attached}
+                    aria-pressed={attached}
                     onClick={() => addAttachment(type)}
                   >
                     {attached ? "✓" : "+"} {attachmentLabel(type)}

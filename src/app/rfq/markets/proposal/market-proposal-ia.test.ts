@@ -11,9 +11,7 @@ const PAGE = "src/app/rfq/markets/proposal/page.tsx";
 describe("market proposal information architecture", () => {
   it("no longer lives in the pool-creation namespace", () => {
     expect(existsSync(resolve(process.cwd(), "src/app/pools"))).toBe(false);
-    expect(source("src/main.tsx")).toContain(
-      "@/app/rfq/markets/proposal/page",
-    );
+    expect(source("src/main.tsx")).toContain("@/app/rfq/markets/proposal/page");
     expect(source("src/main.tsx")).not.toContain("@/app/pools/create/page");
     expect(source(PAGE)).toContain("./market-proposal.module.css");
   });
@@ -53,12 +51,15 @@ describe("market proposal information architecture", () => {
       "market-proposal-amount-b-error",
       "market-proposal-reference-price-error",
     ]) {
-      expect(page).toContain(`aria-describedby={showErrors`);
-      expect(page).toContain(`\"${id}\"`);
+      expect(page).toMatch(
+        new RegExp(
+          String.raw`aria-describedby=\{\s*showErrors\s*&&[\s\S]{0,160}"${id}"`,
+        ),
+      );
       expect(page).toContain(`<em id=\"${id}\">`);
     }
     expect(page).toContain("errorSummaryRef.current?.focus()");
     expect(page).toContain("market-proposal-error-summary-title");
-    expect(page).toContain('tabIndex={-1}');
+    expect(page).toContain("tabIndex={-1}");
   });
 });

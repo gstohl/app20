@@ -1,10 +1,10 @@
 # APP20 engineering data-flow and retention disclosure
 
-> **Engineering disclosure only — not a privacy policy, terms, legal notice, or launch acceptance.** This document describes behavior evidenced by the cited repository code. It does not identify a controller, choose a lawful basis, promise a retention period, establish a rights process, or approve any deployment. The application has no privacy/terms route ([`src/app/routes.ts:1-15`](../src/app/routes.ts#L1-L15)). **P0-34 remains open** pending an accountable operator, deployment-specific facts, and legal/regulatory/data-protection review; this document does not close it ([`APP20_RFQ_GAPS.md:128-132`](APP20_RFQ_GAPS.md#L128-L132)).
+> **Engineering disclosure only — not a privacy policy, terms, legal notice, or launch acceptance.** This document describes behavior evidenced by the cited repository code. It does not identify a controller, choose a lawful basis, promise a retention period, establish a rights process, or approve any deployment. The application has no privacy/terms route ([`src/app/routes.ts:1-15`](../src/app/routes.ts#L1-L15)). **Legal/data-protection acceptance remains open** pending an accountable operator, deployment-specific facts, and legal/regulatory/data-protection review; this document does not close that release gate ([`APP20_RELEASE_GATES.md`](APP20_RELEASE_GATES.md#gate-summary)).
 
 ## Scope and reading rules
 
-This is a code-derived map for engineers and reviewers. “Stored” means code deliberately writes a record; it does not imply that browser, platform, network, backup, observability, or upstream operators retain nothing else. “Expiry” means a lifecycle status or access window changes; it is **not deletion** unless the cited code removes the record. Browser deletion cannot delete copies already shared with recipients, services, backups, or a public chain.
+This is a code-derived map for engineers and reviewers. Mail/escrow/RFQ execution descriptions below concern build-gated localnet behavior or dormant production seams; no live APP20 helper or public-network RFQ is configured, and the repository contains no Cloudflare deployment evidence. “Stored” means code deliberately writes a record; it does not imply that browser, platform, network, backup, observability, or upstream operators retain nothing else. “Expiry” means a lifecycle status or access window changes; it is **not deletion** unless the cited code removes the record. Browser deletion cannot delete copies already shared with recipients, services, backups, or a public chain.
 
 ## Data-flow and storage inventory
 
@@ -55,7 +55,7 @@ Accordingly:
 - No recall or deletion of data disclosed to recipients/makers and no erasure of public-chain data.
 - No proof that a configured deployment applies the code’s technical expiry routines, that backups follow them, or that third parties honor the same durations.
 
-## Unanswered operator and legal questions (P0-34)
+## Unanswered operator and legal questions
 
 These require accountable operator and counsel decisions; code cannot answer them:
 
@@ -70,4 +70,4 @@ These require accountable operator and counsel decisions; code cannot answer the
 9. What recovery/rotation/revocation process governs a compromised mailbox seed, local address-book key, Privy identity, maker key, or operator secret?
 10. Which production configuration, logging settings, backup topology, and operator runbooks were independently verified, by whom, and when?
 
-Until those questions are answered and an accountable operator/legal review accepts a real deployment, **P0-34 remains open and release-blocking**. This disclosure is engineering evidence only and must not be presented as policy acceptance.
+Until those questions are answered and an accountable operator/legal review accepts a real deployment, **the legal/data-protection release gate remains open and release-blocking**. This disclosure is engineering evidence only and must not be presented as policy acceptance.

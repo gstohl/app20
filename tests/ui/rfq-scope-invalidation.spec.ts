@@ -1,12 +1,12 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
-  connectLocalnetWallet,
-  localNetworkToggle,
+  expect,
   localnetIdentity,
-  readLocalnetConfig,
-  selectLocalNetwork,
+  openLocalnetPage,
+  test,
   type LocalnetConfig,
   type LocalnetIdentityId,
+  type Locator,
+  type Page,
 } from "./support/localnet";
 
 const DISCARD_MESSAGE =
@@ -38,20 +38,13 @@ async function openLocalDesk(
     identity?: LocalnetIdentityId;
   } = {},
 ) {
-  await page.goto("/rfq#desk");
-  if ((await localNetworkToggle(page).getAttribute("aria-pressed")) !== "true")
-    await selectLocalNetwork(page);
-  if (options.identity)
-    await page
-      .locator(`[data-localnet-identity="${options.identity}"]`)
-      .click();
-  await connectLocalnetWallet(page);
+  await openLocalnetPage(page, "/rfq#desk", {
+    identity: options.identity,
+  });
   const desk = page.getByRole("region", { name: "Block RFQ", exact: true });
   await expect(desk).toBeVisible();
   if (options.pairId && options.pairId !== "STRK_USDC")
-    await desk
-      .getByLabel("Private intent market")
-      .selectOption(options.pairId);
+    await desk.getByLabel("Private intent market").selectOption(options.pairId);
   await prepareQuoteRequest(desk);
   return desk;
 }
@@ -66,10 +59,9 @@ async function expectNoPersistedCompletion(
     .poll(async () => {
       const records = await page.evaluate(
         async ({ chainId, account }) => {
-          const dynamicImport = new Function(
-            "path",
-            "return import(path)",
-          ) as (path: string) => Promise<any>;
+          const dynamicImport = new Function("path", "return import(path)") as (
+            path: string,
+          ) => Promise<any>;
           const storageModule = await dynamicImport(
             "/src/app/rfq/rfq-storage.ts",
           );
@@ -104,57 +96,58 @@ async function delayQuoteResponse(page: Page) {
   return release;
 }
 
-test("an Alice quote completion is discarded after switching to Bob", async ({
+test("an Alice quote request is discarded after switching to Bob", async ({
   page,
-  request,
+  localnetConfig: config,
 }) => {
-  const config = await readLocalnetConfig(request);
   const desk = await openLocalDesk(page);
   const release = await delayQuoteResponse(page);
   const quoteRequest = page.waitForRequest("**/private-intents/quotes");
-  const quoteResponse = page.waitForResponse("**/private-intents/quotes");
-  await desk.getByRole("button", { name: "Request signed quotes" }).click();
-  await quoteRequest;
+  try {
+    await desk.getByRole("button", { name: "Request signed quotes" }).click();
+    await quoteRequest;
 
-  await page.locator('[data-localnet-identity="bob"]').click();
-  await expect(page.locator('[data-localnet-identity="bob"]')).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  release();
-  await quoteResponse;
+    await page.locator('[data-localnet-identity="bob"]').click();
+    await expect(
+      page.locator('[data-localnet-identity="bob"]'),
+    ).toHaveAttribute("aria-pressed", "true");
+  } finally {
+    release();
+  }
 
   await expect(
     page.getByRole("alert").filter({ hasText: DISCARD_MESSAGE }),
   ).toBeVisible();
   await expect(page.getByLabel("Selected private maker quote")).toHaveCount(0);
   await page.getByRole("link", { name: "Activity", exact: true }).click();
-  await expect(page.getByLabel("RFQ activity").locator("article")).toHaveCount(0);
+  await expect(page.getByLabel("RFQ activity").locator("article")).toHaveCount(
+    0,
+  );
   await expectNoPersistedCompletion(page, config);
 });
 
-test("a LOCAL quote completion is discarded after disconnecting and selecting Sepolia", async ({
+test("a LOCAL quote request is discarded after disconnecting and selecting Sepolia", async ({
   page,
-  request,
+  localnetConfig: config,
 }) => {
-  const config = await readLocalnetConfig(request);
   const desk = await openLocalDesk(page, {
     pairId: "USDC_STRK",
     identity: "bob",
   });
   const release = await delayQuoteResponse(page);
   const quoteRequest = page.waitForRequest("**/private-intents/quotes");
-  const quoteResponse = page.waitForResponse("**/private-intents/quotes");
-  await desk.getByRole("button", { name: "Request signed quotes" }).click();
-  await quoteRequest;
+  try {
+    await desk.getByRole("button", { name: "Request signed quotes" }).click();
+    await quoteRequest;
 
-  await page.getByRole("button", { name: "Disconnect wallet" }).click();
-  await page.getByRole("button", { name: "SEPOLIA", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "SEPOLIA", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
-  release();
-  await quoteResponse;
+    await page.getByRole("button", { name: "Disconnect wallet" }).click();
+    await page.getByRole("button", { name: "SEPOLIA", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "SEPOLIA", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+  } finally {
+    release();
+  }
 
   await expect(
     page.getByRole("heading", { name: "Private RFQ unavailable" }),
@@ -173,10 +166,7 @@ test("blocked IndexedDB guidance states that new requests remain gated", async (
       throw new Error("IndexedDB blocked by browser policy.");
     };
   });
-  await page.goto("/rfq#desk");
-  if ((await localNetworkToggle(page).getAttribute("aria-pressed")) !== "true")
-    await selectLocalNetwork(page);
-  await connectLocalnetWallet(page);
+  await openLocalnetPage(page, "/rfq#desk");
 
   const recovery = page.locator('[data-load-state="storage-unavailable"]');
   await expect(recovery).toBeVisible();
@@ -185,11 +175,9 @@ test("blocked IndexedDB guidance states that new requests remain gated", async (
   );
   await expect(recovery).not.toContainText("continue with a new request");
   await expect(
-    page
-      .getByRole("alert")
-      .filter({
-        hasText:
-          /RFQ resume storage and unresolved-deal discovery must load successfully/,
-      }),
+    page.getByRole("alert").filter({
+      hasText:
+        /RFQ resume storage and unresolved-deal discovery must load successfully/,
+    }),
   ).toBeVisible();
 });

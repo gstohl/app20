@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { secondaryRailEnvironmentLabel } from "./SecondaryRailShell";
 
 function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), "utf8");
@@ -28,6 +29,13 @@ describe("secondary rails share one boundary shell", () => {
     expect(shell).toContain("LOCALNET DEMO");
     expect(shell).toContain("SEPOLIA");
     expect(shell).toContain("MAINNET");
+  });
+
+  it("maps Ready provider indices, not the unused Goerli slot, onto environment labels", () => {
+    expect(secondaryRailEnvironmentLabel(0)).toBe("MAINNET");
+    expect(secondaryRailEnvironmentLabel(1)).toBe("UNKNOWN NETWORK");
+    expect(secondaryRailEnvironmentLabel(2)).toBe("SEPOLIA");
+    expect(secondaryRailEnvironmentLabel(3)).toBe("LOCALNET DEMO");
   });
 
   it("labels public send as unavailable instead of an actionable module", () => {

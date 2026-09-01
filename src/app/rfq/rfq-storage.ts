@@ -991,12 +991,12 @@ export function createRfqLifecycleStorage(
   });
 }
 
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () =>
-      reject(request.error ?? new Error("IndexedDB request failed."));
-  });
+function abortIndexedDbTransaction(transaction: IDBTransaction): void {
+  try {
+    transaction.abort();
+  } catch {
+    // The transaction may already be aborting or inactive after a compare fail.
+  }
 }
 
 async function openDatabase(): Promise<IDBDatabase> {
@@ -1014,41 +1014,79 @@ async function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
-export function waitForIndexedDbTransaction<T>(
+export function waitForIndexedDbRequests(
   transaction: IDBTransaction,
-  request: IDBRequest<T>,
-): Promise<T> {
+  requests: readonly IDBRequest[],
+): Promise<unknown[]> {
   return new Promise((resolve, reject) => {
-    let result: T;
-    let requestSucceeded = false;
+    const results: unknown[] = new Array(requests.length);
+    const succeeded = new Array(requests.length).fill(false);
     let settled = false;
-    const fail = () => {
+    const fail = (error?: unknown) => {
       if (settled) return;
       settled = true;
       reject(
-        transaction.error ??
-          request.error ??
+        error ??
+          transaction.error ??
+          requests.find((request) => request.error)?.error ??
           new Error("IndexedDB transaction aborted before commit."),
       );
     };
-    request.onsuccess = () => {
-      result = request.result;
-      requestSucceeded = true;
-    };
-    request.onerror = fail;
-    transaction.onerror = fail;
-    transaction.onabort = fail;
+    requests.forEach((request, index) => {
+      request.onsuccess = () => {
+        results[index] = request.result;
+        succeeded[index] = true;
+      };
+      request.onerror = () => fail(request.error);
+    });
+    transaction.onerror = () => fail();
+    transaction.onabort = () => fail();
     transaction.oncomplete = () => {
       if (settled) return;
       settled = true;
-      if (!requestSucceeded) {
+      if (succeeded.some((ok) => !ok)) {
         reject(
           new Error("IndexedDB transaction completed without its request."),
         );
         return;
       }
-      resolve(result);
+      resolve(results);
     };
+  });
+}
+
+export function waitForIndexedDbTransaction<T>(
+  transaction: IDBTransaction,
+  request: IDBRequest<T>,
+): Promise<T> {
+  return waitForIndexedDbRequests(transaction, [request]).then(
+    ([result]) => result as T,
+  );
+}
+
+function runIndexedDbMutation(
+  transaction: IDBTransaction,
+  start: (fail: (error: unknown) => void) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const fail = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(
+        error ??
+          transaction.error ??
+          new Error("IndexedDB transaction aborted before commit."),
+      );
+    };
+    start(fail);
+    transaction.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    transaction.onerror = () => fail();
+    transaction.onabort = () => fail();
   });
 }
 
@@ -1061,23 +1099,32 @@ export function createIndexedDbRfqStorage(
       try {
         const transaction = db.transaction(STORE, "readwrite");
         const store = transaction.objectStore(STORE);
-        await new Promise<void>((resolve, reject) => {
+        await runIndexedDbMutation(transaction, (fail) => {
           const keysRequest = store.getAllKeys();
           const valuesRequest = store.getAll();
           let keys: IDBValidKey[] | undefined;
           let values: unknown[] | undefined;
           const apply = () => {
             if (!keys || !values) return;
+            const snapshotKeys = keys;
+            const snapshotValues = values;
             try {
+              if (snapshotKeys.length !== snapshotValues.length) {
+                throw new Error(
+                  "IndexedDB alias migration read an inconsistent key/value snapshot.",
+                );
+              }
               const plan = planRfqAliasMigration(
-                keys.map((key, index) => [key, values![index]] as const),
+                snapshotKeys.map(
+                  (key, index) => [key, snapshotValues[index]] as const,
+                ),
                 scope,
               );
               for (const key of plan.deleteKeys) store.delete(key);
               for (const [key, value] of plan.putEntries) store.put(value, key);
             } catch (error: unknown) {
-              transaction.abort();
-              reject(error);
+              fail(error);
+              abortIndexedDbTransaction(transaction);
             }
           };
           keysRequest.onsuccess = () => {
@@ -1088,19 +1135,8 @@ export function createIndexedDbRfqStorage(
             values = valuesRequest.result;
             apply();
           };
-          keysRequest.onerror = () => reject(keysRequest.error);
-          valuesRequest.onerror = () => reject(valuesRequest.error);
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () =>
-            reject(
-              transaction.error ??
-                new Error("IndexedDB alias migration failed."),
-            );
-          transaction.onabort = () =>
-            reject(
-              transaction.error ??
-                new Error("IndexedDB alias migration aborted."),
-            );
+          keysRequest.onerror = () => fail(keysRequest.error);
+          valuesRequest.onerror = () => fail(valuesRequest.error);
         });
       } finally {
         db.close();
@@ -1111,29 +1147,19 @@ export function createIndexedDbRfqStorage(
       try {
         const transaction = db.transaction(STORE, "readwrite");
         const store = transaction.objectStore(STORE);
-        await new Promise<void>((resolve, reject) => {
+        await runIndexedDbMutation(transaction, (fail) => {
           const get = store.get(key);
           get.onerror = () =>
-            reject(get.error ?? new Error("IndexedDB compare read failed."));
+            fail(get.error ?? new Error("IndexedDB compare read failed."));
           get.onsuccess = () => {
             try {
               assertRfqStorageReplacement(get.result, value);
               store.put(finalizeRfqLifecycleForStorage(value), key);
             } catch (error: unknown) {
-              transaction.abort();
-              reject(error);
+              fail(error);
+              abortIndexedDbTransaction(transaction);
             }
           };
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () =>
-            reject(
-              transaction.error ?? new Error("IndexedDB compare/write failed."),
-            );
-          transaction.onabort = () =>
-            reject(
-              transaction.error ??
-                new Error("IndexedDB compare/write aborted."),
-            );
         });
       } finally {
         db.close();
@@ -1144,10 +1170,10 @@ export function createIndexedDbRfqStorage(
       try {
         const transaction = db.transaction(STORE, "readwrite");
         const store = transaction.objectStore(STORE);
-        await new Promise<void>((resolve, reject) => {
+        await runIndexedDbMutation(transaction, (fail) => {
           const get = store.get(key);
           get.onerror = () =>
-            reject(
+            fail(
               get.error ?? new Error("IndexedDB delete compare read failed."),
             );
           get.onsuccess = () => {
@@ -1158,21 +1184,10 @@ export function createIndexedDbRfqStorage(
               );
               store.delete(legacyKey);
             } catch (error: unknown) {
-              transaction.abort();
-              reject(error);
+              fail(error);
+              abortIndexedDbTransaction(transaction);
             }
           };
-          transaction.oncomplete = () => resolve();
-          transaction.onerror = () =>
-            reject(
-              transaction.error ??
-                new Error("IndexedDB compare/delete failed."),
-            );
-          transaction.onabort = () =>
-            reject(
-              transaction.error ??
-                new Error("IndexedDB compare/delete aborted."),
-            );
         });
       } finally {
         db.close();
@@ -1181,8 +1196,10 @@ export function createIndexedDbRfqStorage(
     async get(key) {
       const db = await openDatabase();
       try {
-        return await requestResult(
-          db.transaction(STORE).objectStore(STORE).get(key),
+        const transaction = db.transaction(STORE);
+        return await waitForIndexedDbTransaction(
+          transaction,
+          transaction.objectStore(STORE).get(key),
         );
       } finally {
         db.close();
@@ -1191,13 +1208,18 @@ export function createIndexedDbRfqStorage(
     async list(prefix) {
       const db = await openDatabase();
       try {
-        const store = db.transaction(STORE).objectStore(STORE);
-        const keysRequest = store.getAllKeys();
-        const valuesRequest = store.getAll();
-        const [keys, storedRows] = await Promise.all([
-          requestResult(keysRequest),
-          requestResult(valuesRequest),
+        const transaction = db.transaction(STORE);
+        const store = transaction.objectStore(STORE);
+        const [keys, storedRows] = await waitForIndexedDbRequests(transaction, [
+          store.getAllKeys(),
+          store.getAll(),
         ]);
+        if (!Array.isArray(keys) || !Array.isArray(storedRows))
+          throw new Error("IndexedDB list read an inconsistent snapshot.");
+        if (keys.length !== storedRows.length)
+          throw new Error(
+            "IndexedDB list read an inconsistent key/value snapshot.",
+          );
         return storedRows.filter(
           (_row: RfqStoredRow, index: number) =>
             typeof keys[index] === "string" &&

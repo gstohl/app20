@@ -6,7 +6,7 @@ APP20 joins three existing surfaces into one professional workflow:
 2. **Mailbox** — encrypted correspondence and non-authoritative evidence.
 3. **Counterparties** — a device-encrypted address book with RFQ and Mail handoffs.
 
-APP20 is definitively a bookless invited-maker RFQ venue using the existing STRK20 privacy pool. Creating a new privacy venue, AMM, order book, liquidity pool, or pool factory is an explicit non-goal. See [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md) for the canonical goals, non-goals, definitions of done, and open gaps.
+APP20 is definitively a bookless invited-maker RFQ venue using the existing STRK20 privacy pool. Creating a new privacy venue, AMM, order book, liquidity pool, or pool factory is an explicit non-goal. See [`GAPS.md`](GAPS.md) for the open engineering gaps.
 
 ## Localnet-final gate (2026-08-26)
 
@@ -42,9 +42,10 @@ against the real pool with mock proof bytes.
 Exact maker balances and private keys are never returned to the browser, and no
 order book is published. Devnet still exposes deterministic predeployed keys,
 loopback maker HTTP is not HPKE yet, and a single-host PID lock is not a
-replicated production database. Cairo and finalized pool state remain
-authoritative. A Mail letter, local lifecycle state, quote, WAL entry, or digest
-cannot prove settlement.
+replicated production database. Within this same-devnet fixture, Cairo and
+finalized pool state are the value authority. That is not a production
+configured-chain verifier or independent RPC quorum. A Mail letter, local
+lifecycle state, quote, WAL entry, or digest cannot prove settlement.
 
 ## Localnet claim authorization
 
@@ -59,13 +60,14 @@ RFQ execution remains disabled.
 
 ## Contact storage and recovery
 
-The live address book remains AES-GCM encrypted under a random device-local key
-at `app20/address-book/v1/<wallet>`. The key is stored in the same browser
+The browser address book remains AES-GCM encrypted under a random device-local
+key at `app20/address-book/v1/<wallet>`. The key is stored in the same browser
 profile, so this protects against casual storage inspection—not XSS, malicious
 extensions, or code already running in that profile.
 
-An unlocked Mailbox can create a full authenticated contact snapshot and post
-it as self-addressed Mail ciphertext. Snapshot v1 binds:
+In the build-gated localnet Mail flow, an unlocked Mailbox can create a full
+authenticated contact snapshot and post it as self-addressed Mail ciphertext.
+Snapshot v1 binds:
 
 - normalized wallet address;
 - Starknet chain ID;
@@ -89,7 +91,9 @@ Recovery requires both:
 2. the mailbox recovery phrase/seed registered to that wallet.
 
 Ready signatures are not stable encryption secrets and are never used as
-wrapping keys. The dapp never requests the STRK20 viewing key.
+wrapping keys. This Ready Mail/contact flow never requests the STRK20 viewing
+key; the separate optional Privy SDK has its own documented browser-owned
+viewing-key boundary.
 
 After decryption APP20 verifies every scope field, digest, MAC, timestamp,
 label, address, duplicate, and limit before allowing an explicit **Merge**.

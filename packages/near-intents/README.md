@@ -9,7 +9,8 @@ Vendor-isolated NEAR 1Click integration boundary. The shipped client is delibera
 - fail-closed rejection of unknown or funding-shaped fields, including deposit addresses, memos, nested funding objects, chain deposit maps, and live funding windows;
 - mandatory quote-signature verification with structured algorithm, key-id, and signed-payload-digest provenance;
 - no partner credential or default network transport;
-- no submit, deposit, funding, status, or refund method.
+- no submit, deposit, funding, status, or refund method;
+- token catalogs are length-capped and copied through a known-field allowlist, so extra or hostile catalog properties never reach callers.
 
 `mapCrossChainIntentToDryQuote()` is the single canonical intent-to-1Click dry-request mapping. `assertDryQuoteSatisfiesIntent()` binds the parsed quote back to the exact request, exact input where applicable, user minimum output, and explicit fee ceiling.
 

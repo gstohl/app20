@@ -20,15 +20,15 @@ flowchart TD
     PV --> PS[Sepolia recovery rail only]
     LW --> LD[Ephemeral localnet demo]
 
-    RM --> V[RFQ funding utilities and public send]
+    RM --> V[Funding utilities, public send unavailable]
     RS --> V
     PS --> PR[Privy Sepolia recovery vault]
     LD --> D[Private RFQ]
-    RW --> M[Mailbox and Counterparties]
+    RW -. UI view only, live Mail action denied .-> M[Mailbox and Counterparties, localnet actions only]
     LW --> M
 
     D -. no automatic fallback .-> X[Public venue]
-    X -->|Separate explicit confirmation only| PX[Public execution route]
+    X -->|Future separate approval, not implemented| PX[Public execution route]
 ```
 
 Mainnet rejects Privy and the development wallet. Localnet exists only when its build flag is enabled. Selecting one rail never silently borrows another rail's signer.
@@ -39,7 +39,7 @@ Mainnet rejects Privy and the development wallet. Localnet exists only when its 
 flowchart LR
     A[Public wallet balance] -->|Shield: public amount and timing| P[STRK20 private note pool]
     P -->|Private transfer| Q[New encrypted notes]
-    Q -->|Private RFQ note ownership| E[APP20 escrow interaction]
+    Q -->|Localnet private RFQ note ownership| E[APP20 localnet escrow interaction]
     Q -->|Unshield: public amount and timing| B[Public wallet balance]
 
     E --> C[Public pair, amounts, deadline, lifecycle events]
@@ -181,7 +181,7 @@ flowchart TD
 
     LM -->|Separate approval and review| MS[Optional Mainnet Mail scoring lane]
     LE -. do not deploy directly .-> VN[New quote-bound escrow VNext]
-    CT -. compatibility review .-> TN[Reviewed ticket class]
+    CT -. replace; do not reuse .-> TN[New App20Claim]
 
     VN --> A1[Independent Cairo and protocol audits]
     TN --> A1
@@ -209,8 +209,8 @@ flowchart LR
     P6 --> P7[Capped production]
 
     D[Current state] --> P2
-    D -. blocked: dirty source .-> P0
-    D -. blocked: HPKE, chain verifier, replicated storage .-> P3
+    D -. blocked: no attested delivering source .-> P0
+    D -. blocked: configured-chain verifier, replicated storage, accepted review .-> P3
 ```
 
-Passing a later-looking UI test cannot skip an earlier trust gate. Current release evidence allows localnet demonstration and dry review only.
+Passing a later-looking UI test cannot skip an earlier trust gate. Current RFQ release evidence allows localnet demonstration and dry review only; the separate Ready/Privy wallet surfaces do not authorize Mail or RFQ.

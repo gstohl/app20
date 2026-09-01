@@ -329,8 +329,7 @@ async function main() {
           });
         });
       });
-      // If a future policy permits CoinGecko, keep this verification local and
-      // deterministic; CSP is evaluated before Playwright can fulfill a request.
+      // Keep the reviewed CoinGecko request local and deterministic.
       await page.route("https://api.coingecko.com/**", async (requestRoute) => {
         await requestRoute.fulfill({
           contentType: "application/json",
@@ -360,15 +359,8 @@ async function main() {
         if (await loadPublicContext.isVisible()) {
           await loadPublicContext.click();
           await page
-            .waitForFunction(
-              () =>
-                (globalThis.__app20CspViolations ?? []).some(
-                  (violation) => violation.directive === "connect-src",
-                ),
-              undefined,
-              { timeout: 3_000 },
-            )
-            .catch(() => undefined);
+            .getByRole("img", { name: /candlesticks/i })
+            .waitFor({ timeout: 3_000 });
         } else {
           pageFailures.push(
             "opt-in CoinGecko price-history control is not visible",

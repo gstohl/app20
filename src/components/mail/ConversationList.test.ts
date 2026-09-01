@@ -1,8 +1,10 @@
+import { createElement, type ComponentType } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../../utils/constants";
 import { decodeEnvelope, encodeEnvelope } from "../../lib/envelope";
 import type { LocalMailMessage } from "./Thread";
-import {
+import ConversationList, {
   conversationCorrespondent,
   mailboxMatchesFilter,
 } from "./ConversationList";
@@ -99,5 +101,36 @@ describe("foldered composite reachability", () => {
     expect(correspondent.primary).toContain("0xb0b");
     expect(correspondent.primary).toContain("Bob");
     expect(correspondent.detail).toMatch(/not on-chain/i);
+  });
+});
+
+describe("conversation list accessibility", () => {
+  it("exposes unread state and a machine-readable timestamp", () => {
+    const message = compositeMessage("incoming");
+    message.localCreatedAt = Date.UTC(2026, 0, 2, 15, 4);
+    const List = ConversationList as ComponentType<{
+      messages: LocalMailMessage[];
+      selectedMessageId: string | null;
+      readMessageIds: ReadonlySet<string>;
+      aliases: [];
+      selfAddress: string;
+      folderLabel: string;
+      filterLabel: string;
+      onSelect: (messageId: string) => void;
+    }>;
+    const markup = renderToStaticMarkup(
+      createElement(List, {
+        messages: [message],
+        selectedMessageId: null,
+        readMessageIds: new Set<string>(),
+        aliases: [],
+        selfAddress: "0xb0b",
+        folderLabel: "Inbox",
+        filterLabel: "All types",
+        onSelect: () => undefined,
+      }),
+    );
+    expect(markup).toContain('aria-label="Unread.');
+    expect(markup).toMatch(/dateTime="2026-01-02T15:04:00.000Z"/i);
   });
 });

@@ -3,10 +3,8 @@
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import {
-  closeSync,
   existsSync,
   mkdirSync,
-  openSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -63,7 +61,9 @@ import {
   resolveExactLocalnetReservationOwner,
 } from "./localnet-expiry-handler.mjs";
 import {
+  acquireLocalnetRuntimeLock,
   initializeLocalnetRuntime,
+  releaseLocalnetRuntimeLock,
   rotateLocalnetDeploymentEpoch,
 } from "./localnet-runtime-state.mjs";
 import {
@@ -75,16 +75,13 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RUNTIME_DIR = join(ROOT, ".app20-localnet");
 const RESET_RUNTIME = process.argv.includes("--reset-runtime");
-let RUNTIME_LAYOUT = initializeLocalnetRuntime(RUNTIME_DIR, {
-  destructiveReset: RESET_RUNTIME,
-  confirmation: process.argv.includes("--confirm-delete-localnet-runtime")
-    ? "DELETE-LOCALNET-RUNTIME"
-    : undefined,
-});
-let RUNTIME_EPOCH = RUNTIME_LAYOUT.epoch;
 const STATE_FILE = join(RUNTIME_DIR, "state.json");
 const LOCK_FILE = join(RUNTIME_DIR, "start.lock");
+const RFQ_ACCOUNTING_JOURNAL = join(RUNTIME_DIR, "rfq-accounting.json");
 const GENERATED_ENV_FILE = join(ROOT, ".env.localnet.local");
+let RUNTIME_LAYOUT;
+let RUNTIME_EPOCH;
+let runtimeLockOwner;
 const API_HOST = "127.0.0.1";
 const API_PORT = Number(process.env.APP20_LOCALNET_API_PORT ?? 5051);
 const VITE_PORT = Number(process.env.APP20_LOCALNET_VITE_PORT ?? 5173);
@@ -112,8 +109,8 @@ const RFQ_OPERATIONS_CONTROL = Object.freeze({
   updatedAt: RFQ_OPERATIONS_STARTED_AT,
   claimsAndRefundsEnabled: true,
 });
-let MAKER_RUNTIME_DIR = RUNTIME_LAYOUT.makerRuntimeDir;
-let RESERVATION_COORDINATOR_JOURNAL = RUNTIME_LAYOUT.coordinatorJournal;
+let MAKER_RUNTIME_DIR;
+let RESERVATION_COORDINATOR_JOURNAL;
 const MAKER_NODE_SCRIPT = join(ROOT, "scripts", "localnet-maker-node.mjs");
 const MAKER_NODE_PORT_A = Number(
   process.env.APP20_LOCALNET_MAKER_A_PORT ?? 5052,
@@ -154,6 +151,19 @@ function readJsonFile(path) {
   }
 }
 
+function isRuntimeLockRecord(value) {
+  return Boolean(
+    value &&
+      value.schema === "app20/localnet-runtime-lock/v1" &&
+      Number.isSafeInteger(value.pid) &&
+      value.pid > 0 &&
+      typeof value.token === "string" &&
+      /^[0-9a-f]{64}$/.test(value.token) &&
+      typeof value.startedAt === "string" &&
+      value.startedAt,
+  );
+}
+
 function persistReplacementMakerPid(makerId, pid) {
   if (!Number.isInteger(pid) || pid <= 0) return;
   const state = readJsonFile(STATE_FILE);
@@ -172,10 +182,28 @@ function persistReplacementMakerPid(makerId, pid) {
   );
 }
 
-function removeRuntimeFiles() {
-  rmSync(STATE_FILE, { force: true });
-  rmSync(LOCK_FILE, { force: true });
+function removeStaleRuntimeFiles({ statePresent, lockPresent }) {
+  if (!statePresent && !lockPresent) return;
+
+  // Keep whichever ownership marker exists until the final unlink so a new
+  // startup cannot acquire the runtime while stale cleanup is still deleting
+  // files that belong to the previous process.
   rmSync(GENERATED_ENV_FILE, { force: true });
+  if (lockPresent) {
+    rmSync(STATE_FILE, { force: true });
+    rmSync(LOCK_FILE, { force: true });
+  } else {
+    rmSync(STATE_FILE, { force: true });
+  }
+}
+
+function releaseOwnedRuntimeFiles() {
+  rmSync(STATE_FILE, { force: true });
+  rmSync(GENERATED_ENV_FILE, { force: true });
+  if (runtimeLockOwner) {
+    releaseLocalnetRuntimeLock(LOCK_FILE, runtimeLockOwner);
+    runtimeLockOwner = undefined;
+  }
 }
 
 async function waitForExit(pid, timeoutMs) {
@@ -188,16 +216,33 @@ async function waitForExit(pid, timeoutMs) {
 }
 
 async function stopExisting() {
-  const state = readJsonFile(STATE_FILE);
-  const lock = readJsonFile(LOCK_FILE);
-  const pid = Number(state?.pid ?? lock?.pid ?? 0);
+  // Snapshot marker existence before reading ownership. If neither marker was
+  // present, cleanup must not delete a lock acquired by a concurrent startup.
+  const statePresent = existsSync(STATE_FILE);
+  const lockPresent = existsSync(LOCK_FILE);
+  const state = statePresent ? readJsonFile(STATE_FILE) : null;
+  const lock = lockPresent ? readJsonFile(LOCK_FILE) : null;
+  if (lockPresent && !isRuntimeLockRecord(lock)) {
+    fail(
+      "runtime lock is malformed or still being written; refusing to delete unknown ownership.",
+    );
+  }
+  const statePid = Number(state?.pid ?? 0);
+  const lockPid = Number(lock?.pid ?? 0);
+  const livePids = [...new Set([statePid, lockPid])].filter(isProcessAlive);
 
-  if (!pid || !isProcessAlive(pid)) {
-    removeRuntimeFiles();
+  if (livePids.length > 1) {
+    fail(
+      `runtime ownership is inconsistent across live pids ${livePids.join(", ")}; inspect them before stopping either process.`,
+    );
+  }
+  if (livePids.length === 0) {
+    removeStaleRuntimeFiles({ statePresent, lockPresent });
     console.log("APP20 localnet is already stopped.");
     return;
   }
 
+  const [pid] = livePids;
   console.log(`Stopping APP20 localnet (pid ${pid})…`);
   process.kill(pid, "SIGTERM");
   if (!(await waitForExit(pid, 20_000))) {
@@ -205,7 +250,10 @@ async function stopExisting() {
       `process ${pid} did not stop within 20 seconds; inspect it before sending SIGKILL.`,
     );
   }
-  removeRuntimeFiles();
+
+  // The owner removes its own state and token-bound lock. Do not perform a
+  // second blind unlink here: a new startup may legitimately acquire the lock
+  // immediately after the old process exits.
   console.log("APP20 localnet stopped.");
 }
 
@@ -213,64 +261,112 @@ if (process.argv.includes("--stop")) {
   await stopExisting();
   process.exit(0);
 }
-if (RESET_RUNTIME) {
-  console.log(`APP20 localnet runtime reset created epoch ${RUNTIME_EPOCH}.`);
-  process.exit(0);
-}
 
-if (!Number.isInteger(API_PORT) || API_PORT <= 0 || API_PORT > 65_535) {
+if (
+  !RESET_RUNTIME &&
+  (!Number.isInteger(API_PORT) || API_PORT <= 0 || API_PORT > 65_535)
+) {
   fail("APP20_LOCALNET_API_PORT must be a valid TCP port.");
 }
-if (!Number.isInteger(VITE_PORT) || VITE_PORT <= 0 || VITE_PORT > 65_535) {
+if (
+  !RESET_RUNTIME &&
+  (!Number.isInteger(VITE_PORT) || VITE_PORT <= 0 || VITE_PORT > 65_535)
+) {
   fail("APP20_LOCALNET_VITE_PORT must be a valid TCP port.");
 }
 
 const priorState = readJsonFile(STATE_FILE);
-if (priorState?.pid && isProcessAlive(Number(priorState.pid))) {
-  try {
-    const response = await fetch(`${BACKEND_TARGET}/health`);
-    if (response.ok) {
-      console.log(
-        `APP20 localnet is already running at ${priorState.appUrl ?? APP_URL}.`,
-      );
-      process.exit(0);
+const priorLock = readJsonFile(LOCK_FILE);
+const priorStatePid = Number(priorState?.pid ?? 0);
+const priorLockPid = Number(priorLock?.pid ?? 0);
+if (
+  isProcessAlive(priorStatePid) &&
+  isProcessAlive(priorLockPid) &&
+  priorStatePid !== priorLockPid
+) {
+  fail(
+    `runtime state pid ${priorStatePid} conflicts with lock owner ${priorLockPid}; inspect both processes before cleanup.`,
+  );
+}
+if (existsSync(STATE_FILE)) {
+  if (isProcessAlive(priorStatePid)) {
+    if (RESET_RUNTIME) {
+      fail("cannot reset localnet runtime while its owner is still running.");
     }
-  } catch {
-    // Fall through to the explicit error below.
+    try {
+      const response = await fetch(`${BACKEND_TARGET}/health`, {
+        signal: AbortSignal.timeout(2_000),
+      });
+      const healthy = response.ok;
+      await response.body?.cancel();
+      if (healthy) {
+        console.log(
+          `APP20 localnet is already running at ${priorState.appUrl ?? APP_URL}.`,
+        );
+        process.exit(0);
+      }
+    } catch {
+      // Fall through to the explicit error below.
+    }
+    fail(
+      `pid ${priorStatePid} is alive but its health endpoint is unavailable; run npm run localnet:stop before retrying.`,
+    );
   }
   fail(
-    `pid ${priorState.pid} is alive but its health endpoint is unavailable; run npm run localnet:stop before retrying.`,
+    "stale or malformed localnet runtime state requires npm run localnet:stop before startup.",
+  );
+}
+if (existsSync(LOCK_FILE)) {
+  fail(
+    isProcessAlive(priorLockPid)
+      ? `another localnet process owns the runtime as pid ${priorLockPid}.`
+      : "a stale or malformed localnet runtime lock requires npm run localnet:stop before startup.",
   );
 }
 
 mkdirSync(RUNTIME_DIR, { recursive: true });
-mkdirSync(MAKER_RUNTIME_DIR, { recursive: true, mode: 0o700 });
-rmSync(STATE_FILE, { force: true });
+runtimeLockOwner = acquireLocalnetRuntimeLock(LOCK_FILE);
+process.once("exit", () => {
+  if (!runtimeLockOwner) return;
+  try {
+    releaseLocalnetRuntimeLock(LOCK_FILE, runtimeLockOwner);
+    runtimeLockOwner = undefined;
+  } catch {
+    // Exit cannot recover from substituted ownership; preserve it fail-closed.
+  }
+});
 rmSync(GENERATED_ENV_FILE, { force: true });
-const priorLock = readJsonFile(LOCK_FILE);
-if (priorLock?.pid && isProcessAlive(Number(priorLock.pid))) {
-  fail(`another localnet startup is already running as pid ${priorLock.pid}.`);
+
+if (RESET_RUNTIME) {
+  try {
+    RUNTIME_LAYOUT = initializeLocalnetRuntime(RUNTIME_DIR, {
+      destructiveReset: true,
+      confirmation: process.argv.includes("--confirm-delete-localnet-runtime")
+        ? "DELETE-LOCALNET-RUNTIME"
+        : undefined,
+    });
+    RUNTIME_EPOCH = RUNTIME_LAYOUT.epoch;
+    rmSync(RFQ_ACCOUNTING_JOURNAL, { force: true });
+  } finally {
+    releaseLocalnetRuntimeLock(LOCK_FILE, runtimeLockOwner);
+    runtimeLockOwner = undefined;
+  }
+  console.log(`APP20 localnet runtime reset created epoch ${RUNTIME_EPOCH}.`);
+  process.exit(0);
 }
-rmSync(LOCK_FILE, { force: true });
-let lockDescriptor;
-try {
-  lockDescriptor = openSync(LOCK_FILE, "wx");
-  writeFileSync(
-    lockDescriptor,
-    `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`,
-  );
-  closeSync(lockDescriptor);
-} catch (error) {
-  if (lockDescriptor !== undefined) closeSync(lockDescriptor);
-  rmSync(LOCK_FILE, { force: true });
-  fail(`could not acquire the startup lock: ${String(error)}`);
-}
+
+RUNTIME_LAYOUT = initializeLocalnetRuntime(RUNTIME_DIR);
+RUNTIME_EPOCH = RUNTIME_LAYOUT.epoch;
+MAKER_RUNTIME_DIR = RUNTIME_LAYOUT.makerRuntimeDir;
+RESERVATION_COORDINATOR_JOURNAL = RUNTIME_LAYOUT.coordinatorJournal;
+mkdirSync(MAKER_RUNTIME_DIR, { recursive: true, mode: 0o700 });
 
 let currentStage = "prerequisite check";
 let devnet;
 let apiServer;
 let viteProcess;
 const makerProcesses = new Map();
+const makerRestartTimers = new Map();
 let shuttingDown = false;
 let operationTail = Promise.resolve();
 const operationLog = [];
@@ -358,15 +454,50 @@ function assertMakerPorts() {
   }
 }
 
+function childIsRunning(child) {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+async function waitForChildExit(child, timeoutMs) {
+  if (!childIsRunning(child)) return true;
+  return new Promise((resolveExit) => {
+    const timeout = setTimeout(() => {
+      child.removeListener("exit", onExit);
+      resolveExit(!childIsRunning(child));
+    }, timeoutMs);
+    const onExit = () => {
+      clearTimeout(timeout);
+      resolveExit(true);
+    };
+    child.once("exit", onExit);
+  });
+}
+
+async function terminateChild(child, label, timeoutMs = 5_000) {
+  if (!childIsRunning(child)) return;
+  child.kill("SIGTERM");
+  if (await waitForChildExit(child, timeoutMs)) return;
+  child.kill("SIGKILL");
+  if (!(await waitForChildExit(child, 2_000))) {
+    throw new Error(`${label} did not exit after SIGKILL.`);
+  }
+}
+
 async function waitForMakerHealth(client, child) {
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) {
+    if (!childIsRunning(child)) {
       fail(`${client.solverId} stopped before becoming healthy.`);
     }
     try {
-      const response = await fetch(`${client.endpoint}/health`);
-      if (response.ok) return;
+      const response = await fetch(`${client.endpoint}/health`, {
+        signal: AbortSignal.timeout(
+          Math.max(1, Math.min(1_000, deadline - Date.now())),
+        ),
+      });
+      const healthy = response.ok;
+      await response.body?.cancel();
+      if (healthy) return;
     } catch {
       // Keep polling until the bounded startup deadline.
     }
@@ -432,7 +563,9 @@ async function launchMakerNode(definition, context, authToken) {
     console.error(
       `${definition.solverId} stopped unexpectedly (${signal ? `signal ${signal}` : `exit ${code}`}); restarting from its WAL.`,
     );
-    setTimeout(() => {
+    const restartTimer = setTimeout(() => {
+      makerRestartTimers.delete(definition.solverId);
+      if (shuttingDown || !makerRestartContext) return;
       void launchMakerNode(definition, makerRestartContext, authToken)
         .then((replacement) => {
           makerClients = makerClients.map((candidate) =>
@@ -452,6 +585,7 @@ async function launchMakerNode(definition, context, authToken) {
           void shutdown(1);
         });
     }, 250);
+    makerRestartTimers.set(definition.solverId, restartTimer);
   });
   await waitForMakerHealth(client, child);
   ready = true;
@@ -470,22 +604,19 @@ async function startMakerNodes(context) {
 }
 
 async function stopMakerNodes() {
-  const children = [...makerProcesses.values()];
-  for (const child of children) {
-    if (child.exitCode === null) child.kill("SIGTERM");
-  }
-  await Promise.all(
-    children.map(
-      (child) =>
-        new Promise((resolveExit) => {
-          if (child.exitCode === null) child.once("exit", resolveExit);
-          else resolveExit();
-        }),
+  makerRestartContext = null;
+  for (const timer of makerRestartTimers.values()) clearTimeout(timer);
+  makerRestartTimers.clear();
+  const children = [...makerProcesses.entries()];
+  const outcomes = await Promise.allSettled(
+    children.map(([makerId, child]) =>
+      terminateChild(child, `maker node ${makerId}`),
     ),
   );
   makerProcesses.clear();
   makerClients = [];
-  makerRestartContext = null;
+  const failure = outcomes.find((outcome) => outcome.status === "rejected");
+  if (failure) throw failure.reason;
 }
 
 async function makerRequest(client, pathname, body) {
@@ -509,33 +640,54 @@ async function fundMakerPublicUsdc(env, token, accounts, starknet) {
   }
 }
 
+async function closeHttpServer(server) {
+  let closed = false;
+  const close = new Promise((resolveClose) => {
+    server.close(() => {
+      closed = true;
+      resolveClose();
+    });
+  });
+  await Promise.race([
+    close,
+    new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000)),
+  ]);
+  if (closed) return;
+  server.closeAllConnections?.();
+  await Promise.race([
+    close,
+    new Promise((resolveDelay) => setTimeout(resolveDelay, 2_000)),
+  ]);
+  if (!closed) throw new Error("local wallet API did not close cleanly.");
+}
+
 async function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log("\nStopping APP20 localnet…");
 
-  if (viteProcess?.pid && viteProcess.exitCode === null) {
-    viteProcess.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolveExit) => viteProcess.once("exit", resolveExit)),
-      new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000)),
-    ]);
-    if (viteProcess.exitCode === null) viteProcess.kill("SIGKILL");
-  }
-  if (apiServer) {
-    await new Promise((resolveClose) => apiServer.close(() => resolveClose()));
-  }
-  await stopMakerNodes();
-  if (devnet) {
+  const cleanup = async (label, operation) => {
     try {
-      await devnet.cleanup();
+      await operation();
     } catch (error) {
-      console.error(`Devnet cleanup failed: ${String(error)}`);
+      console.error(`${label} cleanup failed: ${String(error)}`);
       exitCode = exitCode || 1;
     }
-  }
+  };
 
-  removeRuntimeFiles();
+  await cleanup("Vite", async () => {
+    if (viteProcess?.pid) await terminateChild(viteProcess, "Vite");
+  });
+  await cleanup("Local wallet API", async () => {
+    if (apiServer) await closeHttpServer(apiServer);
+  });
+  await cleanup("Maker-node", stopMakerNodes);
+  await cleanup("Devnet", async () => {
+    if (devnet) await devnet.cleanup();
+  });
+  await cleanup("Runtime ownership", async () => {
+    releaseOwnedRuntimeFiles();
+  });
   process.exit(exitCode);
 }
 
@@ -899,39 +1051,18 @@ function assertCalls(value) {
 }
 
 async function readDevnetTimestamp(rpcUrl) {
-  const response = await fetch(rpcUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "starknet_getBlockWithTxHashes",
-      params: ["latest"],
-    }),
-  });
-  const payload = await response.json();
-  const timestamp = payload?.result?.timestamp;
-  if (!response.ok || payload.error || !Number.isSafeInteger(timestamp)) {
+  const rpc = createLocalnetJsonRpc(rpcUrl);
+  const block = await rpc("starknet_getBlockWithTxHashes", ["latest"]);
+  if (!Number.isSafeInteger(block?.timestamp)) {
     fail("devnet returned an invalid latest block timestamp.");
   }
-  return timestamp;
+  return block.timestamp;
 }
 
 async function createDevnetBlocks(rpcUrl, count = 10) {
+  const rpc = createLocalnetJsonRpc(rpcUrl);
   for (let index = 0; index < count; index += 1) {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: index + 1,
-        method: "devnet_createBlock",
-      }),
-    });
-    const payload = await response.json();
-    if (!response.ok || payload.error) {
-      fail("devnet could not mature the seeded escrow notes.");
-    }
+    await rpc("devnet_createBlock", []);
   }
 }
 
@@ -1170,7 +1301,9 @@ async function startApi({
   const coordinator = createLocalnetReservationCoordinator(
     RESERVATION_COORDINATOR_JOURNAL,
   );
-  const rfqEconomics = createLocalnetRfqEconomics();
+  const rfqEconomics = createLocalnetRfqEconomics({
+    accountingPath: RFQ_ACCOUNTING_JOURNAL,
+  });
   const authorityArtifact = Object.freeze({
     runtimeEpoch: RUNTIME_EPOCH,
     chainId: LOCALNET_CHAIN_ID,
@@ -1196,15 +1329,13 @@ async function startApi({
   });
   const quarantineAuthorityProjection = async (projection) => {
     if (projection.status !== "reorged") return;
-    const requestRecord = coordinator
-      .listRequests()
-      .find(
-        (candidate) =>
-          candidate.rfqId === projection.rfqId &&
-          candidate.account === projection.account &&
-          candidate.chainId === projection.chainId,
-      );
-    if (!requestRecord?.selection) return;
+    const requestRecord = coordinator.getRequestForRfq(projection.rfqId);
+    if (
+      !requestRecord?.selection ||
+      requestRecord.account !== projection.account ||
+      requestRecord.chainId !== projection.chainId
+    )
+      return;
     await coordinator.quarantineAuthority({
       intentDigest: requestRecord.intentDigest,
       rfqId: requestRecord.rfqId,
@@ -1220,13 +1351,9 @@ async function startApi({
     });
   };
   const releaseAttempt = async (attempt, reason) => {
-    const requestRecord = coordinator
-      .listRequests()
-      .find((candidate) => candidate.intentDigest === attempt.intentDigest);
+    const requestRecord = coordinator.getRequest(attempt.intentDigest);
     const selected = requestRecord?.selection;
-    const hasDurableDeal = coordinator
-      .listDeals()
-      .some((candidate) => candidate.intentDigest === attempt.intentDigest);
+    const hasDurableDeal = coordinator.hasDealForIntent(attempt.intentDigest);
     if (
       hasDurableDeal &&
       selected?.reservationId === attempt.reservationId &&
@@ -1321,19 +1448,8 @@ async function startApi({
     validateFundedObservation: validateCanonicalFundedObservation,
     readTime: () => readDevnetTimestamp(devnet.url),
     advanceTime: async (timestamp) => {
-      const setTimeResponse = await fetch(devnet.url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "devnet_setTime",
-          params: { time: timestamp },
-        }),
-      });
-      const setTimePayload = await setTimeResponse.json();
-      if (!setTimeResponse.ok || setTimePayload.error)
-        fail("devnet could not advance the private-intent expiry.");
+      const rpc = createLocalnetJsonRpc(devnet.url);
+      await rpc("devnet_setTime", { time: timestamp });
       await createDevnetBlocks(devnet.url, 1);
     },
     now: () => Math.floor(Date.now() / 1_000),
@@ -1359,9 +1475,7 @@ async function startApi({
     if (attempt.state === "released" || attempt.state === "expired") continue;
     const client = makerById.get(attempt.makerId);
     if (!client) continue;
-    const request = coordinator
-      .listRequests()
-      .find((candidate) => candidate.intentDigest === attempt.intentDigest);
+    const request = coordinator.getRequest(attempt.intentDigest);
     const durableTerms =
       request?.ticketAuthorization?.settlementTerms ??
       request?.settlementTerms ??
@@ -1408,7 +1522,8 @@ async function startApi({
     client,
     observedAt = Math.floor(Date.now() / 1_000),
   ) {
-    const available = makerProcesses.get(client.solverId)?.exitCode === null;
+    const makerProcess = makerProcesses.get(client.solverId);
+    const available = makerProcess ? childIsRunning(makerProcess) : false;
     const keyValid = observedAt < RFQ_MAKER_KEY_VALID_UNTIL;
     return {
       makerId: client.solverId,
@@ -1560,18 +1675,15 @@ async function startApi({
         const account = feltInput(body.account, "account", starknet);
         const chainId = feltInput(body.chainId, "chainId", starknet);
         const dealId = feltInput(body.dealId, "dealId", starknet);
-        const requestRecord = coordinator
-          .listRequests()
-          .find((candidate) => candidate.intentDigest === intentDigest);
-        const dealRecord = coordinator
-          .listDeals()
-          .find((candidate) => candidate.intentDigest === intentDigest);
+        const requestRecord = coordinator.getRequest(intentDigest);
+        const dealRecord = coordinator.getDeal(dealId);
         if (
           !requestRecord ||
           !dealRecord ||
           requestRecord.rfqId !== rfqId ||
           requestRecord.account !== account ||
           requestRecord.chainId !== chainId ||
+          dealRecord.intentDigest !== intentDigest ||
           dealRecord.dealId !== dealId ||
           dealRecord.rfqId !== rfqId ||
           !requestRecord.selection ||
@@ -1984,6 +2096,17 @@ async function startApi({
                 }
                 throw new Error(formatRfqEconomicRefusal(quoteEconomics));
               }
+              if (quoteEconomics.derivedUsdcEquivalentBaseUnits !== undefined) {
+                // Persist risk accounting before coordinator registration. A
+                // crash can conservatively count an unregistered quote, but
+                // cannot lose a maker commitment and reopen the 24h limit.
+                rfqEconomics.commit(
+                  client.solverId,
+                  quoteEconomics.derivedUsdcEquivalentBaseUnits,
+                  decisionAt,
+                  offer.reservationId,
+                );
+              }
               const registered = await coordinator.register(
                 {
                   intentDigest,
@@ -1994,16 +2117,6 @@ async function startApi({
                 releaseAttempt,
                 decisionAt,
               );
-              if (
-                registered.state === "reserved" &&
-                quoteEconomics.derivedUsdcEquivalentBaseUnits !== undefined
-              ) {
-                rfqEconomics.commit(
-                  client.solverId,
-                  quoteEconomics.derivedUsdcEquivalentBaseUnits,
-                  decisionAt,
-                );
-              }
               return { ...result, registered };
             } catch (error) {
               const declined = isLocalnetMakerDecline(error);
@@ -2484,7 +2597,10 @@ async function startApi({
     }
   });
 
+  let authorityRecoveryInFlight = false;
   const authorityMonitor = setInterval(() => {
+    if (authorityRecoveryInFlight) return;
+    authorityRecoveryInFlight = true;
     void authorityReconciliation
       .recover()
       .then(() => {
@@ -2496,6 +2612,9 @@ async function startApi({
         console.warn(
           "Localnet chain/maker authority monitor fail-stopped; no operation was retried.",
         );
+      })
+      .finally(() => {
+        authorityRecoveryInFlight = false;
       });
   }, 15_000);
   authorityMonitor.unref();
@@ -2537,13 +2656,21 @@ async function waitForVite() {
   const deadline = Date.now() + 30_000;
   let lastError = "Vite did not answer.";
   while (Date.now() < deadline) {
-    if (viteProcess?.exitCode !== null) {
-      fail(`Vite exited early with code ${viteProcess?.exitCode}.`);
+    if (!viteProcess || !childIsRunning(viteProcess)) {
+      fail(
+        `Vite exited early with ${viteProcess?.signalCode ? `signal ${viteProcess.signalCode}` : `code ${viteProcess?.exitCode}`}.`,
+      );
     }
     try {
-      const response = await fetch(APP_URL);
-      if (response.ok) return;
-      lastError = `HTTP ${response.status}`;
+      const response = await fetch(APP_URL, {
+        signal: AbortSignal.timeout(
+          Math.max(1, Math.min(2_000, deadline - Date.now())),
+        ),
+      });
+      const healthy = response.ok;
+      if (!healthy) lastError = `HTTP ${response.status}`;
+      await response.body?.cancel();
+      if (healthy) return;
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error);
     }
@@ -2554,13 +2681,17 @@ async function waitForVite() {
 
 async function verifyServedApp() {
   for (const path of ["/", "/inbox"]) {
-    const response = await fetch(`${APP_URL}${path}`);
+    const response = await fetch(`${APP_URL}${path}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
     const body = await response.text();
     if (!response.ok || !body.includes('id="root"')) {
       fail(`${path} did not serve the Vite SPA (HTTP ${response.status}).`);
     }
   }
-  const configResponse = await fetch(`${APP_URL}${WALLET_PROXY_PATH}/config`);
+  const configResponse = await fetch(`${APP_URL}${WALLET_PROXY_PATH}/config`, {
+    signal: AbortSignal.timeout(5_000),
+  });
   const configPayload = await configResponse.json();
   if (
     !configResponse.ok ||
@@ -2762,7 +2893,6 @@ try {
   writeFileSync(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`, {
     mode: 0o600,
   });
-  rmSync(LOCK_FILE, { force: true });
 
   console.log("\nAPP20 local demo is ready:");
   console.log(`  App:                ${APP_URL}`);

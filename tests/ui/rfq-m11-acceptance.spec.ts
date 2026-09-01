@@ -1,9 +1,8 @@
-import { expect, test } from "@playwright/test";
-
 import {
-  connectLocalnetWallet,
+  expect,
   expectNoHorizontalOverflow,
-  selectLocalNetwork,
+  openLocalnetPage,
+  test,
 } from "./support/localnet";
 
 test("M11 keeps /rfq canonical, preserves legacy hashes, and restores keyboard-selected views", async ({
@@ -56,9 +55,7 @@ test("M11 prioritizes the local RFQ ticket on mobile and keeps proposal migratio
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/rfq#new");
-  await selectLocalNetwork(page);
-  await connectLocalnetWallet(page, { auditFocusReturn: true });
+  await openLocalnetPage(page, "/rfq#new", { auditFocusReturn: true });
 
   const environment = page.getByRole("status", { name: "RFQ environment" });
   const ticket = page.locator('aside[aria-label="Private RFQ ticket"]');

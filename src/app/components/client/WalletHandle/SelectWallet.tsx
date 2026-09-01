@@ -1,6 +1,5 @@
 "use client";
 
-import type { Store } from "@starknet-io/get-starknet-discovery";
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
 import { validateAndParseAddress, walletV6, WalletAccountV6 } from "starknet";
 import { useEffect, useRef, useState } from "react";
@@ -11,6 +10,7 @@ import {
 } from "@/lib/wallet-policy";
 import {
   chainIdFromStandardAccount,
+  createWalletDiscoveryCoordinator,
   describeWalletConnectError,
 } from "@/lib/wallet-connect";
 import {
@@ -22,35 +22,22 @@ import styles from "../../../uni.module.css";
 import { useStoreWallet } from "../../Wallet/walletContext";
 import { useFrontendProvider } from "../provider/providerContext";
 
+const walletDiscovery = createWalletDiscoveryCoordinator(async () => {
+  const { createStore } = await import("@starknet-io/get-starknet-discovery");
+  return createStore({ eip1193Adapters: [] });
+});
+
+const DISCOVERY_LOAD_ERROR =
+  "Wallet discovery could not load. Close this dialog and try connecting again.";
+
 export default function SelectWallet({
   variant = "ctaBig",
 }: {
   variant?: "nav" | "ctaBig";
 }) {
-  const setMyWallet = useStoreWallet(
-    (state) => state.setMyStarknetWalletObject,
-  );
-  const setMyWalletAccount = useStoreWallet(
-    (state) => state.setMyWalletAccount,
-  );
   const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const isConnected = useStoreWallet((state) => state.isConnected);
-  const setConnected = useStoreWallet((state) => state.setConnected);
-  const disconnect = useStoreWallet((state) => state.disconnect);
   const address = useStoreWallet((state) => state.address);
-  const setWalletApi = useStoreWallet((state) => state.setWalletApiList);
-  const setStrk20Capable = useStoreWallet((state) => state.setStrk20Capable);
-  const setStrk20Capability = useStoreWallet(
-    (state) => state.setStrk20Capability,
-  );
-  const setConnectionNotice = useStoreWallet(
-    (state) => state.setConnectionNotice,
-  );
-  const setChain = useStoreWallet((state) => state.setChain);
-  const setAddressAccount = useStoreWallet((state) => state.setAddressAccount);
-  const setCurrentFrontendProviderIndex = useFrontendProvider(
-    (state) => state.setCurrentFrontendProviderIndex,
-  );
 
   const [connectingWallet, setConnectingWallet] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -59,10 +46,6 @@ export default function SelectWallet({
   const [discoveryState, setDiscoveryState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const discoveryStoreRef = useRef<Store | null>(null);
-  const discoveryLoadRef = useRef<Promise<void> | null>(null);
-  const discoveryUnsubscribeRef = useRef<(() => void) | null>(null);
-  const discoveryMountedRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const firstWalletRef = useRef<HTMLButtonElement>(null);
@@ -73,48 +56,25 @@ export default function SelectWallet({
   // Load it only after explicit connect intent so unrelated routes never fetch
   // or execute that dependency chain. EIP-1193 adapters remain disabled and
   // the selected wallet is still the only wallet that receives a request.
-  async function loadWalletDiscovery(): Promise<void> {
-    if (discoveryStoreRef.current) return;
-    if (discoveryLoadRef.current) return discoveryLoadRef.current;
-
-    setDiscoveryState("loading");
-    const pending = import("@starknet-io/get-starknet-discovery")
-      .then(({ createStore }) => {
-        const store: Store = createStore({ eip1193Adapters: [] });
-        const unsubscribe = store.subscribe((next) => {
-          if (discoveryMountedRef.current) setWallets(next.slice());
-        });
-        if (!discoveryMountedRef.current) {
-          unsubscribe();
-          return;
-        }
-        discoveryStoreRef.current = store;
-        discoveryUnsubscribeRef.current = unsubscribe;
-        setWallets(store.getWallets().slice());
-        setDiscoveryState("ready");
-      })
-      .catch(() => {
-        if (!discoveryMountedRef.current) return;
-        setDiscoveryState("error");
-        setError(
-          "Wallet discovery could not load. Close this dialog and try connecting again.",
-        );
-        discoveryLoadRef.current = null;
-      });
-    discoveryLoadRef.current = pending;
-    return pending;
-  }
-
+  // createStore registers window listeners with no cleanup, so the coordinator
+  // reuses one store and this effect only subscribes while the picker is open.
   useEffect(() => {
-    discoveryMountedRef.current = true;
-    return () => {
-      discoveryMountedRef.current = false;
-      discoveryUnsubscribeRef.current?.();
-      discoveryUnsubscribeRef.current = null;
-      discoveryStoreRef.current = null;
-      discoveryLoadRef.current = null;
-    };
-  }, []);
+    if (!pickerOpen) return;
+    let received = false;
+    const stop = walletDiscovery.subscribe({
+      onWallets: (next) => {
+        received = true;
+        setWallets(next);
+        setDiscoveryState("ready");
+      },
+      onError: () => {
+        setDiscoveryState("error");
+        setError(DISCOVERY_LOAD_ERROR);
+      },
+    });
+    if (!received) setDiscoveryState("loading");
+    return stop;
+  }, [pickerOpen]);
 
   // Keep the app store in sync with wallet-standard account changes. Extension
   // wallets can use this for normal account switching; the dev-only localnet
@@ -124,10 +84,10 @@ export default function SelectWallet({
 
     return walletV6.subscribeWalletEvent(selectedWallet, (change) => {
       if (!change.accounts) return;
+      const walletStore = useStoreWallet.getState();
       const [account] = change.accounts;
       if (!account) {
-        disconnect();
-        setConnectionNotice(
+        walletStore.disconnect(
           "The wallet removed account access. Connect again to reopen this mailbox.",
         );
         return;
@@ -135,8 +95,7 @@ export default function SelectWallet({
 
       const chainId = chainIdFromStandardAccount(account) ?? "";
       if (!chainId || !isStrk20Chain(chainId)) {
-        disconnect();
-        setConnectionNotice(
+        walletStore.disconnect(
           "The wallet switched to an unsupported network. Switch it to Starknet Sepolia or Mainnet, then connect again.",
         );
         return;
@@ -145,27 +104,22 @@ export default function SelectWallet({
       try {
         const providerIndex = providerIndexForChain(chainId);
         assertWalletOperationPolicy(selectedWallet, providerIndex, "connect");
-        setAddressAccount(validateAndParseAddress(account.address));
-        setChain(chainId);
-        setCurrentFrontendProviderIndex(providerIndex);
+        walletStore.applyAccountSwitch({
+          address: validateAndParseAddress(account.address),
+          chain: chainId,
+        });
+        useFrontendProvider
+          .getState()
+          .setCurrentFrontendProviderIndex(providerIndex);
       } catch (error) {
-        disconnect();
-        setConnectionNotice(
+        walletStore.disconnect(
           error instanceof Error
             ? error.message
             : "APP20 could not read the switched account. Reconnect on an allowed network.",
         );
       }
     });
-  }, [
-    disconnect,
-    isConnected,
-    selectedWallet,
-    setAddressAccount,
-    setChain,
-    setConnectionNotice,
-    setCurrentFrontendProviderIndex,
-  ]);
+  }, [isConnected, selectedWallet]);
 
   const pickable = wallets.filter(isSelectablePrivacyWallet);
 
@@ -266,22 +220,21 @@ export default function SelectWallet({
     );
     const address = validateAndParseAddress(accounts[0]);
 
-    setMyWallet(selectedWallet);
-    setMyWalletAccount(walletAccount);
-    setAddressAccount(address);
-    setChain(chainId);
-    setCurrentFrontendProviderIndex(providerIndex);
-    setWalletApi(capability.walletApiVersions);
-    setStrk20Capability(capability);
-    setStrk20Capable(capability.supported);
-    setConnectionNotice("");
-    setConnected(true);
+    useStoreWallet.getState().applyConnectedWallet({
+      wallet: selectedWallet,
+      walletAccount,
+      address,
+      chain: chainId,
+      capability,
+    });
+    useFrontendProvider
+      .getState()
+      .setCurrentFrontendProviderIndex(providerIndex);
   }
 
   function openPicker() {
     setError("");
     setPickerOpen(true);
-    void loadWalletDiscovery();
   }
 
   async function selectWallet(wallet: WalletWithStarknetFeatures) {
@@ -377,8 +330,7 @@ export default function SelectWallet({
         <button
           className={styles.addrPill}
           onClick={() => {
-            disconnect();
-            setConnectionNotice("");
+            useStoreWallet.getState().disconnect();
           }}
           aria-label="Disconnect wallet"
           title="Disconnect wallet"

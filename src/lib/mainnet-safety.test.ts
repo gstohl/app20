@@ -7,6 +7,7 @@ import {
   assertPublicBalanceCovers,
   authorizeStrk20ValueAction,
   formatMainnetPreflight,
+  isMainnetValueNetwork,
   readLivePoolFee,
   readPublicStrkBalance,
   type ValueActionPreflight,
@@ -164,6 +165,27 @@ describe("mainnet value safety", () => {
     expect(result.publicCover).toBe("fee-only");
     expect(result.requiredPublicBalance).toBe(2n * STRK);
     expect(result.sufficientBalance).toBe(true);
+  });
+
+  it("treats lowercase and SN_MAIN labels as mainnet confirmation gates", async () => {
+    expect(isMainnetValueNetwork("mainnet")).toBe(true);
+    expect(isMainnetValueNetwork(" SN_MAIN ")).toBe(true);
+    expect(isMainnetValueNetwork("SEPOLIA")).toBe(false);
+    expect(isMainnetValueNetwork("LOCALNET (DEV)")).toBe(false);
+
+    const present = vi.fn<(preflight: ValueActionPreflight) => boolean>(
+      () => true,
+    );
+    await authorizeStrk20ValueAction({
+      provider: providerWith(1n, 10n),
+      poolAddress,
+      accountAddress,
+      network: "mainnet",
+      action: "Shield",
+      amount: 1n,
+      presentMainnet: present,
+    });
+    expect(present).toHaveBeenCalledOnce();
   });
 
   it("keeps Sepolia confirmation-free while retaining the live guard", async () => {

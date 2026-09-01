@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_STRK_AMOUNT,
+  MAX_STRK_AMOUNT_INPUT_LENGTH,
   formatStrkAmount,
   loadStrkAmount,
   parseStrkAmount,
@@ -42,6 +43,12 @@ describe("STRK amount input", () => {
     expect(() => parseStrkAmount("0.0000000000000000001")).toThrow(
       /at most 18 decimal places/i,
     );
+  });
+
+  it("rejects unbounded amount strings before allocating a BigInt", () => {
+    expect(() =>
+      parseStrkAmount(`${"9".repeat(MAX_STRK_AMOUNT_INPUT_LENGTH + 1)}`),
+    ).toThrow(/positive decimal STRK amount/i);
   });
 
   it("formats exact human and base-unit values", () => {

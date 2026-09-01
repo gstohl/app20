@@ -25,6 +25,7 @@ Server-only foundations for independently operated APP20 invited makers.
   intent, quote, selection fence, deal, assets, amounts, deadline, ticket,
   outcome, authority digest, and authority revision before it changes capacity.
 - Offers and health responses expose no raw private balances or private keys.
+- Durable field strings, felt hex, lock files, and reservation-ledger HTTP bodies are length-capped. Oversize ledger responses are cancelled without JSON parse.
 
 ## Localnet service
 

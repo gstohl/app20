@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
 import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
@@ -60,6 +60,14 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   const [passphrase, setPassphrase] = useState("");
   const [passphraseConfirm, setPassphraseConfirm] = useState("");
   const [unlockPassphrase, setUnlockPassphrase] = useState("");
+  const aliveRef = useRef(true);
+
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
 
   const vault =
     address && chainId
@@ -103,6 +111,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   }
 
   async function finishWithSeed(seed: Uint8Array, created: boolean) {
+    if (!aliveRef.current) return;
     const keypair = deriveKeypair(seed);
     if (created) {
       setBackupPhrase(exportMailSeed(seed));
@@ -162,6 +171,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         entrypoint: "get_pubkey",
         calldata: [address],
       });
+      if (!aliveRef.current) return;
 
       if (keysEqual(registered, publicKey)) {
         await finishWithSeed(seed, created || Boolean(backupPhrase));
@@ -218,7 +228,9 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         throw new Error("The helper did not return the registered public key.");
       }
 
+      if (!aliveRef.current) return;
       await finishWithSeed(seed, created);
+      if (!aliveRef.current) return;
       if (created) {
         setSetup({
           kind: "ok",
@@ -234,6 +246,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         });
       }
     } catch (error: unknown) {
+      if (!aliveRef.current) return;
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
   }
@@ -254,6 +267,10 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     setSetup({ kind: "pending", message: "Unlocking the mailbox vault…" });
     try {
       const seed = await unwrapMailSeed(existing.record, unlockPassphrase);
+      if (!aliveRef.current) {
+        seed.fill(0);
+        return;
+      }
       onKeyReady(deriveKeypair(seed), seed);
       setUnlockPassphrase("");
       setSetup({
@@ -261,6 +278,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         message: "Mailbox vault unlocked for this session.",
       });
     } catch (error: unknown) {
+      if (!aliveRef.current) return;
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
   }
@@ -320,7 +338,9 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         return;
       }
 
+      if (!aliveRef.current) return;
       await persistSeed(restored.seed);
+      if (!aliveRef.current) return;
       onKeyReady(restored.keypair, restored.seed);
       setBackupPhrase("");
       setCopied(false);
@@ -332,6 +352,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           "Backup restored locally and matched this wallet's public mailbox key.",
       });
     } catch (error: unknown) {
+      if (!aliveRef.current) return;
       setRestoreNeedsConfirmation(false);
       setSetup({ kind: "error", message: strk20ErrorMessage(error) });
     }
@@ -562,7 +583,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           className={`${styles.status} ${
             setup.kind === "error" ? styles.statusError : ""
           }`}
-          role="status"
+          role={setup.kind === "error" ? "alert" : "status"}
         >
           {setup.message}
           {setup.transactionHash ? (

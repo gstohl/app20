@@ -116,8 +116,8 @@ async function expectTerminalReleaseRejected(
     }),
   ).rejects.toThrow(/terminal reservation state cannot transition/i);
   await expect(
-    repository.serializable(async (tx) =>
-      (await tx.get(RESERVATION_ID))?.reservation.state,
+    repository.serializable(
+      async (tx) => (await tx.get(RESERVATION_ID))?.reservation.state,
     ),
   ).resolves.toBe(expectedState);
 }
@@ -193,6 +193,17 @@ async function reservationRecoveryContract(
 }
 
 describe("production maker fail-closed ports", () => {
+  it("refuses oversize ledger bodies before JSON parse", async () => {
+    const repository = new DurableObjectReservationRepository({
+      fetch: async () =>
+        new Response("{}", {
+          headers: { "content-length": String(1_048_577) },
+        }),
+    });
+    await expect(repository.serializable(async () => 1)).rejects.toThrow(
+      /bounded size/i,
+    );
+  });
   it("does not claim an unconfigured repository or HSM", async () => {
     await expect(
       new UnavailableProductionRepository().serializable(async () => 1),

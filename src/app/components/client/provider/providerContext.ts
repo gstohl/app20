@@ -46,7 +46,12 @@ interface FrontEndProviderState {
 export const useFrontendProvider = create<FrontEndProviderState>()((set) => ({
   currentFrontendProviderIndex: readInitialProviderIndex(),
   setCurrentFrontendProviderIndex: (currentFrontendProviderIndex: number) => {
-    persistProviderIndex(currentFrontendProviderIndex);
-    set({ currentFrontendProviderIndex });
+    set((state) => {
+      if (state.currentFrontendProviderIndex === currentFrontendProviderIndex) {
+        return state;
+      }
+      persistProviderIndex(currentFrontendProviderIndex);
+      return { currentFrontendProviderIndex };
+    });
   },
 }));

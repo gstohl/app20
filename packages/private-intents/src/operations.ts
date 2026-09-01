@@ -308,7 +308,9 @@ function signedUnits(value: unknown, label: string): string {
 
 function felt(value: unknown, label: string): string {
   try {
-    return canonicalizeStarknetFelt(String(value ?? ""));
+    const normalized = canonicalizeStarknetFelt(String(value ?? ""));
+    if (normalized === "0x0") throw new Error();
+    return normalized;
   } catch {
     throw new Error(`${label} is not a canonical Starknet felt.`);
   }
@@ -887,8 +889,15 @@ export function planOperationalNetting(
     }
     const sellToken = felt(fill.sellToken, "Fill sell token");
     const buyToken = felt(fill.buyToken, "Fill buy token");
-    if (fill.sellAmount <= 0n || fill.buyAmount <= 0n) {
-      throw new Error("Operational netting fill amounts must be positive.");
+    if (
+      fill.sellAmount <= 0n ||
+      fill.sellAmount > U256_MAX ||
+      fill.buyAmount <= 0n ||
+      fill.buyAmount > U256_MAX
+    ) {
+      throw new Error(
+        "Operational netting fill amounts must be positive u256 values.",
+      );
     }
     const fillDigest = digest(fill.fillDigest, "Finalized fill digest");
     if (seenFillDigests.has(fillDigest)) {

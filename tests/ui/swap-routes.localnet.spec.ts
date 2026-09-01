@@ -1,15 +1,12 @@
-import { expect, test, type Page } from "@playwright/test";
 import {
+    activateLocalnet,
     connectLocalnetWallet,
+    expect,
     expectNoHorizontalOverflow,
     readStorageSnapshot,
-    selectLocalNetwork,
+    test,
+    type Page,
 } from "./support/localnet";
-
-async function connectLocalnet(page: Page) {
-    await selectLocalNetwork(page);
-    await connectLocalnetWallet(page);
-}
 
 async function gotoRoute(page: Page, route: string) {
     let lastError: unknown;
@@ -48,7 +45,7 @@ test("keeps RFQ canonical, public context opt-in, swap non-executable, and marke
 
     await gotoRoute(page, "/");
     await expect(page).toHaveURL(/\/rfq$/);
-    await connectLocalnet(page);
+    await activateLocalnet(page);
     await expect(
         page.getByText("LOCALNET DEMO", { exact: true }),
     ).toBeVisible();

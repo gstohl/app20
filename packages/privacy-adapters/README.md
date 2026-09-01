@@ -10,7 +10,7 @@ Fail-closed wallet and network policy plus normalized privacy intents for APP20.
 | Sepolia | Allowed | Blocked | Allowed | Blocked |
 | Localnet | Blocked | Blocked | Blocked | Build-gated only |
 
-The policy is enforced before an adapter may sign, discover, prove, or submit. A hidden button is not a security boundary. `PolicyBoundPrivacyAdapter` separates `build()` from `submit()`, so build-only sessions cannot accidentally call the delegate submission method.
+The policy is enforced before an adapter may sign, discover, prove, or submit. A hidden button is not a security boundary. Unknown network, adapter, operation, or submission-mode values fail closed. `PolicyBoundPrivacyAdapter` snapshots identity and capabilities at construction, then separates `build()` from `submit()`, so later mutation or a build-only session cannot widen authority or call the delegate submission method.
 
 Ready identification uses the Wallet Standard feature ID, not its display name. This remains a product routing control rather than cryptographic brand attestation.
 

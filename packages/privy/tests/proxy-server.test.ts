@@ -234,6 +234,24 @@ describe("Privy prover proxy", () => {
     );
   });
 
+  it("does not spend pre-auth admission on health checks", async () => {
+    const { url, upstreamFetch } = await start({
+      preAuthRequestsPerMinute: 1,
+    });
+    expect((await fetch(`${url}/health`)).status).toBe(200);
+    expect((await fetch(`${url}/health`)).status).toBe(200);
+    const rpc = await fetch(`${url}/rpc`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [PROVER_PROXY_TENANT_HEADER]: "tenant-demo",
+      },
+      body: JSON.stringify(proveRequest()),
+    });
+    expect(rpc.status).toBe(401);
+    expect(upstreamFetch).not.toHaveBeenCalled();
+  });
+
   it("rate-limits unauthenticated work before JWT verification", async () => {
     const { url, upstreamFetch } = await start({
       preAuthRequestsPerMinute: 1,

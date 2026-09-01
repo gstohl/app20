@@ -1,15 +1,17 @@
 "use client";
 
+import { useActiveStarknetSession } from "@/app/active-session";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
   configuredMarketPair,
   networkForProviderIndex,
+  resolveSessionTokenNetwork,
   type App20TokenNetwork,
   type CanonicalPairResolution,
 } from "@/lib/token-registry";
 import { MIN_STRK20_WALLET_API, type Strk20Capability } from "@/lib/strk20";
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 const FUNDING_ACTIONS = [
   { label: "Shield", specAction: "deposit" },
@@ -51,6 +53,8 @@ export type FundingReadinessInput = Readonly<{
   capability: Strk20Capability | null;
   network: App20TokenNetwork | null;
   pair: CanonicalPairResolution | null;
+  sessionCompatible: boolean;
+  sessionReason?: string;
 }>;
 
 function shortAddress(address: string): string {
@@ -69,12 +73,19 @@ export function createFundingReadinessModel({
   capability,
   network,
   pair,
+  sessionCompatible,
+  sessionReason,
 }: FundingReadinessInput): FundingReadinessModel {
   const localnetDemo = network === "localnet";
   const blockers: string[] = [];
+  const mismatchReason =
+    sessionReason?.trim() ||
+    "The connected account and selected network do not match.";
 
   if (!isConnected || !address) {
     blockers.push("No wallet is connected.");
+  } else if (!sessionCompatible) {
+    blockers.push(mismatchReason);
   }
   if (!localnetDemo) {
     blockers.push(
@@ -96,13 +107,15 @@ export function createFundingReadinessModel({
   }
 
   let pairModel: FundingReadinessModel["pair"];
+  const pairBoundToLocalnet =
+    localnetDemo && (!isConnected || sessionCompatible);
   if (!pair?.ok) {
     const reason = pair
       ? pair.message
       : "The active network has no reviewed canonical STRK/USDC asset identity.";
     pairModel = { eligible: false, reason };
     blockers.push(reason);
-  } else if (localnetDemo) {
+  } else if (pairBoundToLocalnet) {
     pairModel = {
       eligible: true,
       tokenA: {
@@ -116,6 +129,8 @@ export function createFundingReadinessModel({
         decimals: pair.pair.tokenB.decimals,
       },
     };
+  } else if (localnetDemo) {
+    pairModel = { eligible: false, reason: mismatchReason };
   } else {
     pairModel = {
       eligible: false,
@@ -291,21 +306,41 @@ export default function FundingReadinessPanel({
 }: {
   children?: ReactNode;
 }) {
+  const session = useActiveStarknetSession();
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
   const isConnected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
   const capability = useStoreWallet((state) => state.strk20Capability);
-  const network = networkForProviderIndex(providerIndex);
-  const pair = network ? configuredMarketPair(network) : null;
-  const model = createFundingReadinessModel({
+  const selectedNetwork = networkForProviderIndex(providerIndex);
+  const boundNetwork = resolveSessionTokenNetwork({
+    selectedNetwork,
+    sessionNetwork: session.network,
+    connected: session.connected,
+    compatible: session.compatible,
+    reason: session.reason,
+  });
+  const network = boundNetwork.ok ? boundNetwork.network : selectedNetwork;
+  const model = useMemo(() => {
+    const pair = network ? configuredMarketPair(network) : null;
+    return createFundingReadinessModel({
+      isConnected,
+      address,
+      capability,
+      network,
+      pair,
+      sessionCompatible: session.compatible,
+      sessionReason: session.reason,
+    });
+  }, [
     isConnected,
     address,
     capability,
     network,
-    pair,
-  });
+    session.compatible,
+    session.reason,
+  ]);
 
   return (
     <FundingReadinessPanelView model={model}>

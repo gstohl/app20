@@ -53,6 +53,7 @@ infrastructure:
   Browser-safe `hpke.ts` seals once per invited maker with pinned
   `@hpke/core@1.9.0`; the separate `@app20/private-intents/hpke-open` export
   opens through a maker key-id handle and must never enter the browser graph.
+  Openers require decrypted plaintext to equal canonical `PrivateRfqV1` JSON.
   The upstream library passes RFC/Wycheproof vectors but is **not formally
   audited**. Padding does not hide timing, source, maker fanout, or bucket size.
 - `MakerReservationV1` provides monotonic fencing and legal reserve → select →

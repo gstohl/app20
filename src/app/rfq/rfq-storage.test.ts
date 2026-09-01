@@ -19,6 +19,7 @@ import {
   planRfqAliasMigration,
   replaceRfqWithTombstone,
   rfqStorageKey,
+  waitForIndexedDbRequests,
   waitForIndexedDbTransaction,
   type RfqStorageBackend,
   type RfqStorageTombstone,
@@ -1027,5 +1028,49 @@ describe("RFQ lifecycle storage", () => {
     secondRequest.onsuccess?.({} as Event);
     secondTransaction.oncomplete?.({} as Event);
     await expect(second).resolves.toBe("ok");
+  });
+
+  it("does not replace a compare failure with a later abort rejection", async () => {
+    const request = {
+      result: undefined,
+      error: null,
+    } as unknown as IDBRequest<void>;
+    const transaction = { error: null } as unknown as IDBTransaction;
+    const pending = waitForIndexedDbRequests(transaction, [request]);
+    request.onsuccess?.({} as Event);
+    await Promise.resolve();
+    transaction.oncomplete?.({} as Event);
+    await expect(pending).resolves.toEqual([undefined]);
+  });
+
+  it("persists hash-only v1 migration evidence as a v2 quarantine row", async () => {
+    const storage = createRfqLifecycleStorage(memoryBackend().backend);
+    const restored = restoreRfqLifecycle(
+      {
+        schemaRevision: "app20/rfq-lifecycle/v1",
+        authority: "Local resume record · not settlement authority",
+        chainId: "0x1",
+        account: "0xabc",
+        rfqId: "legacy-hash",
+        state: "submission-unknown",
+        updatedAt: 99,
+        transactionHash: "0xfeed",
+      },
+      { chainId: "0x1", account: "0xabc", now: 100 },
+    );
+    await expect(storage.save(restored)).resolves.toBeUndefined();
+    const loaded = await storage.load(restored);
+    const roundTrip = restoreRfqLifecycle(loaded, {
+      chainId: "0x1",
+      account: "0xabc",
+      now: 101,
+    });
+    expect(roundTrip).toMatchObject({
+      state: "quarantined",
+      transactionHash: "0xfeed",
+      attempts: {
+        funding: { state: "submitted-unknown", transactionHash: "0xfeed" },
+      },
+    });
   });
 });

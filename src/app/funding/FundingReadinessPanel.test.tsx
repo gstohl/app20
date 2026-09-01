@@ -54,6 +54,7 @@ describe("FundingReadinessPanel", () => {
       capability: capableWallet,
       network: "localnet",
       pair: localnetPair,
+      sessionCompatible: true,
     });
     const html = renderToStaticMarkup(
       <FundingReadinessPanelView model={model}>
@@ -87,6 +88,7 @@ describe("FundingReadinessPanel", () => {
       capability: null,
       network: "localnet",
       pair: localnetPair,
+      sessionCompatible: false,
     });
     const oldApi = createFundingReadinessModel({
       isConnected: true,
@@ -100,6 +102,7 @@ describe("FundingReadinessPanel", () => {
       },
       network: "localnet",
       pair: localnetPair,
+      sessionCompatible: true,
     });
 
     expect(disconnected.ready).toBe(false);
@@ -131,6 +134,7 @@ describe("FundingReadinessPanel", () => {
         message:
           "USDC is not configured from reviewed metadata on this network.",
       },
+      sessionCompatible: true,
     });
     const html = renderToStaticMarkup(
       <FundingReadinessPanelView model={model}>
@@ -145,5 +149,28 @@ describe("FundingReadinessPanel", () => {
       "USDC is not configured from reviewed metadata on this network",
     );
     expect(html).not.toContain("Executable funding control");
+  });
+
+  it("does not treat a localnet provider as ready when the wallet chain disagrees", () => {
+    const model = createFundingReadinessModel({
+      isConnected: true,
+      address: "0x123",
+      capability: capableWallet,
+      network: "localnet",
+      pair: localnetPair,
+      sessionCompatible: false,
+      sessionReason: "Ready account and selected network do not match.",
+    });
+    const html = renderToStaticMarkup(
+      <FundingReadinessPanelView model={model}>
+        <button type="button">Mismatched funding control</button>
+      </FundingReadinessPanelView>,
+    );
+
+    expect(model.ready).toBe(false);
+    expect(model.pair.eligible).toBe(false);
+    expect(html).toContain("Ready account and selected network do not match.");
+    expect(html).not.toContain("Mismatched funding control");
+    expect(html).not.toContain("reviewed localnet demo identity");
   });
 });

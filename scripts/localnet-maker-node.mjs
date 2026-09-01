@@ -104,18 +104,36 @@ async function importRuntime() {
   return { client, sdk, abi, testing, starknet };
 }
 
-async function predeployedAccount(rpcUrl, accountIndex) {
+let devnetRpcSequence = 0;
+async function callDevnetRpc(rpcUrl, method, params = []) {
+  const id = ++devnetRpcSequence;
   const response = await fetch(rpcUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
-      id: 1,
-      method: "devnet_getPredeployedAccounts",
+      id,
+      method,
+      params,
     }),
+    redirect: "error",
+    signal: AbortSignal.timeout(5_000),
   });
   const payload = await response.json();
-  const account = payload?.result?.[accountIndex];
+  if (
+    !response.ok ||
+    payload?.id !== id ||
+    payload?.error ||
+    payload?.result === undefined
+  ) {
+    fail(`devnet RPC ${method} is unavailable.`);
+  }
+  return payload.result;
+}
+
+async function predeployedAccount(rpcUrl, accountIndex) {
+  const accounts = await callDevnetRpc(rpcUrl, "devnet_getPredeployedAccounts");
+  const account = accounts?.[accountIndex];
   if (!account?.address || !account?.private_key) {
     fail(`predeployed account index ${accountIndex} is unavailable.`);
   }
@@ -149,16 +167,7 @@ function toCoreCallAndProof(prepared) {
 
 async function createBlocks(rpcUrl, count = 10) {
   for (let index = 0; index < count; index += 1) {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: index + 1,
-        method: "devnet_createBlock",
-      }),
-    });
-    if (!response.ok) fail("could not advance devnet for proof validation.");
+    await callDevnetRpc(rpcUrl, "devnet_createBlock");
   }
 }
 

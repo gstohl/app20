@@ -1,70 +1,12 @@
 import {
   cairo,
   CallData,
-  Contract,
   type Account,
   type Call,
   type RpcProvider,
 } from "starknet";
 import { NETWORK_DEFAULTS } from "./constants.js";
 import type { StarknetNetwork } from "./constants.js";
-
-const ERC20_ABI = [
-  {
-    type: "function",
-    name: "balance_of",
-    inputs: [
-      {
-        name: "account",
-        type: "core::starknet::contract_address::ContractAddress",
-      },
-    ],
-    outputs: [{ type: "core::integer::u256" }],
-    state_mutability: "view",
-  },
-  {
-    type: "function",
-    name: "balanceOf",
-    inputs: [
-      {
-        name: "account",
-        type: "core::starknet::contract_address::ContractAddress",
-      },
-    ],
-    outputs: [{ type: "core::integer::u256" }],
-    state_mutability: "view",
-  },
-  {
-    type: "function",
-    name: "allowance",
-    inputs: [
-      {
-        name: "owner",
-        type: "core::starknet::contract_address::ContractAddress",
-      },
-      {
-        name: "spender",
-        type: "core::starknet::contract_address::ContractAddress",
-      },
-    ],
-    outputs: [{ type: "core::integer::u256" }],
-    state_mutability: "view",
-  },
-  {
-    type: "function",
-    name: "decimals",
-    inputs: [],
-    outputs: [{ type: "core::integer::u8" }],
-    state_mutability: "view",
-  },
-  {
-    type: "function",
-    name: "symbol",
-    inputs: [],
-    outputs: [{ type: "core::byte_array::ByteArray" }],
-    state_mutability: "view",
-  },
-] as const;
 
 export function defaultToken(network: StarknetNetwork): string {
   return NETWORK_DEFAULTS[network].strk;
@@ -96,22 +38,30 @@ export function transferCall(
   };
 }
 
+async function callU256(
+  provider: RpcProvider,
+  token: string,
+  entrypoint: string,
+  calldata: string[],
+): Promise<bigint> {
+  return toBigInt(
+    await provider.callContract({
+      contractAddress: token,
+      entrypoint,
+      calldata,
+    }),
+  );
+}
+
 export async function readBalance(
   provider: RpcProvider,
   token: string,
   owner: string,
 ): Promise<bigint> {
-  const contract = new Contract({
-    abi: ERC20_ABI,
-    address: token,
-    providerOrAccount: provider,
-  });
   try {
-    const result = await contract.call("balance_of", [owner]);
-    return toBigInt(result);
+    return await callU256(provider, token, "balance_of", [owner]);
   } catch {
-    const result = await contract.call("balanceOf", [owner]);
-    return toBigInt(result);
+    return await callU256(provider, token, "balanceOf", [owner]);
   }
 }
 
@@ -121,13 +71,7 @@ export async function readAllowance(
   owner: string,
   spender: string,
 ): Promise<bigint> {
-  const contract = new Contract({
-    abi: ERC20_ABI,
-    address: token,
-    providerOrAccount: provider,
-  });
-  const result = await contract.call("allowance", [owner, spender]);
-  return toBigInt(result);
+  return callU256(provider, token, "allowance", [owner, spender]);
 }
 
 export async function ensureAllowance(
@@ -138,12 +82,10 @@ export async function ensureAllowance(
   tip = 0n,
 ): Promise<string | undefined> {
   const current = await readAllowance(
-    account as never,
+    account.provider,
     token,
     account.address,
     spender,
-  ).catch(async () =>
-    readAllowance(account.provider, token, account.address, spender),
   );
   if (current >= amount) return undefined;
   const tx = await account.execute(approveCall(token, spender, amount), {
@@ -160,6 +102,14 @@ function toBigInt(value: unknown): bigint {
   if (typeof value === "bigint") return value;
   if (typeof value === "number") return BigInt(value);
   if (typeof value === "string") return BigInt(value);
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      throw new Error("Cannot parse u256 from empty result");
+    }
+    const low = toBigInt(value[0]);
+    const high = value[1] === undefined ? 0n : toBigInt(value[1]);
+    return low + (high << 128n);
+  }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
     if ("balance" in record) return toBigInt(record.balance);

@@ -20,9 +20,7 @@ export class PrivacyCapabilityError extends Error {
   }
 }
 
-function capabilityForIntent(
-  intent: PrivacyIntent,
-): keyof PrivacyCapabilities {
+function capabilityForIntent(intent: PrivacyIntent): keyof PrivacyCapabilities {
   switch (intent.type) {
     case "register":
       return "register";
@@ -48,8 +46,18 @@ export class PolicyBoundPrivacyAdapter implements PrivacyAccountAdapter {
   readonly submissionMode;
 
   constructor(private readonly delegate: PrivacyAccountAdapter) {
-    this.identity = delegate.identity;
-    this.capabilities = delegate.capabilities;
+    this.identity = Object.freeze({
+      adapter: delegate.identity.adapter,
+      network: delegate.identity.network,
+      address: delegate.identity.address,
+      ...(delegate.identity.publicKey === undefined
+        ? {}
+        : { publicKey: delegate.identity.publicKey }),
+      ...(delegate.identity.label === undefined
+        ? {}
+        : { label: delegate.identity.label }),
+    });
+    this.capabilities = Object.freeze({ ...delegate.capabilities });
     this.submissionMode = delegate.submissionMode;
     assertNetworkPolicy({
       network: this.identity.network,

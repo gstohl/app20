@@ -18,6 +18,7 @@ import {
   normalizeTokenRef,
   otcStorageKey,
   parseAcceptPayload,
+  isPositiveBaseUnitAmount,
   parseDecimalToBaseUnits,
   parseOfferPayload,
   parsePaymentRequestPayload,
@@ -26,6 +27,8 @@ import {
   recordDealEvent,
   recordPaymentRequest,
   recordUnverifiedPaymentClaim,
+  releaseOtcAccept,
+  releasePayment,
   transitionDeal,
   type OfferPayload,
   type PaymentRequestPayload,
@@ -96,6 +99,11 @@ describe("OTC payloads", () => {
     expect(parseDecimalToBaseUnits("2.5", 6)).toBe("2500000");
     expect(formatBaseUnits("2500000", 6)).toBe("2.5");
     expect(() => parseDecimalToBaseUnits("0.0000001", 6)).toThrow(/6 decimal/i);
+    expect(isPositiveBaseUnitAmount(((1n << 256n) - 1n).toString())).toBe(true);
+    expect(isPositiveBaseUnitAmount((1n << 256n).toString())).toBe(false);
+    expect(() => parseDecimalToBaseUnits((1n << 256n).toString(), 0)).toThrow(
+      /uint256/i,
+    );
   });
 
   it("canonicalizes addresses and strips controls from symbols and notes", () => {
@@ -420,7 +428,42 @@ describe("OTC local state", () => {
         },
         101,
       ),
-    ).toThrow();
+    ).toThrow(/expired/i);
+  });
+
+  it("expires an offered deal at reservation time instead of leaving a stuck fence", () => {
+    const storage = new MemoryStorage();
+    const expiring = offer({ expiresAt: 100 });
+    recordDealEvent(
+      storage,
+      "SN_SEPOLIA",
+      "0xb0b",
+      { type: "offer", payload: expiring },
+      99,
+    );
+    expect(() =>
+      claimOtcAccept(
+        storage,
+        "SN_SEPOLIA",
+        "0xb0b",
+        {
+          dealId,
+          transfer: {
+            token: strk,
+            amount: expiring.give.amount,
+            to: offerer,
+          },
+        },
+        100,
+      ),
+    ).toThrow(/expired/i);
+    const stored = loadOtcState(storage, "SN_SEPOLIA", "0xb0b").deals[dealId];
+    expect(stored.status).toBe("expired");
+    expect(stored.acceptPending).toBeUndefined();
+    expect(stored.acceptOperation).toBeUndefined();
+    expect(
+      releaseOtcAccept(storage, "SN_SEPOLIA", "0xb0b", dealId, 101)?.status,
+    ).toBe("expired");
   });
 
   it("moves an offered deal to declined as a terminal state", () => {
@@ -540,6 +583,23 @@ describe("payment request idempotency", () => {
     expect(stored.status).toBe("requested");
     expect(stored.paymentTxHash).toBeUndefined();
     expect(stored.receipt).toBeUndefined();
+  });
+
+  it("releases a reserved payment without leaving a reserved operation fence", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    claimPayment(...scope, request, 1_900_000_001);
+    const released = releasePayment(...scope, request.requestId, 1_900_000_002);
+    expect(released).toMatchObject({
+      status: "requested",
+      paymentPending: false,
+      paymentVerified: false,
+    });
+    expect(released).not.toHaveProperty("paymentOperation");
+    expect(
+      claimPayment(...scope, request, 1_900_000_003).paymentOperation?.state,
+    ).toBe("reserved");
   });
 
   it("refuses non-STRK and expired payment requests", () => {

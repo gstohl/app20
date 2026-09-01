@@ -52,18 +52,19 @@ export class InMemoryProverProxyLimiter implements ProverProxyLimiter {
     }
   }
 
-  private consumeWindow(
+  private windowStatus(
     windows: Map<string, Window>,
     key: string,
     limit: number,
     now: number,
-  ): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
+  ):
+    | { allowed: true; window: Window }
+    | { allowed: false; retryAfterSeconds: number } {
     const existing = windows.get(key);
     const window =
       !existing || now - existing.startedAt >= 60_000
         ? { startedAt: now, count: 0 }
         : existing;
-    windows.set(key, window);
     if (window.count >= limit) {
       return {
         allowed: false,
@@ -73,8 +74,7 @@ export class InMemoryProverProxyLimiter implements ProverProxyLimiter {
         ),
       };
     }
-    window.count += 1;
-    return { allowed: true };
+    return { allowed: true, window };
   }
 
   private cleanup(now: number): void {
@@ -91,16 +91,17 @@ export class InMemoryProverProxyLimiter implements ProverProxyLimiter {
   async acquire(input: ProverProxyLimitInput): Promise<ProverProxyLimitLease> {
     const now = Date.now();
     this.cleanup(now);
-    const tenantWindow = this.consumeWindow(
+    const tenantWindow = this.windowStatus(
       this.tenantWindows,
       input.tenantId,
       this.options.tenantRequestsPerMinute,
       now,
     );
     if (!tenantWindow.allowed) return tenantWindow;
-    const userWindow = this.consumeWindow(
+    const userKey = `${input.tenantId}:${input.userHash}`;
+    const userWindow = this.windowStatus(
       this.userWindows,
-      `${input.tenantId}:${input.userHash}`,
+      userKey,
       this.options.userRequestsPerMinute,
       now,
     );
@@ -114,6 +115,10 @@ export class InMemoryProverProxyLimiter implements ProverProxyLimiter {
       return { allowed: false, retryAfterSeconds: 1 };
     }
 
+    this.tenantWindows.set(input.tenantId, tenantWindow.window);
+    tenantWindow.window.count += 1;
+    this.userWindows.set(userKey, userWindow.window);
+    userWindow.window.count += 1;
     this.globalActive += 1;
     this.tenantActive.set(input.tenantId, activeForTenant + 1);
     let released = false;

@@ -8,6 +8,7 @@ import {
   readFileSync,
   renameSync,
   rmSync,
+  statSync,
   truncateSync,
   writeFileSync,
   writeSync,
@@ -36,7 +37,11 @@ import {
 
 const WAL_DOMAIN = "app20/maker-reservation-wal/v1" as const;
 const HEX_32_PATTERN = /^0x[0-9a-f]{64}$/;
+const FELT_HEX_PATTERN = /^0x[0-9a-f]{1,64}$/;
 const MAX_U128 = (1n << 128n) - 1n;
+const MAX_TEXT_LENGTH = 8192;
+const MAX_FELT_HEX_LENGTH = 66;
+const MAX_LOCK_FILE_BYTES = 4096;
 
 export type MakerTerminalReconciliation = Readonly<{
   attemptId: string;
@@ -263,8 +268,14 @@ export class MakerNodeError extends Error {
 }
 
 function requireText(value: string, label: string): string {
+  if (typeof value !== "string") {
+    throw new MakerNodeError(`${label} is required.`);
+  }
   const normalized = value.trim();
   if (!normalized) throw new MakerNodeError(`${label} is required.`);
+  if (normalized.length > MAX_TEXT_LENGTH) {
+    throw new MakerNodeError(`${label} exceeds the bounded length.`);
+  }
   return normalized;
 }
 
@@ -325,8 +336,15 @@ function serializeStored(record: StoredMakerReservation): StoredWire {
     ),
     ...(record.signedCanonical === undefined
       ? {}
-      : { signedCanonical: record.signedCanonical }),
-    ...(record.signature === undefined ? {} : { signature: record.signature }),
+      : {
+          signedCanonical: requireText(
+            record.signedCanonical,
+            "signedCanonical",
+          ),
+        }),
+    ...(record.signature === undefined
+      ? {}
+      : { signature: requireText(record.signature, "signature") }),
     ...(record.quoteDigest === undefined
       ? {}
       : { quoteDigest: requireHex32(record.quoteDigest, "quoteDigest") }),
@@ -599,10 +617,14 @@ export class DurableReservationStore {
     mkdirSync(dirname(this.#walPath), { recursive: true, mode: 0o700 });
     const existing = (() => {
       try {
+        if (statSync(this.#lockPath).size > MAX_LOCK_FILE_BYTES) {
+          throw new MakerNodeError("Reservation WAL lock file is invalid.");
+        }
         return JSON.parse(readFileSync(this.#lockPath, "utf8")) as {
           pid?: number;
         };
-      } catch {
+      } catch (error) {
+        if (error instanceof MakerNodeError) throw error;
         return null;
       }
     })();
@@ -906,7 +928,10 @@ function requireTtl(value: number): number {
 
 function requireFeltText(value: string, label: string): string {
   const normalized = requireText(value, label).toLowerCase();
-  if (!/^0x[0-9a-f]+$/.test(normalized))
+  if (
+    normalized.length > MAX_FELT_HEX_LENGTH ||
+    !FELT_HEX_PATTERN.test(normalized)
+  )
     throw new MakerNodeError(`${label} must be a canonical felt.`);
   return normalized;
 }
@@ -1732,14 +1757,22 @@ export class DurableMakerNode {
             requireHex32(request.intentDigest, "intentDigest") &&
           current.quoteDigest ===
             requireHex32(request.quoteDigest, "quoteDigest") &&
+          typeof request.sellToken === "string" &&
+          request.sellToken.length <= MAX_FELT_HEX_LENGTH &&
           current.sellToken.toLowerCase() === request.sellToken.toLowerCase() &&
           current.sellAmount === request.sellAmount &&
+          typeof request.buyToken === "string" &&
+          request.buyToken.length <= MAX_FELT_HEX_LENGTH &&
           current.buyToken.toLowerCase() === request.buyToken.toLowerCase() &&
           current.buyAmount === request.buyAmount &&
           Number.isSafeInteger(request.deadline) &&
           request.deadline === current.rfqExpiresAt &&
-          /^0x[0-9a-f]+$/i.test(request.dealId) &&
-          /^0x[0-9a-f]+$/i.test(request.ticketAddress) &&
+          typeof request.dealId === "string" &&
+          request.dealId.length <= MAX_FELT_HEX_LENGTH &&
+          typeof request.ticketAddress === "string" &&
+          request.ticketAddress.length <= MAX_FELT_HEX_LENGTH &&
+          FELT_HEX_PATTERN.test(request.dealId.toLowerCase()) &&
+          FELT_HEX_PATTERN.test(request.ticketAddress.toLowerCase()) &&
           (current.settlementDealId === undefined ||
             current.settlementDealId === request.dealId.toLowerCase()) &&
           (current.settlementDeadline === undefined ||

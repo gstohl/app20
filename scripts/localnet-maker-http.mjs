@@ -72,6 +72,7 @@ export async function requestLocalnetMaker(
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
+    redirect: "error",
     signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await response.json();

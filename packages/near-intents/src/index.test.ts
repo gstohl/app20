@@ -321,6 +321,9 @@ describe("APP20 dry-only NEAR Intents connector", () => {
       /canonical/i,
     );
     expect(() =>
+      assertDryQuoteRequest(request({ amount: `1${"0".repeat(78)}` })),
+    ).toThrow(/canonical/i);
+    expect(() =>
       assertDryQuoteRequest(request({ slippageTolerance: 10_001 })),
     ).toThrow(/basis points/i);
     expect(() =>
@@ -331,6 +334,16 @@ describe("APP20 dry-only NEAR Intents connector", () => {
         request({ depositMode: "EVIL" as DryQuoteRequest["depositMode"] }),
       ),
     ).toThrow(/depositMode/i);
+  });
+
+  it("rejects overlong quote base-unit integers before verification", async () => {
+    const fixture = response();
+    (fixture.quote as Record<string, unknown>).amountOut = `1${"0".repeat(78)}`;
+    const setup = client(fixture);
+    await expect(
+      setup.client.quote(request(), async () => undefined),
+    ).rejects.toThrow(/canonical base-unit integer/i);
+    expect(setup.verify).not.toHaveBeenCalled();
   });
 
   it("rejects malformed response timestamps before verification", async () => {
@@ -356,6 +369,67 @@ describe("APP20 dry-only NEAR Intents connector", () => {
     await expect(
       new DryOnlyNearIntentsClient(transport, verifier).listTokens(),
     ).rejects.toThrow(/decimals/i);
+  });
+
+  it("copies only reviewed token fields and rejects unbounded catalogs", async () => {
+    const verifier: OneClickQuoteVerifier = {
+      verify: async () => verification,
+    };
+    const allowlisted = new DryOnlyNearIntentsClient(
+      {
+        listTokens: async () => [
+          {
+            assetId: "asset",
+            symbol: "TOK",
+            decimals: 18,
+            blockchain: "near",
+            price: 1.5,
+            fundingAddress: "0xfunding",
+          } as never,
+        ],
+        requestQuote: async () => ({}),
+      },
+      verifier,
+    );
+    await expect(allowlisted.listTokens()).resolves.toEqual([
+      {
+        assetId: "asset",
+        symbol: "TOK",
+        decimals: 18,
+        blockchain: "near",
+        price: 1.5,
+      },
+    ]);
+    await expect(
+      new DryOnlyNearIntentsClient(
+        {
+          listTokens: async () => [
+            {
+              assetId: "asset",
+              symbol: "TOK",
+              decimals: 18,
+              price: Number.POSITIVE_INFINITY,
+            },
+          ],
+          requestQuote: async () => ({}),
+        },
+        verifier,
+      ).listTokens(),
+    ).rejects.toThrow(/price/i);
+    await expect(
+      new DryOnlyNearIntentsClient(
+        {
+          listTokens: async () =>
+            Array.from({ length: 4097 }, (_, index) => ({
+              assetId: `asset-${index}`,
+              symbol: "TOK",
+              decimals: 18,
+            })),
+          requestQuote: async () => ({}),
+        },
+        verifier,
+      ).listTokens(),
+    ).rejects.toThrow(/too many values/i);
   });
 
   it("exposes no live submission or funding method", () => {

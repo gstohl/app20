@@ -167,7 +167,7 @@ async function readResponseBody(
     }
     chunks.push(value);
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+  return Buffer.concat(chunks);
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -400,18 +400,18 @@ export function createPrivyProverProxyHandler(
     });
 
     try {
+      if (request.method === "GET" && request.url === "/health") {
+        status = 200;
+        outcome = "allowed";
+        sendJson(response, 200, { ok: true });
+        return;
+      }
       const sourceIp =
         options.clientIp?.(request) ??
         request.socket.remoteAddress ??
         "unknown";
       if (!admissionLimiter.consume(sourceIp)) {
         throw new ProxyHttpError(429, "Too many requests.", -32003, 60);
-      }
-      if (request.method === "GET" && request.url === "/health") {
-        status = 200;
-        outcome = "allowed";
-        sendJson(response, 200, { ok: true });
-        return;
       }
       if (request.method !== "POST" || request.url !== "/rpc") {
         throw new ProxyHttpError(404, "Not found.", -32601);

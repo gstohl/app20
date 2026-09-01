@@ -20,6 +20,35 @@ const DIGEST = /^0x[0-9a-fA-F]{64}$/;
 const NONCE = /^0x[0-9a-f]{64}$/;
 const DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const MAX_U256 = (1n << 256n) - 1n;
+const QUOTE_V2_WIRE_FIELDS = [
+  "buyAmount",
+  "buyToken",
+  "directoryDigest",
+  "directoryEpoch",
+  "domain",
+  "escrowAddress",
+  "escrowClassHash",
+  "helper",
+  "intentDigest",
+  "nonce",
+  "pool",
+  "pricingProvenance",
+  "quoteExpiresAt",
+  "quoteKeyId",
+  "quotedAt",
+  "registryRevision",
+  "reservationExpiresAt",
+  "reservationFence",
+  "reservationId",
+  "rfqDigest",
+  "sellAmount",
+  "sellToken",
+  "settlementContextDigest",
+  "signature",
+  "solverId",
+  "spreadBps",
+] as const;
+const QUOTE_V2_WIRE_FIELD_SET = new Set<string>(QUOTE_V2_WIRE_FIELDS);
 
 export type SolverQuoteV2 = Readonly<
   Omit<SolverQuote, "domain" | "solverKey"> & {
@@ -145,9 +174,17 @@ export function encodeSolverQuoteV2(quote: SolverQuoteV2): SolverQuoteV2Wire {
   });
 }
 export function decodeSolverQuoteV2(value: unknown): SolverQuoteV2 {
-  if (!value || typeof value !== "object")
+  if (!value || typeof value !== "object" || Array.isArray(value))
     throw new PrivateIntentError("Quote v2 wire payload must be an object.");
   const item = value as Record<string, unknown>;
+  for (const field of QUOTE_V2_WIRE_FIELDS) {
+    if (!(field in item))
+      throw new PrivateIntentError(`Quote v2 ${field} is required.`);
+  }
+  for (const field of Object.keys(item)) {
+    if (!QUOTE_V2_WIRE_FIELD_SET.has(field))
+      throw new PrivateIntentError(`Quote v2 field ${field} is unsupported.`);
+  }
   if (
     typeof item.sellAmount !== "string" ||
     !DECIMAL.test(item.sellAmount) ||
@@ -168,7 +205,9 @@ export function decodeSolverQuoteV2(value: unknown): SolverQuoteV2 {
   if (typeof quote.signature !== "string")
     throw new PrivateIntentError("Quote v2 signature is required.");
   if (!isCanonicalQuoteSignature(quote.signature))
-    throw new PrivateIntentError("Quote v2 signature must use canonical raw low-S P-256 encoding.");
+    throw new PrivateIntentError(
+      "Quote v2 signature must use canonical raw low-S P-256 encoding.",
+    );
   canonicalSolverQuoteV2(quote);
   return Object.freeze(quote);
 }
@@ -176,7 +215,9 @@ export async function digestSolverQuoteV2(
   quote: SolverQuoteV2,
 ): Promise<string> {
   if (!isCanonicalQuoteSignature(quote.signature)) {
-    throw new PrivateIntentError("Quote v2 digest requires canonical raw low-S P-256 encoding.");
+    throw new PrivateIntentError(
+      "Quote v2 digest requires canonical raw low-S P-256 encoding.",
+    );
   }
   const bytes = new Uint8Array(
     await crypto.subtle.digest(
@@ -255,7 +296,9 @@ export async function verifySolverQuoteV2(
 ): Promise<"accepted" | "idempotent"> {
   const canonical = canonicalSolverQuoteV2(quote);
   if (!isCanonicalQuoteSignature(quote.signature)) {
-    throw new PrivateIntentError("Quote v2 signature must use canonical raw low-S P-256 encoding.");
+    throw new PrivateIntentError(
+      "Quote v2 signature must use canonical raw low-S P-256 encoding.",
+    );
   }
   integer(now, "now", 1);
   const expected = input.expected;

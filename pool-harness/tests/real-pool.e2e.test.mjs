@@ -25,165 +25,195 @@ async function tokenBalance(node, token, account) {
 	return BigInt(balance[0]) + (BigInt(balance[1]) << 128n);
 }
 
-test(
-	"real privacy pool: register -> deposit -> private transfer -> discover -> withdraw",
-	{ timeout: 300_000 },
-	async () => {
-		const devnet = new Devnet();
+function totalNoteAmount(...noteGroups) {
+	return noteGroups.reduce(
+		(total, notes) =>
+			notes.reduce((subtotal, note) => subtotal + BigInt(note.amount), total),
+		0n,
+	);
+}
 
-		try {
-			const { env, transfers } = await createDevnetTestEnv(devnet);
-			const poolClassHash = await env.node.getClassHashAt(
-				env.privacy.address,
-			);
-			assert.equal(
-				BigInt(poolClassHash),
-				BigInt(EXPECTED_PRIVACY_CLASS_HASH),
-				"devnet must deploy the pinned privacy_Privacy class",
-			);
+test("real privacy pool: register -> deposit -> private transfer -> discover -> withdraw", {
+	timeout: 300_000,
+}, async () => {
+	const devnet = new Devnet();
 
-			const poolBalanceBefore = await tokenBalance(
-				env.node,
-				env.strk,
-				env.privacy.address,
-			);
-			assert.equal(poolBalanceBefore, 0n, "new pool must start with zero STRK");
+	try {
+		const { env, transfers } = await createDevnetTestEnv(devnet);
+		const poolClassHash = await env.node.getClassHashAt(env.privacy.address);
+		assert.equal(
+			BigInt(poolClassHash),
+			BigInt(EXPECTED_PRIVACY_CLASS_HASH),
+			"devnet must deploy the pinned privacy_Privacy class",
+		);
 
-			await env.alice.execute({
-				contractAddress: env.strk,
-				entrypoint: "approve",
-				calldata: [env.privacy.address, DEPOSIT_AMOUNT, 0n],
-			});
+		const poolBalanceBefore = await tokenBalance(
+			env.node,
+			env.strk,
+			env.privacy.address,
+		);
+		assert.equal(poolBalanceBefore, 0n, "new pool must start with zero STRK");
 
-			const bobRegistration = await transfers.bob
-				.build()
-				.register()
-				.execute();
-			assert.equal(
-				bobRegistration.callAndProof.proof.data,
-				undefined,
-				"devnet registration must use upstream's simulated proof",
-			);
-			assert.equal(
-				bobRegistration.callAndProof.proof.proofFacts.length,
-				9,
-				"registration must carry the nine on-chain proof facts",
-			);
-			const registrationReceipt = await devnet.executeOutside(
-				bobRegistration.callAndProof,
-			);
-			assert.equal(registrationReceipt.isSuccess(), true);
+		const approval = await env.alice.execute({
+			contractAddress: env.strk,
+			entrypoint: "approve",
+			calldata: [env.privacy.address, DEPOSIT_AMOUNT, 0n],
+		});
+		const approvalReceipt = await env.node.waitForTransaction(
+			approval.transaction_hash,
+		);
+		assert.equal(approvalReceipt.isSuccess(), true);
+		const alicePublicBalanceBefore = await tokenBalance(
+			env.node,
+			env.strk,
+			env.alice.address,
+		);
 
-			const sent = await transfers.alice
-				.build({
-					autoRegister: true,
-					autoSetup: true,
-					autoDiscover: { notes: "refresh", channels: "refresh" },
-				})
-				.with(env.strk)
-				.deposit({ amount: DEPOSIT_AMOUNT })
-				.transfer({
-					recipient: env.bob.address,
-					amount: TRANSFER_AMOUNT,
-				})
-				.surplusTo(env.alice.address)
-				.execute();
+		const bobRegistration = await transfers.bob.build().register().execute();
+		assert.equal(
+			bobRegistration.callAndProof.proof.data,
+			undefined,
+			"devnet registration must use upstream's simulated proof",
+		);
+		assert.equal(
+			bobRegistration.callAndProof.proof.proofFacts.length,
+			9,
+			"registration must carry the nine on-chain proof facts",
+		);
+		const registrationReceipt = await devnet.executeOutside(
+			bobRegistration.callAndProof,
+		);
+		assert.equal(registrationReceipt.isSuccess(), true);
 
-			// This is upstream's devnet confidence boundary: real pool calldata and
-			// proof facts, but no STARK proof bytes. The test-only signer also adds
-			// the screening attestation required by the real contract.
-			assert.equal(
-				sent.callAndProof.proof.data,
-				undefined,
-				"devnet transfer must use upstream's simulated proof",
-			);
-			assert.equal(sent.callAndProof.proof.proofFacts.length, 9);
-			const screeningSignature =
-				sent.callAndProof.proof.additionalData?.signature;
-			assert.ok(screeningSignature, "deposit must carry screening attestation");
-			assert.ok(
-				Number.isInteger(screeningSignature.issued_at) &&
-					screeningSignature.issued_at > 0,
-				"screening timestamp must be a positive integer",
-			);
-			assert.match(screeningSignature.sig_r, /^0x[0-9a-f]+$/i);
-			assert.match(screeningSignature.sig_s, /^0x[0-9a-f]+$/i);
+		const sent = await transfers.alice
+			.build({
+				autoRegister: true,
+				autoSetup: true,
+				autoDiscover: { notes: "refresh", channels: "refresh" },
+			})
+			.with(env.strk)
+			.deposit({ amount: DEPOSIT_AMOUNT })
+			.transfer({
+				recipient: env.bob.address,
+				amount: TRANSFER_AMOUNT,
+			})
+			.surplusTo(env.alice.address)
+			.execute();
 
-			const transferReceipt = await devnet.executeOutside(sent.callAndProof);
-			assert.equal(transferReceipt.isSuccess(), true);
-			assert.equal(
-				await tokenBalance(env.node, env.strk, env.privacy.address),
-				DEPOSIT_AMOUNT,
-				"pool must custody the full 100 STRK base units",
-			);
+		// This is upstream's devnet confidence boundary: real pool calldata and
+		// proof facts, but no STARK proof bytes. The test-only signer also adds
+		// the screening attestation required by the real contract.
+		assert.equal(
+			sent.callAndProof.proof.data,
+			undefined,
+			"devnet transfer must use upstream's simulated proof",
+		);
+		assert.equal(sent.callAndProof.proof.proofFacts.length, 9);
+		const screeningSignature = sent.callAndProof.proof.additionalData?.signature;
+		assert.ok(screeningSignature, "deposit must carry screening attestation");
+		assert.ok(
+			Number.isInteger(screeningSignature.issued_at) &&
+				screeningSignature.issued_at > 0,
+			"screening timestamp must be a positive integer",
+		);
+		assert.match(screeningSignature.sig_r, /^0x[0-9a-f]+$/i);
+		assert.match(screeningSignature.sig_s, /^0x[0-9a-f]+$/i);
 
-			const bobDiscovery = await transfers.bob.discoverNotes();
-			const bobStrkNotes = bobDiscovery.notes.get(env.strk) ?? [];
-			assert.equal(bobStrkNotes.length, 1, "Bob must discover one STRK note");
-			assert.equal(bobStrkNotes[0].amount, TRANSFER_AMOUNT);
+		const transferReceipt = await devnet.executeOutside(sent.callAndProof);
+		assert.equal(transferReceipt.isSuccess(), true);
+		assert.equal(
+			await tokenBalance(env.node, env.strk, env.privacy.address),
+			DEPOSIT_AMOUNT,
+			"pool must custody the full 100 STRK base units",
+		);
+		const alicePublicBalanceAfter = await tokenBalance(
+			env.node,
+			env.strk,
+			env.alice.address,
+		);
+		assert.equal(
+			alicePublicBalanceBefore - alicePublicBalanceAfter,
+			DEPOSIT_AMOUNT,
+			"shielding must debit Alice by exactly the deposited base units",
+		);
 
-			const aliceDiscovery = await transfers.alice.discoverNotes();
-			const aliceStrkNotes = aliceDiscovery.notes.get(env.strk) ?? [];
-			assert.equal(
-				aliceStrkNotes.length,
-				1,
-				"Alice must discover one surplus note",
-			);
-			assert.equal(aliceStrkNotes[0].amount, TRANSFER_AMOUNT);
+		const bobDiscovery = await transfers.bob.discoverNotes();
+		const bobStrkNotes = bobDiscovery.notes.get(env.strk) ?? [];
+		assert.equal(bobStrkNotes.length, 1, "Bob must discover one STRK note");
+		assert.equal(bobStrkNotes[0].amount, TRANSFER_AMOUNT);
 
-			const bobPublicBalanceBefore = await tokenBalance(
-				env.node,
-				env.strk,
-				env.bob.address,
-			);
-			const withdrawn = await transfers.bob
-				.build({
-					autoDiscover: { notes: "refresh", channels: "refresh" },
-					autoSelectNotes: "naive",
-				})
-				.with(env.strk)
-				.withdraw({
-					amount: TRANSFER_AMOUNT,
-					recipient: env.bob.address,
-				})
-				.execute();
-			assert.equal(withdrawn.callAndProof.proof.data, undefined);
-			assert.equal(withdrawn.callAndProof.proof.proofFacts.length, 9);
-			const withdrawalReceipt = await devnet.executeOutside(
-				withdrawn.callAndProof,
-			);
-			assert.equal(withdrawalReceipt.isSuccess(), true);
+		const aliceDiscovery = await transfers.alice.discoverNotes();
+		const aliceStrkNotes = aliceDiscovery.notes.get(env.strk) ?? [];
+		assert.equal(
+			aliceStrkNotes.length,
+			1,
+			"Alice must discover one surplus note",
+		);
+		assert.equal(aliceStrkNotes[0].amount, TRANSFER_AMOUNT);
+		assert.equal(
+			totalNoteAmount(bobStrkNotes, aliceStrkNotes),
+			DEPOSIT_AMOUNT,
+			"discovered private notes must equal the pool's token custody",
+		);
 
-			const bobPublicBalanceAfter = await tokenBalance(
-				env.node,
-				env.strk,
-				env.bob.address,
-			);
-			assert.equal(
-				bobPublicBalanceAfter - bobPublicBalanceBefore,
-				TRANSFER_AMOUNT,
-				"withdrawal must add exactly 50 STRK base units to Bob",
-			);
-			assert.equal(
-				await tokenBalance(env.node, env.strk, env.privacy.address),
-				TRANSFER_AMOUNT,
-				"pool must retain Alice's 50-unit private surplus",
-			);
+		const bobPublicBalanceBefore = await tokenBalance(
+			env.node,
+			env.strk,
+			env.bob.address,
+		);
+		const withdrawn = await transfers.bob
+			.build({
+				autoDiscover: { notes: "refresh", channels: "refresh" },
+				autoSelectNotes: "naive",
+			})
+			.with(env.strk)
+			.withdraw({
+				amount: TRANSFER_AMOUNT,
+				recipient: env.bob.address,
+			})
+			.execute();
+		assert.equal(withdrawn.callAndProof.proof.data, undefined);
+		assert.equal(withdrawn.callAndProof.proof.proofFacts.length, 9);
+		const withdrawalReceipt = await devnet.executeOutside(withdrawn.callAndProof);
+		assert.equal(withdrawalReceipt.isSuccess(), true);
 
-			const bobAfterWithdrawal = await transfers.bob.discoverNotes();
-			assert.equal(
-				(bobAfterWithdrawal.notes.get(env.strk) ?? []).length,
-				0,
-				"Bob's withdrawn note must be spent",
-			);
+		const bobPublicBalanceAfter = await tokenBalance(
+			env.node,
+			env.strk,
+			env.bob.address,
+		);
+		assert.equal(
+			bobPublicBalanceAfter - bobPublicBalanceBefore,
+			TRANSFER_AMOUNT,
+			"withdrawal must add exactly 50 STRK base units to Bob",
+		);
+		assert.equal(
+			await tokenBalance(env.node, env.strk, env.privacy.address),
+			TRANSFER_AMOUNT,
+			"pool must retain Alice's 50-unit private surplus",
+		);
 
-			console.log("APP20 real-pool lifecycle passed:");
-			console.log(`  privacy_Privacy: ${env.privacy.address}`);
-			console.log(`  class hash: ${poolClassHash}`);
-			console.log(`  screening key: ${TEST_ONLY_SCREENING_KEY} (TEST ONLY)`);
-			console.log("  Bob discovered and withdrew: 50 STRK base units");
-		} finally {
-			await devnet.cleanup();
-		}
-	},
-);
+		const bobAfterWithdrawal = await transfers.bob.discoverNotes();
+		const bobRemainingNotes = bobAfterWithdrawal.notes.get(env.strk) ?? [];
+		assert.equal(
+			bobRemainingNotes.length,
+			0,
+			"Bob's withdrawn note must be spent",
+		);
+		const aliceAfterWithdrawal = await transfers.alice.discoverNotes();
+		const aliceRemainingNotes = aliceAfterWithdrawal.notes.get(env.strk) ?? [];
+		assert.equal(
+			totalNoteAmount(bobRemainingNotes, aliceRemainingNotes),
+			TRANSFER_AMOUNT,
+			"remaining private notes must equal post-withdrawal pool custody",
+		);
+
+		console.log("APP20 real-pool lifecycle passed:");
+		console.log(`  privacy_Privacy: ${env.privacy.address}`);
+		console.log(`  class hash: ${poolClassHash}`);
+		console.log(`  screening key: ${TEST_ONLY_SCREENING_KEY} (TEST ONLY)`);
+		console.log("  Bob discovered and withdrew: 50 STRK base units");
+	} finally {
+		await devnet.cleanup();
+	}
+});

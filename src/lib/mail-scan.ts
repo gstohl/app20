@@ -141,13 +141,20 @@ export function loadMailScanCursor(
     ) {
       return emptyMailScanCursor();
     }
+    let pending: MailScanCursor["pending"];
+    if (cursor.pending !== undefined) {
+      try {
+        pending = parsePending(cursor.pending);
+      } catch {
+        // Keep the durable scanned range; only the continuation token is dropped.
+        pending = undefined;
+      }
+    }
     return {
       version: 1,
       oldestScannedBlock: cursor.oldestScannedBlock as number | null,
       newestScannedBlock: cursor.newestScannedBlock as number | null,
-      ...(cursor.pending === undefined
-        ? {}
-        : { pending: parsePending(cursor.pending) }),
+      ...(pending ? { pending } : {}),
     };
   } catch {
     return emptyMailScanCursor();

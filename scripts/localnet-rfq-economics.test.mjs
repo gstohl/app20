@@ -1,4 +1,14 @@
 import assert from "node:assert/strict";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   LOCALNET_RFQ_ECONOMICS_DELTA,
@@ -334,4 +344,178 @@ test("commit records outstanding USDC and can trip the maker daily cap", () => {
   const second = economics.evaluate(quoteInput());
   assert.equal(second.allowed, false);
   assert.ok(codes(second).includes("PER_MAKER_DAILY_CAP_EXCEEDED"));
+});
+
+test("trailing accounting does not reset across a UTC-day boundary", () => {
+  const utcBoundary = NOW - (NOW % 86_400) + 86_400;
+  const economics = createLocalnetRfqEconomics({
+    unapprovedFixtureAccounting: {
+      makerCommittedUsdcBaseUnits:
+        RFQ_PER_MAKER_DAILY_CAP_USDC_BASE_UNITS - REFERENCE_BUY,
+      marketCommittedUsdcBaseUnits: 45_000n * 1_000_000n,
+    },
+  });
+  economics.commit(
+    "app20-localnet-solver",
+    REFERENCE_BUY,
+    utcBoundary - 1,
+    "reservation-before-midnight",
+  );
+  const afterMidnight = economics.evaluate(
+    quoteInput({
+      decisionAt: utcBoundary + 1,
+      referenceObservedAt: utcBoundary + 1,
+    }),
+  );
+  assert.equal(afterMidnight.allowed, false);
+  assert.ok(codes(afterMidnight).includes("PER_MAKER_DAILY_CAP_EXCEEDED"));
+});
+
+test("trailing 24-hour lower boundary expires at exactly 86,400 seconds", () => {
+  const economics = createLocalnetRfqEconomics({
+    unapprovedFixtureAccounting: {
+      makerCommittedUsdcBaseUnits:
+        RFQ_PER_MAKER_DAILY_CAP_USDC_BASE_UNITS - 2n * REFERENCE_BUY + 1n,
+      marketCommittedUsdcBaseUnits: 45_000n * 1_000_000n,
+    },
+  });
+  economics.commit(
+    "app20-localnet-solver",
+    REFERENCE_BUY,
+    NOW,
+    "boundary-reservation",
+  );
+
+  const oneSecondInside = economics.evaluate(
+    quoteInput({
+      decisionAt: NOW + 86_399,
+      referenceObservedAt: NOW + 86_399,
+    }),
+  );
+  assert.equal(oneSecondInside.allowed, false);
+  assert.ok(codes(oneSecondInside).includes("PER_MAKER_DAILY_CAP_EXCEEDED"));
+
+  const exactlyExpired = economics.evaluate(
+    quoteInput({
+      decisionAt: NOW + 86_400,
+      referenceObservedAt: NOW + 86_400,
+    }),
+  );
+  assert.equal(exactlyExpired.allowed, true);
+  assert.ok(!codes(exactlyExpired).includes("PER_MAKER_DAILY_CAP_EXCEEDED"));
+});
+
+test("accounting snapshots use a moving half-open window and exact maker totals", () => {
+  const economics = createLocalnetRfqEconomics({
+    unapprovedFixtureAccounting: null,
+  });
+  economics.commit("maker-a", 10n, NOW - 86_400, "expired");
+  economics.commit("maker-a", 20n, NOW - 86_399, "inside");
+  economics.commit("maker-b", 30n, NOW, "other-maker");
+  economics.commit("maker-a", 40n, NOW + 1, "future");
+
+  const snapshot = economics.accountingSnapshot(NOW, "maker-a");
+  assert.equal(snapshot.startsAt, NOW - 86_399);
+  assert.equal(snapshot.endsAt, NOW + 1);
+  assert.equal(snapshot.endsAt - snapshot.startsAt, 86_400);
+  assert.match(snapshot.windowId, /^localnet-risk-trailing-24h-/);
+  assert.equal(snapshot.makerCommittedUsdcBaseUnits, 20n);
+  assert.equal(snapshot.marketCommittedUsdcBaseUnits, 50n);
+});
+
+test("commitment identities make replay idempotent and reject equivocation", () => {
+  const economics = createLocalnetRfqEconomics({
+    unapprovedFixtureAccounting: null,
+  });
+  economics.commit("maker-a", 20n, NOW, "reservation-a");
+  economics.commit("maker-a", 20n, NOW + 1, "reservation-a");
+  assert.equal(
+    economics.accountingSnapshot(NOW + 1, "maker-a")
+      .makerCommittedUsdcBaseUnits,
+    20n,
+  );
+  assert.throws(
+    () => economics.commit("maker-a", 21n, NOW + 1, "reservation-a"),
+    /different economic terms/i,
+  );
+  assert.throws(
+    () => economics.commit("maker-a", 1n, Number.NaN),
+    /commitment time/i,
+  );
+});
+
+test("durable accounting survives restart and preserves the exact boundary", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app20-rfq-accounting-"));
+  const accountingPath = join(directory, "accounting.json");
+  try {
+    const first = createLocalnetRfqEconomics({
+      accountingPath,
+      unapprovedFixtureAccounting: null,
+    });
+    first.commit("maker-a", 20n, NOW, "reservation-a");
+    assert.equal(statSync(accountingPath).mode & 0o777, 0o600);
+
+    const restarted = createLocalnetRfqEconomics({
+      accountingPath,
+      unapprovedFixtureAccounting: null,
+    });
+    assert.equal(
+      restarted.accountingSnapshot(NOW + 86_399, "maker-a")
+        .makerCommittedUsdcBaseUnits,
+      20n,
+    );
+    assert.equal(
+      restarted.accountingSnapshot(NOW + 86_400, "maker-a")
+        .makerCommittedUsdcBaseUnits,
+      0n,
+    );
+    restarted.commit("maker-a", 20n, NOW + 1, "reservation-a");
+    assert.equal(
+      JSON.parse(readFileSync(accountingPath, "utf8")).commitments.length,
+      1,
+    );
+
+    const journal = JSON.parse(readFileSync(accountingPath, "utf8"));
+    journal.commitments.push(journal.commitments[0]);
+    writeFileSync(accountingPath, JSON.stringify(journal));
+    assert.throws(
+      () =>
+        createLocalnetRfqEconomics({
+          accountingPath,
+          unapprovedFixtureAccounting: null,
+        }),
+      /repeats a commitment identity/i,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("uncertain accounting persistence fail-stops future risk decisions", () => {
+  const directory = mkdtempSync(join(tmpdir(), "app20-rfq-accounting-"));
+  const accountingPath = join(directory, "accounting.json");
+  try {
+    const economics = createLocalnetRfqEconomics({
+      accountingPath,
+      unapprovedFixtureAccounting: null,
+      faultInjector(stage) {
+        if (stage === "after-write") throw new Error("fault");
+      },
+    });
+    assert.throws(
+      () => economics.commit("maker-a", 20n, NOW, "reservation-a"),
+      /fail-stopped/i,
+    );
+    assert.throws(
+      () => economics.accountingSnapshot(NOW, "maker-a"),
+      /fail-stopped/i,
+    );
+    assert.equal(
+      economics.evaluate({ action: "refund", decisionAt: NOW }).recoveryOnly,
+      true,
+    );
+    assert.deepEqual(readdirSync(directory), []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

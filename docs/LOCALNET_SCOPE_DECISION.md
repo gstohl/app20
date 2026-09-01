@@ -2,9 +2,9 @@
 
 Decision date: 2026-08-26
 
-APP20 is returning to a **localnet-only** product scope. Mainnet remains Ready-only wallet functionality; Sepolia remains Ready plus optional Privy wallet functionality. The build-gated development wallet, Mail fixtures, and private RFQ run only on localnet. Production RFQ transport, RFQ publication/value execution, and authoritative browser receipts remain disabled.
+APP20 is returning to a **localnet-only APP20 Mail/escrow/RFQ** product scope. Mainnet retains only the Ready STRK20 functionality exposed by the app (public transfer is unavailable); Sepolia retains Ready plus the optional Privy recovery rail. The build-gated development wallet, Mail fixtures, and private RFQ run only on localnet. Production RFQ transport, RFQ publication/value execution, and authoritative browser receipts remain disabled.
 
-APP20's definitive product is a bookless invited-maker RFQ using the existing STRK20 privacy pool; creating a new dark pool, AMM, order book, liquidity pool, or pool factory is not a goal. The canonical goals and gaps are in [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md).
+APP20's definitive product is a bookless invited-maker RFQ using the existing STRK20 privacy pool; creating a new dark pool, AMM, order book, liquidity pool, or pool factory is not a goal. The open engineering gaps are in [`GAPS.md`](GAPS.md).
 
 The historical Sepolia transactions are one-off deployability evidence, not runtime configuration, release approval, an audit, or canonical production deployment provenance. Their denylisted records live under [`evidence/historical-sepolia-proofs/`](evidence/historical-sepolia-proofs/); the separate production manifest remains blocked with `releaseReady: false`, zero addresses/class hashes, no audits, and no approvals.
 
@@ -32,4 +32,4 @@ The historical Sepolia transactions are one-off deployability evidence, not runt
 
 ## Approval boundary
 
-Any future live helper, canonical escrow/claim, RFQ transport, authoritative receipt adapter, deployment tooling, or Mainnet value path requires a new scoped design/review and explicit human approval. The old release checkpoint JSON is historical and superseded by this scope decision; it is not rewritten because its immutability claim belongs to its containing checkpoint.
+Any future live helper, canonical escrow/claim, RFQ transport, authoritative receipt adapter, deployment tooling, or Mainnet value path requires a new scoped design/review and explicit human approval. Any release checkpoint that predates this decision or does not bind the current tree is historical. Generated checkpoint records are not rewritten to imply continuity; a fresh exact-commit capture is required for a later release decision.

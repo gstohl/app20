@@ -1,8 +1,11 @@
 import {
+  app20TokenRegistry,
   configuredMarketPair,
   resolveCanonicalPair,
+  resolveSessionTokenNetwork,
   type App20CanonicalToken,
   type App20TokenNetwork,
+  type SessionTokenNetworkInput,
 } from "./token-registry";
 
 export const DEFAULT_SWAP_ROUTE = "/swap/strk/usdc" as const;
@@ -43,14 +46,15 @@ export function resolveSwapRoutePair(
   if (!tokenA || !tokenB) {
     return { kind: "invalid", message: "Token route syntax is invalid." };
   }
-  const resolved = resolveCanonicalPair(network, tokenA, tokenB);
+  const registry = app20TokenRegistry(network);
+  const resolved = resolveCanonicalPair(network, tokenA, tokenB, registry);
   if (!resolved.ok) {
     return resolved.code === "SAME_TOKEN"
       ? { kind: "duplicate", message: resolved.message }
       : { kind: "unverified", message: resolved.message };
   }
 
-  const configured = configuredMarketPair(network);
+  const configured = configuredMarketPair(network, registry);
   let pairId: SupportedSwapPairId | null = null;
   if (configured.ok) {
     if (
@@ -74,6 +78,19 @@ export function resolveSwapRoutePair(
   return pairId
     ? { kind: "configured", pair: { ...pair, pairId } }
     : { kind: "reviewed-no-inventory", pair };
+}
+
+/** Resolve a swap URL against the bound session network, never a mismatched chain. */
+export function resolveSwapRouteForSession(
+  session: SessionTokenNetworkInput,
+  tokenAInput: string,
+  tokenBInput: string,
+): SwapRouteResolution {
+  const network = resolveSessionTokenNetwork(session);
+  if (!network.ok) {
+    return { kind: "invalid", message: network.message };
+  }
+  return resolveSwapRoutePair(network.network, tokenAInput, tokenBInput);
 }
 
 export function swapRoutePath(tokenA: string, tokenB: string): string {

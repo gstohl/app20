@@ -16,6 +16,7 @@ export default defineConfig(({ command, mode }) => {
     "VITE_LOCALNET_RPC_URL",
     "VITE_LOCALNET_POOL_ADDRESS",
     "VITE_LOCALNET_USDC_TOKEN_ADDRESS",
+    "VITE_MAIL_HELPER_LOCALNET",
     "VITE_ESCROW_HELPER_LOCALNET",
     "APP20_LOCALNET_BACKEND_TARGET",
     "APP20_LOCALNET_RPC_TARGET",
@@ -115,7 +116,7 @@ export default defineConfig(({ command, mode }) => {
           entryFileNames: "assets/app-[hash].js",
           chunkFileNames: "assets/[name]-[hash].js",
           manualChunks(id) {
-            const moduleId = id.replaceAll("\\\\", "/");
+            const moduleId = id.replaceAll("\\", "/");
             if (
               moduleId.includes("/node_modules/react/") ||
               moduleId.includes("/node_modules/react-dom/") ||

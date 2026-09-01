@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./support/localnet";
 
 test("real IndexedDB preserves hidden RFQ tombstones across tabs and reopen", async ({
   page,

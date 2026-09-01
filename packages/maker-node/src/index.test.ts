@@ -1032,6 +1032,15 @@ describe("winner-only fill lifecycle", () => {
       node.fill({ ...fillRequest, fence: fillRequest.fence - 1n }, NOW + 3),
     ).rejects.toThrow(/does not authorize/);
     await expect(
+      node.fill({ ...fillRequest, dealId: `0x${"1".repeat(65)}` }, NOW + 3),
+    ).rejects.toThrow(/does not authorize/);
+    await expect(
+      node.bindSettlementForReconciliation(
+        { ...fillRequest, dealId: `0x${"1".repeat(65)}` },
+        NOW + 3,
+      ),
+    ).rejects.toThrow(/canonical felt/i);
+    await expect(
       node.fill({ ...fillRequest, quoteDigest: DIGEST_C }, NOW + 3),
     ).rejects.toThrow(/does not authorize/);
     const first = node.fill(fillRequest, NOW + 3);
@@ -1345,10 +1354,21 @@ describe("configuration failures", () => {
     expect(() => fixture(store, { reservationTtlSeconds: 0 })).toThrow(
       /reservationTtlSeconds/i,
     );
+    expect(() => fixture(store, { makerId: "m".repeat(8193) })).toThrow(
+      /bounded length/i,
+    );
     await store.close();
     openStores.splice(openStores.indexOf(store), 1);
     await expect(store.transaction(() => undefined)).rejects.toBeInstanceOf(
       MakerNodeError,
+    );
+  });
+
+  it("rejects an oversized WAL lock file without treating it as a live owner", () => {
+    const path = walPath();
+    writeFileSync(`${path}.lock`, "x".repeat(4097), "utf8");
+    expect(() => DurableReservationStore.open(path)).toThrow(
+      /lock file is invalid/i,
     );
   });
 });

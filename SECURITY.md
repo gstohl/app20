@@ -2,7 +2,7 @@
 
 ## Current status
 
-APP20 is a **build-gated localnet demonstration**. Public-network RFQ transport and execution, including Sepolia and Mainnet RFQ and value movement, are disabled. Nothing in this repository's localnet evidence authorizes a public deployment or public-network value path.
+APP20 Mail, escrow, and RFQ are a **build-gated localnet demonstration**. Public-network APP20 helper/RFQ transport and RFQ value execution are disabled. The separate Ready STRK20 wallet surface and optional Privy Sepolia recovery rail do not authorize Mail or RFQ, and this repository contains no Cloudflare deployment evidence. Nothing in the localnet evidence authorizes a public deployment or public-network RFQ value path.
 
 No independent security audit or external security acceptance has been accepted. Local tests, dependency review, and same-devnet fixture evidence are not substitutes for an independent audit.
 
@@ -23,7 +23,7 @@ In scope:
 
 Out of scope:
 
-- public-network RFQ or value execution, which is disabled and unauthorized;
+- public-network RFQ transport or RFQ value execution, which is disabled and unauthorized;
 - third-party services, wallets, registries, networks, and dependencies not operated by this project (report those to their maintainers);
 - historical Sepolia proof deployments, which are denylisted and are not canonical production contracts;
 - social engineering, denial-of-service traffic, destructive testing, or testing against systems/accounts without explicit authorization;
@@ -44,4 +44,4 @@ Please report privately, provide enough reproducible detail to investigate safel
 - relay metadata such as source, timing, fanout, and bucket size is observable, and the relay may also observe maker quotes unless the return path changes;
 - first-version settlement facts and related public activity may remain observable.
 
-See [`docs/APP20_RFQ_GAPS.md`](docs/APP20_RFQ_GAPS.md) for the complete gap register, production blockers, and privacy-boundary details.
+See [`docs/GAPS.md`](docs/GAPS.md) for the engineering gap register and [`docs/APP20_RELEASE_GATES.md`](docs/APP20_RELEASE_GATES.md) for the release conditions that gate any public-network deployment.

@@ -1,28 +1,28 @@
-import {
-  expect,
-  test,
-  type Locator,
-  type Page,
-  type TestInfo,
-} from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   BASE_URL,
+  activateLocalnet,
   connectLocalnetWallet,
+  expect,
   expectNoHorizontalOverflow,
   localnetIdentity,
-  readLocalnetConfig,
+  newIsolatedLocalnetContext,
   readStorageSnapshot,
-  selectLocalNetwork,
+  test,
   type LocalnetConfig,
   type LocalnetIdentityId,
+  type Locator,
+  type Page,
+  type TestInfo,
 } from "./support/localnet";
 
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
   "11111111 11111111 11111111 11111111 11111111 11111111 11111111 11111111";
 let sharedBobBackup = "";
+
+test.describe.configure({ mode: "serial" });
 
 async function screenshot(page: Page, name: string, testInfo: TestInfo) {
   mkdirSync(ARTIFACT_DIR, { recursive: true });
@@ -206,17 +206,15 @@ async function shieldedBalanceLabel(walletRegion: Locator) {
 test("creates a standalone payment link without an on-chain action", async ({
   page,
   browser,
-  request,
+  localnetConfig: config,
 }, testInfo) => {
   test.setTimeout(3 * 60_000);
-  const config = await readLocalnetConfig(request);
   const signer = localnetIdentity(config, "bob");
   const requestedUrls: string[] = [];
   page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
 
   await page.goto("/mail/inbox");
-  await selectLocalNetwork(page);
-  await connectLocalnetWallet(page);
+  await activateLocalnet(page);
   await switchIdentity(page, config, "bob");
   await page.getByRole("link", { name: "Pay", exact: true }).click();
   await expect(
@@ -290,10 +288,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   expect(requestedUrls.some((url) => url.includes("#"))).toBeFalsy();
   await screenshot(page, "standalone-payment-link-create", testInfo);
 
-  const fresh = await browser.newContext({
-    baseURL: BASE_URL,
-    viewport: { width: 1_440, height: 900 },
-  });
+  const fresh = await newIsolatedLocalnetContext(browser);
   const review = await fresh.newPage();
   const reviewRequests: string[] = [];
   review.on("request", (outgoing) => reviewRequests.push(outgoing.url()));
@@ -343,10 +338,9 @@ test("creates a standalone payment link without an on-chain action", async ({
 test("all APP20 localnet journeys", async ({
   page,
   browser,
-  request,
+  localnetConfig: config,
 }, testInfo) => {
   test.setTimeout(15 * 60_000);
-  const config = await readLocalnetConfig(request);
   const alice = localnetIdentity(config, "alice");
   const bob = localnetIdentity(config, "bob");
   const compositeBody =
@@ -391,7 +385,7 @@ test("all APP20 localnet journeys", async ({
   if (!bobBackup)
     throw new Error("Bob backup was not captured during onboarding.");
 
-  await test.step("1b. Alice backs up and restores Contacts through encrypted self-mail", async () => {
+  await test.step("1b. Alice restores Contacts after local ciphertext loss through encrypted self-mail", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
     await page.getByRole("link", { name: "Counterparties" }).click();
@@ -411,7 +405,14 @@ test("all APP20 localnet journeys", async ({
     ).toBeVisible({ timeout: 60_000 });
 
     await page.getByRole("link", { name: "Counterparties" }).click();
-    await page.getByRole("button", { name: "Remove", exact: true }).click();
+    await page.evaluate(async (address) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const addressBook = await dynamicImport("/src/lib/address-book.ts");
+      localStorage.removeItem(addressBook.addressBookStorageKey(address));
+      window.dispatchEvent(new Event(addressBook.ADDRESS_BOOK_CHANGED_EVENT));
+    }, alice.address);
     await expect(page.getByText("Bob recovery desk")).toHaveCount(0);
     await page.getByRole("link", { name: "Mailbox", exact: true }).click();
     await loadExistingKey(page);
@@ -620,16 +621,10 @@ test("all APP20 localnet journeys", async ({
     ).toBeVisible();
     await screenshot(page, "09-bob-decrypted-composite", testInfo);
 
-    const unrelated = await browser.newContext({
-      baseURL: BASE_URL,
-      viewport: { width: 1_440, height: 900 },
+    const unrelated = await newIsolatedLocalnetContext(browser, {
+      config,
+      identity: "bob",
     });
-    await unrelated.addInitScript((runtimeEpoch) => {
-      localStorage.setItem(
-        `app20/localnet-wallet/identity/v1/${runtimeEpoch}`,
-        "bob",
-      );
-    }, config.runtimeEpoch);
     const wrongKeyPage = await unrelated.newPage();
     await wrongKeyPage.goto("/mail/inbox");
     await connectLocalnetWallet(wrongKeyPage);
@@ -692,16 +687,10 @@ test("all APP20 localnet journeys", async ({
     expect(paymentLink.startsWith(`${BASE_URL}/pay#app20p2.`)).toBeTruthy();
     await screenshot(page, "13-invoice-share-link", testInfo);
 
-    const fresh = await browser.newContext({
-      baseURL: BASE_URL,
-      viewport: { width: 1_440, height: 900 },
+    const fresh = await newIsolatedLocalnetContext(browser, {
+      config,
+      identity: "bob",
     });
-    await fresh.addInitScript((runtimeEpoch) => {
-      localStorage.setItem(
-        `app20/localnet-wallet/identity/v1/${runtimeEpoch}`,
-        "bob",
-      );
-    }, config.runtimeEpoch);
     const payPage = await fresh.newPage();
     const requestedUrls: string[] = [];
     payPage.on("request", (outgoing) => requestedUrls.push(outgoing.url()));

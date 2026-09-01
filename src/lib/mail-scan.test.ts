@@ -99,6 +99,32 @@ describe("bounded mail scanning", () => {
     });
   });
 
+  it("keeps the scanned range when a pending continuation token is malformed", () => {
+    const storage = new MemoryStorage();
+    const key = mailScanCursorKey(
+      "SN_MAIN",
+      "0x000abc",
+      "0x000def",
+      fingerprint,
+    );
+    saveMailScanCursor(storage, key, {
+      version: 1,
+      oldestScannedBlock: 10,
+      newestScannedBlock: 20,
+      pending: {
+        direction: "newer",
+        fromBlock: 21,
+        toBlock: 30,
+        continuationToken: "",
+      },
+    });
+    expect(loadMailScanCursor(storage, key)).toEqual({
+      version: 1,
+      oldestScannedBlock: 10,
+      newestScannedBlock: 20,
+    });
+  });
+
   it("starts with a recent window and advances older only on request", () => {
     expect(MAIL_SCAN_CHUNK_SIZE).toBeLessThanOrEqual(1_024);
     expect(MAIL_SCAN_MAX_MESSAGES).toBeLessThanOrEqual(2_048);

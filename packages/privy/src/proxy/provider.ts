@@ -80,6 +80,36 @@ function transient(error: unknown): boolean {
   );
 }
 
+function callerAbortSignal(
+  abortSignal: PrivyProxyProverOptions["abortSignal"],
+): AbortSignal | undefined {
+  return typeof abortSignal === "function" ? abortSignal() : abortSignal;
+}
+
+function abortError(signal?: AbortSignal): Error {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  return new ProverProxyClientError("Prover proxy request aborted.");
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError(signal));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError(signal));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** Authenticated proof provider used internally by `privyProxyProver()`. */
 export class PrivyProxyProofProvider {
   private requestId = 0;
@@ -121,6 +151,7 @@ export class PrivyProxyProofProvider {
     invocation: unknown,
     blockIdentifier: unknown,
     forceRefresh: boolean,
+    callerSignal?: AbortSignal,
   ): Promise<ProofResult> {
     const token = await this.accessToken(forceRefresh);
     const body = {
@@ -132,95 +163,98 @@ export class PrivyProxyProofProvider {
         transaction: invocation,
       },
     };
-    const timeoutSignal = AbortSignal.timeout(this.requestTimeoutMs);
-    const callerSignal =
-      typeof this.options.abortSignal === "function"
-        ? this.options.abortSignal()
-        : this.options.abortSignal;
-    const signal = callerSignal
-      ? AbortSignal.any([callerSignal, timeoutSignal])
-      : timeoutSignal;
-    const response = await this.fetchImpl(this.options.url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-        [PROVER_PROXY_TENANT_HEADER]: this.options.tenantId,
-      },
-      body: JSON.stringify(body),
-      signal,
-    });
-    const text = await response.text();
-    let payload: Record<string, unknown>;
+    if (callerSignal?.aborted) throw abortError(callerSignal);
+    const controller = new AbortController();
+    const onCallerAbort = () => controller.abort(abortError(callerSignal));
+    callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
+    const timeout = setTimeout(() => controller.abort(), this.requestTimeoutMs);
     try {
-      payload = JSON.parse(text) as Record<string, unknown>;
-    } catch (error) {
-      throw new ProverProxyClientError(
-        "Prover proxy returned invalid JSON.",
-        response.status,
-        undefined,
-        { cause: error },
-      );
-    }
-    const rpcError = payload.error as
-      | { code?: number; message?: string }
-      | undefined;
-    if (!response.ok || rpcError) {
-      throw new ProverProxyClientError(
-        rpcError?.message ?? `Prover proxy HTTP ${response.status}.`,
-        response.status,
-        rpcError?.code,
-      );
-    }
-    const result = payload.result as
-      | {
-          proof?: unknown;
-          proof_facts?: unknown;
-          l2_to_l1_messages?: unknown;
-          additional_data?: unknown;
-        }
-      | undefined;
-    if (
-      !result ||
-      typeof result.proof !== "string" ||
-      !Array.isArray(result.proof_facts) ||
-      !result.proof_facts.every((fact) => typeof fact === "string") ||
-      !Array.isArray(result.l2_to_l1_messages)
-    ) {
-      throw new ProverProxyClientError(
-        "Prover proxy returned an invalid proof response.",
-        response.status,
-      );
-    }
-    const pool = BigInt(this.poolAddress);
-    const message = result.l2_to_l1_messages.find((candidate) => {
-      if (!candidate || typeof candidate !== "object") return false;
+      const response = await this.fetchImpl(this.options.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+          [PROVER_PROXY_TENANT_HEADER]: this.options.tenantId,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let payload: Record<string, unknown>;
       try {
-        return (
-          BigInt((candidate as { from_address: string }).from_address) === pool
+        payload = JSON.parse(text) as Record<string, unknown>;
+      } catch (error) {
+        throw new ProverProxyClientError(
+          "Prover proxy returned invalid JSON.",
+          response.status,
+          undefined,
+          { cause: error },
         );
-      } catch {
-        return false;
       }
-    }) as { payload?: unknown } | undefined;
-    if (!message || !Array.isArray(message.payload)) {
-      throw new ProverProxyClientError(
-        "Prover response did not contain the privacy-pool output.",
-        response.status,
-      );
+      const rpcError = payload.error as
+        | { code?: number; message?: string }
+        | undefined;
+      if (!response.ok || rpcError) {
+        throw new ProverProxyClientError(
+          rpcError?.message ?? `Prover proxy HTTP ${response.status}.`,
+          response.status,
+          rpcError?.code,
+        );
+      }
+      const result = payload.result as
+        | {
+            proof?: unknown;
+            proof_facts?: unknown;
+            l2_to_l1_messages?: unknown;
+            additional_data?: unknown;
+          }
+        | undefined;
+      if (
+        !result ||
+        typeof result.proof !== "string" ||
+        !Array.isArray(result.proof_facts) ||
+        !result.proof_facts.every((fact) => typeof fact === "string") ||
+        !Array.isArray(result.l2_to_l1_messages)
+      ) {
+        throw new ProverProxyClientError(
+          "Prover proxy returned an invalid proof response.",
+          response.status,
+        );
+      }
+      const pool = BigInt(this.poolAddress);
+      const message = result.l2_to_l1_messages.find((candidate) => {
+        if (!candidate || typeof candidate !== "object") return false;
+        try {
+          return (
+            BigInt((candidate as { from_address: string }).from_address) ===
+            pool
+          );
+        } catch {
+          return false;
+        }
+      }) as { payload?: unknown } | undefined;
+      if (!message || !Array.isArray(message.payload)) {
+        throw new ProverProxyClientError(
+          "Prover response did not contain the privacy-pool output.",
+          response.status,
+        );
+      }
+      if (!message.payload.every((felt) => typeof felt === "string")) {
+        throw new ProverProxyClientError(
+          "Privacy-pool output contains invalid felts.",
+          response.status,
+        );
+      }
+      return {
+        data: result.proof,
+        output: message.payload as string[],
+        proofFacts: result.proof_facts as string[],
+        additionalData: result.additional_data,
+      };
+    } finally {
+      clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
     }
-    if (!message.payload.every((felt) => typeof felt === "string")) {
-      throw new ProverProxyClientError(
-        "Privacy-pool output contains invalid felts.",
-        response.status,
-      );
-    }
-    return {
-      data: result.proof,
-      output: message.payload as string[],
-      proofFacts: result.proof_facts as string[],
-      additionalData: result.additional_data,
-    };
   }
 
   async prove(
@@ -232,11 +266,18 @@ export class PrivyProxyProofProvider {
         "A numeric proving block identifier is required by the proxy.",
       );
     }
+    const callerSignal = callerAbortSignal(this.options.abortSignal);
     let refreshedAuth = false;
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await this.callOnce(invocation, blockIdentifier, refreshedAuth);
+        return await this.callOnce(
+          invocation,
+          blockIdentifier,
+          refreshedAuth,
+          callerSignal,
+        );
       } catch (error) {
+        if (callerSignal?.aborted) throw abortError(callerSignal);
         if (
           error instanceof ProverProxyClientError &&
           error.status === 401 &&
@@ -248,11 +289,9 @@ export class PrivyProxyProofProvider {
           continue;
         }
         if (attempt >= this.maxRetries || !transient(error)) throw error;
-        await new Promise((resolve) =>
-          setTimeout(
-            resolve,
-            Math.min(this.baseDelayMs * 2 ** attempt, 30_000),
-          ),
+        await delay(
+          Math.min(this.baseDelayMs * 2 ** attempt, 30_000),
+          callerSignal,
         );
       }
     }

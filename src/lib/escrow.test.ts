@@ -240,6 +240,15 @@ describe("escrow operation idempotency", () => {
     expect(() => claimEscrowOperation(...scope, dealId, "fund", 102)).toThrow(
       /no second transfer/i,
     );
+    expect(() =>
+      markEscrowOperationSubmitted(
+        ...scope,
+        "not-a-felt",
+        "fund",
+        "0xabc",
+        103,
+      ),
+    ).toThrow(/No matching escrow operation reservation/i);
     expect(
       markEscrowOperationSubmitted(...scope, dealId, "fund", "0xabc", 103),
     ).toMatchObject({

@@ -1,7 +1,6 @@
 "use client";
 
 import { validateAndParseAddress } from "starknet";
-import type { MailboxFilter } from "@/components/mail/ConversationList";
 import type { LocalMailMessage } from "@/components/mail/Thread";
 import { parseCompositePayload } from "@/lib/composite";
 import type { CompositeDraft } from "@/lib/drafts";
@@ -18,6 +17,7 @@ import {
 } from "@/lib/otc";
 import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import type { StoredSentMail } from "@/lib/sent-mail";
+import type { AliasRecord } from "@/lib/aliases";
 import * as constants from "@/utils/constants";
 
 export type ScanWorkerResponse =
@@ -30,6 +30,8 @@ export type ActiveScanWorker = {
 };
 
 export type ScanKind = "idle" | "scanning" | "ok" | "error";
+
+export type MailboxFilter = "all" | "letters" | "deals" | "invoices" | "escrow";
 
 export const TYPE_FILTERS: Array<{ id: MailboxFilter; label: string }> = [
   { id: "all", label: "All types" },
@@ -45,6 +47,8 @@ export const MAIL_FOLDERS: Array<{ id: MailFolder; label: string }> = [
   { id: "sent", label: "Sent" },
   { id: "drafts", label: "Drafts" },
 ];
+
+export type MailboxFilterHits = Record<Exclude<MailboxFilter, "all">, boolean>;
 
 function configuredForLocalnet(
   providerIndex: number,
@@ -102,18 +106,32 @@ export function mailKeyFingerprint(keypair: MailKeypair | null): string {
   ).join("");
 }
 
-function messageTime(message: LocalMailMessage): number | undefined {
+export function mailMessageTimestampMs(
+  message: LocalMailMessage,
+): number | undefined {
   if (message.localCreatedAt !== undefined) return message.localCreatedAt;
   if (message.blockTimestamp === undefined) return undefined;
   return message.blockTimestamp * 1_000;
+}
+
+export function mailMessageDateTime(
+  message: LocalMailMessage,
+): string | undefined {
+  const milliseconds = mailMessageTimestampMs(message);
+  if (milliseconds === undefined) return undefined;
+  try {
+    return new Date(milliseconds).toISOString();
+  } catch {
+    return undefined;
+  }
 }
 
 function compareMailMessages(
   left: LocalMailMessage,
   right: LocalMailMessage,
 ): number {
-  const leftTime = messageTime(left);
-  const rightTime = messageTime(right);
+  const leftTime = mailMessageTimestampMs(left);
+  const rightTime = mailMessageTimestampMs(right);
   if (leftTime !== undefined || rightTime !== undefined) {
     const timeDifference = (rightTime ?? -1) - (leftTime ?? -1);
     if (timeDifference) return timeDifference;
@@ -124,9 +142,9 @@ function compareMailMessages(
 }
 
 export function sortMailMessages(
-  messages: LocalMailMessage[],
+  messages: readonly LocalMailMessage[],
 ): LocalMailMessage[] {
-  return messages.sort(compareMailMessages);
+  return messages.slice().sort(compareMailMessages);
 }
 
 export function mergeMailMessages(
@@ -217,6 +235,76 @@ export function paymentLinkRecords(state: OtcState): PaymentRecord[] {
   );
 }
 
+function attachmentCategory(
+  type: "payment" | "offer" | "payment_request" | "escrow_fund",
+): Exclude<MailboxFilter, "all"> {
+  if (type === "payment_request") return "invoices";
+  if (type === "escrow_fund") return "escrow";
+  return "deals";
+}
+
+function mailboxCategory(
+  message: LocalMailMessage,
+): Exclude<MailboxFilter, "all"> {
+  if (message.envelope.type === "composite") {
+    const composite = parseCompositePayload(message.envelope.payload);
+    if (composite?.body.trim()) return "letters";
+    const first = composite?.attachments[0];
+    return first ? attachmentCategory(first.type) : "letters";
+  }
+  switch (message.envelope.type) {
+    case "text":
+    case "contact_snapshot":
+      return "letters";
+    case "payment_request":
+      return "invoices";
+    case "escrow_fund":
+    case "escrow_fill":
+    case "escrow_claim":
+    case "escrow_timeout":
+      return "escrow";
+    default:
+      return "deals";
+  }
+}
+
+/** Composite documents can appear under every matching secondary label. */
+export function mailboxFilterHits(
+  message: LocalMailMessage,
+): MailboxFilterHits {
+  if (message.envelope.type !== "composite") {
+    const category = mailboxCategory(message);
+    return {
+      letters: category === "letters",
+      deals: category === "deals",
+      invoices: category === "invoices",
+      escrow: category === "escrow",
+    };
+  }
+  const composite = parseCompositePayload(message.envelope.payload);
+  if (!composite) {
+    return { letters: false, deals: false, invoices: false, escrow: false };
+  }
+  const hits: MailboxFilterHits = {
+    letters: Boolean(composite.body.trim()),
+    deals: false,
+    invoices: false,
+    escrow: false,
+  };
+  for (const attachment of composite.attachments) {
+    hits[attachmentCategory(attachment.type)] = true;
+  }
+  return hits;
+}
+
+export function mailboxMatchesFilter(
+  message: LocalMailMessage,
+  filter: MailboxFilter,
+): boolean {
+  if (filter === "all") return true;
+  return mailboxFilterHits(message)[filter];
+}
+
 export function draftMatchesFilter(
   draft: CompositeDraft,
   filter: MailboxFilter,
@@ -240,6 +328,87 @@ export function draftMatchesFilter(
     );
   }
   return false;
+}
+
+export function partitionMailboxFolders(
+  messages: readonly LocalMailMessage[],
+): {
+  inbox: LocalMailMessage[];
+  sent: LocalMailMessage[];
+} {
+  const inbox: LocalMailMessage[] = [];
+  const sent: LocalMailMessage[] = [];
+  for (const message of messages) {
+    if (message.direction === "outgoing") sent.push(message);
+    else inbox.push(message);
+  }
+  return { inbox, sent };
+}
+
+export function countMailboxFilterHits(
+  messages: readonly LocalMailMessage[],
+): Record<MailboxFilter, number> {
+  const counts: Record<MailboxFilter, number> = {
+    all: messages.length,
+    letters: 0,
+    deals: 0,
+    invoices: 0,
+    escrow: 0,
+  };
+  for (const message of messages) {
+    const hits = mailboxFilterHits(message);
+    if (hits.letters) counts.letters += 1;
+    if (hits.deals) counts.deals += 1;
+    if (hits.invoices) counts.invoices += 1;
+    if (hits.escrow) counts.escrow += 1;
+  }
+  return counts;
+}
+
+export function countDraftFilterHits(
+  drafts: readonly CompositeDraft[],
+): Record<MailboxFilter, number> {
+  const counts: Record<MailboxFilter, number> = {
+    all: drafts.length,
+    letters: 0,
+    deals: 0,
+    invoices: 0,
+    escrow: 0,
+  };
+  for (const draft of drafts) {
+    if (draftMatchesFilter(draft, "letters")) counts.letters += 1;
+    if (draftMatchesFilter(draft, "deals")) counts.deals += 1;
+    if (draftMatchesFilter(draft, "invoices")) counts.invoices += 1;
+    if (draftMatchesFilter(draft, "escrow")) counts.escrow += 1;
+  }
+  return counts;
+}
+
+function feltFingerprint(address: string): string | null {
+  try {
+    return BigInt(address).toString(16);
+  } catch {
+    return null;
+  }
+}
+
+export function mergeDisplayAliases(
+  bookEntries: readonly AliasRecord[],
+  aliases: readonly AliasRecord[],
+): AliasRecord[] {
+  const seen = new Set<string>();
+  const merged: AliasRecord[] = [];
+  for (const entry of bookEntries) {
+    const fingerprint = feltFingerprint(entry.address);
+    if (fingerprint) seen.add(fingerprint);
+    merged.push(entry);
+  }
+  for (const alias of aliases) {
+    const fingerprint = feltFingerprint(alias.address);
+    if (fingerprint && seen.has(fingerprint)) continue;
+    merged.push(alias);
+  }
+  return merged;
 }
 
 export function parseBlockTimestamp(value: unknown): number | undefined {

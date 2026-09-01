@@ -15,7 +15,7 @@ import {
   type QuoteVerificationEvidence,
   type VerifiedDryQuote,
 } from "@app20/near-intents";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./intents.module.css";
 
 const REVIEW_STAGES = CROSS_CHAIN_STAGES.filter((stage) =>
@@ -685,10 +685,17 @@ export default function IntentsPage() {
     DEFAULT_DESTINATION_ADDRESS,
   );
   const [refundInput, setRefundInput] = useState(DEFAULT_REFUND_ADDRESS);
+  const reviewGeneration = useRef(0);
   const busy = state.kind === "running";
   const selected =
     REVIEW_SCENARIOS.find((scenario) => scenario.id === scenarioId) ??
     REVIEW_SCENARIOS[0];
+
+  useEffect(() => {
+    return () => {
+      reviewGeneration.current += 1;
+    };
+  }, []);
 
   const destination = resolveAddressBookInput(
     destinationInput,
@@ -709,15 +716,21 @@ export default function IntentsPage() {
 
   const replay = () => {
     if (busy) return;
+    const requestGeneration = ++reviewGeneration.current;
     setState({ kind: "running", scenarioId });
-    runDryReview(scenarioId, {
+    void runDryReview(scenarioId, {
       destinationAddress: destination.address,
       refundAddress: refund.address,
-    })
-      .then((report) => setState({ kind: "done", report }))
-      .catch((error) =>
-        setState({ kind: "error", message: errorMessage(error) }),
-      );
+    }).then(
+      (report) => {
+        if (requestGeneration !== reviewGeneration.current) return;
+        setState({ kind: "done", report });
+      },
+      (error: unknown) => {
+        if (requestGeneration !== reviewGeneration.current) return;
+        setState({ kind: "error", message: errorMessage(error) });
+      },
+    );
   };
 
   const terms: readonly { label: string; value: string; note?: string }[] = [

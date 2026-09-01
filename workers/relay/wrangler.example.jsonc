@@ -1,24 +1,36 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "replace-with-relay-worker-name",
   "main": "src/index.ts",
-  "compatibility_date": "2025-03-01",
+  "compatibility_date": "2026-08-14",
+  // bootstrap.ts imports `@privy-io/node`, which needs the Node.js
+  // compatibility layer; deploys without it fail at bundle time.
+  "compatibility_flags": ["nodejs_compat"],
   "durable_objects": {
     "bindings": [
       { "name": "RELAY_GATE", "class_name": "RelayGateDurableObject" },
-      { "name": "RFQ_REPLAY", "class_name": "RfqReplayDurableObject" }
+      { "name": "RFQ_REPLAY", "class_name": "RfqReplayDurableObject" },
+      {
+        "name": "RESERVATION_LEDGER",
+        "class_name": "ReservationLedgerDurableObject"
+      }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["RelayGateDurableObject"] },
-    { "tag": "v2", "new_sqlite_classes": ["RfqReplayDurableObject"] }
+    { "tag": "v2", "new_sqlite_classes": ["RfqReplayDurableObject"] },
+    { "tag": "v3", "new_sqlite_classes": ["ReservationLedgerDurableObject"] }
   ],
   "vars": {
     "ENVIRONMENT": "production",
     "RFQ_TRANSPORT_ENABLED": "false",
+    "PRIVY_SUBMISSION_MODE": "build-only",
     "PRIVY_FRAME_ORIGINS": "https://replace-with-reviewed-privy-frame-origin.invalid",
     "PRIVY_CONNECT_ORIGINS": "https://replace-with-reviewed-privy-connect-origin.invalid"
   }
   // Configure all URLs, authorization values, and OHTTP_SESSION_SECRET with
   // `wrangler secret put`; never place them in this file.
+  // Set TRUST_CLIENT_IP_HEADERS to "true" only behind an edge that strips and
+  // rewrites client IP headers (for example Cloudflare); otherwise leave it
+  // unset so rate limiting never keys on spoofable request headers.
 }

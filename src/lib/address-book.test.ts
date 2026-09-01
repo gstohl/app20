@@ -161,6 +161,87 @@ describe("encrypted address book", () => {
     expect(await loadAddressBook(storage, SELF)).toEqual(beforeFailure);
   });
 
+  it("does not resurrect a locally deleted contact from an older snapshot replay", async () => {
+    const storage = makeStorage();
+    const now = Date.now();
+    await replaceAddressBookEntries(storage, SELF, [
+      { label: "Alice", address: ALICE, updatedAt: now - 50 },
+      { label: "Bob", address: BOB, updatedAt: now - 40 },
+    ]);
+    const snapshot = await loadAddressBook(storage, SELF);
+
+    await removeAddressBookEntry(storage, SELF, "Alice");
+    expect(
+      (await loadAddressBook(storage, SELF)).map((entry) => entry.label),
+    ).toEqual(["Bob"]);
+
+    const replayed = await mergeAddressBookEntries(storage, SELF, snapshot);
+    expect(replayed.map((entry) => entry.label)).toEqual(["Bob"]);
+    expect(replayed.find((entry) => entry.label === "Alice")).toBeUndefined();
+
+    const replayedAgain = await mergeAddressBookEntries(
+      storage,
+      SELF,
+      snapshot,
+    );
+    expect(replayedAgain.map((entry) => entry.label)).toEqual(["Bob"]);
+
+    const withUnrelated = await mergeAddressBookEntries(storage, SELF, [
+      ...snapshot,
+      { label: "Carol", address: ALICE, updatedAt: now - 30 },
+    ]);
+    expect(withUnrelated.map((entry) => entry.label)).toEqual(["Bob", "Carol"]);
+
+    const restored = await mergeAddressBookEntries(storage, SELF, [
+      { label: "Alice", address: ALICE, updatedAt: now + 1_000 },
+    ]);
+    expect(restored.map((entry) => entry.label)).toEqual([
+      "Alice",
+      "Bob",
+      "Carol",
+    ]);
+    expect(restored.find((entry) => entry.label === "Alice")?.address).toBe(
+      normalizeStarknetAddress(ALICE),
+    );
+  });
+
+  it("clears a deletion tombstone when the user re-adds that label", async () => {
+    const storage = makeStorage();
+    const now = Date.now();
+    await replaceAddressBookEntries(storage, SELF, [
+      { label: "Alice", address: ALICE, updatedAt: now - 50 },
+    ]);
+    const snapshot = await loadAddressBook(storage, SELF);
+    await removeAddressBookEntry(storage, SELF, "Alice");
+    await saveAddressBookEntry(storage, SELF, {
+      label: "Alice",
+      address: BOB,
+    });
+
+    const merged = await mergeAddressBookEntries(storage, SELF, snapshot);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].address).toBe(normalizeStarknetAddress(BOB));
+  });
+
+  it("leaves the local book untouched when an additive merge would overflow", async () => {
+    const storage = makeStorage();
+    const now = Date.now();
+    const filled = Array.from({ length: 200 }, (_, index) => ({
+      label: `Contact ${index}`,
+      address: ALICE,
+      updatedAt: now - index,
+    }));
+    await replaceAddressBookEntries(storage, SELF, filled);
+    const before = await loadAddressBook(storage, SELF);
+
+    await expect(
+      mergeAddressBookEntries(storage, SELF, [
+        { label: "Overflow", address: BOB, updatedAt: now },
+      ]),
+    ).rejects.toThrow(/full/i);
+    expect(await loadAddressBook(storage, SELF)).toEqual(before);
+  });
+
   it("resolves labels, raw addresses, and rejects unknown input", async () => {
     const storage = makeStorage();
     const entries = await saveAddressBookEntry(storage, SELF, {

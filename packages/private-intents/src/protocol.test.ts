@@ -494,18 +494,78 @@ describe("maker-specific RFQ transport envelope", () => {
 
   it("enforces transport-key expiry, revocation, and explicit key rotation", async () => {
     const keys = await p256Keys();
-    const oldKey = { keyId: "maker-a/hpke/p256/old", publicKey: keys.publicKey, validFrom: NOW - 100, validUntil: NOW + 100, revokedAt: NOW + 50 };
-    const newKey = { keyId: "maker-a/hpke/p256/new", publicKey: keys.publicKey, validFrom: NOW + 100, validUntil: NOW + 300 };
-    const body = directory(keys.publicKey, { makers: [maker(keys.publicKey, { transportKeys: [oldKey, newKey] })] });
+    const oldKey = {
+      keyId: "maker-a/hpke/p256/old",
+      publicKey: keys.publicKey,
+      validFrom: NOW - 100,
+      validUntil: NOW + 100,
+      revokedAt: NOW + 50,
+    };
+    const newKey = {
+      keyId: "maker-a/hpke/p256/new",
+      publicKey: keys.publicKey,
+      validFrom: NOW + 100,
+      validUntil: NOW + 300,
+    };
+    const body = directory(keys.publicKey, {
+      makers: [maker(keys.publicKey, { transportKeys: [oldKey, newKey] })],
+    });
     const signed = await signDirectory(body, keys.privateKey);
-    const verification = await verifyMakerDirectoryEpoch(signed, { now: NOW, expectedChainId: body.chainId, authorityKeys: [authority(keys.publicKey)], verify: verifyP256 });
+    const verification = await verifyMakerDirectoryEpoch(signed, {
+      now: NOW,
+      expectedChainId: body.chainId,
+      authorityKeys: [authority(keys.publicKey)],
+      verify: verifyP256,
+    });
     if (!verification.ok) throw new Error(verification.reason);
-    expect(resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW).keyId).toBe(oldKey.keyId);
-    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW + 50)).toThrow(/not valid/);
-    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", oldKey.keyId, NOW + 100)).toThrow(/not valid/);
-    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 99)).toThrow(/not valid/);
-    expect(resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 100).keyId).toBe(newKey.keyId);
-    expect(() => resolveMakerTransportKeyAt(verification.verified, "maker-a", newKey.keyId, NOW + 300)).toThrow(/not valid/);
+    expect(
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        oldKey.keyId,
+        NOW,
+      ).keyId,
+    ).toBe(oldKey.keyId);
+    expect(() =>
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        oldKey.keyId,
+        NOW + 50,
+      ),
+    ).toThrow(/not valid/);
+    expect(() =>
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        oldKey.keyId,
+        NOW + 100,
+      ),
+    ).toThrow(/not valid/);
+    expect(() =>
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        newKey.keyId,
+        NOW + 99,
+      ),
+    ).toThrow(/not valid/);
+    expect(
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        newKey.keyId,
+        NOW + 100,
+      ).keyId,
+    ).toBe(newKey.keyId);
+    expect(() =>
+      resolveMakerTransportKeyAt(
+        verification.verified,
+        "maker-a",
+        newKey.keyId,
+        NOW + 300,
+      ),
+    ).toThrow(/not valid/);
   });
 
   it("rejects header mutation, wrong padding, and unverified directory digests", async () => {
@@ -697,5 +757,26 @@ describe("fenced reservation lifecycle", () => {
         fence: current.fence,
       }),
     ).toThrow(/positive u256/i);
+  });
+
+  it("rejects reserved or expired records that carry later-state metadata", () => {
+    const current = reservation();
+    expect(() =>
+      canonicalMakerReservation({
+        ...current,
+        selectedQuoteDigest: DIGEST_A,
+      }),
+    ).toThrow(/transition metadata/i);
+    const expired = transitionMakerReservation(current, {
+      kind: "expire",
+      expectedFence: current.fence,
+      at: NOW + 300,
+    });
+    expect(() =>
+      canonicalMakerReservation({
+        ...expired,
+        terminalReason: "late",
+      }),
+    ).toThrow(/transition metadata/i);
   });
 });

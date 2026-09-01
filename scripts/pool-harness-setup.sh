@@ -13,7 +13,8 @@ HARNESS_DIR="${ROOT_DIR}/pool-harness"
 PRIVACY_REPOSITORY="https://github.com/starkware-libs/starknet-privacy.git"
 PRIVACY_REF="PRIVACY-0.14.3-RC.5"
 PRIVACY_COMMIT="66e3caae8c0201227a6719696d004e30d90aea65"
-SCARB_VERSION="2.17.0"
+PRIVACY_SCARB_VERSION="2.17.0"
+APP20_SCARB_VERSION="2.18.0"
 USC_VERSION="2.8.0"
 DEVNET_VERSION="0.8.0-rc.3"
 
@@ -57,7 +58,7 @@ require_command() {
 check_node() {
 	local major
 	major="$(node -p 'Number(process.versions.node.split(".")[0])')"
-	if [[ ! "${major}" =~ ^[0-9]+$ ]] || (( major < 24 )); then
+	if [[ ! "${major}" =~ ^[0-9]+$ ]] || ((major < 24)); then
 		fail "Node >=24 is required; found $(node --version)."
 	fi
 	printf 'Node: %s\n' "$(node --version)"
@@ -68,21 +69,21 @@ platform_target() {
 	system="$(uname -s)"
 	machine="$(uname -m)"
 	case "${system}-${machine}" in
-		Darwin-arm64 | Darwin-aarch64)
-			printf 'aarch64-apple-darwin\n'
-			;;
-		Darwin-x86_64)
-			printf 'x86_64-apple-darwin\n'
-			;;
-		Linux-arm64 | Linux-aarch64)
-			printf 'aarch64-unknown-linux-gnu\n'
-			;;
-		Linux-x86_64)
-			printf 'x86_64-unknown-linux-gnu\n'
-			;;
-		*)
-			fail "unsupported platform ${system}/${machine}; install the pinned tools manually in vendor/bin."
-			;;
+	Darwin-arm64 | Darwin-aarch64)
+		printf 'aarch64-apple-darwin\n'
+		;;
+	Darwin-x86_64)
+		printf 'x86_64-apple-darwin\n'
+		;;
+	Linux-arm64 | Linux-aarch64)
+		printf 'aarch64-unknown-linux-gnu\n'
+		;;
+	Linux-x86_64)
+		printf 'x86_64-unknown-linux-gnu\n'
+		;;
+	*)
+		fail "unsupported platform ${system}/${machine}; install the pinned tools manually in vendor/bin."
+		;;
 	esac
 }
 
@@ -135,20 +136,22 @@ install_bundle() {
 }
 
 ensure_scarb() {
-	local target="$1"
-	local destination="${TOOLCHAINS_DIR}/scarb-${SCARB_VERSION}"
+	local version="$1"
+	local target="$2"
+	local link_name="$3"
+	local destination="${TOOLCHAINS_DIR}/scarb-${version}"
 	local executable="${destination}/bin/scarb"
-	if [[ ! -x "${executable}" ]] || ! "${executable}" --version 2>/dev/null | grep -q "^scarb ${SCARB_VERSION} "; then
+	if [[ ! -x "${executable}" ]] || ! "${executable}" --version 2>/dev/null | grep -q "^scarb ${version} "; then
 		install_bundle \
-			"Scarb ${SCARB_VERSION}" \
-			"https://github.com/software-mansion/scarb/releases/download/v${SCARB_VERSION}/scarb-v${SCARB_VERSION}-${target}.tar.gz" \
-			"scarb-v${SCARB_VERSION}-${target}" \
+			"Scarb ${version}" \
+			"https://github.com/software-mansion/scarb/releases/download/v${version}/scarb-v${version}-${target}.tar.gz" \
+			"scarb-v${version}-${target}" \
 			"${destination}" \
 			"scarb"
 	fi
 	mkdir -p "${BIN_DIR}"
-	ln -sfn "../toolchains/scarb-${SCARB_VERSION}/bin/scarb" "${BIN_DIR}/scarb"
-	"${BIN_DIR}/scarb" --version | head -n 1
+	ln -sfn "../toolchains/scarb-${version}/bin/scarb" "${BIN_DIR}/${link_name}"
+	"${BIN_DIR}/${link_name}" --version | head -n 1
 }
 
 ensure_usc() {
@@ -223,14 +226,17 @@ assert_executable() {
 check_installation() {
 	check_vendor_clone
 	assert_executable "${BIN_DIR}/scarb"
+	assert_executable "${BIN_DIR}/app20-scarb"
 	assert_executable "${BIN_DIR}/universal-sierra-compiler"
 	assert_executable "${BIN_DIR}/starknet-devnet"
 
-	"${BIN_DIR}/scarb" --version 2>/dev/null | grep -q "^scarb ${SCARB_VERSION} " || \
-		fail "vendor/bin/scarb is not Scarb ${SCARB_VERSION}; run 'npm run pool:setup'."
-	"${BIN_DIR}/universal-sierra-compiler" --version 2>/dev/null | grep -q "${USC_VERSION}" || \
+	"${BIN_DIR}/scarb" --version 2>/dev/null | grep -q "^scarb ${PRIVACY_SCARB_VERSION} " ||
+		fail "vendor/bin/scarb is not Scarb ${PRIVACY_SCARB_VERSION}; run 'npm run pool:setup'."
+	"${BIN_DIR}/app20-scarb" --version 2>/dev/null | grep -q "^scarb ${APP20_SCARB_VERSION} " ||
+		fail "vendor/bin/app20-scarb is not Scarb ${APP20_SCARB_VERSION}; run 'npm run pool:setup'."
+	"${BIN_DIR}/universal-sierra-compiler" --version 2>/dev/null | grep -q "${USC_VERSION}" ||
 		fail "vendor/bin/universal-sierra-compiler is not ${USC_VERSION}; run 'npm run pool:setup'."
-	"${BIN_DIR}/starknet-devnet" --version 2>/dev/null | grep -q "starknet-devnet ${DEVNET_VERSION}" || \
+	"${BIN_DIR}/starknet-devnet" --version 2>/dev/null | grep -q "starknet-devnet ${DEVNET_VERSION}" ||
 		fail "vendor/bin/starknet-devnet is not ${DEVNET_VERSION}; run 'npm run pool:setup'."
 
 	assert_file "${PRIVACY_DIR}/target/dev/privacy_Privacy.contract_class.json"
@@ -243,8 +249,8 @@ check_installation() {
 	(cd "${HARNESS_DIR}" && node --input-type=module --eval \
 		'await import("@starkware-libs/starknet-privacy-sdk/testing"); await import("@starkware-libs/starknet-privacy-client")')
 
-	printf 'Scarb: %s (repository-local; cairo/ remains unchanged)\n' \
-		"$("${BIN_DIR}/scarb" --version | head -n 1)"
+	printf 'Privacy Scarb: %s\n' "$("${BIN_DIR}/scarb" --version | head -n 1)"
+	printf 'APP20 Scarb: %s\n' "$("${BIN_DIR}/app20-scarb" --version | head -n 1)"
 	printf 'Universal Sierra Compiler: %s\n' \
 		"$("${BIN_DIR}/universal-sierra-compiler" --version)"
 	printf 'Starknet Devnet: %s\n' \
@@ -253,16 +259,16 @@ check_installation() {
 }
 
 case "${MODE}" in
-	setup | --check)
-		;;
-	-h | --help)
-		printf 'Usage: %s [--check]\n' "$0"
-		printf 'Without --check, install and build the ignored real-pool toolchain.\n'
-		exit 0
-		;;
-	*)
-		fail "unknown argument '${MODE}'; expected --check."
-		;;
+setup | --check)
+	;;
+-h | --help)
+	printf 'Usage: %s [--check]\n' "$0"
+	printf 'Without --check, install and build the ignored real-pool toolchain.\n'
+	exit 0
+	;;
+*)
+	fail "unknown argument '${MODE}'; expected --check."
+	;;
 esac
 
 step "checking required host tools" require_command git
@@ -280,12 +286,15 @@ TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/app20-pool-setup.XXXXXX")"
 TARGET="$(platform_target)"
 
 step "cloning pinned starknet-privacy source" ensure_vendor_clone
-step "installing repository-local Scarb ${SCARB_VERSION}" ensure_scarb "${TARGET}"
+step "installing privacy Scarb ${PRIVACY_SCARB_VERSION}" \
+	ensure_scarb "${PRIVACY_SCARB_VERSION}" "${TARGET}" "scarb"
+step "installing APP20 Scarb ${APP20_SCARB_VERSION}" \
+	ensure_scarb "${APP20_SCARB_VERSION}" "${TARGET}" "app20-scarb"
 step "installing repository-local Universal Sierra Compiler ${USC_VERSION}" ensure_usc "${TARGET}"
 step "installing native starknet-devnet ${DEVNET_VERSION}" ensure_devnet "${TARGET}"
 step "installing vendored SDK dependencies" install_sdk_dependencies
 step "installing vendored client dependencies" install_client_dependencies
-step "building the real privacy_Privacy Cairo artifacts with Scarb ${SCARB_VERSION}" build_privacy_contracts
+step "building the real privacy_Privacy Cairo artifacts with Scarb ${PRIVACY_SCARB_VERSION}" build_privacy_contracts
 step "building the vendored TypeScript SDK" build_sdk
 step "building the vendored TypeScript client" build_client
 step "installing isolated pool-harness dependencies" install_harness_dependencies

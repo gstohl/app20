@@ -79,6 +79,10 @@ function positiveU128(value: string | bigint, label: string): string {
   return boundedHex(value, U128_MAX, label);
 }
 
+function assertNonZeroFelt(value: FeltInput, label: string): void {
+  felt(value, label);
+}
+
 function felt(value: FeltInput, label: string): string {
   if (typeof value === "number" && !Number.isSafeInteger(value)) {
     throw new Error(`${label} must be a safe integer or integer string.`);
@@ -132,6 +136,12 @@ export function buildEscrowFundActions({
 }: EscrowFundBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
   felt(ticketAddress, "Ticket address");
+  assertNonZeroFelt(recoveryAddress, "Recovery address");
+  assertNonZeroFelt(token, "Funding token");
+  assertNonZeroFelt(counterToken, "Counter token");
+  if (BigInt(token) === BigInt(counterToken)) {
+    throw new Error("Fund legs must use different tokens.");
+  }
   return [
     withdraw(token, positiveU128(amount, "Funding amount"), escrowAddress),
     openNote(ticketAddress, recoveryAddress),
@@ -158,6 +168,9 @@ export function buildEscrowFillActions({
   payoutToken,
 }: EscrowFillBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
+  assertNonZeroFelt(recoveryAddress, "Recovery address");
+  assertNonZeroFelt(token, "Fill token");
+  assertNonZeroFelt(payoutToken, "Payout token");
   return [
     withdraw(token, positiveU128(amount, "Fill amount"), escrowAddress),
     openNote(payoutToken, recoveryAddress),
@@ -183,6 +196,8 @@ function buildPayoutActions(
 ): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
   felt(ticketAddress, "Ticket address");
+  assertNonZeroFelt(recoveryAddress, "Recovery address");
+  assertNonZeroFelt(payoutToken, "Payout token");
   return [
     withdraw(ticketAddress, "0x1", escrowAddress),
     openNote(payoutToken, recoveryAddress),

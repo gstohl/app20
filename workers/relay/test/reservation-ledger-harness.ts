@@ -59,6 +59,7 @@ export class ReservationLedgerTestSql {
   records = new Map<string, RecordRow>();
   attempts = new Map<string, AttemptRow>();
   private mutationsUntilWriteFailure: number | null = null;
+  private nextWriteError: Error | null = null;
 
   /**
    * Fail the Nth subsequent persisted mutation (0 = the next write). Schema
@@ -72,6 +73,11 @@ export class ReservationLedgerTestSql {
       );
     }
     this.mutationsUntilWriteFailure = count;
+  }
+
+  /** Fail the next persisted mutation with a caller-supplied platform error. */
+  failNextWriteWith(error: Error): void {
+    this.nextWriteError = error;
   }
 
   exec<T>(query: string, ...bindings: unknown[]): Iterable<T> & { one(): T } {
@@ -165,6 +171,11 @@ export class ReservationLedgerTestSql {
   }
 
   private assertWritable(): void {
+    if (this.nextWriteError) {
+      const error = this.nextWriteError;
+      this.nextWriteError = null;
+      throw error;
+    }
     if (this.mutationsUntilWriteFailure === null) return;
     if (this.mutationsUntilWriteFailure === 0) {
       this.mutationsUntilWriteFailure = null;

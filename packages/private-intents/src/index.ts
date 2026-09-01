@@ -484,7 +484,7 @@ export async function quotePrivateSwapIntent(
   )
     .trim()
     .toLowerCase();
-  if (!SIGNATURE_PATTERN.test(signature)) {
+  if (!isCanonicalQuoteSignature(signature)) {
     throw new PrivateIntentError("The solver returned an unusable signature.");
   }
   return { kind: "quoted", quote: { ...unsigned, signature } };
@@ -553,6 +553,9 @@ export async function verifySolverQuote(
   const digest = await digestPrivateSwapIntent(intent);
   if (digest !== quote.intentDigest) {
     throw new PrivateIntentError("The quote does not bind this intent digest.");
+  }
+  if (!isCanonicalQuoteSignature(quote.signature)) {
+    throw new PrivateIntentError("The quote signature is not authentic.");
   }
   const canonical = canonicalSolverQuote(quote);
   const authentic = await verification.verify(
@@ -727,6 +730,11 @@ export function planRestock(
   for (const fill of fills) {
     const bought = requireToken(fill.buyToken, "buyToken");
     const sold = requireToken(fill.sellToken, "sellToken");
+    if (bought === sold) {
+      throw new PrivateIntentError("sellToken and buyToken must differ.");
+    }
+    requireAmount(fill.buyAmount, "buyAmount");
+    requireAmount(fill.sellAmount, "sellAmount");
     // We delivered buyToken from inventory (owed back) and received sellToken.
     exposure.set(bought, (exposure.get(bought) ?? 0n) + fill.buyAmount);
     exposure.set(sold, (exposure.get(sold) ?? 0n) - fill.sellAmount);

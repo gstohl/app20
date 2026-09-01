@@ -130,6 +130,7 @@ export type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
 const ID_PATTERN = /^0x[0-9a-fA-F]{64}$/;
 const BASE_UNITS_PATTERN = /^(?:0|[1-9]\d*)$/;
+const MAX_UINT256 = (1n << 256n) - 1n;
 const MAX_TOKEN_DECIMALS = 255;
 const STRK_SYMBOL = "STRK";
 const STRK_DECIMALS = 18;
@@ -160,11 +161,11 @@ export function isRandom32ByteId(value: unknown): value is string {
 }
 
 export function isPositiveBaseUnitAmount(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    BASE_UNITS_PATTERN.test(value) &&
-    BigInt(value) > 0n
-  );
+  if (typeof value !== "string" || !BASE_UNITS_PATTERN.test(value)) {
+    return false;
+  }
+  const amount = BigInt(value);
+  return amount > 0n && amount <= MAX_UINT256;
 }
 
 export function normalizeTokenRef(token: TokenRef): TokenRef {
@@ -391,6 +392,9 @@ export function parseDecimalToBaseUnits(
     BigInt(match[1]) * 10n ** BigInt(decimals) +
     BigInt(fraction.padEnd(decimals, "0") || "0");
   if (units <= 0n) throw new Error("Amount must be greater than zero.");
+  if (units > MAX_UINT256) {
+    throw new Error("Amount exceeds the uint256 limit.");
+  }
   return units.toString();
 }
 
@@ -778,12 +782,31 @@ export function claimOtcAccept(
   const current = state.deals[accept.dealId];
   if (!current)
     throw new Error("The referenced OTC offer is not stored locally.");
+  if (
+    current.status === "expired" ||
+    (current.status === "offered" &&
+      !current.acceptPending &&
+      offerIsExpired(current.offer, at))
+  ) {
+    if (current.status !== "expired") {
+      state.deals[accept.dealId] = {
+        ...current,
+        status: "expired",
+        updatedAt: at,
+      };
+      saveOtcState(storage, chainId, selfAddress, state);
+    }
+    throw new Error("This offer has expired.");
+  }
   if (current.status !== "offered" || current.acceptPending) {
     throw new Error(
       "This deal was already accepted; no second transfer was sent.",
     );
   }
   const next = transitionDeal(current, { type: "accept", payload: accept }, at);
+  if (next.status !== "accepted" || !next.accept) {
+    throw new Error("Cannot reserve an OTC accept for this deal.");
+  }
   const claimed = {
     ...next,
     acceptOperation: {
@@ -1319,12 +1342,20 @@ export function releasePayment(
     return current;
   }
   const next: PaymentRecord = {
-    ...current,
+    requestId: current.requestId,
     status: paymentRequestIsExpired(current.request, at)
       ? "expired"
       : "requested",
+    request: current.request,
     paymentPending: false,
     paymentVerified: false,
+    ...(current.origin ? { origin: current.origin } : {}),
+    ...(current.linkAuthenticity
+      ? { linkAuthenticity: current.linkAuthenticity }
+      : {}),
+    ...(current.counterpartyPaymentClaim
+      ? { counterpartyPaymentClaim: current.counterpartyPaymentClaim }
+      : {}),
     updatedAt: at,
   };
   state.payments[requestId] = next;

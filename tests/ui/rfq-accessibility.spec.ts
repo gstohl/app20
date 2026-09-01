@@ -1,11 +1,12 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-
 import {
   connectLocalnetWallet,
+  expect,
   expectNoHorizontalOverflow,
   localnetIdentity,
-  readLocalnetConfig,
-  selectLocalNetwork,
+  openLocalnetPage,
+  test,
+  type Locator,
+  type Page,
 } from "./support/localnet";
 
 async function expectVisibleFocus(locator: Locator) {
@@ -84,9 +85,7 @@ function expectHeadingOrder(headings: readonly number[]) {
 }
 
 async function prepareFinalReview(page: Page) {
-  await page.goto("/rfq#desk");
-  await selectLocalNetwork(page);
-  await connectLocalnetWallet(page);
+  await openLocalnetPage(page, "/rfq#desk");
 
   const ticket = page.locator('aside[aria-label="Private RFQ ticket"]');
   const desk = ticket.getByRole("region", { name: "Block RFQ", exact: true });
@@ -381,13 +380,10 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
 
 test("authority and copy controls expose unambiguous text rather than colour-only state", async ({
   page,
-  request,
+  localnetConfig: config,
 }) => {
-  const config = await readLocalnetConfig(request);
   const account = localnetIdentity(config, "alice").address;
-  await page.goto("/rfq#activity");
-  await selectLocalNetwork(page);
-  await connectLocalnetWallet(page);
+  await openLocalnetPage(page, "/rfq#activity");
   await seedAuthorityActivity(page, {
     account,
     chainId: config.chainId,

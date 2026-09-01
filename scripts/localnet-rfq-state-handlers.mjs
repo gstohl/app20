@@ -8,6 +8,16 @@ import {
   terminalizeHttpTargetThroughCoordinator,
 } from "./localnet-release-boundary.mjs";
 
+function requestForTarget(coordinator, target) {
+  const intentDigest = target.intentDigest ?? target.requestDigest;
+  if (typeof coordinator.getRequest === "function") {
+    return coordinator.getRequest(intentDigest);
+  }
+  return coordinator
+    .listRequests()
+    .find((candidate) => candidate.intentDigest === intentDigest);
+}
+
 /** Importable handler seam used by startApi and barrier-controlled tests. */
 export function createLocalnetRfqStateHandlers({
   coordinator,
@@ -104,26 +114,14 @@ export function createLocalnetRfqStateHandlers({
           "Exact escrow status changed before coordinator convergence.",
         );
       validateFundedObservation(target, observed, expectedStatus);
-      let request = coordinator
-        .listRequests()
-        .find(
-          (candidate) =>
-            candidate.intentDigest ===
-            (target.intentDigest ?? target.requestDigest),
-        );
+      let request = requestForTarget(coordinator, target);
       if (["funding-pending", "funding-unknown"].includes(request?.state)) {
         await observeFundedHttpTargetThroughCoordinator({
           coordinator,
           target,
           attemptId,
         });
-        request = coordinator
-          .listRequests()
-          .find(
-            (candidate) =>
-              candidate.intentDigest ===
-              (target.intentDigest ?? target.requestDigest),
-          );
+        request = requestForTarget(coordinator, target);
       }
       if (observed.status === 1) {
         if (!["funded", "expired"].includes(request?.state))
@@ -139,13 +137,7 @@ export function createLocalnetRfqStateHandlers({
             target,
             outcome: "filled",
           });
-          request = coordinator
-            .listRequests()
-            .find(
-              (candidate) =>
-                candidate.intentDigest ===
-                (target.intentDigest ?? target.requestDigest),
-            );
+          request = requestForTarget(coordinator, target);
         }
         if (observed.status === 3 && request?.state === "filled") {
           await terminalizeHttpTargetThroughCoordinator({
@@ -153,13 +145,7 @@ export function createLocalnetRfqStateHandlers({
             target,
             outcome: "settled",
           });
-          request = coordinator
-            .listRequests()
-            .find(
-              (candidate) =>
-                candidate.intentDigest ===
-                (target.intentDigest ?? target.requestDigest),
-            );
+          request = requestForTarget(coordinator, target);
         }
         const expected = observed.status === 2 ? "filled" : "settled";
         if (request?.state !== expected)
@@ -174,13 +160,7 @@ export function createLocalnetRfqStateHandlers({
           target,
           outcome: "expired",
         });
-        request = coordinator
-          .listRequests()
-          .find(
-            (candidate) =>
-              candidate.intentDigest ===
-              (target.intentDigest ?? target.requestDigest),
-          );
+        request = requestForTarget(coordinator, target);
       }
       if (request?.state === "expired") {
         await terminalizeHttpTargetThroughCoordinator({
@@ -188,13 +168,7 @@ export function createLocalnetRfqStateHandlers({
           target,
           outcome: "refunded",
         });
-        request = coordinator
-          .listRequests()
-          .find(
-            (candidate) =>
-              candidate.intentDigest ===
-              (target.intentDigest ?? target.requestDigest),
-          );
+        request = requestForTarget(coordinator, target);
       }
       if (request?.state !== "refunded")
         throw new Error(

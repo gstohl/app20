@@ -7,6 +7,7 @@ import {
   networkForProviderIndex,
   resolveCanonicalPair,
   resolveCanonicalToken,
+  resolveSessionTokenNetwork,
   type App20CanonicalToken,
 } from "./token-registry";
 
@@ -115,5 +116,47 @@ describe("APP20 token registry", () => {
     expect(networkForProviderIndex(0)).toBe("mainnet");
     expect(networkForProviderIndex(2)).toBe("sepolia");
     expect(networkForProviderIndex(1)).toBeNull();
+  });
+
+  it("fails closed when a connected session and selected provider disagree", () => {
+    expect(
+      resolveSessionTokenNetwork({
+        selectedNetwork: "mainnet",
+        sessionNetwork: "sepolia",
+        connected: true,
+        compatible: false,
+        reason: "Ready account and selected network do not match.",
+      }),
+    ).toEqual({
+      ok: false,
+      message: "Ready account and selected network do not match.",
+    });
+  });
+
+  it("previews the selected network only while disconnected", () => {
+    expect(
+      resolveSessionTokenNetwork({
+        selectedNetwork: "sepolia",
+        sessionNetwork: null,
+        connected: false,
+        compatible: false,
+      }),
+    ).toEqual({ ok: true, network: "sepolia" });
+    expect(
+      resolveSessionTokenNetwork({
+        selectedNetwork: "localnet",
+        sessionNetwork: "localnet",
+        connected: true,
+        compatible: true,
+      }),
+    ).toEqual({ ok: true, network: "localnet" });
+    expect(
+      resolveSessionTokenNetwork({
+        selectedNetwork: null,
+        sessionNetwork: null,
+        connected: false,
+        compatible: false,
+      }),
+    ).toMatchObject({ ok: false });
   });
 });

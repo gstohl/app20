@@ -2,7 +2,7 @@
 
 Pure APP20 account, asset, intent, canonicalization, and lifecycle types. It has no React, wallet, network, storage, or secret dependency.
 
-`canonicalizeStarknetFelt()`, `starknetFeltEquals()`, `parseTokenAmount()`, and `formatTokenAmount()` provide the shared bounded-felt and exact integer-unit boundary used by APP20 registry, proposal, and quote code. Decimal parsing rejects exponent/sign syntax, excess precision, zero, and u128 overflow without using floating-point arithmetic.
+`canonicalizeStarknetFelt()`, `starknetFeltEquals()`, `parseTokenAmount()`, and `formatTokenAmount()` provide the shared bounded-felt and exact integer-unit boundary used by APP20 registry, proposal, and quote code. Felt input is length-capped before trim/parse. Decimal parsing rejects exponent/sign syntax, excess precision, overlong digit strings, zero, and u128 overflow without using floating-point arithmetic. Canonical intent base-unit fields accept at most 78 digits (256-bit unsigned decimal).
 
 `assertCrossChainIntent()` fail-closes on unknown fields, hostile enum values, malformed identifiers or timestamps, duplicate set entries, non-canonical base-unit integers, and account/asset/refund chain mismatches. `digestCrossChainIntent()` binds explicit source, destination, and refund accounts; chain-scoped assets; provider and account modes; integer amount/output/fee bounds; slippage; deadlines; policy mode; and the disclosure set under `app20/intent/v1`.
 

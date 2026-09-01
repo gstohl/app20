@@ -30,7 +30,9 @@ not overwrite it.
 2. When P0-07 evidence is accepted, add a separate canonical record. Do not
    relabel this test fixture.
 3. Run `node scripts/generate-abi-decoder.mjs --artifact <canonical.json>
-   --out <server-only-path>`. Omitting `--artifact` still fails closed while
-   the index reports no canonical ABI.
+   --out <server-only-path>`. The explicit artifact must be the exact regular
+   file pinned by `index.json`, and its classification, canonical flag, and
+   deny-state flags must match the index. Omitting `--artifact` still fails
+   closed while the index reports no canonical ABI.
 4. Do not import a generated decoder into browser/`src/` paths. Do not claim
    P0-21 closed from test-fixture output.

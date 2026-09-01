@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
-import { deskMarketModel, LOCALNET_DESK_SPREAD_BPS, LOCALNET_FIXTURE_SPREAD_RANGE_BPS } from "./desk-market-model";
+import {
+  deskMarketModel,
+  LOCALNET_DESK_SPREAD_BPS,
+  LOCALNET_FIXTURE_SPREAD_RANGE_BPS,
+} from "./desk-market-model";
 import {
   aggregatePublicCandles,
   coinGeckoStrkOhlcUrl,
@@ -92,10 +96,12 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
       signal: controller.signal,
     })
       .then(async (response) => {
+        if (controller.signal.aborted) return;
         if (!response.ok) {
           throw new Error(`Public price service returned ${response.status}.`);
         }
         const body: unknown = await response.json();
+        if (controller.signal.aborted) return;
         setPriceState({ kind: "ready", candles: parseCoinGeckoOhlc(body) });
         setRetrievedAt(Date.now());
       })
@@ -251,7 +257,10 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
         </div>
         <div>
           <span>LOCALNET FIXTURE SPREAD RANGE</span>
-          <strong>{LOCALNET_FIXTURE_SPREAD_RANGE_BPS.minimum}–{LOCALNET_FIXTURE_SPREAD_RANGE_BPS.maximum} BPS</strong>
+          <strong>
+            {LOCALNET_FIXTURE_SPREAD_RANGE_BPS.minimum}–
+            {LOCALNET_FIXTURE_SPREAD_RANGE_BPS.maximum} BPS
+          </strong>
           <small>Maker A 30 · Maker B 20 · executable only after signing</small>
         </div>
       </section>
@@ -275,7 +284,9 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
                 aria-pressed={publicContextEnabled}
                 onClick={() => setPublicContextEnabled((value) => !value)}
               >
-                {publicContextEnabled ? "Disable third-party data" : "Load CoinGecko context"}
+                {publicContextEnabled
+                  ? "Disable third-party data"
+                  : "Load CoinGecko context"}
               </button>
               {PUBLIC_PRICE_RANGES.map((item) => (
                 <button
@@ -445,12 +456,20 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
                       : "Loading public candlesticks…"}
                 </strong>
                 {priceState.kind === "idle" ? (
-                  <p>Opting in contacts CoinGecko directly and discloses your IP address, user agent, request timing, and selected range.</p>
+                  <p>
+                    Opting in contacts CoinGecko directly and discloses your IP
+                    address, user agent, request timing, and selected range.
+                  </p>
                 ) : null}
                 {priceState.kind === "error" ? (
                   <>
                     <p>{priceState.message}</p>
-                    <button type="button" onClick={() => setRefreshKey((value) => value + 1)}>Retry</button>
+                    <button
+                      type="button"
+                      onClick={() => setRefreshKey((value) => value + 1)}
+                    >
+                      Retry
+                    </button>
                   </>
                 ) : null}
               </div>
@@ -460,7 +479,10 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
             <span>
               {activeCandle
                 ? `O ${formatPrice(activeCandle.open)} · H ${formatPrice(activeCandle.high)} · L ${formatPrice(activeCandle.low)} · C ${formatPrice(activeCandle.close)} · ${formatChartTime(activeCandle.timestamp, range)} UTC`
-                : "PUBLIC OHLC UNAVAILABLE"}{retrievedAt ? ` · retrieved ${new Date(retrievedAt).toISOString()}` : ""}
+                : "PUBLIC OHLC UNAVAILABLE"}
+              {retrievedAt
+                ? ` · retrieved ${new Date(retrievedAt).toISOString()}`
+                : ""}
             </span>
             <small>
               <a
@@ -475,15 +497,29 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
           </footer>
         </section>
 
-        <aside className={styles.referenceBook} aria-labelledby="reference-book-title">
+        <aside
+          className={styles.referenceBook}
+          aria-labelledby="reference-book-title"
+        >
           <header className={styles.marketSectionHeader}>
-            <div><span>PUBLIC MARKET CONTEXT</span><h3 id="reference-book-title">Not an RFQ quote</h3></div>
+            <div>
+              <span>PUBLIC MARKET CONTEXT</span>
+              <h3 id="reference-book-title">Not an RFQ quote</h3>
+            </div>
             <strong>NON-EXECUTABLE</strong>
           </header>
           <div className={styles.depthWithheld}>
             <span>LOCAL FIXTURE POLICY</span>
-            <strong>{model.clientRateLabel} · {LOCALNET_DESK_SPREAD_BPS} bps chart example</strong>
-            <p>Non-executable example only. Fixture spread range is 20–30 bps; exact executable terms and effective rate require an invited-maker signed response. There is no order book, quote ladder, market depth, or continuous liquidity on this surface.</p>
+            <strong>
+              {model.clientRateLabel} · {LOCALNET_DESK_SPREAD_BPS} bps chart
+              example
+            </strong>
+            <p>
+              Non-executable example only. Fixture spread range is 20–30 bps;
+              exact executable terms and effective rate require an invited-maker
+              signed response. There is no order book, quote ladder, market
+              depth, or continuous liquidity on this surface.
+            </p>
           </div>
         </aside>
       </div>

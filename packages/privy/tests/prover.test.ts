@@ -31,6 +31,18 @@ describe("prover sources", () => {
     });
   });
 
+  it("forwards OHTTP transport options so the SDK can encapsulate witnesses", async () => {
+    const ohttp = {
+      relayUrl: "/api/ohttp/prover",
+      publicKeyConfig: new Uint8Array([1, 2, 3]),
+    };
+    const prover = serviceProver({
+      url: "https://prover.example",
+      ohttp,
+    });
+    await expect(prover.resolve(context)).resolves.toMatchObject({ ohttp });
+  });
+
   it("marks in-process and HTTP mocks as non-submittable", () => {
     expect(mockProver()).toMatchObject({ kind: "mock", submittable: false });
     expect(

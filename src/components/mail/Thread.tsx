@@ -412,15 +412,14 @@ export default function Thread({
   proofs = {},
 }: ThreadProps) {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const focusKey = messages.map((message) => message.id).join("|");
   const conversationAddress =
     replyAddressForConversation(messages, selfAddress) ?? undefined;
 
   useEffect(() => {
-    if (!messages.length) return;
+    if (!messages.length || focusVersion === 0) return;
     const frame = requestAnimationFrame(() => headingRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [focusKey, focusVersion, messages.length]);
+  }, [focusVersion, messages.length]);
 
   function renderEnvelope(message: LocalMailMessage) {
     const { envelope } = message;
@@ -736,6 +735,8 @@ export default function Thread({
         <ol className={styles.threadList}>
           {messages.map((message) => {
             const paymentLink = message.transport === "payment_link";
+            const recipientCount =
+              message.recipientCount ?? publicRecipientCount(message.record);
             return (
               <li className={styles.message} key={message.id}>
                 <div className={styles.messageMeta}>
@@ -760,13 +761,8 @@ export default function Thread({
                         {message.index}
                       </span>
                       <span>
-                        {message.recipientCount ??
-                          publicRecipientCount(message.record)}{" "}
-                        recipient
-                        {(message.recipientCount ??
-                          publicRecipientCount(message.record)) === 1
-                          ? ""
-                          : "s"}
+                        {recipientCount} recipient
+                        {recipientCount === 1 ? "" : "s"}
                         {message.blockNumber === undefined
                           ? " · posted"
                           : ` · block ${message.blockNumber}`}

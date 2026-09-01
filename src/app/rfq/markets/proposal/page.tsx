@@ -11,6 +11,7 @@ import {
   APP20_TOKEN_REGISTRY_REVISION,
   networkForProviderIndex,
   resolveCanonicalPair,
+  resolveSessionTokenNetwork,
 } from "@/lib/token-registry";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -40,9 +41,15 @@ export default function MarketProposalPage({
   );
   const session = useActiveStarknetSession();
   const selectedNetwork = networkForProviderIndex(providerIndex);
-  const proposalNetwork = session.network ?? selectedNetwork;
-  const pairResolution = proposalNetwork
-    ? resolveCanonicalPair(proposalNetwork, tokenA, tokenB)
+  const networkResolution = resolveSessionTokenNetwork({
+    selectedNetwork,
+    sessionNetwork: session.network,
+    connected: session.connected,
+    compatible: session.compatible,
+    reason: session.reason,
+  });
+  const pairResolution = networkResolution.ok
+    ? resolveCanonicalPair(networkResolution.network, tokenA, tokenB)
     : null;
   const pair = pairResolution?.ok ? pairResolution.pair : null;
   const [proposedAmountA, setProposedAmountA] = useState("");
@@ -68,7 +75,7 @@ export default function MarketProposalPage({
       })
     : null;
   const contextKey = JSON.stringify([
-    proposalNetwork,
+    networkResolution.ok ? networkResolution.network : null,
     pair?.tokenA.address ?? tokenA,
     pair?.tokenB.address ?? tokenB,
     session.account,
@@ -126,9 +133,11 @@ export default function MarketProposalPage({
   }
 
   if (!pair) {
-    const reason = pairResolution?.ok
-      ? "The pair is unavailable."
-      : (pairResolution?.message ?? "No supported network is selected.");
+    const reason = networkResolution.ok
+      ? pairResolution?.ok
+        ? "The pair is unavailable."
+        : (pairResolution?.message ?? "No supported network is selected.")
+      : networkResolution.message;
     return (
       <main className={styles.page}>
         <section className={styles.invalidCard} role="alert">
@@ -188,8 +197,8 @@ export default function MarketProposalPage({
           <strong>{pair.tokenB.symbol}</strong>
         </div>
         <p>
-          This session-only review does not create a venue, AMM, order book, LP position,
-          inventory, transaction, or deployment authorization.
+          This session-only review does not create a venue, AMM, order book, LP
+          position, inventory, transaction, or deployment authorization.
         </p>
       </div>
 
@@ -246,8 +255,16 @@ export default function MarketProposalPage({
                 <div>
                   <input
                     aria-label={`${pair.tokenA.symbol} proposed amount`}
-                    aria-describedby={showErrors && validation?.errors.proposedAmountA ? "market-proposal-amount-a-error" : undefined}
-                    aria-errormessage={showErrors && validation?.errors.proposedAmountA ? "market-proposal-amount-a-error" : undefined}
+                    aria-describedby={
+                      showErrors && validation?.errors.proposedAmountA
+                        ? "market-proposal-amount-a-error"
+                        : undefined
+                    }
+                    aria-errormessage={
+                      showErrors && validation?.errors.proposedAmountA
+                        ? "market-proposal-amount-a-error"
+                        : undefined
+                    }
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
@@ -264,7 +281,9 @@ export default function MarketProposalPage({
                   <strong>{pair.tokenA.symbol}</strong>
                 </div>
                 {showErrors && validation?.errors.proposedAmountA ? (
-                  <em id="market-proposal-amount-a-error">{validation.errors.proposedAmountA}</em>
+                  <em id="market-proposal-amount-a-error">
+                    {validation.errors.proposedAmountA}
+                  </em>
                 ) : null}
               </label>
               <label className={styles.inventoryCard}>
@@ -272,8 +291,16 @@ export default function MarketProposalPage({
                 <div>
                   <input
                     aria-label={`${pair.tokenB.symbol} proposed amount`}
-                    aria-describedby={showErrors && validation?.errors.proposedAmountB ? "market-proposal-amount-b-error" : undefined}
-                    aria-errormessage={showErrors && validation?.errors.proposedAmountB ? "market-proposal-amount-b-error" : undefined}
+                    aria-describedby={
+                      showErrors && validation?.errors.proposedAmountB
+                        ? "market-proposal-amount-b-error"
+                        : undefined
+                    }
+                    aria-errormessage={
+                      showErrors && validation?.errors.proposedAmountB
+                        ? "market-proposal-amount-b-error"
+                        : undefined
+                    }
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
@@ -290,7 +317,9 @@ export default function MarketProposalPage({
                   <strong>{pair.tokenB.symbol}</strong>
                 </div>
                 {showErrors && validation?.errors.proposedAmountB ? (
-                  <em id="market-proposal-amount-b-error">{validation.errors.proposedAmountB}</em>
+                  <em id="market-proposal-amount-b-error">
+                    {validation.errors.proposedAmountB}
+                  </em>
                 ) : null}
               </label>
             </div>
@@ -299,8 +328,16 @@ export default function MarketProposalPage({
               <div className={styles.inputShell}>
                 <input
                   aria-label={`Non-executable reference price in ${pair.tokenB.symbol} per ${pair.tokenA.symbol}`}
-                  aria-describedby={showErrors && validation?.errors.referencePrice ? "market-proposal-reference-price-error" : undefined}
-                  aria-errormessage={showErrors && validation?.errors.referencePrice ? "market-proposal-reference-price-error" : undefined}
+                  aria-describedby={
+                    showErrors && validation?.errors.referencePrice
+                      ? "market-proposal-reference-price-error"
+                      : undefined
+                  }
+                  aria-errormessage={
+                    showErrors && validation?.errors.referencePrice
+                      ? "market-proposal-reference-price-error"
+                      : undefined
+                  }
                   type="text"
                   inputMode="decimal"
                   autoComplete="off"
@@ -323,7 +360,9 @@ export default function MarketProposalPage({
                 executable market price.
               </small>
               {showErrors && validation?.errors.referencePrice ? (
-                <em id="market-proposal-reference-price-error">{validation.errors.referencePrice}</em>
+                <em id="market-proposal-reference-price-error">
+                  {validation.errors.referencePrice}
+                </em>
               ) : null}
             </label>
             {showErrors && validation && !validation.ok ? (
@@ -334,10 +373,17 @@ export default function MarketProposalPage({
                 tabIndex={-1}
                 aria-labelledby="market-proposal-error-summary-title"
               >
-                <strong id="market-proposal-error-summary-title">Proposal needs attention</strong>
-                <p>Resolve the blocked proposal fields and active-session evidence.</p>
+                <strong id="market-proposal-error-summary-title">
+                  Proposal needs attention
+                </strong>
+                <p>
+                  Resolve the blocked proposal fields and active-session
+                  evidence.
+                </p>
                 <ul>
-                  {Object.values(validation.errors).map((message) => message ? <li key={message}>{message}</li> : null)}
+                  {Object.values(validation.errors).map((message) =>
+                    message ? <li key={message}>{message}</li> : null,
+                  )}
                 </ul>
               </div>
             ) : null}
@@ -352,11 +398,18 @@ export default function MarketProposalPage({
           </button>
         </form>
 
-        <aside className={styles.reviewPanel} aria-label="Market proposal review">
+        <aside
+          className={styles.reviewPanel}
+          aria-label="Market proposal review"
+        >
           <header className={styles.reviewHeader}>
             <div>
               <span>SESSION REVIEW</span>
-              <h2>{currentPrepared ? "Proposal identifier prepared" : "Proposal summary"}</h2>
+              <h2>
+                {currentPrepared
+                  ? "Proposal identifier prepared"
+                  : "Proposal summary"}
+              </h2>
             </div>
             <strong className={currentPrepared ? styles.ready : undefined}>
               {currentPrepared ? "DRAFT PREPARED" : "NOT PREPARED"}
@@ -386,8 +439,15 @@ export default function MarketProposalPage({
 
           <section className={styles.readinessSection}>
             <span>PROPOSAL ONLY · NO DEPLOYMENT</span>
-            <p>Reviewed assets, owner/session, network, exact amounts, registry revision, and a non-executable reference price are the entire proposal scope.</p>
-            <p>The checksum is an identifier only. It does not represent operational readiness or a liquidity action.</p>
+            <p>
+              Reviewed assets, owner/session, network, exact amounts, registry
+              revision, and a non-executable reference price are the entire
+              proposal scope.
+            </p>
+            <p>
+              The checksum is an identifier only. It does not represent
+              operational readiness or a liquidity action.
+            </p>
           </section>
         </aside>
       </div>

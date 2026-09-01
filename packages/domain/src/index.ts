@@ -4,6 +4,9 @@ export type { Digest256 } from "./digest256.ts";
 const STARKNET_FELT_LIMIT = 2n ** 251n;
 const STARKNET_U128_LIMIT = 2n ** 128n;
 const MAX_FELT_INPUT_LENGTH = 78;
+const MAX_FELT_RAW_INPUT_LENGTH = 256;
+const MAX_TOKEN_AMOUNT_INPUT_LENGTH = 512;
+const MAX_BASE_UNIT_DIGITS = 78;
 const STARKNET_FELT_PATTERN = /^(?:0[xX][0-9a-fA-F]+|[0-9]+)$/;
 const TOKEN_DECIMAL_PATTERN = /^(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))$/;
 
@@ -14,6 +17,9 @@ export type StarknetAssetMetadata = Readonly<{
 }>;
 
 export function canonicalizeStarknetFelt(value: string): string {
+  if (typeof value !== "string" || value.length > MAX_FELT_RAW_INPUT_LENGTH) {
+    throw new Error("Value must be a bounded Starknet felt.");
+  }
   const trimmed = value.trim();
   if (
     trimmed.length === 0 ||
@@ -50,7 +56,17 @@ export function parseTokenAmount(
   ) {
     throw new Error("Token decimals must be an integer between 0 and 255.");
   }
-  const match = TOKEN_DECIMAL_PATTERN.exec(value.trim());
+  if (
+    typeof value !== "string" ||
+    value.length > MAX_TOKEN_AMOUNT_INPUT_LENGTH
+  ) {
+    throw new Error("Enter an unsigned plain-decimal amount.");
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_TOKEN_AMOUNT_INPUT_LENGTH) {
+    throw new Error("Enter an unsigned plain-decimal amount.");
+  }
+  const match = TOKEN_DECIMAL_PATTERN.exec(trimmed);
   if (!match) throw new Error("Enter an unsigned plain-decimal amount.");
   const whole = (match[1] ?? "0").replace(/^0+/, "") || "0";
   const fraction = match[2] ?? match[3] ?? "";
@@ -379,7 +395,11 @@ function assertBaseUnits(
   allowZero = false,
 ): asserts value is string {
   assertString(value, label);
-  if (!/^(0|[1-9][0-9]*)$/.test(value)) {
+  if (
+    value.length === 0 ||
+    value.length > MAX_BASE_UNIT_DIGITS ||
+    !/^(0|[1-9][0-9]*)$/.test(value)
+  ) {
     throw new Error(
       `${label} must be a canonical non-negative base-unit integer.`,
     );

@@ -315,6 +315,22 @@ function snapshotReceipt(receipt: PolicyReceiptV1): Readonly<PolicyReceiptV1> {
 function snapshotEvidence(
   evidence: AttestationEvidence,
 ): Readonly<AttestationEvidence> {
+  const rawEvidence = evidence.rawEvidence;
+  if (typeof rawEvidence === "string" && rawEvidence.length > 262_144) {
+    throw new Error("Attestation evidence rawEvidence is too large.");
+  }
+  if (rawEvidence instanceof ArrayBuffer && rawEvidence.byteLength > 262_144) {
+    throw new Error("Attestation evidence rawEvidence is too large.");
+  }
+  if (ArrayBuffer.isView(rawEvidence) && rawEvidence.byteLength > 262_144) {
+    throw new Error("Attestation evidence rawEvidence is too large.");
+  }
+  let clonedRawEvidence: AttestationEvidence["rawEvidence"];
+  try {
+    clonedRawEvidence = structuredClone(rawEvidence);
+  } catch {
+    throw new Error("Attestation evidence rawEvidence cannot be snapshotted.");
+  }
   return Object.freeze({
     vendor: evidence.vendor,
     measurement: evidence.measurement,
@@ -325,7 +341,7 @@ function snapshotEvidence(
     debug: evidence.debug,
     securityStatus: evidence.securityStatus,
     evidenceDigest: evidence.evidenceDigest,
-    rawEvidence: evidence.rawEvidence,
+    rawEvidence: clonedRawEvidence,
   });
 }
 

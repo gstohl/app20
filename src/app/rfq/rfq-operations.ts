@@ -372,6 +372,51 @@ export function normalizeRfqOperationsStatus(
   });
 }
 
+function eligibleMakerIds(
+  status: RfqOperationsStatus | undefined,
+  now: number,
+): string {
+  return (
+    status?.makers
+      .filter(
+        (maker) =>
+          maker.eligible &&
+          maker.keyStatus === "valid" &&
+          maker.keyValidUntil > now,
+      )
+      .map((maker) => maker.makerId)
+      .join(",") ?? ""
+  );
+}
+
+/** Fingerprint of gating-relevant operations state, excluding the raw clock. */
+export function operationsAvailabilityFingerprint(
+  availability: OperationsAvailability,
+): string {
+  return [
+    availability.mode,
+    availability.reason,
+    String(availability.claimsAndRefundsEnabled),
+    eligibleMakerIds(availability.status, availability.asOf),
+    availability.status?.validUntil ?? 0,
+    availability.status?.directory.validUntil ?? 0,
+  ].join("|");
+}
+
+export function shouldPublishOperationsClock(
+  status: RfqOperationsStatus | null,
+  previousNow: number,
+  nextNow: number,
+): boolean {
+  if (nextNow === previousNow) return false;
+  return (
+    operationsAvailabilityFingerprint(
+      operationsAvailability(status, previousNow),
+    ) !==
+    operationsAvailabilityFingerprint(operationsAvailability(status, nextNow))
+  );
+}
+
 export function operationsAvailability(
   status: RfqOperationsStatus | null,
   now: number,

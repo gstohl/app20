@@ -67,9 +67,15 @@ describe("localnet-final Sepolia RFQ manifest", () => {
     ).toBe(false);
   });
 
-  it("hard-denies Mainnet", () => {
-    expect(() =>
-      assertPrivateRfqNetwork("mainnet", SEPOLIA_RFQ_MANIFEST),
-    ).toThrow(/hard-disabled/);
-  });
+  it.each(["mainnet", "sepolia", "localnet"] as const)(
+    "hard-denies production private RFQ on %s",
+    (network) => {
+      expect(() =>
+        assertPrivateRfqNetwork(network, apparentlyComplete()),
+      ).toThrow(network === "mainnet" ? /hard-disabled/ : /unavailable/);
+      expect(isSepoliaRfqCandidateEnabled(apparentlyComplete(), 100)).toBe(
+        false,
+      );
+    },
+  );
 });

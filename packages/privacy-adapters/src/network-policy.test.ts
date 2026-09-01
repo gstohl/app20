@@ -101,6 +101,54 @@ describe("evaluateNetworkPolicy", () => {
       }),
     ).toThrow(NetworkPolicyError);
   });
+
+  it("fails closed on unknown network, adapter, operation, and submission mode", () => {
+    expect(
+      evaluateNetworkPolicy({
+        network: "testnet" as PrivacyNetwork,
+        adapter: "ready",
+        operation: "private-transfer",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      submittable: false,
+      code: "unrecognized-policy-input",
+    });
+    expect(
+      evaluateNetworkPolicy({
+        network: "sepolia",
+        adapter: "injected" as PrivacyAdapterKind,
+        operation: "shield",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      submittable: false,
+      code: "unrecognized-policy-input",
+    });
+    expect(
+      evaluateNetworkPolicy({
+        network: "sepolia",
+        adapter: "privy",
+        operation: "evil" as "shield",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      submittable: false,
+      code: "unrecognized-policy-input",
+    });
+    expect(
+      evaluateNetworkPolicy({
+        network: "sepolia",
+        adapter: "privy",
+        operation: "mail",
+        submissionMode: "review-only" as "build-only",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      submittable: false,
+      code: "unrecognized-policy-input",
+    });
+  });
 });
 
 describe("isReadyWalletFeatureId", () => {
@@ -109,9 +157,15 @@ describe("isReadyWalletFeatureId", () => {
     (id) => expect(isReadyWalletFeatureId(id)).toBe(true),
   );
 
-  it.each(["Ready Wallet Copy", "xverse", "metamask", "", "ready-evil"])(
-    "rejects an unreviewed or display-name-only id %s",
-    (id) => expect(isReadyWalletFeatureId(id)).toBe(false),
+  it.each([
+    "Ready Wallet Copy",
+    "xverse",
+    "metamask",
+    "",
+    "ready-evil",
+    `ready${"!".repeat(80)}`,
+  ])("rejects an unreviewed or display-name-only id %s", (id) =>
+    expect(isReadyWalletFeatureId(id)).toBe(false),
   );
 
   it("classifies unreviewed feature ids as generic Wallet Standard", () => {

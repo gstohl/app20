@@ -41,6 +41,18 @@ const STATE_KEY = "gate-state-v1";
 const WINDOW_MS = 60_000;
 const GLOBAL_RATE = 2_000;
 const GLOBAL_CONCURRENT = 200;
+const MAX_RATE_KEYS = 8_192;
+const MAX_SUBJECT_LENGTH = 200;
+const MAX_LEASE_ID_LENGTH = 100;
+const MAX_DIMENSION_LENGTH = 300;
+
+const SERVICE_BUDGETS: Readonly<Record<string, readonly GateBudget[]>> = {
+  "privy-bootstrap": ["privy-bootstrap"],
+  prover: ["ohttp-prover"],
+  discovery: ["ohttp-discovery"],
+  "starknet-sepolia": ["rpc-read", "rpc-costly", "rpc-submit"],
+  "starknet-mainnet": ["rpc-read", "rpc-costly", "rpc-submit"],
+};
 
 function policy(budget: GateBudget): GatePolicy {
   switch (budget) {
@@ -95,47 +107,198 @@ function policy(budget: GateBudget): GatePolicy {
   }
 }
 
-function validAcquire(value: unknown): value is GateAcquireRequest {
+function noStoreJson(value: unknown, status: number): Response {
+  return Response.json(value, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
+}
+
+function gateUnavailable(): Response {
+  return noStoreJson({ error: "Relay gate unavailable." }, 503);
+}
+
+function quotaExceeded(): Response {
+  return noStoreJson({ error: "Relay quota exceeded." }, 429);
+}
+
+function isDangerousKey(key: string): boolean {
+  return key === "__proto__" || key === "constructor" || key === "prototype";
+}
+
+function validRateEntry(value: unknown): value is RateEntry {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
   return (
-    typeof item.subject === "string" &&
-    item.subject.length > 0 &&
-    item.subject.length <= 200 &&
-    typeof item.service === "string" &&
-    [
-      "privy-bootstrap",
-      "prover",
-      "discovery",
-      "starknet-sepolia",
-      "starknet-mainnet",
-    ].includes(item.service) &&
-    typeof item.budget === "string" &&
-    [
-      "privy-bootstrap",
-      "ohttp-prover",
-      "ohttp-discovery",
-      "rpc-read",
-      "rpc-costly",
-      "rpc-submit",
-    ].includes(item.budget)
+    typeof item.startedAt === "number" &&
+    Number.isSafeInteger(item.startedAt) &&
+    item.startedAt > 0 &&
+    typeof item.count === "number" &&
+    Number.isSafeInteger(item.count) &&
+    item.count >= 0
   );
+}
+
+function validLeaseEntry(value: unknown): value is LeaseEntry {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.expiresAt === "number" &&
+    Number.isSafeInteger(item.expiresAt) &&
+    item.expiresAt > 0 &&
+    Array.isArray(item.dimensions) &&
+    item.dimensions.length > 0 &&
+    item.dimensions.length <= 8 &&
+    item.dimensions.every(
+      (dimension) =>
+        typeof dimension === "string" &&
+        dimension.length > 0 &&
+        dimension.length <= MAX_DIMENSION_LENGTH,
+    )
+  );
+}
+
+function emptySnapshot(): GateSnapshot {
+  return { rates: {}, leases: {} };
+}
+
+function parseSnapshot(value: unknown): GateSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return emptySnapshot();
+  }
+  const item = value as Record<string, unknown>;
+  if (
+    !item.rates ||
+    typeof item.rates !== "object" ||
+    Array.isArray(item.rates) ||
+    !item.leases ||
+    typeof item.leases !== "object" ||
+    Array.isArray(item.leases)
+  ) {
+    return emptySnapshot();
+  }
+  const rates: Record<string, RateEntry> = {};
+  for (const [key, rate] of Object.entries(
+    item.rates as Record<string, unknown>,
+  )) {
+    if (
+      isDangerousKey(key) ||
+      key.length === 0 ||
+      key.length > MAX_DIMENSION_LENGTH
+    ) {
+      return emptySnapshot();
+    }
+    if (!validRateEntry(rate)) return emptySnapshot();
+    rates[key] = { startedAt: rate.startedAt, count: rate.count };
+  }
+  const leases: Record<string, LeaseEntry> = {};
+  for (const [key, lease] of Object.entries(
+    item.leases as Record<string, unknown>,
+  )) {
+    if (
+      isDangerousKey(key) ||
+      key.length === 0 ||
+      key.length > MAX_LEASE_ID_LENGTH
+    ) {
+      return emptySnapshot();
+    }
+    if (!validLeaseEntry(lease)) return emptySnapshot();
+    leases[key] = {
+      expiresAt: lease.expiresAt,
+      dimensions: lease.dimensions.slice(),
+    };
+  }
+  return { rates, leases };
+}
+
+function pruneSnapshot(snapshot: GateSnapshot, now: number): GateSnapshot {
+  const rates: Record<string, RateEntry> = {};
+  for (const [key, rate] of Object.entries(snapshot.rates)) {
+    if (now - rate.startedAt < WINDOW_MS * 2) {
+      rates[key] = { startedAt: rate.startedAt, count: rate.count };
+    }
+  }
+  const leases: Record<string, LeaseEntry> = {};
+  for (const [key, lease] of Object.entries(snapshot.leases)) {
+    if (lease.expiresAt > now) {
+      leases[key] = {
+        expiresAt: lease.expiresAt,
+        dimensions: lease.dimensions.slice(),
+      };
+    }
+  }
+  return { rates, leases };
+}
+
+function rateCount(
+  rates: Record<string, RateEntry>,
+  dimension: string,
+  now: number,
+): number {
+  const existing = rates[dimension];
+  if (!existing || now - existing.startedAt >= WINDOW_MS) return 0;
+  return existing.count;
+}
+
+function incrementRate(
+  rates: Record<string, RateEntry>,
+  dimension: string,
+  now: number,
+): void {
+  const existing = rates[dimension];
+  if (!existing || now - existing.startedAt >= WINDOW_MS) {
+    rates[dimension] = { startedAt: now, count: 1 };
+    return;
+  }
+  rates[dimension] = {
+    startedAt: existing.startedAt,
+    count: existing.count + 1,
+  };
+}
+
+function missingRateKeys(
+  rates: Record<string, RateEntry>,
+  dimensions: readonly string[],
+): number {
+  let extra = 0;
+  for (const dimension of dimensions) {
+    if (!Object.hasOwn(rates, dimension)) extra += 1;
+  }
+  return extra;
+}
+
+function validAcquire(value: unknown): value is GateAcquireRequest {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  if (
+    typeof item.subject !== "string" ||
+    item.subject.length === 0 ||
+    item.subject.length > MAX_SUBJECT_LENGTH ||
+    typeof item.service !== "string" ||
+    typeof item.budget !== "string"
+  ) {
+    return false;
+  }
+  const allowed = SERVICE_BUDGETS[item.service];
+  if (!allowed || !allowed.includes(item.budget as GateBudget)) return false;
+  return true;
 }
 
 export class RelayGateDurableObject {
   private readonly state: DurableStateLike;
-  private snapshot: GateSnapshot = { rates: {}, leases: {} };
+  private snapshot: GateSnapshot = emptySnapshot();
   private readonly ready: Promise<void>;
   private tail: Promise<void> = Promise.resolve();
 
   constructor(state: DurableStateLike) {
     this.state = state;
     this.ready = state.blockConcurrencyWhile(async () => {
-      this.snapshot = (await state.storage.get<GateSnapshot>(STATE_KEY)) ?? {
-        rates: {},
-        leases: {},
-      };
-      await this.cleanup(Date.now());
+      this.snapshot = parseSnapshot(
+        await state.storage.get<unknown>(STATE_KEY),
+      );
+      const pruned = pruneSnapshot(this.snapshot, Date.now());
+      await this.persistSnapshot(pruned);
+      this.snapshot = pruned;
     });
   }
 
@@ -145,21 +308,22 @@ export class RelayGateDurableObject {
     try {
       pathname = new URL(request.url).pathname;
     } catch {
-      return Response.json({ error: "Invalid request URL." }, { status: 400 });
+      return noStoreJson({ error: "Invalid request URL." }, 400);
     }
     if (request.method === "POST" && pathname === "/acquire")
       return this.exclusive(() => this.acquire(request));
     if (request.method === "POST" && pathname === "/release")
       return this.exclusive(() => this.release(request));
-    return Response.json(
-      { error: "Not found." },
-      { status: 404, headers: { "cache-control": "no-store" } },
-    );
+    return noStoreJson({ error: "Not found." }, 404);
   }
 
   async alarm(): Promise<void> {
     await this.ready;
-    await this.exclusive(() => this.cleanup(Date.now()));
+    await this.exclusive(async () => {
+      const pruned = pruneSnapshot(this.snapshot, Date.now());
+      await this.persistSnapshot(pruned);
+      this.snapshot = pruned;
+    });
   }
 
   private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
@@ -184,9 +348,9 @@ export class RelayGateDurableObject {
       input = null;
     }
     if (!validAcquire(input))
-      return Response.json({ error: "Invalid gate request." }, { status: 400 });
+      return noStoreJson({ error: "Invalid gate request." }, 400);
     const now = Date.now();
-    await this.cleanup(now);
+    const working = pruneSnapshot(this.snapshot, now);
     const selected = policy(input.budget);
     const dimensions = [
       "global",
@@ -200,30 +364,35 @@ export class RelayGateDurableObject {
     ];
     for (let index = 0; index < dimensions.length; index += 1) {
       const dimension = dimensions[index];
-      const rate = this.currentRate(dimension, now);
-      const concurrent = Object.values(this.snapshot.leases).filter((lease) =>
+      const concurrent = Object.values(working.leases).filter((lease) =>
         lease.dimensions.includes(dimension),
       ).length;
       if (
-        rate.count >= limits[index].rate ||
+        rateCount(working.rates, dimension, now) >= limits[index].rate ||
         concurrent >= limits[index].concurrent
       ) {
-        return Response.json(
-          { error: "Relay quota exceeded." },
-          { status: 429, headers: { "cache-control": "no-store" } },
-        );
+        return quotaExceeded();
       }
     }
+    if (
+      Object.keys(working.rates).length +
+        missingRateKeys(working.rates, dimensions) >
+      MAX_RATE_KEYS
+    ) {
+      return quotaExceeded();
+    }
     for (const dimension of dimensions)
-      this.currentRate(dimension, now).count += 1;
+      incrementRate(working.rates, dimension, now);
     const leaseId = crypto.randomUUID();
     const expiresAt = now + selected.leaseMs;
-    this.snapshot.leases[leaseId] = { expiresAt, dimensions };
-    await this.persist(expiresAt);
-    return Response.json(
-      { leaseId },
-      { status: 201, headers: { "cache-control": "no-store" } },
-    );
+    working.leases[leaseId] = { expiresAt, dimensions };
+    try {
+      await this.persistSnapshot(working, expiresAt);
+    } catch {
+      return gateUnavailable();
+    }
+    this.snapshot = working;
+    return noStoreJson({ leaseId }, 201);
   }
 
   private async release(request: Request): Promise<Response> {
@@ -237,35 +406,35 @@ export class RelayGateDurableObject {
       input && typeof input === "object"
         ? (input as Record<string, unknown>).leaseId
         : null;
-    if (typeof leaseId !== "string" || leaseId.length > 100)
+    if (
+      typeof leaseId !== "string" ||
+      leaseId.length === 0 ||
+      leaseId.length > MAX_LEASE_ID_LENGTH
+    )
       return new Response(null, { status: 400 });
-    delete this.snapshot.leases[leaseId];
-    await this.persist();
+    if (!Object.hasOwn(this.snapshot.leases, leaseId)) {
+      return new Response(null, { status: 204 });
+    }
+    const next: GateSnapshot = {
+      rates: this.snapshot.rates,
+      leases: { ...this.snapshot.leases },
+    };
+    delete next.leases[leaseId];
+    try {
+      await this.persistSnapshot(next);
+    } catch {
+      return gateUnavailable();
+    }
+    this.snapshot = next;
     return new Response(null, { status: 204 });
   }
 
-  private currentRate(dimension: string, now: number): RateEntry {
-    const existing = this.snapshot.rates[dimension];
-    if (!existing || now - existing.startedAt >= WINDOW_MS) {
-      const fresh = { startedAt: now, count: 0 };
-      this.snapshot.rates[dimension] = fresh;
-      return fresh;
-    }
-    return existing;
-  }
-
-  private async cleanup(now: number): Promise<void> {
-    for (const [key, lease] of Object.entries(this.snapshot.leases))
-      if (lease.expiresAt <= now) delete this.snapshot.leases[key];
-    for (const [key, rate] of Object.entries(this.snapshot.rates))
-      if (now - rate.startedAt >= WINDOW_MS * 2)
-        delete this.snapshot.rates[key];
-    await this.persist();
-  }
-
-  private async persist(preferredAlarm?: number): Promise<void> {
-    await this.state.storage.put(STATE_KEY, this.snapshot);
-    const expiries = Object.values(this.snapshot.leases).map(
+  private async persistSnapshot(
+    snapshot: GateSnapshot,
+    preferredAlarm?: number,
+  ): Promise<void> {
+    await this.state.storage.put(STATE_KEY, snapshot);
+    const expiries = Object.values(snapshot.leases).map(
       (lease) => lease.expiresAt,
     );
     const next = Math.min(
@@ -306,12 +475,25 @@ export class DurableAtomicGate implements AtomicGate {
     return {
       release: async (): Promise<void> => {
         if (released) return;
-        released = true;
-        await this.stub.fetch("https://relay-gate.invalid/release", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ leaseId: output.leaseId }),
-        });
+        let releaseResponse: Response;
+        try {
+          releaseResponse = await this.stub.fetch(
+            "https://relay-gate.invalid/release",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ leaseId: output.leaseId }),
+            },
+          );
+        } catch {
+          throw new RelayHttpError(503, "Relay gate unavailable.");
+        }
+        if (releaseResponse.status === 204) {
+          released = true;
+          return;
+        }
+        await releaseResponse.body?.cancel();
+        throw new RelayHttpError(503, "Relay gate unavailable.");
       },
     };
   }

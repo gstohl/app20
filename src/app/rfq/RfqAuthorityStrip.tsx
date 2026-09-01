@@ -1,8 +1,6 @@
-import {
-        rfqAuthorityPresentation,
-        type RfqAuthorityPresentation,
-} from "./rfq-authority";
+import type { RfqAuthorityPresentation } from "./rfq-authority";
 import type { RfqLifecycleRecord } from "./rfq-lifecycle";
+import { useRfqAuthorityPresentation } from "./ui/use-rfq-authority-presentation";
 import styles from "./rfq.module.css";
 
 export function AuthorityStrip({
@@ -51,9 +49,10 @@ export default function RfqAuthorityStrip({
         record: RfqLifecycleRecord;
         headingLevel?: "h3" | "h4";
 }) {
+        const presentation = useRfqAuthorityPresentation(record);
         return (
                 <AuthorityStrip
-                        presentation={rfqAuthorityPresentation(record)}
+                        presentation={presentation}
                         headingLevel={headingLevel}
                 />
         );

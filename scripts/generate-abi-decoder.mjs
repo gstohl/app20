@@ -43,6 +43,12 @@ const ARTIFACT_KEYS = Object.freeze([
 ]);
 const LAYOUT_KEYS = Object.freeze(["name", "keys", "data"]);
 const FIELD_KEYS = Object.freeze(["name", "decodedName", "kind"]);
+const RESERVED_DECODED_FIELD_NAMES = new Set([
+  "stage",
+  "status",
+  "blockNumber",
+  "outcome",
+]);
 const INDEX_KEYS = Object.freeze([
   "schemaVersion",
   "scope",
@@ -178,6 +184,14 @@ function validateLayout(layout, abiEvent, label) {
   const data = layout.data.map((field, index) =>
     validateField(field, `${label}.data[${index}]`),
   );
+  const decodedNames = new Set();
+  for (const field of [...keys, ...data]) {
+    if (RESERVED_DECODED_FIELD_NAMES.has(field.decodedName))
+      fail(`${label}.${field.decodedName} is a reserved decoded field name.`);
+    if (decodedNames.has(field.decodedName))
+      fail(`${label}.${field.decodedName} is a duplicate decoded field name.`);
+    decodedNames.add(field.decodedName);
+  }
   if (!abiEvent || typeof abiEvent !== "object" || Array.isArray(abiEvent))
     fail(`${label} is missing from abiBytes events.`);
   exactKeys(abiEvent, ["keys", "data"], `${label} abi event`);
@@ -307,6 +321,38 @@ export async function loadAbiArtifact(path) {
   return validateAbiArtifact(value);
 }
 
+function indexedRecordPath(index, record, position) {
+  requiredText(record.path, `index record ${position} path`, 512);
+  return containedPath(
+    index.directory,
+    resolve(repositoryRoot, record.path),
+    `index record ${position}`,
+  );
+}
+
+async function loadIndexedAbiArtifact(index, record, position) {
+  const path = indexedRecordPath(index, record, position);
+  const loaded = await readRegularJson(path, `index record ${position}`);
+  if (loaded.sha256 !== record.sha256)
+    fail(`index record ${position} sha256 does not match file bytes.`);
+  const artifact = validateAbiArtifact(loaded.value);
+  if (artifact.classification !== record.classification)
+    fail(
+      `index record ${position} classification does not match its artifact.`,
+    );
+  if (artifact.canonicalProductionAbi !== record.canonicalProductionAbi)
+    fail(
+      `index record ${position} canonicalProductionAbi does not match its artifact.`,
+    );
+  if (
+    artifact.runtimeAllowed !== index.runtimeAllowed ||
+    artifact.productionEligible !== index.productionEligible ||
+    artifact.p0_21_status !== index.p0_21_status
+  )
+    fail(`index record ${position} does not match the governed deny flags.`);
+  return Object.freeze({ artifact, path });
+}
+
 export async function loadAbiManifestIndex(
   manifestsDir = DEFAULT_MANIFESTS_DIR,
 ) {
@@ -333,16 +379,30 @@ export async function loadAbiManifestIndex(
   requiredText(value.scope, "scope", 128);
   requiredText(value.blockedUntil, "blockedUntil", 256);
   exactKeys(value.schema, ["path", "sha256"], "ABI manifest index schema");
+  requiredText(value.schema.path, "ABI manifest index schema path", 512);
+  if (
+    typeof value.schema.sha256 !== "string" ||
+    !/^[0-9a-f]{64}$/.test(value.schema.sha256)
+  )
+    fail("ABI manifest index schema sha256 is invalid.");
   if (!Array.isArray(value.records) || value.records.length < 1)
     fail("ABI manifest index records are invalid.");
   const schemaPath = containedPath(
-    repositoryRoot,
+    directory,
     resolve(repositoryRoot, value.schema.path),
     "ABI manifest schema",
   );
   const schemaFile = await readRegularJson(schemaPath, "ABI manifest schema");
   if (schemaFile.sha256 !== value.schema.sha256)
     fail("ABI manifest schema sha256 does not match index.");
+
+  const index = Object.freeze({
+    ...value,
+    path: indexPath,
+    directory,
+  });
+  const seenPaths = new Set();
+  let canonicalRecords = 0;
   for (const [position, record] of value.records.entries()) {
     exactKeys(
       record,
@@ -358,23 +418,39 @@ export async function loadAbiManifestIndex(
       fail(`index record ${position} classification is invalid.`);
     if (typeof record.canonicalProductionAbi !== "boolean")
       fail(`index record ${position} canonicalProductionAbi is invalid.`);
-    const recordPath = containedPath(
-      repositoryRoot,
-      resolve(repositoryRoot, record.path),
-      `index record ${position}`,
-    );
-    const loaded = await readRegularJson(
-      recordPath,
-      `index record ${position}`,
-    );
-    if (loaded.sha256 !== record.sha256)
-      fail(`index record ${position} sha256 does not match file bytes.`);
+    const recordPath = indexedRecordPath(index, record, position);
+    if (seenPaths.has(recordPath))
+      fail(`index record ${position} duplicates another artifact path.`);
+    seenPaths.add(recordPath);
+    if (record.canonicalProductionAbi) canonicalRecords += 1;
+    await loadIndexedAbiArtifact(index, record, position);
   }
-  return Object.freeze({
-    ...value,
-    path: indexPath,
-    directory,
-  });
+  if (canonicalRecords !== (value.canonicalAbiPresent ? 1 : 0))
+    fail(
+      "canonicalAbiPresent must exactly match one governed canonical record.",
+    );
+  return index;
+}
+
+async function resolveIndexedAbiArtifact(
+  artifactPath,
+  manifestsDir = DEFAULT_MANIFESTS_DIR,
+) {
+  if (typeof artifactPath !== "string" || !artifactPath.trim())
+    fail("ABI artifact path is invalid.");
+  const index = await loadAbiManifestIndex(manifestsDir);
+  const requestedPath = resolve(artifactPath);
+  const matches = index.records
+    .map((record, position) => ({ record, position }))
+    .filter(
+      ({ record, position }) =>
+        indexedRecordPath(index, record, position) === requestedPath,
+    );
+  if (matches.length !== 1)
+    fail("ABI artifact is missing from the governed ABI manifest index.");
+  return (
+    await loadIndexedAbiArtifact(index, matches[0].record, matches[0].position)
+  ).artifact;
 }
 
 export async function resolveCanonicalAbiArtifact(
@@ -385,20 +461,14 @@ export async function resolveCanonicalAbiArtifact(
     fail(
       "No canonical ABI artifact is present; decoder generation fails closed.",
     );
-  const canonical = index.records.filter(
+  const position = index.records.findIndex(
     (record) => record?.canonicalProductionAbi === true,
   );
-  if (canonical.length !== 1)
+  if (position < 0)
     fail("Canonical ABI presence requires exactly one canonical record.");
-  const relativePath = canonical[0].path;
-  if (typeof relativePath !== "string")
-    fail("Canonical ABI record path is invalid.");
-  const path = containedPath(
-    repositoryRoot,
-    resolve(repositoryRoot, relativePath),
-    "canonical ABI artifact",
-  );
-  const artifact = await loadAbiArtifact(path);
+  const artifact = (
+    await loadIndexedAbiArtifact(index, index.records[position], position)
+  ).artifact;
   if (!artifact.canonicalProductionAbi || !artifact.p0_07_canonical_abi_present)
     fail("Canonical ABI record is not a P0-07 accepted artifact.");
   return artifact;
@@ -628,15 +698,12 @@ export async function generatePinnedDecoder(options) {
       "No ABI artifact was provided and no canonical ABI is configured; decoder generation fails closed.",
     );
   }
-  let artifact;
-  if (artifactPath) {
-    artifact = await loadAbiArtifact(resolve(artifactPath));
-  } else {
-    artifact = await resolveCanonicalAbiArtifact(options?.manifestsDir);
-  }
   if (!outPath)
     fail("Refusing to emit a decoder without an explicit --out path.");
   const resolvedOut = assertWritableDecoderPath(outPath);
+  const artifact = artifactPath
+    ? await resolveIndexedAbiArtifact(artifactPath, options?.manifestsDir)
+    : await resolveCanonicalAbiArtifact(options?.manifestsDir);
   const source = generatePinnedDecoderSource(artifact);
   await atomicWrite(resolvedOut, source);
   return Object.freeze({
@@ -655,9 +722,6 @@ export async function main(argv = process.argv.slice(2)) {
     fail(
       "No ABI artifact was provided and no canonical ABI is configured; decoder generation fails closed.",
     );
-  }
-  if (!parsed.artifactPath) {
-    await resolveCanonicalAbiArtifact();
   }
   const result = await generatePinnedDecoder(parsed);
   process.stdout.write(

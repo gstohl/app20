@@ -2,7 +2,7 @@ import { assertCrossChainIntent } from "@app20/domain";
 import { mapCrossChainIntentToDryQuote } from "@app20/near-intents";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import IntentsPage, {
   REVIEW_SCENARIOS,
   buildReviewIntent,
@@ -85,6 +85,17 @@ describe("intents dry review desk", () => {
     expect(report.quote).toBeUndefined();
     const bounds = report.checks.find((check) => check.id === "intent-bounds");
     expect(bounds?.status).toBe("failed");
+  });
+
+  it("replays fixtures without contacting a network", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      await runDryReview("provider-honors-terms");
+      await runDryReview("funding-shaped-response");
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 
   it("ships four distinct fixture scenarios", () => {

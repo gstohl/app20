@@ -31,6 +31,32 @@ export const LOCALNET_SOLVER_PUBLIC_JWK = LOCALNET_SOLVER_PUBLIC_JWKS[
 ] as JsonWebKey;
 
 const cachedPublicKeys = new Map<string, CryptoKey>();
+const inflightPublicKeys = new Map<string, Promise<CryptoKey>>();
+
+async function localnetSolverPublicKey(
+  solverKey: string,
+  publicJwk: JsonWebKey,
+): Promise<CryptoKey> {
+  const cached = cachedPublicKeys.get(solverKey);
+  if (cached) return cached;
+  const inflight = inflightPublicKeys.get(solverKey);
+  if (inflight) return inflight;
+  const loading = importQuotePublicKey(publicJwk).then(
+    (publicKey) => {
+      cachedPublicKeys.set(solverKey, publicKey);
+      return publicKey;
+    },
+    (error: unknown) => {
+      throw error;
+    },
+  );
+  inflightPublicKeys.set(solverKey, loading);
+  try {
+    return await loading;
+  } finally {
+    inflightPublicKeys.delete(solverKey);
+  }
+}
 
 export async function verifyLocalnetSolverQuote(
   canonical: string,
@@ -39,10 +65,6 @@ export async function verifyLocalnetSolverQuote(
 ): Promise<boolean> {
   const publicJwk = LOCALNET_SOLVER_PUBLIC_JWKS[solverKey];
   if (!publicJwk) return false;
-  let publicKey = cachedPublicKeys.get(solverKey);
-  if (!publicKey) {
-    publicKey = await importQuotePublicKey(publicJwk);
-    cachedPublicKeys.set(solverKey, publicKey);
-  }
+  const publicKey = await localnetSolverPublicKey(solverKey, publicJwk);
   return verifyCanonicalQuote(canonical, signature, publicKey);
 }

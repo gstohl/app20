@@ -1,21 +1,34 @@
 "use client";
 
+import { memo } from "react";
 import type { CompositeDraft } from "@/lib/drafts";
 import styles from "./mail.module.css";
 
-function draftTime(milliseconds: number): string {
+function draftTime(milliseconds: number): { label: string; dateTime: string } {
   const date = new Date(milliseconds);
+  let dateTime = "";
+  try {
+    dateTime = date.toISOString();
+  } catch {
+    dateTime = "";
+  }
   const today = new Date();
   if (date.toDateString() === today.toDateString()) {
-    return new Intl.DateTimeFormat(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    return {
+      label: new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date),
+      dateTime,
+    };
   }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-  }).format(date);
+  return {
+    label: new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(date),
+    dateTime,
+  };
 }
 
 function preview(draft: CompositeDraft): string {
@@ -45,7 +58,7 @@ type DraftListProps = {
   onDelete: (draftId: string) => void;
 };
 
-export default function DraftList({
+function DraftList({
   drafts,
   selectedDraftId,
   filterLabel,
@@ -70,46 +83,51 @@ export default function DraftList({
       </div>
       {drafts.length ? (
         <ol className={styles.conversationList}>
-          {drafts.map((draft) => (
-            <li key={draft.id} className={styles.draftListItem}>
-              <button
-                className={`${styles.conversationItem} ${
-                  selectedDraftId === draft.id
-                    ? styles.conversationItemActive
-                    : ""
-                }`}
-                type="button"
-                aria-current={selectedDraftId === draft.id ? "true" : undefined}
-                onClick={() => onSelect(draft.id)}
-              >
-                <span className={styles.conversationTopline}>
-                  <strong>{draft.recipient.trim() || "No recipient"}</strong>
-                  <time>{draftTime(draft.updatedAt)}</time>
-                </span>
-                <span className={styles.conversationPreview}>
-                  {preview(draft)}
-                </span>
-                <span className={styles.conversationMeta}>
-                  <em className={styles.typeBadge}>
-                    {draft.attachments.length
-                      ? `${draft.attachments.length} attachment${
-                          draft.attachments.length === 1 ? "" : "s"
-                        }`
-                      : "Letter"}
-                  </em>
-                  <span className={styles.readIndicator}>DRAFT</span>
-                </span>
-              </button>
-              <button
-                className={styles.draftDelete}
-                type="button"
-                onClick={() => onDelete(draft.id)}
-                aria-label={`Delete draft to ${draft.recipient || "no recipient"}`}
-              >
-                Delete…
-              </button>
-            </li>
-          ))}
+          {drafts.map((draft) => {
+            const posted = draftTime(draft.updatedAt);
+            return (
+              <li key={draft.id} className={styles.draftListItem}>
+                <button
+                  className={`${styles.conversationItem} ${
+                    selectedDraftId === draft.id
+                      ? styles.conversationItemActive
+                      : ""
+                  }`}
+                  type="button"
+                  aria-current={
+                    selectedDraftId === draft.id ? "true" : undefined
+                  }
+                  onClick={() => onSelect(draft.id)}
+                >
+                  <span className={styles.conversationTopline}>
+                    <strong>{draft.recipient.trim() || "No recipient"}</strong>
+                    <time dateTime={posted.dateTime}>{posted.label}</time>
+                  </span>
+                  <span className={styles.conversationPreview}>
+                    {preview(draft)}
+                  </span>
+                  <span className={styles.conversationMeta}>
+                    <em className={styles.typeBadge}>
+                      {draft.attachments.length
+                        ? `${draft.attachments.length} attachment${
+                            draft.attachments.length === 1 ? "" : "s"
+                          }`
+                        : "Letter"}
+                    </em>
+                    <span className={styles.readIndicator}>DRAFT</span>
+                  </span>
+                </button>
+                <button
+                  className={styles.draftDelete}
+                  type="button"
+                  onClick={() => onDelete(draft.id)}
+                  aria-label={`Delete draft to ${draft.recipient || "no recipient"}`}
+                >
+                  Delete…
+                </button>
+              </li>
+            );
+          })}
         </ol>
       ) : (
         <div className={styles.railEmptyState}>
@@ -123,3 +141,5 @@ export default function DraftList({
     </section>
   );
 }
+
+export default memo(DraftList);

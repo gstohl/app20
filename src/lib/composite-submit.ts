@@ -1,4 +1,4 @@
-import type { CompositePayload } from "./composite";
+import { parseCompositePayload, type CompositePayload } from "./composite";
 import { computeActionId } from "./strk20";
 
 export type CompositeSubmissionStep =
@@ -23,7 +23,13 @@ export type CompositeSubmissionStep =
 export function planCompositeSubmission(
   payload: CompositePayload,
 ): CompositeSubmissionStep[] {
-  const escrow = payload.attachments.find(
+  const parsed = parseCompositePayload(payload);
+  if (!parsed) {
+    throw new Error(
+      "Composite submission is ambiguous or invalid; value-moving steps were not planned.",
+    );
+  }
+  const escrow = parsed.attachments.find(
     (attachment) => attachment.type === "escrow_fund",
   );
   const steps: CompositeSubmissionStep[] = [];
@@ -37,7 +43,7 @@ export function planCompositeSubmission(
   steps.push({
     kind: "send_document",
     label: "sending document",
-    idempotencyKey: computeActionId("composite-document", payload.documentId),
+    idempotencyKey: computeActionId("composite-document", parsed.documentId),
   });
   return steps;
 }

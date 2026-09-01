@@ -26,7 +26,7 @@ All addresses/class hashes are nonzero, tokens differ, runtime chain ID equals `
 
 UDC—not the deployer account—is the constructor caller. Sepolia/Mainnet UDC is `0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125`. Prefer origin-independent deployment (`not_from_zero=false`; no sncast `--unique`). Claim deployer is escrow, salt is `deal_id`, class is the pinned claim class, and calldata is `(escrow, pool, deal_id, commitment_digest)`. Its precomputed address must equal committed `claimTicketIdentity` before Fund.
 
-Do not declare with `sncast --no-abi`. Pin Scarb/Cairo and `Scarb.lock`; build and declare with the same named profile and `casm = true`. Two independent builders must reproduce ABI/Sierra/CASM bytes plus Sierra and compiled class hashes. `sncast --wait` is not L1 finality.
+Do not declare with `sncast --no-abi`. Pin Scarb/Cairo and `cairo/Scarb.lock`; build and declare with the same named profile and `casm = true`. Two independent builders must reproduce ABI/Sierra/CASM bytes plus Sierra and compiled class hashes. `sncast --wait` is not L1 finality.
 
 ## C2. Digest256 and commitment codec
 

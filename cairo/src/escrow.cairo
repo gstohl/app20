@@ -88,6 +88,7 @@ pub mod App20Escrow {
         pub const DEAL_NOT_EXPIRED: felt252 = 'DEAL_NOT_EXPIRED';
         pub const WRONG_TOKEN: felt252 = 'WRONG_TOKEN';
         pub const SHORT_FILL: felt252 = 'SHORT_FILL';
+        pub const EXCESS_FILL: felt252 = 'EXCESS_FILL';
         pub const BAD_TICKET: felt252 = 'BAD_TICKET';
         pub const BALANCE_DEFICIT: felt252 = 'BALANCE_DEFICIT';
         pub const AMOUNT_OVERFLOW: felt252 = 'AMOUNT_OVERFLOW';
@@ -291,7 +292,10 @@ pub mod App20Escrow {
         let leg_b_accounted = self.accounted.entry(deal.leg_b_token).read();
         assert(leg_b_balance >= leg_b_accounted, errors::BALANCE_DEFICIT);
         let received_u256 = leg_b_balance - leg_b_accounted;
-        assert(received_u256 >= deal.leg_b_terms.into(), errors::SHORT_FILL);
+        let expected: u256 = deal.leg_b_terms.into();
+        // A successful fill becomes value-authoritative, so it must preserve the exact quoted leg.
+        assert(received_u256 >= expected, errors::SHORT_FILL);
+        assert(received_u256 == expected, errors::EXCESS_FILL);
         let received: u128 = received_u256.try_into().expect(errors::AMOUNT_OVERFLOW);
 
         self.accounted.entry(deal.leg_a_token).write(leg_a_after);
@@ -323,7 +327,6 @@ pub mod App20Escrow {
         assert(balance - accounted == 1, errors::BAD_TICKET);
         ticket.burn();
         assert(ticket.balance_of(get_contract_address()) == accounted, errors::BAD_TICKET);
-        self.accounted.entry(deal.ticket).write(accounted);
     }
 
     fn claim(

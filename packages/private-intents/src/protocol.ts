@@ -1111,6 +1111,17 @@ export function assertMakerReservation(
   ) {
     throw new MakerProtocolError(`${state} reservation requires a reason.`);
   }
+  if (
+    (state === "reserved" || state === "expired") &&
+    (selectedQuoteDigest !== undefined ||
+      settlementAttemptId !== undefined ||
+      settlementTransactionHash !== undefined ||
+      terminalReason !== undefined)
+  ) {
+    throw new MakerProtocolError(
+      "Reserved and expired reservations cannot carry transition metadata.",
+    );
+  }
 }
 
 export function createMakerReservation(

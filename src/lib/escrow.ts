@@ -245,7 +245,7 @@ export function parseEscrowFundPayload(
     !legB ||
     !deadline ||
     (!ticket && !claimPubkey) ||
-    Boolean(ticket && claimPubkey && !feltEquals(ticket, claimPubkey)) ||
+    (ticket && claimPubkey && !feltEquals(ticket, claimPubkey)) ||
     note === null ||
     feltEquals(legA.token.address, legB.token.address)
   ) {
@@ -669,8 +669,9 @@ export function markEscrowOperationSubmitted(
   at = nowSeconds(),
 ): EscrowDealRecord {
   const txHash = parseFelt(transactionHash, false);
+  const parsedDealId = parseFelt(dealId, false);
   const state = loadEscrowState(storage, chainId, selfAddress);
-  const current = state.deals[num.toHex(dealId)];
+  const current = parsedDealId ? state.deals[parsedDealId] : undefined;
   const reserved = current?.operations[operation];
   if (!current || !reserved || reserved.state !== "reserved" || !txHash) {
     throw new Error(

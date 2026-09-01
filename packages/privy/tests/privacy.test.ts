@@ -27,4 +27,16 @@ describe("provingBlockId", () => {
       ),
     ).rejects.toBeInstanceOf(SequencingError);
   });
+
+  it("times out when block polling RPC never returns", async () => {
+    await expect(
+      waitForMaturity(
+        { getBlockNumber: () => new Promise(() => undefined) } as never,
+        1,
+        10,
+        1,
+        30,
+      ),
+    ).rejects.toBeInstanceOf(SequencingError);
+  });
 });

@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
-import ConversationList, {
-  mailboxMatchesFilter,
-  type MailboxFilter,
-} from "@/components/mail/ConversationList";
+import ConversationList from "@/components/mail/ConversationList";
 import DraftList from "@/components/mail/DraftList";
 import Onboard from "@/components/mail/Onboard";
 import { ScanProgress } from "@/components/mail/OperationProgress";
@@ -158,6 +155,7 @@ import {
   TYPE_FILTERS,
   MAIL_FOLDERS,
   type MailFolder,
+  type MailboxFilter,
   type ScanKind,
   type ScanWorkerResponse,
   type ActiveScanWorker,
@@ -166,11 +164,16 @@ import {
   loadPersistedMailSeed,
   mailKeyFingerprint,
   mergeMailMessages,
+  mergeDisplayAliases,
   sortMailMessages,
   storedSentToLocal,
   paymentLinkToLocal,
   paymentLinkRecords,
   draftMatchesFilter,
+  mailboxMatchesFilter,
+  partitionMailboxFolders,
+  countMailboxFilterHits,
+  countDraftFilterHits,
   parseBlockTimestamp,
 } from "./mailbox-model";
 
@@ -221,17 +224,10 @@ export default function InboxPage() {
     };
   }, [address]);
 
-  const displayAliases = useMemo(() => {
-    const seen = new Set(
-      bookEntries.map((entry) => BigInt(entry.address).toString(16)),
-    );
-    return [
-      ...bookEntries,
-      ...aliases.filter(
-        (alias) => !seen.has(BigInt(alias.address).toString(16)),
-      ),
-    ];
-  }, [aliases, bookEntries]);
+  const displayAliases = useMemo(
+    () => mergeDisplayAliases(bookEntries, aliases),
+    [aliases, bookEntries],
+  );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
   const [escrowState, setEscrowState] = useState<EscrowState>(
     emptyEscrowState(),
@@ -294,6 +290,7 @@ export default function InboxPage() {
   const scanIdentityRef = useRef(scanIdentity);
   const recentLoadedRef = useRef(false);
   const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
+  const escrowRefreshRef = useRef(0);
   const readingPaneRef = useRef<HTMLElement | null>(null);
   const readingScrollRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -417,7 +414,6 @@ export default function InboxPage() {
     const active = scanWorkerRef.current;
     if (!active) return;
     scanWorkerRef.current = null;
-    active.worker.terminate();
     active.reject(new Error("Mail scan cancelled."));
   }
 
@@ -426,26 +422,40 @@ export default function InboxPage() {
     records: EncryptedMailRecord[],
   ): Promise<DecryptedMail[]> {
     return new Promise((resolve, reject) => {
+      let settled = false;
       const worker = new Worker(
         new URL("../../workers/mail-scan.worker.ts", import.meta.url),
         { type: "module" },
       );
-      const active: ActiveScanWorker = { worker, reject };
-      scanWorkerRef.current = active;
 
       function finish() {
         worker.terminate();
         if (scanWorkerRef.current === active) scanWorkerRef.current = null;
       }
 
-      worker.onmessage = (event: MessageEvent<ScanWorkerResponse>) => {
+      function settle(action: () => void) {
+        if (settled) return;
+        settled = true;
         finish();
-        if (event.data.ok) resolve(event.data.decrypted);
-        else reject(new Error(event.data.message));
+        action();
+      }
+
+      const active: ActiveScanWorker = {
+        worker,
+        reject: (error) => settle(() => reject(error)),
+      };
+      scanWorkerRef.current = active;
+
+      worker.onmessage = (event: MessageEvent<ScanWorkerResponse>) => {
+        settle(() => {
+          if (event.data.ok) resolve(event.data.decrypted);
+          else reject(new Error(event.data.message));
+        });
       };
       worker.onerror = () => {
-        finish();
-        reject(new Error("The background mailbox scanner failed."));
+        settle(() => {
+          reject(new Error("The background mailbox scanner failed."));
+        });
       };
       worker.postMessage({ privateKey, records });
     });
@@ -453,6 +463,7 @@ export default function InboxPage() {
 
   useEffect(() => {
     scanGenerationRef.current += 1;
+    escrowRefreshRef.current += 1;
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
     setScanning(false);
@@ -521,6 +532,7 @@ export default function InboxPage() {
     }
     return () => {
       scanGenerationRef.current += 1;
+      escrowRefreshRef.current += 1;
       cancelActiveScanWorker();
     };
   }, [address, chainId, providerIndex]);
@@ -589,11 +601,49 @@ export default function InboxPage() {
     }
   }, [address, chainId, pendingPayment]);
 
+  const mailboxView = useMemo(() => {
+    const folders = partitionMailboxFolders(messages);
+    const folderMessages = mailFolder === "sent" ? folders.sent : folders.inbox;
+    const typeCounts =
+      mailFolder === "drafts"
+        ? countDraftFilterHits(drafts)
+        : countMailboxFilterHits(folderMessages);
+    const filteredMessages =
+      mailboxFilter === "all"
+        ? folderMessages
+        : folderMessages.filter((message) =>
+            mailboxMatchesFilter(message, mailboxFilter),
+          );
+    const filteredDrafts =
+      mailboxFilter === "all"
+        ? drafts
+        : drafts.filter((draft) => draftMatchesFilter(draft, mailboxFilter));
+    const allAnnotatedMessages = messages.map((message) => ({
+      ...message,
+      assignedAddress: assignments[message.id]?.address,
+      localConversationId: assignments[message.id]?.conversationId,
+    }));
+    const visibleIds = new Set(filteredMessages.map((message) => message.id));
+    const annotatedMessages = allAnnotatedMessages.filter((message) =>
+      visibleIds.has(message.id),
+    );
+    return {
+      folderCounts: {
+        inbox: folders.inbox.length,
+        sent: folders.sent.length,
+        drafts: drafts.length,
+      } satisfies Record<MailFolder, number>,
+      typeCounts,
+      filteredMessages,
+      filteredDrafts,
+      allAnnotatedMessages,
+      annotatedMessages,
+    };
+  }, [assignments, drafts, mailFolder, mailboxFilter, messages]);
+
   useEffect(() => {
     if (mailFolder === "drafts") {
-      const visibleDrafts = drafts.filter((draft) =>
-        draftMatchesFilter(draft, mailboxFilter),
-      );
+      const visibleDrafts = mailboxView.filteredDrafts;
       if (
         selectedDraftId &&
         visibleDrafts.some((draft) => draft.id === selectedDraftId)
@@ -603,27 +653,18 @@ export default function InboxPage() {
       setSelectedDraftId(visibleDrafts[0]?.id ?? null);
       return;
     }
-    const inFolder = messages.filter((message) =>
-      mailFolder === "sent"
-        ? message.direction === "outgoing"
-        : message.direction !== "outgoing",
-    );
-    const visibleMessages = inFolder.filter((message) =>
-      mailboxMatchesFilter(message, mailboxFilter),
-    );
+    const visibleMessages = mailboxView.filteredMessages;
     if (
       selectedMessageId &&
       visibleMessages.some((message) => message.id === selectedMessageId)
     ) {
       return;
     }
-    const firstMessage = visibleMessages[0];
-    setSelectedMessageId(firstMessage?.id ?? null);
+    setSelectedMessageId(visibleMessages[0]?.id ?? null);
   }, [
-    drafts,
     mailFolder,
-    mailboxFilter,
-    messages,
+    mailboxView.filteredDrafts,
+    mailboxView.filteredMessages,
     selectedDraftId,
     selectedMessageId,
   ]);
@@ -666,6 +707,7 @@ export default function InboxPage() {
 
   async function refreshEscrowChainDeals() {
     if (!address || !chainId || !escrowAddress) return;
+    const generation = escrowRefreshRef.current;
     const scopeAddress = address;
     const scopeChainId = chainId;
     const state = loadEscrowState(
@@ -695,7 +737,11 @@ export default function InboxPage() {
         }
       }),
     );
-    if (address === scopeAddress && chainId === scopeChainId) {
+    if (
+      generation === escrowRefreshRef.current &&
+      address === scopeAddress &&
+      chainId === scopeChainId
+    ) {
       refreshEscrowState();
     }
   }
@@ -829,9 +875,6 @@ export default function InboxPage() {
             );
           }
         } else if (envelope.type === "decline") {
-          // Decrypted Mail is not authenticated wallet identity. Keep the
-          // notice visible in Thread, but never let it advance local RFQ state.
-          continue;
         } else if (envelope.type === "receipt") {
           const receipt = parseReceiptPayload(envelope.payload);
           if (receipt) {
@@ -900,6 +943,7 @@ export default function InboxPage() {
 
   function handleKeyReady(nextKeypair: MailKeypair, nextSeed?: Uint8Array) {
     scanGenerationRef.current += 1;
+    escrowRefreshRef.current += 1;
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
     setScanning(false);
@@ -2066,55 +2110,48 @@ export default function InboxPage() {
     }
   }
 
-  const inboxMessages = messages.filter(
-    (message) => message.direction !== "outgoing",
-  );
-  const sentMessages = messages.filter(
-    (message) => message.direction === "outgoing",
-  );
-  const folderCounts: Record<MailFolder, number> = {
-    inbox: inboxMessages.length,
-    sent: sentMessages.length,
-    drafts: drafts.length,
-  };
-  const folderMessages = mailFolder === "sent" ? sentMessages : inboxMessages;
-  const typeCounts: Record<MailboxFilter, number> = {
-    all: mailFolder === "drafts" ? drafts.length : folderMessages.length,
-    letters: 0,
-    deals: 0,
-    invoices: 0,
-    escrow: 0,
-  };
-  for (const filter of TYPE_FILTERS.slice(1)) {
-    typeCounts[filter.id] =
-      mailFolder === "drafts"
-        ? drafts.filter((draft) => draftMatchesFilter(draft, filter.id)).length
-        : folderMessages.filter((message) =>
-            mailboxMatchesFilter(message, filter.id),
-          ).length;
-  }
-  const filteredMessages = folderMessages.filter((message) =>
-    mailboxMatchesFilter(message, mailboxFilter),
-  );
-  const filteredDrafts = drafts.filter((draft) =>
-    draftMatchesFilter(draft, mailboxFilter),
-  );
-  const allAnnotatedMessages = messages.map((message) => ({
-    ...message,
-    assignedAddress: assignments[message.id]?.address,
-    localConversationId: assignments[message.id]?.conversationId,
-  }));
-  const annotatedMessages = allAnnotatedMessages.filter((message) =>
-    filteredMessages.some((filtered) => filtered.id === message.id),
-  );
+  const {
+    folderCounts,
+    typeCounts,
+    filteredDrafts,
+    allAnnotatedMessages,
+    annotatedMessages,
+  } = mailboxView;
   const selectedMessage = annotatedMessages.find(
     (message) => message.id === selectedMessageId,
   );
-  const conversationMessages = assembleConversation(
-    allAnnotatedMessages,
-    selectedMessage?.id ?? null,
+  const conversationMessages = useMemo(
+    () =>
+      assembleConversation(allAnnotatedMessages, selectedMessage?.id ?? null),
+    [allAnnotatedMessages, selectedMessage?.id],
   );
   const activeDraft = drafts.find((draft) => draft.id === selectedDraftId);
+  const scanCursorDescription = useMemo(() => {
+    if (
+      !keypair ||
+      scanMessage ||
+      !address ||
+      !chainId ||
+      !helperAddress ||
+      !keyFingerprint
+    ) {
+      return null;
+    }
+    return describeMailScanCursor(
+      loadMailScanCursor(
+        window.localStorage,
+        mailScanCursorKey(chainId, address, helperAddress, keyFingerprint),
+      ),
+    );
+  }, [
+    address,
+    chainId,
+    helperAddress,
+    keyFingerprint,
+    keypair,
+    scanKind,
+    scanMessage,
+  ]);
   const folderLabel =
     MAIL_FOLDERS.find((folder) => folder.id === mailFolder)?.label ?? "Inbox";
   const filterLabel =
@@ -2132,10 +2169,17 @@ export default function InboxPage() {
           draft.updatedAt,
         ),
       );
-      setStorageNotice({
-        kind: "ok",
-        message: "Draft saved in this browser profile (not encrypted at rest).",
-      });
+      setStorageNotice((current) =>
+        current?.kind === "ok" &&
+        current.message ===
+          "Draft saved in this browser profile (not encrypted at rest)."
+          ? current
+          : {
+              kind: "ok",
+              message:
+                "Draft saved in this browser profile (not encrypted at rest).",
+            },
+      );
     } catch (error: unknown) {
       setDrafts((current) =>
         [
@@ -2248,20 +2292,20 @@ export default function InboxPage() {
     }
   }
 
-  function selectMessage(messageId: string) {
+  const selectMessage = useCallback((messageId: string) => {
     activatedMessageIdRef.current = messageId;
     setSelectedMessageId(messageId);
     setMessageActivation((current) => current + 1);
     setComposerOpen(false);
     setMobileDetailOpen(true);
-  }
+  }, []);
 
-  function selectDraft(draftId: string) {
+  const selectDraft = useCallback((draftId: string) => {
     setSelectedDraftId(draftId);
     setComposerOpen(true);
     setMobileDetailOpen(true);
     setSidebarOpen(false);
-  }
+  }, []);
 
   function openComposer() {
     if (!address || !chainId) {
@@ -2398,6 +2442,7 @@ export default function InboxPage() {
         <button
           className={styles.mobileCompose}
           type="button"
+          aria-label="Compose new message"
           onClick={openComposer}
         >
           New
@@ -2518,25 +2563,8 @@ export default function InboxPage() {
                 Set up a mailbox key before checking for mail.
               </p>
             )}
-            {keypair &&
-            !scanMessage &&
-            address &&
-            chainId &&
-            helperAddress &&
-            keyFingerprint ? (
-              <p className={styles.scanMessage}>
-                {describeMailScanCursor(
-                  loadMailScanCursor(
-                    window.localStorage,
-                    mailScanCursorKey(
-                      chainId,
-                      address,
-                      helperAddress,
-                      keyFingerprint,
-                    ),
-                  ),
-                )}
-              </p>
+            {scanCursorDescription ? (
+              <p className={styles.scanMessage}>{scanCursorDescription}</p>
             ) : null}
             {!scanning && scanMessage ? (
               <p
@@ -2650,6 +2678,7 @@ export default function InboxPage() {
             <button
               className={styles.backToList}
               type="button"
+              aria-label="Back to message list"
               onClick={closeDetail}
             >
               ← Messages

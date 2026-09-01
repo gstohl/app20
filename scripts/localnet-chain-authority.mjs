@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 import {
   LOCALNET_CHAIN_AUTHORITY_SERVER_SENTINEL,
@@ -21,8 +21,7 @@ import {
 export { LOCALNET_CHAIN_AUTHORITY_SERVER_SENTINEL };
 export const LOCALNET_CHAIN_AUTHORITY_SCHEMA =
   "app20/localnet-chain-authority/v1";
-export const LOCALNET_CHAIN_AUTHORITY_SOURCE =
-  "localnet-chain-authority";
+export const LOCALNET_CHAIN_AUTHORITY_SOURCE = "localnet-chain-authority";
 const HEX_32 = /^0x[0-9a-f]{64}$/;
 const STATUSES = new Set([
   "authoritative",
@@ -36,7 +35,11 @@ function canonicalFelt(value, label) {
   if (typeof value !== "string" || !/^0x[0-9a-f]+$/.test(value))
     throw new Error(`${label} must be a lowercase canonical felt.`);
   const parsed = BigInt(value);
-  if (parsed === 0n || parsed >= 1n << 252n || value !== `0x${parsed.toString(16)}`)
+  if (
+    parsed === 0n ||
+    parsed >= 1n << 252n ||
+    value !== `0x${parsed.toString(16)}`
+  )
     throw new Error(`${label} must be a nonzero canonical felt.`);
   return value;
 }
@@ -46,7 +49,12 @@ function hex32(value, label) {
   return value;
 }
 function text(value, label) {
-  if (typeof value !== "string" || !value.trim() || value.includes("\0") || value.length > 512)
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.includes("\0") ||
+    value.length > 512
+  )
     throw new Error(`${label} is invalid.`);
   return value.trim();
 }
@@ -102,7 +110,10 @@ export function canonicalLocalnetAuthorityQuery(input) {
     intentDigest: hex32(input.intentDigest, "intentDigest"),
     commitmentDigest: hex32(input.commitmentDigest, "commitmentDigest"),
     reservationId: hex32(input.reservationId, "reservationId"),
-    reservationFence: positiveDecimal(input.reservationFence, "reservationFence"),
+    reservationFence: positiveDecimal(
+      input.reservationFence,
+      "reservationFence",
+    ),
     quoteDigest: hex32(input.quoteDigest, "quoteDigest"),
     makerId: text(input.makerId, "makerId"),
     sellToken: canonicalFelt(input.sellToken, "sellToken"),
@@ -117,12 +128,17 @@ export function canonicalLocalnetAuthorityQuery(input) {
         (outcome === "settled"
           ? ["fund", "fill", "claim"]
           : ["fund", "timeout"]
-        ).map((stage) => [stage, canonicalFelt(input.transactions?.[stage], `${stage} transaction`)]),
+        ).map((stage) => [
+          stage,
+          canonicalFelt(input.transactions?.[stage], `${stage} transaction`),
+        ]),
       ),
     ),
   };
   if (query.rfqId !== query.dealId)
-    throw new Error("Localnet authority requires RFQ and deal identity equality.");
+    throw new Error(
+      "Localnet authority requires RFQ and deal identity equality.",
+    );
   return Object.freeze(query);
 }
 
@@ -130,6 +146,60 @@ function expectedStages(query) {
   return query.outcome === "settled"
     ? ["fund", "fill", "claim"]
     : ["fund", "timeout"];
+}
+
+function coordinateAfter(left, right) {
+  return (
+    left.blockNumber > right.blockNumber ||
+    (left.blockNumber === right.blockNumber &&
+      (left.transactionIndex > right.transactionIndex ||
+        (left.transactionIndex === right.transactionIndex &&
+          left.eventIndex > right.eventIndex)))
+  );
+}
+
+function validatePersistedLifecycle(value, query) {
+  if (!Array.isArray(value)) return Object.freeze([]);
+  const stages = expectedStages(query);
+  if (value.length !== 0 && value.length !== stages.length)
+    throw new Error("Authority journal lifecycle is incomplete.");
+  let prior;
+  const lifecycle = value.map((item, index) => {
+    const stage = text(item?.stage, "authority lifecycle stage");
+    const coordinate = Object.freeze({
+      stage,
+      transactionHash: canonicalFelt(
+        item?.transactionHash,
+        "authority lifecycle transaction",
+      ),
+      blockNumber: nonnegativeInteger(
+        item?.blockNumber,
+        "authority lifecycle block number",
+      ),
+      blockHash: canonicalFelt(
+        item?.blockHash,
+        "authority lifecycle block hash",
+      ),
+      transactionIndex: nonnegativeInteger(
+        item?.transactionIndex,
+        "authority transaction index",
+      ),
+      eventIndex: nonnegativeInteger(item?.eventIndex, "authority event index"),
+    });
+    if (
+      stage !== stages[index] ||
+      coordinate.transactionHash !== query.transactions[stage]
+    ) {
+      throw new Error("Authority journal lifecycle changed its exact query.");
+    }
+    if (prior && !coordinateAfter(coordinate, prior))
+      throw new Error(
+        "Authority journal lifecycle coordinates are out of order.",
+      );
+    prior = coordinate;
+    return coordinate;
+  });
+  return Object.freeze(lifecycle);
 }
 
 function assertDecodedBinding(decoded, query) {
@@ -143,23 +213,42 @@ function assertDecodedBinding(decoded, query) {
       decoded.buyAmount !== query.buyAmount ||
       decoded.deadline !== query.deadline ||
       decoded.ticketAddress !== query.ticketAddress
-    ) throw new Error("Decoded fund event does not match exact settlement terms.");
+    )
+      throw new Error(
+        "Decoded fund event does not match exact settlement terms.",
+      );
   } else if (decoded.stage === "fill") {
     if (
       decoded.sellToken !== query.sellToken ||
       decoded.sellAmount !== query.sellAmount ||
       decoded.buyToken !== query.buyToken ||
       decoded.buyAmount !== query.buyAmount
-    ) throw new Error("Decoded fill event does not match exact settlement terms.");
+    )
+      throw new Error(
+        "Decoded fill event does not match exact settlement terms.",
+      );
   } else if (decoded.stage === "claim") {
     if (decoded.token !== query.buyToken || decoded.amount !== query.buyAmount)
-      throw new Error("Decoded claim does not match the selected maker amount.");
-  } else if (decoded.token !== query.sellToken || decoded.amount !== query.sellAmount) {
+      throw new Error(
+        "Decoded claim does not match the selected maker amount.",
+      );
+  } else if (
+    decoded.token !== query.sellToken ||
+    decoded.amount !== query.sellAmount
+  ) {
     throw new Error("Decoded timeout does not return exact taker principal.");
   }
 }
 
-function normalizeObservation(raw, query, artifact, readerId, now, maxAgeSeconds, finalityDepth) {
+function normalizeObservation(
+  raw,
+  query,
+  artifact,
+  readerId,
+  now,
+  maxAgeSeconds,
+  finalityDepth,
+) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error(`Reader ${readerId} returned no observation.`);
   if (raw.runtimeEpoch !== query.runtimeEpoch || raw.chainId !== query.chainId)
@@ -172,42 +261,82 @@ function normalizeObservation(raw, query, artifact, readerId, now, maxAgeSeconds
     number: nonnegativeInteger(raw.head?.number, "reader head number"),
     hash: canonicalFelt(raw.head?.hash, "reader head hash"),
   };
-  const finalizedHead = nonnegativeInteger(raw.finalizedHead, "reader finalized head");
+  const finalizedHead = nonnegativeInteger(
+    raw.finalizedHead,
+    "reader finalized head",
+  );
   if (observedAt > now + 5 || now - observedAt > maxAgeSeconds)
-    throw Object.assign(new Error(`Reader ${readerId} observation is stale.`), { authorityStatus: "stale" });
+    throw Object.assign(new Error(`Reader ${readerId} observation is stale.`), {
+      authorityStatus: "stale",
+    });
   if (finalizedHead > head.number)
-    throw new Error(`Reader ${readerId} finalized head exceeds its observed head.`);
+    throw new Error(
+      `Reader ${readerId} finalized head exceeds its observed head.`,
+    );
   const stages = expectedStages(query);
   if (!Array.isArray(raw.lifecycle) || raw.lifecycle.length !== stages.length)
     throw new Error(`Reader ${readerId} returned an incomplete lifecycle.`);
   const coordinates = new Set();
+  let priorCoordinate;
   const lifecycle = raw.lifecycle.map((item, index) => {
     if (!item || typeof item !== "object" || item.stage !== stages[index])
       throw new Error(`Reader ${readerId} lifecycle ordering is invalid.`);
-    const transactionHash = canonicalFelt(item.transactionHash, "lifecycle transaction hash");
+    const transactionHash = canonicalFelt(
+      item.transactionHash,
+      "lifecycle transaction hash",
+    );
     if (transactionHash !== query.transactions[item.stage])
       throw new Error(`Reader ${readerId} returned a substituted transaction.`);
-    const blockNumber = nonnegativeInteger(item.blockNumber, "lifecycle block number");
+    const blockNumber = nonnegativeInteger(
+      item.blockNumber,
+      "lifecycle block number",
+    );
     const blockHash = canonicalFelt(item.blockHash, "lifecycle block hash");
-    const transactionIndex = nonnegativeInteger(item.transactionIndex, "lifecycle transaction index");
-    const eventIndex = nonnegativeInteger(item.eventIndex, "lifecycle event index");
+    const transactionIndex = nonnegativeInteger(
+      item.transactionIndex,
+      "lifecycle transaction index",
+    );
+    const eventIndex = nonnegativeInteger(
+      item.eventIndex,
+      "lifecycle event index",
+    );
     const block = item.block;
     if (
       !block ||
-      nonnegativeInteger(block.number, "canonical block number") !== blockNumber ||
+      nonnegativeInteger(block.number, "canonical block number") !==
+        blockNumber ||
       canonicalFelt(block.hash, "canonical block hash") !== blockHash ||
       !Array.isArray(block.transactions) ||
-      canonicalFelt(block.transactions[transactionIndex], "canonical block transaction") !== transactionHash
-    ) throw new Error("Lifecycle transaction is not a member of its canonical block number.");
-    const coordinate = `${blockNumber}:${transactionIndex}:${eventIndex}`;
-    if (coordinates.has(coordinate)) throw new Error("Lifecycle event coordinate was reused.");
-    coordinates.add(coordinate);
+      canonicalFelt(
+        block.transactions[transactionIndex],
+        "canonical block transaction",
+      ) !== transactionHash
+    )
+      throw new Error(
+        "Lifecycle transaction is not a member of its canonical block number.",
+      );
+    const coordinate = { blockNumber, transactionIndex, eventIndex };
+    const coordinateKey = `${blockNumber}:${transactionIndex}:${eventIndex}`;
+    if (coordinates.has(coordinateKey))
+      throw new Error("Lifecycle event coordinate was reused.");
+    if (priorCoordinate && !coordinateAfter(coordinate, priorCoordinate))
+      throw new Error("Lifecycle event coordinates are out of order.");
+    coordinates.add(coordinateKey);
+    priorCoordinate = coordinate;
     const decoded = decodeLocalnetEscrowEvent(item.event, artifact);
     if (decoded.stage !== item.stage)
-      throw new Error("Lifecycle stage does not match its decoded event selector.");
+      throw new Error(
+        "Lifecycle stage does not match its decoded event selector.",
+      );
     assertDecodedBinding(decoded, query);
-    if (head.number - blockNumber < finalityDepth || finalizedHead < blockNumber)
-      throw Object.assign(new Error("Lifecycle event has not reached local fixture finality."), { authorityStatus: "stale" });
+    if (
+      head.number - blockNumber < finalityDepth ||
+      finalizedHead < blockNumber
+    )
+      throw Object.assign(
+        new Error("Lifecycle event has not reached local fixture finality."),
+        { authorityStatus: "stale" },
+      );
     return Object.freeze({
       stage: item.stage,
       transactionHash,
@@ -247,7 +376,8 @@ function browserProjection(row) {
 function validatePersistedRow(value, runtimeEpoch, chainId) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Authority journal row is invalid.");
-  if (!STATUSES.has(value.status)) throw new Error("Authority journal status is invalid.");
+  if (!STATUSES.has(value.status))
+    throw new Error("Authority journal status is invalid.");
   if (value.runtimeEpoch !== runtimeEpoch || value.chainId !== chainId)
     throw new Error("Authority journal contains cross-runtime data.");
   const query = canonicalLocalnetAuthorityQuery(value.query);
@@ -267,27 +397,36 @@ function validatePersistedRow(value, runtimeEpoch, chainId) {
     observedAt: positiveInteger(value.observedAt, "authority observedAt"),
     validUntil: positiveInteger(value.validUntil, "authority validUntil"),
     marketQuarantined: value.marketQuarantined === true,
-    canonicalLifecycle: Array.isArray(value.canonicalLifecycle)
-      ? Object.freeze(value.canonicalLifecycle.map((item) => Object.freeze({
-          stage: text(item.stage, "authority lifecycle stage"),
-          transactionHash: canonicalFelt(item.transactionHash, "authority lifecycle transaction"),
-          blockNumber: nonnegativeInteger(item.blockNumber, "authority lifecycle block number"),
-          blockHash: canonicalFelt(item.blockHash, "authority lifecycle block hash"),
-          transactionIndex: nonnegativeInteger(item.transactionIndex, "authority transaction index"),
-          eventIndex: nonnegativeInteger(item.eventIndex, "authority event index"),
-        })))
-      : Object.freeze([]),
+    canonicalLifecycle: validatePersistedLifecycle(
+      value.canonicalLifecycle,
+      query,
+    ),
   };
   if (row.validUntil <= row.observedAt)
     throw new Error("Authority journal validity window is invalid.");
+  const expectedKey = `${query.chainId}|${query.account}|${query.rfqId}`;
   if (
+    row.key !== expectedKey ||
     row.queryDigest !== digest(query) ||
     row.runtimeEpoch !== query.runtimeEpoch ||
     row.chainId !== query.chainId ||
     row.account !== query.account ||
     row.rfqId !== query.rfqId ||
     row.dealId !== query.dealId
-  ) throw new Error("Authority journal row contradicts its exact query binding.");
+  )
+    throw new Error(
+      "Authority journal row contradicts its exact query binding.",
+    );
+  if (
+    (row.status === "authoritative" ||
+      row.status === "reorged" ||
+      row.status === "quarantined" ||
+      row.marketQuarantined) &&
+    row.canonicalLifecycle.length !== expectedStages(query).length
+  )
+    throw new Error(
+      "Authority journal terminal status lacks a complete lifecycle.",
+    );
   return Object.freeze(row);
 }
 
@@ -308,12 +447,22 @@ export class LocalnetChainAuthority {
     this.#path = text(options.path, "authority journal path");
     this.#artifact = assertLocalnetEscrowArtifactIdentity(options.artifact);
     if (!Array.isArray(options.readers) || options.readers.length < 2)
-      throw new Error("Localnet authority requires at least two modeled readers.");
+      throw new Error(
+        "Localnet authority requires at least two modeled readers.",
+      );
     const ids = options.readers.map((reader) => text(reader.id, "reader id"));
     if (new Set(ids).size !== ids.length)
       throw new Error("Localnet authority reader identities must be unique.");
-    if (options.readers.some((reader) => reader.independence !== "same-devnet-fixture" || typeof reader.observe !== "function"))
-      throw new Error("Local readers must be explicitly labelled same-devnet fixtures.");
+    if (
+      options.readers.some(
+        (reader) =>
+          reader.independence !== "same-devnet-fixture" ||
+          typeof reader.observe !== "function",
+      )
+    )
+      throw new Error(
+        "Local readers must be explicitly labelled same-devnet fixtures.",
+      );
     this.#readers = Object.freeze([...options.readers]);
     this.#now = options.now ?? (() => Math.floor(Date.now() / 1_000));
     this.#maxAgeSeconds = options.maxAgeSeconds ?? 30;
@@ -324,55 +473,97 @@ export class LocalnetChainAuthority {
   }
 
   #load() {
-    const value = JSON.parse(readFileSync(this.#path, "utf8"));
+    let value;
+    try {
+      value = JSON.parse(readFileSync(this.#path, "utf8"));
+    } catch {
+      throw new Error(
+        "Localnet authority journal is not valid JSON; refusing implicit reset.",
+      );
+    }
     if (
       value?.schema !== LOCALNET_CHAIN_AUTHORITY_SCHEMA ||
       value.runtimeEpoch !== this.#artifact.runtimeEpoch ||
       value.chainId !== this.#artifact.chainId ||
       canonicalJson(value.artifact) !== canonicalJson(this.#artifact) ||
-      !Number.isSafeInteger(value.revision) || value.revision < 0 ||
+      !Number.isSafeInteger(value.revision) ||
+      value.revision < 0 ||
       !Array.isArray(value.rows)
-    ) throw new Error("Localnet authority journal is invalid; refusing implicit reset.");
+    )
+      throw new Error(
+        "Localnet authority journal is invalid; refusing implicit reset.",
+      );
     this.#revision = value.revision;
     for (const raw of value.rows) {
       const row = validatePersistedRow(raw, value.runtimeEpoch, value.chainId);
       if (this.#rows.has(row.key) || row.revision > this.#revision)
-        throw new Error("Localnet authority journal has invalid row revisions.");
+        throw new Error(
+          "Localnet authority journal has invalid row revisions.",
+        );
       this.#rows.set(row.key, row);
     }
   }
 
   #serialize() {
-    return `${JSON.stringify({
-      schema: LOCALNET_CHAIN_AUTHORITY_SCHEMA,
-      runtimeEpoch: this.#artifact.runtimeEpoch,
-      chainId: this.#artifact.chainId,
-      artifact: this.#artifact,
-      revision: this.#revision,
-      rows: [...this.#rows.values()].sort((a, b) => a.key.localeCompare(b.key)),
-    }, null, 2)}\n`;
+    return `${JSON.stringify(
+      {
+        schema: LOCALNET_CHAIN_AUTHORITY_SCHEMA,
+        runtimeEpoch: this.#artifact.runtimeEpoch,
+        chainId: this.#artifact.chainId,
+        artifact: this.#artifact,
+        revision: this.#revision,
+        rows: [...this.#rows.values()].sort((a, b) =>
+          a.key.localeCompare(b.key),
+        ),
+      },
+      null,
+      2,
+    )}\n`;
   }
 
   #persist() {
-    if (this.#failed) throw new Error("Localnet authority fail-stopped after uncertain persistence.");
-    const temporary = `${this.#path}.${process.pid}.tmp`;
+    if (this.#failed)
+      throw new Error(
+        "Localnet authority fail-stopped after uncertain persistence.",
+      );
+    let temporary;
+    let renamed = false;
     try {
-      if (existsSync(temporary)) unlinkSync(temporary);
+      temporary = `${this.#path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
       this.#faultInjector?.("before-write");
       writeFileSync(temporary, this.#serialize(), { mode: 0o600, flag: "wx" });
       this.#faultInjector?.("after-write");
       chmodSync(temporary, 0o600);
       const file = openSync(temporary, "r");
-      try { fsyncSync(file); } finally { closeSync(file); }
+      try {
+        fsyncSync(file);
+      } finally {
+        closeSync(file);
+      }
       this.#faultInjector?.("after-file-fsync");
       renameSync(temporary, this.#path);
+      renamed = true;
       this.#faultInjector?.("after-rename");
       const directory = openSync(dirname(this.#path), "r");
-      try { fsyncSync(directory); } finally { closeSync(directory); }
+      try {
+        fsyncSync(directory);
+      } finally {
+        closeSync(directory);
+      }
       this.#faultInjector?.("after-directory-fsync");
     } catch (error) {
       this.#failed = true;
-      throw new Error("Localnet authority persistence became uncertain; process is fail-stopped.", { cause: error });
+      if (!renamed && temporary && existsSync(temporary)) {
+        try {
+          unlinkSync(temporary);
+        } catch {
+          // The instance is fail-stopped; leftover cleanup is best effort.
+        }
+      }
+      throw new Error(
+        "Localnet authority persistence became uncertain; process is fail-stopped.",
+        { cause: error },
+      );
     }
   }
 
@@ -386,11 +577,25 @@ export class LocalnetChainAuthority {
     return this.#enqueue(async () => {
       if (this.#failed) throw new Error("Localnet authority is fail-stopped.");
       const query = canonicalLocalnetAuthorityQuery(input.query);
-      if (query.runtimeEpoch !== this.#artifact.runtimeEpoch || query.chainId !== this.#artifact.chainId)
-        throw new Error("Authority query is outside this runtime composition root.");
+      if (
+        query.runtimeEpoch !== this.#artifact.runtimeEpoch ||
+        query.chainId !== this.#artifact.chainId
+      )
+        throw new Error(
+          "Authority query is outside this runtime composition root.",
+        );
       const market = text(input.market, "market").toLowerCase();
       const key = `${query.chainId}|${query.account}|${query.rfqId}`;
+      const queryDigest = digest(query);
       const prior = this.#rows.get(key);
+      if (
+        prior &&
+        (prior.queryDigest !== queryDigest || prior.market !== market)
+      ) {
+        throw new Error(
+          "Authority key was reused with another exact query or market binding.",
+        );
+      }
       const now = positiveInteger(this.#now(), "authority clock");
       const outcomes = await Promise.allSettled(
         this.#readers.map((reader) => reader.observe(query)),
@@ -402,7 +607,10 @@ export class LocalnetChainAuthority {
       try {
         normalized = outcomes.map((outcome, index) => {
           if (outcome.status !== "fulfilled")
-            throw Object.assign(new Error(`Reader ${this.#readers[index].id} is unavailable.`), { authorityStatus: "disagreement" });
+            throw Object.assign(
+              new Error(`Reader ${this.#readers[index].id} is unavailable.`),
+              { authorityStatus: "disagreement" },
+            );
           return normalizeObservation(
             outcome.value,
             query,
@@ -414,8 +622,14 @@ export class LocalnetChainAuthority {
           );
         });
         const first = canonicalJson({ ...normalized[0], observedAt: 0 });
-        if (normalized.slice(1).some((item) => canonicalJson({ ...item, observedAt: 0 }) !== first))
-          throw Object.assign(new Error("Local readers disagree."), { authorityStatus: "disagreement" });
+        if (
+          normalized
+            .slice(1)
+            .some((item) => canonicalJson({ ...item, observedAt: 0 }) !== first)
+        )
+          throw Object.assign(new Error("Local readers disagree."), {
+            authorityStatus: "disagreement",
+          });
         canonicalLifecycle = normalized[0].lifecycle.map((item) => ({
           stage: item.stage,
           transactionHash: item.transactionHash,
@@ -426,7 +640,10 @@ export class LocalnetChainAuthority {
         }));
       } catch (error) {
         status = error?.authorityStatus === "stale" ? "stale" : "disagreement";
-        reasonCode = status === "stale" ? "observation-stale-or-unfinalized" : "reader-unavailable-or-disagreement";
+        reasonCode =
+          status === "stale"
+            ? "observation-stale-or-unfinalized"
+            : "reader-unavailable-or-disagreement";
       }
       if (prior?.marketQuarantined) {
         status = "reorged";
@@ -435,7 +652,8 @@ export class LocalnetChainAuthority {
       } else if (
         status === "authoritative" &&
         prior?.canonicalLifecycle?.length > 0 &&
-        canonicalJson(prior.canonicalLifecycle) !== canonicalJson(canonicalLifecycle)
+        canonicalJson(prior.canonicalLifecycle) !==
+          canonicalJson(canonicalLifecycle)
       ) {
         status = "reorged";
         reasonCode = "canonical-membership-lost";
@@ -449,27 +667,39 @@ export class LocalnetChainAuthority {
         canonicalLifecycle = prior.canonicalLifecycle;
       }
       this.#revision += 1;
-      const row = validatePersistedRow({
-        key,
-        runtimeEpoch: query.runtimeEpoch,
-        chainId: query.chainId,
-        account: query.account,
-        rfqId: query.rfqId,
-        dealId: query.dealId,
-        market,
-        query,
-        queryDigest: digest(query),
-        status,
-        reasonCode,
-        revision: this.#revision,
-        observedAt: now,
-        validUntil: now + this.#maxAgeSeconds,
-        marketQuarantined: status === "reorged" || status === "quarantined" || prior?.marketQuarantined === true,
-        canonicalLifecycle,
-      }, query.runtimeEpoch, query.chainId);
+      const row = validatePersistedRow(
+        {
+          key,
+          runtimeEpoch: query.runtimeEpoch,
+          chainId: query.chainId,
+          account: query.account,
+          rfqId: query.rfqId,
+          dealId: query.dealId,
+          market,
+          query,
+          queryDigest,
+          status,
+          reasonCode,
+          revision: this.#revision,
+          observedAt: now,
+          validUntil: now + this.#maxAgeSeconds,
+          marketQuarantined:
+            status === "reorged" ||
+            status === "quarantined" ||
+            prior?.marketQuarantined === true,
+          canonicalLifecycle,
+        },
+        query.runtimeEpoch,
+        query.chainId,
+      );
       const before = this.#rows;
       this.#rows = new Map(this.#rows).set(key, row);
-      try { this.#persist(); } catch (error) { this.#rows = before; throw error; }
+      try {
+        this.#persist();
+      } catch (error) {
+        this.#rows = before;
+        throw error;
+      }
       return browserProjection(row);
     });
   }
@@ -488,7 +718,11 @@ export class LocalnetChainAuthority {
   exactQueryForProjection(projection) {
     const key = `${canonicalFelt(projection.chainId, "projection chainId")}|${canonicalFelt(projection.account, "projection account")}|${canonicalFelt(projection.rfqId, "projection RFQ")}`;
     const row = this.#rows.get(key);
-    if (!row || row.runtimeEpoch !== projection.runtimeEpoch || row.dealId !== projection.dealId)
+    if (
+      !row ||
+      row.runtimeEpoch !== projection.runtimeEpoch ||
+      row.dealId !== projection.dealId
+    )
       throw new Error("Authority projection has no durable exact query.");
     return row.query;
   }
@@ -518,18 +752,24 @@ export class LocalnetChainAuthority {
   }
 
   hasQueryDigest(queryDigest) {
-    return [...this.#rows.values()].some((row) => row.queryDigest === queryDigest);
+    return [...this.#rows.values()].some(
+      (row) => row.queryDigest === queryDigest,
+    );
   }
 
   listOperatorSummaries() {
-    return Object.freeze([...this.#rows.values()].map((row) => Object.freeze({
-      reference: row.queryDigest.slice(0, 14),
-      status: row.status,
-      revision: row.revision,
-      market: row.market,
-      marketQuarantined: row.marketQuarantined,
-      observedAt: row.observedAt,
-    })));
+    return Object.freeze(
+      [...this.#rows.values()].map((row) =>
+        Object.freeze({
+          reference: row.queryDigest.slice(0, 14),
+          status: row.status,
+          revision: row.revision,
+          market: row.market,
+          marketQuarantined: row.marketQuarantined,
+          observedAt: row.observedAt,
+        }),
+      ),
+    );
   }
 }
 

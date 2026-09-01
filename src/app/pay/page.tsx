@@ -1,7 +1,7 @@
 "use client";
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import InvoiceCard from "@/components/mail/InvoiceCard";
@@ -57,6 +57,8 @@ export default function PayPage() {
   const [generatedRequest, setGeneratedRequest] =
     useState<PaymentRequestPayload | null>(null);
   const [generatedLink, setGeneratedLink] = useState("");
+  const [generatedAuthenticity, setGeneratedAuthenticity] =
+    useState<PaymentLinkAuthenticity>({ kind: "unsigned" });
 
   useEffect(() => {
     function decodeCurrentFragment() {
@@ -114,6 +116,7 @@ export default function PayPage() {
   useEffect(() => {
     setGeneratedRequest(null);
     setGeneratedLink("");
+    setGeneratedAuthenticity({ kind: "unsigned" });
     setCreateError("");
   }, [address, chainId, isStrk20Capable]);
 
@@ -174,7 +177,7 @@ export default function PayPage() {
     }
   }
 
-  async function generatePaymentLink(event: React.FormEvent<HTMLFormElement>) {
+  async function generatePaymentLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreateError("");
 
@@ -227,12 +230,15 @@ export default function PayPage() {
         seed,
         mailbox.publicKey,
       );
+      const decoded = decodePaymentLink(new URL(link).hash);
       setGeneratedRequest(created);
       setGeneratedLink(link);
+      setGeneratedAuthenticity(decoded.authenticity);
       setMailPassphrase("");
     } catch (error: unknown) {
       setGeneratedRequest(null);
       setGeneratedLink("");
+      setGeneratedAuthenticity({ kind: "unsigned" });
       setCreateError(
         error instanceof Error
           ? error.message
@@ -248,6 +254,7 @@ export default function PayPage() {
     setter(value);
     setGeneratedRequest(null);
     setGeneratedLink("");
+    setGeneratedAuthenticity({ kind: "unsigned" });
     setCreateError("");
   }
 
@@ -456,6 +463,7 @@ export default function PayPage() {
                       setMailPassphrase(event.target.value);
                       setGeneratedRequest(null);
                       setGeneratedLink("");
+                      setGeneratedAuthenticity({ kind: "unsigned" });
                       setCreateError("");
                     }}
                     type="password"
@@ -533,9 +541,7 @@ export default function PayPage() {
                   showPaymentActions={false}
                   shareInitiallyOpen
                   shareLinkOverride={generatedLink}
-                  linkAuthenticity={
-                    decodePaymentLink(new URL(generatedLink).hash).authenticity
-                  }
+                  linkAuthenticity={generatedAuthenticity}
                 />
               </section>
             ) : null}

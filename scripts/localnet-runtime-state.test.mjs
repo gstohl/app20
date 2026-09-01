@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
+  acquireLocalnetRuntimeLock,
   initializeLocalnetRuntime,
+  releaseLocalnetRuntimeLock,
   rotateLocalnetDeploymentEpoch,
 } from "./localnet-runtime-state.mjs";
 
@@ -86,4 +90,35 @@ test("destructive reset is explicit, separately confirmed, and fail-closed", () 
     confirmation: "DELETE-LOCALNET-RUNTIME",
   });
   assert.notEqual(reset.epoch, first.epoch);
+});
+
+test("runtime lock contention never deletes or releases another owner", () => {
+  const lockPath = join(root(), "start.lock");
+  const owner = acquireLocalnetRuntimeLock(lockPath);
+  assert.equal(statSync(lockPath).mode & 0o777, 0o600);
+  assert.throws(
+    () => acquireLocalnetRuntimeLock(lockPath),
+    /could not acquire/i,
+  );
+  assert.equal(JSON.parse(readFileSync(lockPath, "utf8")).token, owner.token);
+
+  assert.throws(
+    () =>
+      releaseLocalnetRuntimeLock(lockPath, {
+        ...owner,
+        token: "0".repeat(64),
+      }),
+    /owned elsewhere/i,
+  );
+  assert.equal(existsSync(lockPath), true);
+  assert.equal(releaseLocalnetRuntimeLock(lockPath, owner), true);
+  assert.equal(existsSync(lockPath), false);
+  assert.equal(releaseLocalnetRuntimeLock(lockPath, owner), false);
+
+  writeFileSync(lockPath, "partial-lock");
+  assert.throws(
+    () => acquireLocalnetRuntimeLock(lockPath),
+    /could not acquire/i,
+  );
+  assert.equal(readFileSync(lockPath, "utf8"), "partial-lock");
 });

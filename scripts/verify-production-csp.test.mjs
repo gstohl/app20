@@ -18,7 +18,7 @@ const knownViolation = {
   exactChange: "Add the reviewed origin to connect-src.",
 };
 
-test("production headers are derived from the Worker implementation and exact Wrangler origins", async () => {
+test("production headers include exact Wrangler and reviewed public-data origins", async () => {
   const { csp, frameOrigins, connectOrigins, assetProbeBody } =
     await loadProductionSecurityHeaders();
 
@@ -31,9 +31,8 @@ test("production headers are derived from the Worker implementation and exact Wr
   assert.match(csp, /frame-src 'self' https:\/\/auth\.privy\.io(?:;|$)/);
   assert.match(
     csp,
-    /connect-src 'self' https:\/\/auth\.privy\.io https:\/\/api\.privy\.io(?:;|$)/,
+    /connect-src 'self' https:\/\/auth\.privy\.io https:\/\/api\.privy\.io https:\/\/api\.coingecko\.com(?:;|$)/,
   );
-  assert.doesNotMatch(csp, /api\.coingecko\.com/);
 });
 
 test("known baseline records require the descriptive resolution fields", () => {

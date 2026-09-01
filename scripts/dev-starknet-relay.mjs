@@ -39,6 +39,7 @@ const UPSTREAM = {
 };
 
 const MAX_BYTES = 2 * 1024 * 1024;
+const UPSTREAM_TIMEOUT_MS = 10_000;
 
 function methodOf(item) {
   if (!item || typeof item !== "object" || Array.isArray(item)) return null;
@@ -96,6 +97,8 @@ async function handleRelay(req, res, network) {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify(payload),
+    redirect: "error",
+    signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
   const body = await upstream.text();
   res.statusCode = upstream.ok ? 200 : 502;

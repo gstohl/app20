@@ -460,8 +460,10 @@ export function createRfqLifecycleRecord(input: {
     state: input.state ?? "draft",
     updatedAt: now,
     storageRevision: 0,
-    ...(input.terms ? { terms: input.terms } : {}),
-    ...(input.selectedQuote ? { selectedQuote: input.selectedQuote } : {}),
+    ...(input.terms ? { terms: Object.freeze({ ...input.terms }) } : {}),
+    ...(input.selectedQuote
+      ? { selectedQuote: Object.freeze({ ...input.selectedQuote }) }
+      : {}),
     ...(settlement ? { settlement } : {}),
     ...(input.requestDigest
       ? { requestDigest: text(input.requestDigest, "requestDigest") }
@@ -621,8 +623,18 @@ export function assertRfqLifecycleAttemptTargets(
       if (target) throw new Error(`${phase} must not carry an attempt target.`);
       continue;
     }
-    if (!target)
+    if (!target) {
+      // Hash-only v1 migration evidence is persistable quarantine, not a ticket.
+      if (
+        phase === "funding" &&
+        attempt.state === "submitted-unknown" &&
+        attempt.transactionHash &&
+        !record.terms &&
+        !record.settlement
+      )
+        continue;
       throw new Error(`${phase} requires its exact immutable attempt target.`);
+    }
     if (!targetCommonMatchesRecord(record, target))
       throw new Error(`${phase} attempt target changed lifecycle scope.`);
     if (phase === "funding") {
@@ -1013,11 +1025,18 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
         : { target: parseAttemptTarget(row.target) }),
     });
     const targetOperation = result[phase]?.target?.operation;
+    const hashOnlyFunding =
+      phase === "funding" &&
+      targetOperation === undefined &&
+      result[phase]?.state === "submitted-unknown" &&
+      Boolean(result[phase]?.transactionHash);
     if (
       (phase === "reservation-release" &&
         targetOperation !== "request-reservations" &&
         targetOperation !== "funded-settlement-expiry") ||
-      (phase === "funding" && targetOperation !== "funding-ticket") ||
+      (phase === "funding" &&
+        !hashOnlyFunding &&
+        targetOperation !== "funding-ticket") ||
       (phase === "fill" && targetOperation !== "maker-fill") ||
       ((phase === "claim" || phase === "refund") && targetOperation)
     )
@@ -1204,6 +1223,11 @@ export function restoreRfqLifecycle(
       throw new Error();
     const updatedAt = timestamp(row.updatedAt, "updatedAt");
     const chainId = canonicalRfqChainId(text(row.chainId, "chainId"));
+    const local = isLocalRfqChain(chainId);
+    const terms = parseTerms(row.terms);
+    const selectedQuote = parseSelectedQuote(row.selectedQuote);
+    const settlement = parseSettlement(row.settlement, local);
+    const latestObservation = parseObservation(row.latestObservation, local);
     const record: RfqLifecycleRecord = {
       schemaRevision: RFQ_LIFECYCLE_SCHEMA_REVISION,
       authority: RFQ_RESUME_AUTHORITY_LABEL,
@@ -1216,27 +1240,11 @@ export function restoreRfqLifecycle(
         row.storageRevision === undefined
           ? 0
           : nonNegativeInteger(row.storageRevision, "storageRevision"),
-      ...(parseTerms(row.terms) ? { terms: parseTerms(row.terms) } : {}),
-      ...(parseSelectedQuote(row.selectedQuote)
-        ? { selectedQuote: parseSelectedQuote(row.selectedQuote) }
-        : {}),
-      ...(parseSettlement(row.settlement, isLocalRfqChain(chainId))
-        ? {
-            settlement: parseSettlement(
-              row.settlement,
-              isLocalRfqChain(chainId),
-            ),
-          }
-        : {}),
+      ...(terms ? { terms } : {}),
+      ...(selectedQuote ? { selectedQuote } : {}),
+      ...(settlement ? { settlement } : {}),
       attempts: parseAttempts(row.attempts),
-      ...(parseObservation(row.latestObservation, isLocalRfqChain(chainId))
-        ? {
-            latestObservation: parseObservation(
-              row.latestObservation,
-              isLocalRfqChain(chainId),
-            ),
-          }
-        : {}),
+      ...(latestObservation ? { latestObservation } : {}),
       evidenceAuthority: parseEvidenceAuthority(
         row.evidenceAuthority,
         updatedAt,

@@ -205,11 +205,33 @@ function asOfferList(value: unknown): ApiResult[] {
   return value.map((offer) => asRecord(offer));
 }
 
-async function getLocalnet(path: string): Promise<ApiResult> {
+function localnetFetchSignal(
+  timeoutMs: number,
+  user?: AbortSignal,
+): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  if (!user) return timeout;
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([timeout, user]);
+  }
+  const controller = new AbortController();
+  const onAbort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  user.addEventListener("abort", onAbort, { once: true });
+  timeout.addEventListener("abort", onAbort, { once: true });
+  if (user.aborted || timeout.aborted) onAbort();
+  return controller.signal;
+}
+
+async function getLocalnet(
+  path: string,
+  signal?: AbortSignal,
+): Promise<ApiResult> {
   if (!API_BASE) throw new Error("The build has no localnet wallet API.");
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(LOCALNET_STATUS_TIMEOUT_MS),
+    signal: localnetFetchSignal(LOCALNET_STATUS_TIMEOUT_MS, signal),
   });
   let payload: unknown;
   try {
@@ -253,6 +275,7 @@ function canonicalizeLocalIdentityBody<TBody extends object>(
 async function postLocalnet<TBody extends object>(
   path: string,
   body: TBody,
+  signal?: AbortSignal,
 ): Promise<ApiResult> {
   if (!API_BASE) {
     throw new Error("The build has no localnet wallet API.");
@@ -264,7 +287,7 @@ async function postLocalnet<TBody extends object>(
       ...canonicalizeLocalIdentityBody(body),
       runtimeEpoch: localnetRuntimeEpoch(),
     }),
-    signal: AbortSignal.timeout(LOCALNET_COMMAND_TIMEOUT_MS),
+    signal: localnetFetchSignal(LOCALNET_COMMAND_TIMEOUT_MS, signal),
   });
   let payload: unknown;
   try {
@@ -422,20 +445,25 @@ export async function requestLocalnetSolverQuotes(input: {
     makers: readonly Readonly<{ makerId: string; keyId: string }>[];
     binding: string;
   }>;
+  signal?: AbortSignal;
 }): Promise<LocalnetQuoteRequestResult> {
-  const result = await postLocalnet("/private-intents/quotes", {
-    account: input.account,
-    chainId: input.chainId,
-    rfqId: input.rfqId,
-    intentDigest: input.intentDigest,
-    createdAt: input.createdAt,
-    expiresAt: input.expiresAt,
-    sellToken: input.sellToken,
-    sellAmount: input.sellAmount.toString(),
-    buyToken: input.buyToken,
-    minBuyAmount: input.minBuyAmount.toString(),
-    cohort: input.cohort,
-  });
+  const result = await postLocalnet(
+    "/private-intents/quotes",
+    {
+      account: input.account,
+      chainId: input.chainId,
+      rfqId: input.rfqId,
+      intentDigest: input.intentDigest,
+      createdAt: input.createdAt,
+      expiresAt: input.expiresAt,
+      sellToken: input.sellToken,
+      sellAmount: input.sellAmount.toString(),
+      buyToken: input.buyToken,
+      minBuyAmount: input.minBuyAmount.toString(),
+      cohort: input.cohort,
+    },
+    input.signal,
+  );
   const offers =
     Array.isArray(result.offers) && result.offers.length > 0
       ? asOfferList(result.offers).map((offer) => ({
@@ -466,27 +494,32 @@ export async function requestLocalnetSolverQuotes(input: {
 export async function signLocalnetSolverQuote(
   canonical: string,
   quote: UnsignedSolverQuote,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const result = await postLocalnet("/private-intents/sign-quote", {
-    canonical,
-    domain: quote.domain,
-    pool: quote.pool,
-    helper: quote.helper,
-    sellToken: quote.sellToken,
-    sellAmount: quote.sellAmount.toString(),
-    buyToken: quote.buyToken,
-    intentDigest: quote.intentDigest,
-    solverId: quote.solverId,
-    solverKey: quote.solverKey,
-    nonce: quote.nonce,
-    reservationId: quote.reservationId,
-    reservationExpiresAt: quote.reservationExpiresAt,
-    buyAmount: quote.buyAmount.toString(),
-    spreadBps: quote.spreadBps,
-    pricingProvenance: quote.pricingProvenance,
-    quotedAt: quote.quotedAt,
-    quoteExpiresAt: quote.quoteExpiresAt,
-  });
+  const result = await postLocalnet(
+    "/private-intents/sign-quote",
+    {
+      canonical,
+      domain: quote.domain,
+      pool: quote.pool,
+      helper: quote.helper,
+      sellToken: quote.sellToken,
+      sellAmount: quote.sellAmount.toString(),
+      buyToken: quote.buyToken,
+      intentDigest: quote.intentDigest,
+      solverId: quote.solverId,
+      solverKey: quote.solverKey,
+      nonce: quote.nonce,
+      reservationId: quote.reservationId,
+      reservationExpiresAt: quote.reservationExpiresAt,
+      buyAmount: quote.buyAmount.toString(),
+      spreadBps: quote.spreadBps,
+      pricingProvenance: quote.pricingProvenance,
+      quotedAt: quote.quotedAt,
+      quoteExpiresAt: quote.quoteExpiresAt,
+    },
+    signal,
+  );
   const signature = asString(result.signature, "signature").toLowerCase();
   if (asString(result.canonical, "canonical") !== canonical) {
     throw new Error("The maker signed a different quote payload.");

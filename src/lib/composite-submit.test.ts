@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../utils/constants";
 import type { CompositePayload } from "./composite";
-import { planCompositeSubmission, submissionStepLabel } from "./composite-submit";
+import {
+  planCompositeSubmission,
+  submissionStepLabel,
+} from "./composite-submit";
 
 const documentId = `0x${"41".repeat(32)}`;
 
@@ -103,5 +106,18 @@ describe("composite submission plan", () => {
     };
     expect(planCompositeSubmission(payload)).toHaveLength(1);
     expect(planCompositeSubmission(payload)[0].kind).toBe("send_document");
+  });
+
+  it("refuses ambiguous duplicate escrow attachments and unparsed payloads", () => {
+    const funded = document(true);
+    expect(() =>
+      planCompositeSubmission({
+        ...funded,
+        attachments: [funded.attachments[0]!, funded.attachments[0]!],
+      }),
+    ).toThrow(/ambiguous or invalid/i);
+    expect(() =>
+      planCompositeSubmission({ ...document(false), documentId: "0x1" }),
+    ).toThrow(/ambiguous or invalid/i);
   });
 });

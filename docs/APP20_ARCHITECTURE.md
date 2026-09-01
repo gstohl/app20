@@ -1,16 +1,16 @@
 # APP20 architecture
 
-APP20 is one private execution desk with three primitives:
+APP20's architecture separates three domains:
 
 1. a browser-owned shielded wallet anchored to the STRK20 pool on Starknet;
-2. bounded cross-chain execution through NEAR Intents;
-3. a remotely attested workflow/policy service.
+2. a bounded cross-chain design through NEAR Intents;
+3. a remotely attested workflow/policy design.
 
-The allowed live-network surface is Ready wallet functionality, plus the optional Privy wallet rail on Sepolia. APP20 Mail helpers, escrow, and Private Desk settlement are available only as build-gated localnet fixtures; historical Sepolia proofs are runtime-ineligible. Cross-chain intents and TEE workflows remain **review-only** and must not expose a deposit address, submit a signed intent, or claim attested enforcement until a newly approved release scope passes its gates.
+The current allowed live-network surface is the Ready STRK20 functionality exposed by the app, plus the optional Privy wallet rail on Sepolia; public transfer is not implemented. APP20 Mail helpers, escrow, and Private Desk settlement are available only as build-gated localnet fixtures, and historical Sepolia proofs are runtime-ineligible. Cross-chain intents and TEE workflows remain **review-only** and must not expose a deposit address, submit a signed intent, or claim attested enforcement until a newly approved release scope passes its gates.
 
 ## Honest product claim
 
-APP20 can provide shielded activity inside the Starknet pool and encrypted mail content. It cannot guarantee that activity is unlinkable across chains.
+The exposed Ready/Privy wallet rails can provide shielded activity inside the Starknet pool, while the build-gated localnet fixture can encrypt Mail content. Neither establishes that activity is unlinkable across chains.
 
 - Shield and unshield boundaries are public.
 - A cross-chain deposit and destination settlement are public and may correlate by amount, asset, and timing.
@@ -37,24 +37,24 @@ Mainnet Ready identification uses a reviewed Wallet Standard feature identifier 
 ```text
 APP20 browser
   |-- account registry and explicit capability model
-  |-- browser-owned mail keys, viewing keys, notes and witnesses
+  |-- browser-owned Mail keys; optional Privy viewing keys, notes and witnesses
   |-- workflow journal without secret material
   |-- Starknet / STRK20 adapters
-  |-- NEAR Intents dry-only connector
+  |-- NEAR Intents dry-only model
   `-- attestation and policy-receipt verifier
          |
-         |-- Cloudflare edge
+         |-- Cloudflare Worker topology (configured, no deployment evidence)
          |     |-- reviewed SPA assets
          |     |-- authenticated bootstrap
          |     |-- restricted public RPC
          |     `-- blind OHTTP relay and distributed quotas
          |
-         |-- OHTTP discovery/prover gateway
-         |-- NEAR Intents provider and solvers
-         `-- separately deployed attested policy service
+         |-- configured OHTTP discovery/prover gateway
+         |-- future dry-only Intents transport to provider/solvers
+         `-- future attested policy service (no deployable exists)
 ```
 
-Cloudflare Workers are not the TEE and cannot host the official prover. Real RPC, prover, discovery, and future credentialed Intents origins remain runtime secrets. Browser assets receive only public metadata and same-origin paths.
+Cloudflare Workers are not the TEE and cannot host the official prover. If this topology is deployed, real RPC, prover, discovery, and future credentialed Intents origins must remain runtime secrets; browser assets receive only public metadata and same-origin paths. Repository configuration is not deployment evidence.
 
 ## Account model
 
@@ -194,7 +194,7 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 
 | Component | Can observe | Must not receive / cannot guarantee |
 | --- | --- | --- |
-| Browser | Mail plaintext, keys, notes, witnesses, quote details | Protection from XSS or replaced assets |
+| Browser | Mail plaintext/keys and quote details; optional Privy viewing keys, notes, and witnesses | Protection from XSS or replaced assets |
 | Ready | Connected account and requested actions | TEE enforcement when it can submit independently |
 | Privy | Identity, wallet metadata, signature hashes | Mail plaintext or proving witness |
 | APP20 bootstrap | Privy identity and public quorum metadata | Viewing keys, notes, witness, mail plaintext |
@@ -216,7 +216,7 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 @app20/privy                 Generic browser/Node STRK20 integration
 src/lib/mail*                Frozen Mail compatibility implementation
 workers/relay                Cloudflare edge; no private-state imports
-services/policy-enclave      Future separate attested deployable service
+future policy-enclave service  Separately scoped; no repository path or deployable exists
 ```
 
 The `@app20/privy` package is the product wrapper. The viewing-key typed-data domain remains `strk20-privy`. STRK20 protocol names, pool methods, and Starknet constants must not be mechanically renamed.

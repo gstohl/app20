@@ -535,3 +535,169 @@ fn timeout_after_fill_reverts() {
     return_ticket(pool, escrow_address, ticket.token);
     invoke(pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_1, 0x1);
 }
+
+#[test]
+#[should_panic(expected: ('EXCESS_FILL',))]
+fn excess_fill_reverts_instead_of_changing_exact_terms() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let ticket = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket);
+    fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT + 1);
+}
+
+#[test]
+#[should_panic(expected: ('BAD_RECIPIENT',))]
+fn pool_cannot_strand_ticket_at_an_unusable_recipient() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
+        fixture();
+    let ticket_deposit = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket_deposit);
+
+    let ticket = IClaimTicketDispatcher { contract_address: ticket_deposit.token };
+    cheat_caller_address(ticket_deposit.token, pool, CheatSpan::TargetCalls(1));
+    ticket.transfer(address(0x123), 1);
+}
+
+#[test]
+fn unrelated_outgoing_dust_is_not_attributed_to_a_deal() {
+    let dust: u128 = 13;
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let ticket = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket);
+
+    transfer_token(token_a_address, token_a, pool, escrow_address, dust);
+    let taker = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
+    assert(taker.amount == LEG_A_AMOUNT, 'leg A dust was attributed');
+    pull_payout(pool, escrow_address, taker);
+    assert(token_a.balance_of(escrow_address) == dust.into(), 'leg A dust did not remain');
+
+    transfer_token(token_b_address, token_b, pool, escrow_address, dust);
+    return_ticket(pool, escrow_address, ticket.token);
+    let maker = invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xD057);
+    let payout = *maker.at(0);
+    assert(payout.amount == LEG_B_AMOUNT, 'leg B dust was attributed');
+    pull_payout(pool, escrow_address, payout);
+    assert(token_b.balance_of(escrow_address) == dust.into(), 'leg B dust did not remain');
+}
+
+#[test]
+fn claim_after_deadline_succeeds_when_fill_was_timely() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let ticket = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket);
+    let taker = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
+    pull_payout(pool, escrow_address, taker);
+    return_ticket(pool, escrow_address, ticket.token);
+
+    let maker = invoke(
+        pool, escrow_address, escrow, DEADLINE + 1, EscrowOperation::Claim, DEAL_1, 0xC1A2,
+    );
+    assert((*maker.at(0)).amount == LEG_B_AMOUNT, 'late claim amount changed');
+    assert(escrow.get_deal(DEAL_1).status == DealStatus::Settled, 'late claim not settled');
+}
+
+#[test]
+#[should_panic(expected: ('BAD_STATE',))]
+fn timeout_cannot_replay_after_refund() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, _token_b) =
+        fixture();
+    let ticket = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket);
+    return_ticket(pool, escrow_address, ticket.token);
+    let refund = invoke(
+        pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_1, 0x701,
+    );
+    pull_payout(pool, escrow_address, *refund.at(0));
+    invoke(pool, escrow_address, escrow, DEADLINE + 1, EscrowOperation::Timeout, DEAL_1, 0x702);
+}
+
+#[test]
+fn fill_uses_exact_delta_beside_an_existing_counter_token_liability() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let reverse_ticket = fund(
+        pool, escrow_address, escrow, token_b_address, token_b, token_a_address, DEAL_2, 300,
+    );
+    pull_ticket(pool, escrow_address, reverse_ticket);
+    let ticket = fund(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        DEAL_1,
+        LEG_A_AMOUNT,
+    );
+    pull_ticket(pool, escrow_address, ticket);
+
+    let taker = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
+    pull_payout(pool, escrow_address, taker);
+    return_ticket(pool, escrow_address, ticket.token);
+    let maker = invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xD311A);
+    pull_payout(pool, escrow_address, *maker.at(0));
+
+    assert(token_b.balance_of(escrow_address) == 300, 'other counter liability changed');
+    assert(escrow.get_deal(DEAL_2).status == DealStatus::Funded, 'other deal changed');
+    return_ticket(pool, escrow_address, reverse_ticket.token);
+    let reverse_refund = invoke(
+        pool, escrow_address, escrow, DEADLINE, EscrowOperation::Timeout, DEAL_2, 0xD311B,
+    );
+    pull_payout(pool, escrow_address, *reverse_refund.at(0));
+    assert(token_b.balance_of(escrow_address) == 0, 'counter liability not conserved');
+}
+
+#[test]
+fn claim_ticket_constructor_rejects_zero_deal_id() {
+    let contract = declare("ClaimTicket").unwrap().contract_class();
+    let deployment = contract.deploy(@array![address(0x1).into(), address(0x2).into(), 0]);
+    assert(deployment.is_err(), 'zero deal id deployed');
+}

@@ -4,13 +4,13 @@
 
 The public fail-closed production template is `deployments/sepolia/deployment-manifest.template.json`; it remains `releaseReady: false` with zero canonical addresses/hashes, no audits, and no approvals. Separate [historical Sepolia proof records](evidence/historical-sepolia-proofs/) document one-off App20Mail and legacy escrow/ticket activity and are explicitly ineligible for runtime or production use.
 
-APP20 uses the existing STRK20 privacy pool. A new pool, AMM, order book, LP system, or pool factory is not part of the definitive RFQ goal. APP20-owned production contracts are limited to quote-bound settlement and claim/refund authority; see [`APP20_RFQ_GAPS.md`](APP20_RFQ_GAPS.md).
+APP20 uses the existing STRK20 privacy pool. A new pool, AMM, order book, LP system, or pool factory is not part of the definitive RFQ goal. APP20-owned production contracts are limited to quote-bound settlement and claim/refund authority; see [`GAPS.md`](GAPS.md).
 
 ## Contracts APP20 does not deploy
 
 | Contract | Owner | Purpose | APP20 action |
 | --- | --- | --- | --- |
-| STRK20 privacy pool | STRK20 protocol | Shield, private note transfer, unshield, proof verification, and `privacy_invoke` routing | Connect through Ready/Wallet API; never redeploy or request the user's viewing key |
+| STRK20 privacy pool | STRK20 protocol | Shield, private note transfer, unshield, proof verification, and `privacy_invoke` routing | Never redeploy. The Ready Wallet API path does not request a viewing key; the optional Privy SDK derives/holds its key only in the browser under its separate trust boundary |
 | STRK and USDC ERC-20s | Existing token issuers | Public token legs and balances | Resolve through the network-scoped token registry; never deploy replacement production tokens |
 | Ready account/relayer infrastructure | Wallet/provider operators | User authorization, proving, note discovery, and relayed submission | Treat as wallet infrastructure, not an APP20-owned contract |
 

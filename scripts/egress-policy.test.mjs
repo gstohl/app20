@@ -240,21 +240,38 @@ test("refuses a Host header that does not match the request URL host", async () 
 });
 
 test("session refuses redirects, oversized bodies, and request deadlines", async () => {
-  await assert.rejects(
-    (
-      await createEgressSession("https://rpc.example.invalid", {
-        lookupImpl: publicLookup(),
-        fetchImpl: async (_url, init) => {
-          assert.equal(init.redirect, "manual");
-          return httpsResponse(null, 307, {
-            location: "https://other.example.invalid",
-          });
-        },
-      })
-    ).request({ method: "GET" }),
-    (error) =>
-      error instanceof EgressFailure && /redirect refused/.test(error.message),
+  let redirectBodyCancelled = false;
+  const redirectSession = await createEgressSession(
+    "https://rpc.example.invalid",
+    {
+      lookupImpl: publicLookup(),
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.redirect, "manual");
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("unbounded redirect"));
+          },
+          cancel() {
+            redirectBodyCancelled = true;
+          },
+        });
+        return httpsResponse(body, 307, {
+          location: "https://other.example.invalid",
+        });
+      },
+    },
   );
+  try {
+    await assert.rejects(
+      redirectSession.request({ method: "GET" }),
+      (error) =>
+        error instanceof EgressFailure &&
+        /redirect refused/.test(error.message),
+    );
+    assert.equal(redirectBodyCancelled, true);
+  } finally {
+    redirectSession.close();
+  }
 
   await assert.rejects(
     (
@@ -374,15 +391,43 @@ test("token verifier consumes this module instead of reimplementing SSRF checks"
 });
 
 test("readBoundedResponseText enforces content-length and streaming caps", async () => {
+  let declaredBodyCancelled = false;
+  const declaredBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("abcd"));
+    },
+    cancel() {
+      declaredBodyCancelled = true;
+    },
+  });
   await assert.rejects(
     readBoundedResponseText(
-      httpsResponse("abcd", 200, { "content-length": "4" }),
+      httpsResponse(declaredBody, 200, { "content-length": "4" }),
       3,
     ),
     (error) =>
       error instanceof EgressFailure &&
       /response-size limit/.test(error.message),
   );
+  assert.equal(declaredBodyCancelled, true);
+
+  let streamedBodyCancelled = false;
+  const streamedBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("abcd"));
+    },
+    cancel() {
+      streamedBodyCancelled = true;
+    },
+  });
+  await assert.rejects(
+    readBoundedResponseText(httpsResponse(streamedBody), 3),
+    (error) =>
+      error instanceof EgressFailure &&
+      /response-size limit/.test(error.message),
+  );
+  assert.equal(streamedBodyCancelled, true);
+
   const text = await readBoundedResponseText(httpsResponse("ok"), 16);
   assert.equal(text, "ok");
 });

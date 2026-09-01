@@ -32,11 +32,13 @@ function adapter(
     submissionMode: "live",
     publicBalances: vi.fn(async () => []),
     privateBalances: vi.fn(async () => []),
-    build: vi.fn(async (intent: PrivacyIntent): Promise<BuiltPrivacyResult> => ({
-      submitted: false,
-      operation: intent.type,
-      review: {},
-    })),
+    build: vi.fn(
+      async (intent: PrivacyIntent): Promise<BuiltPrivacyResult> => ({
+        submitted: false,
+        operation: intent.type,
+        review: {},
+      }),
+    ),
     submit: vi.fn(
       async (intent: PrivacyIntent): Promise<SubmittedPrivacyResult> => ({
         submitted: true,
@@ -103,6 +105,43 @@ describe("PolicyBoundPrivacyAdapter", () => {
     });
     const guarded = new PolicyBoundPrivacyAdapter(delegate);
 
+    await expect(guarded.submit(shield)).rejects.toThrow(
+      PrivacyCapabilityError,
+    );
+    expect(delegate.submit).not.toHaveBeenCalled();
+  });
+
+  it("snapshots identity and capabilities so later mutation cannot widen authority", async () => {
+    const identity: {
+      adapter: "privy" | "ready";
+      network: "sepolia" | "mainnet";
+      address: string;
+    } = {
+      adapter: "privy",
+      network: "sepolia",
+      address: "0x123",
+    };
+    const capabilities = {
+      publicRead: true,
+      privateRead: true,
+      register: true,
+      shield: false,
+      privateTransfer: true,
+      unshield: true,
+      mail: true,
+    };
+    const delegate = adapter({ identity, capabilities });
+    const guarded = new PolicyBoundPrivacyAdapter(delegate);
+
+    identity.adapter = "ready";
+    identity.network = "mainnet";
+    capabilities.shield = true;
+
+    expect(guarded.identity).toEqual({
+      adapter: "privy",
+      network: "sepolia",
+      address: "0x123",
+    });
     await expect(guarded.submit(shield)).rejects.toThrow(
       PrivacyCapabilityError,
     );

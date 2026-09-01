@@ -11,13 +11,13 @@ export function resolveExactLocalnetReservationOwner({
   reservationOwners,
   target,
 }) {
-  const request = coordinator
-    .listRequests()
-    .find(
-      (candidate) =>
-        candidate.intentDigest ===
-        (target.intentDigest ?? target.requestDigest),
-    );
+  const intentDigest = target.intentDigest ?? target.requestDigest;
+  const request =
+    typeof coordinator.getRequest === "function"
+      ? coordinator.getRequest(intentDigest)
+      : coordinator
+          .listRequests()
+          .find((candidate) => candidate.intentDigest === intentDigest);
   const reservationId =
     target.reservationId ?? request?.selection?.reservationId;
   const live = reservationId ? reservationOwners.get(reservationId) : undefined;

@@ -185,6 +185,10 @@ test("incomplete, mismatched, or production-claiming fixture mutations fail clos
     const path = join(root, `mutation-${index}.json`);
     const serialized = JSON.parse(JSON.stringify(mutation));
     if (mutation.classHash === undefined) delete serialized.classHash;
+    assert.throws(
+      () => generatePinnedDecoderSource(serialized),
+      DecoderGenerationRefusal,
+    );
     await writeFile(path, JSON.stringify(serialized));
     await assert.rejects(
       generatePinnedDecoder({ artifactPath: path, outPath }),
@@ -192,6 +196,67 @@ test("incomplete, mismatched, or production-claiming fixture mutations fail clos
     );
     assert.equal(existsSync(outPath), false);
   }
+});
+
+test("artifact layouts refuse decoder-owned and duplicate decoded field names", async () => {
+  const fixture = await readJson(fixturePath);
+  for (const decodedName of ["stage", "status", "blockNumber", "outcome"]) {
+    const mutation = structuredClone(fixture);
+    mutation.eventLayouts.fund.keys[0].decodedName = decodedName;
+    assert.throws(
+      () => generatePinnedDecoderSource(mutation),
+      (error) =>
+        error instanceof DecoderGenerationRefusal &&
+        /reserved decoded field name/.test(error.message),
+    );
+  }
+
+  const duplicate = structuredClone(fixture);
+  duplicate.eventLayouts.fund.data[0].decodedName =
+    duplicate.eventLayouts.fund.keys[0].decodedName;
+  assert.throws(
+    () => generatePinnedDecoderSource(duplicate),
+    (error) =>
+      error instanceof DecoderGenerationRefusal &&
+      /duplicate decoded field name/.test(error.message),
+  );
+});
+
+test("explicit artifacts cannot bypass the governed manifest index", async () => {
+  const root = await tempDir();
+  const artifactPath = join(root, "unindexed-production-claim.json");
+  const outPath = join(root, "unindexed-decoder.mjs");
+  const artifact = {
+    ...(await readJson(fixturePath)),
+    classification: "p0-21-unindexed-production-claim",
+    warning: "Unindexed regression-test artifact.",
+    canonicalProductionAbi: true,
+    runtimeAllowed: true,
+    productionEligible: true,
+    p0_07_canonical_abi_present: true,
+    p0_21_status: "closed",
+  };
+  await writeFile(artifactPath, JSON.stringify(artifact));
+  const loaded = await loadAbiArtifact(artifactPath);
+  assert.equal(loaded.productionEligible, true);
+  assert.equal(loaded.p0_21_status, "closed");
+
+  await assert.rejects(
+    generatePinnedDecoder({ artifactPath, outPath }),
+    (error) =>
+      error instanceof DecoderGenerationRefusal &&
+      /governed ABI manifest index/.test(error.message),
+  );
+  assert.equal(existsSync(outPath), false);
+
+  const cli = spawnSync(
+    process.execPath,
+    [generatorPath, "--artifact", artifactPath, "--out", outPath],
+    { cwd: repositoryRoot, encoding: "utf8" },
+  );
+  assert.notEqual(cli.status, 0);
+  assert.match(`${cli.stdout}\n${cli.stderr}`, /governed ABI manifest index/);
+  assert.equal(existsSync(outPath), false);
 });
 
 test("generator binds a decoder to the committed fixture pins and does not supersede localnet", async () => {

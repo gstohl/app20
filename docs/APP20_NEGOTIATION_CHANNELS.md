@@ -1,6 +1,6 @@
 # APP20 negotiation and relationship channels
 
-APP20 negotiation is encrypted correspondence and tamper-evident local evidence. It never authorizes value: only the connected wallet, the reviewed settlement call, and finalized chain state can do that.
+APP20 negotiation is encrypted correspondence and tamper-evident local evidence. It never authorizes value. In the build-gated localnet fixture, only the connected wallet, Cairo settlement transition, and finalized pool state can do so; no production configured-chain settlement authority is available.
 
 ## Implemented protocol models
 

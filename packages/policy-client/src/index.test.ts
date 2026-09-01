@@ -411,16 +411,31 @@ describe("APP20 policy approval verification", () => {
     });
     mutableReceipt.executionDigest = "0xmutated-after-check";
     mutableEvidence.measurement = "mutated-after-check";
+    (mutableEvidence.rawEvidence as { host?: string }).host = "mutated";
     release();
     const result = await pending;
     expect(result.receipt.executionDigest).toBe("0xexecution");
     expect(result.evidence.measurement).toBe("measurement-approved");
+    expect(result.evidence.rawEvidence).toEqual({});
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.receipt)).toBe(true);
     expect(Object.isFrozen(result.evidence)).toBe(true);
     expect(
       new TextDecoder().decode(signatureVerifier.verify.mock.calls[0]?.[1]),
     ).toContain('"executionDigest":"0xexecution"');
+  });
+
+  it("rejects rawEvidence that cannot be snapshotted", async () => {
+    await expect(
+      verify({
+        evidence: evidence({ rawEvidence: () => undefined }),
+      }).promise,
+    ).rejects.toThrow(/cannot be snapshotted/i);
+    await expect(
+      verify({
+        evidence: evidence({ rawEvidence: "x".repeat(262_145) }),
+      }).promise,
+    ).rejects.toThrow(/too large/i);
   });
 
   it("does not accept or return a caller-selected enforcement label", async () => {

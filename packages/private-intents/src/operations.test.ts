@@ -7,6 +7,7 @@ import {
   RISK_MANIFEST_DOMAIN,
   assessExposure,
   browserSafeMakerOperations,
+  normalizeRiskManifestBody,
   planOperationalNetting,
   riskExceptionBodyDigest,
   riskManifestBodyDigest,
@@ -180,6 +181,23 @@ describe("signed maker risk policy", () => {
         verifyApproval: async () => true,
       }),
     ).rejects.toThrow(/currently valid/i);
+    expect(() =>
+      normalizeRiskManifestBody(
+        body({
+          assets: [
+            {
+              token: "0x0",
+              denominationBaseUnits: "25",
+              minBatchBaseUnits: "50",
+              maxPerTradeBaseUnits: "500",
+              maxGrossExposureBaseUnits: "1000",
+              maxNetExposureBaseUnits: "750",
+              maxDailyFilledBaseUnits: "2000",
+            },
+          ],
+        }),
+      ),
+    ).toThrow(/canonical Starknet felt/i);
   });
 
   it("requires dual Risk and Security/Compliance approval for exceptions", async () => {
@@ -351,6 +369,24 @@ describe("inventory operations", () => {
         now + 1_800,
       ),
     ).toThrow(/consent/i);
+    expect(() =>
+      planOperationalNetting(
+        manifest,
+        [
+          {
+            fillDigest: `sha256:${"43".repeat(32)}`,
+            finalized: true,
+            principalNettingConsent: true,
+            sellToken: tokenA,
+            sellAmount: 1n << 256n,
+            buyToken: tokenB,
+            buyAmount: 80n,
+            filledAt: now,
+          },
+        ],
+        now + 1_800,
+      ),
+    ).toThrow(/positive u256/i);
   });
 
   it("blocks public restocking when no approved venue is enabled", async () => {

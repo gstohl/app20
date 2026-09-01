@@ -142,6 +142,46 @@ describe("authenticated contact snapshots", () => {
     expect(() => verifyContactSnapshot(unknown, context())).toThrow(/schema/i);
   });
 
+  it("rejects tombstone fields so the public snapshot schema stays entries-only", () => {
+    const snapshot = createContactSnapshot({ ...context(), entries: ENTRIES });
+    expect(() =>
+      verifyContactSnapshot({ ...snapshot, tombstones: [] }, context()),
+    ).toThrow(/schema/i);
+    expect(Object.keys(snapshot).sort()).toEqual([
+      "chainId",
+      "createdAt",
+      "digest",
+      "entries",
+      "helperAddress",
+      "mac",
+      "mailboxFingerprint",
+      "owner",
+      "snapshotId",
+      "version",
+    ]);
+    expect(
+      snapshot.entries.every(
+        (entry) =>
+          Object.keys(entry).sort().join(",") === "address,label,updatedAt",
+      ),
+    ).toBe(true);
+  });
+
+  it("verifies independent snapshots so authentication is not a consume-once replay gate", () => {
+    const first = createContactSnapshot({ ...context(), entries: ENTRIES });
+    const second = createContactSnapshot({
+      ...context(),
+      entries: [ENTRIES[0]],
+      now: NOW + 1,
+    });
+    expect(verifyContactSnapshot(first, context()).snapshotId).toMatch(
+      /^[0-9a-f]{64}$/,
+    );
+    expect(
+      verifyContactSnapshot(second, { ...context(), now: NOW + 1 }).snapshotId,
+    ).not.toBe(first.snapshotId);
+  });
+
   it("rejects unsupported versions and malformed 32-byte seeds", () => {
     const snapshot = createContactSnapshot({ ...context(), entries: ENTRIES });
     expect(() =>

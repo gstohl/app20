@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 import {
   canonicalLocalnetAuthorityQuery,
@@ -296,7 +296,14 @@ export class LocalnetMakerReconciler {
   }
 
   #load() {
-    const value = JSON.parse(readFileSync(this.#path, "utf8"));
+    let value;
+    try {
+      value = JSON.parse(readFileSync(this.#path, "utf8"));
+    } catch {
+      throw new Error(
+        "Maker reconciliation journal is not valid JSON; refusing implicit reset.",
+      );
+    }
     if (
       value?.schema !== LOCALNET_MAKER_RECONCILIATION_SCHEMA ||
       value.runtimeEpoch !== this.#runtimeEpoch ||
@@ -334,9 +341,10 @@ export class LocalnetMakerReconciler {
   }
   #persist() {
     if (this.#failed) throw new Error("Maker reconciliation is fail-stopped.");
-    const temporary = `${this.#path}.${process.pid}.tmp`;
+    let temporary;
+    let renamed = false;
     try {
-      if (existsSync(temporary)) unlinkSync(temporary);
+      temporary = `${this.#path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
       this.#faultInjector?.("before-write");
       writeFileSync(temporary, this.#serialize(), { mode: 0o600, flag: "wx" });
       this.#faultInjector?.("after-write");
@@ -349,6 +357,7 @@ export class LocalnetMakerReconciler {
       }
       this.#faultInjector?.("after-file-fsync");
       renameSync(temporary, this.#path);
+      renamed = true;
       this.#faultInjector?.("after-rename");
       const directory = openSync(dirname(this.#path), "r");
       try {
@@ -359,6 +368,13 @@ export class LocalnetMakerReconciler {
       this.#faultInjector?.("after-directory-fsync");
     } catch (error) {
       this.#failed = true;
+      if (!renamed && temporary && existsSync(temporary)) {
+        try {
+          unlinkSync(temporary);
+        } catch {
+          // The instance is fail-stopped; leftover cleanup is best effort.
+        }
+      }
       throw new Error(
         "Maker reconciliation persistence became uncertain; process is fail-stopped.",
         { cause: error },

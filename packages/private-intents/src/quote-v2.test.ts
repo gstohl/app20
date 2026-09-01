@@ -160,7 +160,10 @@ function verification(
 }
 
 function signed(unsigned: UnsignedSolverQuoteV2): SolverQuoteV2 {
-  return { ...unsigned, signature: `0x${"00".repeat(31)}01${"00".repeat(31)}01` };
+  return {
+    ...unsigned,
+    signature: `0x${"00".repeat(31)}01${"00".repeat(31)}01`,
+  };
 }
 
 describe("solver quote v2", () => {
@@ -211,7 +214,20 @@ describe("solver quote v2", () => {
     expect(() =>
       canonicalSolverQuoteV2({ ...quote(), quoteExpiresAt: NOW - 10 }),
     ).toThrow(/strictly ordered/);
-    expect(() => decodeSolverQuoteV2({ ...wire, signature: `0x${"00".repeat(31)}01${"ff".repeat(32)}` })).toThrow(/low-S/);
+    expect(() =>
+      decodeSolverQuoteV2({
+        ...wire,
+        signature: `0x${"00".repeat(31)}01${"ff".repeat(32)}`,
+      }),
+    ).toThrow(/low-S/);
+    expect(() => decodeSolverQuoteV2({ ...wire, extra: true })).toThrow(
+      /field extra is unsupported/,
+    );
+    expect(() => decodeSolverQuoteV2([wire])).toThrow(/must be an object/);
+    const { solverId: _missing, ...incomplete } = wire;
+    expect(() => decodeSolverQuoteV2(incomplete)).toThrow(
+      /solverId is required/,
+    );
   });
 
   it("rejects verification context that is not the verified directory checkpoint", async () => {

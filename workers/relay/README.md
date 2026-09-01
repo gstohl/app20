@@ -40,7 +40,7 @@ Public chain constants, reviewed Privy frame/connect origins, and the build-only
 
 ## Distributed gate
 
-Bind `RELAY_GATE` to `RelayGateDurableObject`. One named object serializes global/session/service rate windows and concurrency leases across isolates. Every success, error, timeout, and client disconnect releases its lease; alarms expire abandoned leases.
+Bind `RELAY_GATE` to `RelayGateDurableObject`. One named object serializes global/session/service rate windows and concurrency leases across isolates. Service and budget pairs are bound at the Durable Object (a prover acquire cannot use an RPC budget). Rejected or invalid acquires do not create attacker-keyed rate entries and do not persist. Restored snapshots are validated and discarded if malformed. Failed releases stay retryable until the object acknowledges them; platform write failures return `503` rather than dropping the in-memory lease. Every success, error, timeout, and client disconnect releases its lease; alarms expire abandoned leases.
 
 `TRUST_CLIENT_IP_HEADERS=true` is safe only at the direct Cloudflare edge, where `cf-connecting-ip` is overwritten by Cloudflare. Forwarded-origin headers remain disabled. The gate retains only HMAC user pseudonyms or hashed source identifiers in rate/lease dimensions, normally until two rate windows or lease expiry; do not export those dimensions to analytics.
 

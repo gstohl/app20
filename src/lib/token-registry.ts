@@ -209,6 +209,44 @@ export function resolveCanonicalPair(
 
 export function configuredMarketPair(
   network: App20TokenNetwork,
+  registry: readonly App20CanonicalToken[] = app20TokenRegistry(network),
 ): CanonicalPairResolution {
-  return resolveCanonicalPair(network, "strk", "usdc");
+  return resolveCanonicalPair(network, "strk", "usdc", registry);
+}
+
+export type SessionTokenNetworkInput = Readonly<{
+  selectedNetwork: App20TokenNetwork | null;
+  sessionNetwork: App20TokenNetwork | null;
+  connected: boolean;
+  compatible: boolean;
+  reason?: string;
+}>;
+
+export type SessionTokenNetworkResolution =
+  | Readonly<{ ok: true; network: App20TokenNetwork }>
+  | Readonly<{ ok: false; message: string }>;
+
+/**
+ * Bind secondary-route token metadata to one network. A connected but
+ * incompatible session fails closed instead of silently using the wallet
+ * chain or the selected provider.
+ */
+export function resolveSessionTokenNetwork(
+  input: SessionTokenNetworkInput,
+): SessionTokenNetworkResolution {
+  if (input.connected && !input.compatible) {
+    const reason = input.reason?.trim();
+    return {
+      ok: false,
+      message:
+        reason || "The connected account and selected network do not match.",
+    };
+  }
+  const network = input.compatible
+    ? input.sessionNetwork
+    : input.selectedNetwork;
+  if (!network) {
+    return { ok: false, message: "Select a supported Starknet network." };
+  }
+  return { ok: true, network };
 }

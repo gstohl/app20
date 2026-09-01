@@ -1,10 +1,18 @@
 # APP20 value flows
 
-What the current stack can do, and what we can invent on top.
-Boxes marked **PUBLIC** leak account, amount, or timing.
-Boxes marked **PRIVATE** are in-pool STRK20 (Ready is not on that hop).
+**Operative scope:** section 8 describes the current build-gated localnet RFQ.
+Sections 0–7 are archived pre-RFQ architecture sketches, not current product
+capabilities or approved backlog: APP20 does not wire an AVNU/Ekubo swap helper,
+anonymizer/CCTP ingress, public execution, a route composer, private crossing,
+or a TEE clerk. Section 9 is a separately gated future market proposal outside
+the definitive RFQ goal. No diagram in this document grants settlement or
+deployment authority. See [`GAPS.md`](GAPS.md).
 
-## 0. Tech we actually have
+Boxes marked **PUBLIC** identify information that a hypothetical flow would
+expose. **PRIVATE** means only that an in-pool STRK20 transfer can hide selected
+note ownership; it is not an anonymity or unlinkability claim.
+
+## 0. Archived dependency sketch — not a current APP20 flow
 
 ```mermaid
 flowchart LR
@@ -45,9 +53,9 @@ flowchart LR
 
 ---
 
-## 1. Stay private — in-pool swap
+## 1. Rejected in-pool public-venue sketch — not implemented
 
-Best hide. Depth = Starknet only (AVNU is often thin).
+APP20 has no wired AVNU/Ekubo swap helper and makes no liquidity or privacy-performance claim for this sketch. A refused RFQ never routes here automatically.
 
 ```mermaid
 sequenceDiagram
@@ -66,9 +74,9 @@ sequenceDiagram
 
 ---
 
-## 2. Hide the wallet, buy depth — USDC door
+## 2. Archived USDC/CCTP ingress sketch — not implemented
 
-Privacy-bridge is **USDC + CCTP only**. NEAR remains a separate public execution rail.
+This was a hypothetical **USDC + CCTP** boundary. NEAR remains a dry review rail; APP20 exposes no deposit address or live cross-chain execution.
 
 ```mermaid
 flowchart TB
@@ -90,8 +98,7 @@ flowchart TB
   end
 ```
 
-Breaks: Ready address ↔ funder address.  
-Does not break: size, time, Circle, 1Click.
+The sketch intended to avoid directly reusing the Ready address as the funder address. It would not establish unlinkability across size, time, Circle, or 1Click.
 
 ---
 
@@ -108,9 +115,9 @@ Same number, short wait, maybe same solver = one payment. Addresses changed; the
 
 ---
 
-## 4. Invented: one Private Swap composer
+## 4. Rejected Private Swap composer — not implemented
 
-User never picks Bridge vs Intents vs AVNU.
+This automatic router conflicts with the current explicit-rail product and is not approved.
 
 ```mermaid
 flowchart TD
@@ -130,9 +137,9 @@ flowchart TD
 
 ---
 
-## 5. Invented: APP20 as the book
+## 5. Rejected book/crossing sketch — outside the definitive RFQ goal
 
-We add STRK depth by **inventory + crossing**, not by copying NEAR into Cairo.
+APP20 is bookless. It does not cross takers or operate a public book; atomic crossing would require a separate product decision, specification, and audit.
 
 ```mermaid
 flowchart TB
@@ -149,13 +156,13 @@ flowchart TB
   H -->|PUBLIC our hedge| Mkt[NEAR / CEX / AVNU]
 ```
 
-User never hits 1Click. We see the RFQ. Public market sees **our** hedge.
+Under this rejected sketch, the taker would not contact 1Click directly; APP20 would see the RFQ and the public market would see an APP20 hedge.
 
 ---
 
-## 6. Invented: TEE clerk
+## 6. Rejected TEE clerk sketch — not implemented
 
-Automation and policy. Not a stronger mixer.
+No TEE can sign or submit APP20 value. Attestation would not make this a stronger mixer.
 
 ```mermaid
 sequenceDiagram
@@ -177,7 +184,7 @@ sequenceDiagram
   T-->>U: receipt + measurement
 ```
 
-Disclose: chain does not see Ready. Enclave sees the order. Markets see the hedge.
+Under this rejected sketch, the pool transaction would omit a direct Ready address while the enclave would see the order and public markets would see the hedge.
 
 ---
 
@@ -201,11 +208,10 @@ flowchart LR
   User --> Visible
 ```
 
-Cairo enforces the private-settlement boundary on Starknet.
-NEAR is depth.
-CCTP is the USDC pipe.
-TEE is the clerk.
-None of them turn a same-size round trip into unlinkability.
+In the current localnet RFQ only, Cairo and finalized pool state govern the
+fixture settlement boundary. The NEAR, CCTP, and TEE roles above are archival
+sketches, not active APP20 services. None would turn a same-size round trip into
+unlinkability.
 
 ---
 
@@ -221,22 +227,24 @@ flowchart LR
   Q --> I[Selected maker private inventory]
   I --> E[Fill-or-refund Cairo escrow]
   E --> U[Private output note]
-  I -. delayed operational netting .-> N[Completed maker fills]
-  I -. delayed residual .-> H[PUBLIC hedge]
+  I -. policy model only, not wired .-> N[Completed maker fills]
+  I -. future separate approval, not wired .-> H[PUBLIC hedge]
 ```
 
-The localnet implementation proves both STRK→USDC and USDC→STRK with a
-six-decimal USDC fixture, a deterministic test price, live solver-note inventory,
+The localnet browser coverage exercises both STRK→USDC and USDC→STRK with a
+six-decimal USDC fixture, a deterministic test price, local maker-note inventory,
 and fail-closed insufficient-inventory handling. It is not a production price
 feed, deployed market, or yield product.
 
-The narrow product is maker-principal RFQ plus operational netting of completed fills. Atomic two-taker crossing is outside the definitive RFQ goal and would require a separate future specification and audit. Bridges remain public commodity ingress and hedge infrastructure.
+The current localnet flow is a maker-principal RFQ fixture. Operational netting of completed fills exists as a fail-closed policy model, not a wired execution route. Atomic two-taker crossing is outside the definitive RFQ goal and would require a separate future specification and audit. Bridges and public hedges are possible future operator infrastructure, not current APP20 capabilities.
 
 ---
 
-## 9. Future SOL market — exact allowlisted bridge asset
+## 9. Separately gated future SOL-market proposal — not approved
 
-A SOL-denominated Starknet market is technically possible through the existing
+This proposal is outside the definitive RFQ goal and no token admission, bridge
+enrollment, deployment, or live test is authorized. A SOL-denominated Starknet
+market might be technically possible through the existing
 Wormhole representation on Ethereum and StarkGate. It must never be labeled
 native SOL on Starknet.
 

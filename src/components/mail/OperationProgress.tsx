@@ -49,9 +49,9 @@ export function ProvingProgress({
         <span />
       </div>
       <p>
-        Indeterminate: elapsed time is not completion percentage. The wallet
-        may spend 30 seconds or longer proving; after a hash appears, Mail
-        waits separately for successful execution.
+        Indeterminate: elapsed time is not completion percentage. The wallet may
+        spend 30 seconds or longer proving; after a hash appears, Mail waits
+        separately for successful execution.
       </p>
     </div>
   );
@@ -82,7 +82,15 @@ export function ScanProgress({
 
   const progress = Math.min(100, (Math.max(0.25, pages) / maxPages) * 100);
   return (
-    <div className={styles.scanProgress} aria-busy="true">
+    <div
+      className={styles.scanProgress}
+      role="progressbar"
+      aria-busy="true"
+      aria-valuemin={0}
+      aria-valuemax={maxPages}
+      aria-valuenow={pages}
+      aria-label={phase || "Checking public MessagePosted records"}
+    >
       <div className={styles.progressHeading}>
         <span role="status" aria-live="polite">
           {phase || "Checking public MessagePosted records"}

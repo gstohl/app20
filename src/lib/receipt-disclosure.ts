@@ -209,16 +209,14 @@ export async function verifyReceiptDisclosureAgainstReceipt(
   receipt: SettlementReceipt,
 ): Promise<boolean> {
   try {
-    if (disclosure.receiptDigest !== (await digestSettlementReceipt(receipt))) {
-      return false;
-    }
     const fields = Object.keys(
       disclosure.disclosedFields,
     ) as ReceiptDisclosureField[];
     const expected = await buildReceiptDisclosure(receipt, fields);
     return (
+      disclosure.receiptDigest === expected.receiptDigest &&
       canonicalReceiptDisclosure(disclosure) ===
-      canonicalReceiptDisclosure(expected)
+        canonicalReceiptDisclosure(expected)
     );
   } catch {
     return false;

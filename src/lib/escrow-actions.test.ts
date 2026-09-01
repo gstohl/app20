@@ -168,5 +168,24 @@ describe("App20Escrow V2 STRK20 action batches", () => {
     expect(() =>
       buildEscrowFundActions({ ...valid, amount: 2n ** 128n }),
     ).toThrow(/range/i);
+    expect(() => buildEscrowFundActions({ ...valid, token: "0x0" })).toThrow(
+      /Funding token/i,
+    );
+    expect(() =>
+      buildEscrowFundActions({ ...valid, recoveryAddress: "0x0" }),
+    ).toThrow(/Recovery address/i);
+    expect(() =>
+      buildEscrowFundActions({ ...valid, counterToken: tokenA }),
+    ).toThrow(/different tokens/i);
+    expect(() =>
+      buildEscrowFillActions({
+        escrowAddress,
+        recoveryAddress,
+        dealId,
+        token: "not-a-felt",
+        amount: "1",
+        payoutToken: tokenA,
+      }),
+    ).toThrow(/Fill token/i);
   });
 });

@@ -197,11 +197,16 @@ function normalizePaymentRequest(
   }
   const chainId = normalizePaymentLinkChainId(value.chainId);
 
-  const parsed = parsePaymentRequestPayload(value);
-  if (!parsed) throw new Error("Payment link request is malformed.");
-  if (BigInt(parsed.amount) > MAX_UINT256) {
+  if (
+    typeof value.amount === "string" &&
+    /^(?:0|[1-9]\d*)$/.test(value.amount) &&
+    BigInt(value.amount) > MAX_UINT256
+  ) {
     throw new Error("Payment link amount exceeds the uint256 STRK limit.");
   }
+
+  const parsed = parsePaymentRequestPayload(value);
+  if (!parsed) throw new Error("Payment link request is malformed.");
   if (BigInt(parsed.requester) === 0n) {
     throw new Error(
       "Payment link requester must be a non-zero Starknet address.",

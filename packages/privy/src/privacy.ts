@@ -87,6 +87,25 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  timeoutError: SequencingError,
+): Promise<T> {
+  if (timeoutMs <= 0) {
+    void work.catch(() => undefined);
+    return Promise.reject(timeoutError);
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(timeoutError), timeoutMs);
+    work.then(resolve, reject);
+  }).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+    void work.catch(() => undefined);
+  });
+}
+
 export async function provingBlockId(
   provider: RpcProvider,
   maturity = NOTE_MATURITY_BLOCKS,
@@ -111,16 +130,26 @@ export async function waitForMaturity(
     throw new SequencingError("Maturity wait timeout must be positive.");
   }
   const deadline = Date.now() + timeoutMs;
-  let latest = await provider.getBlockNumber();
+  let latest = 0;
+  const timedOut = () =>
+    new SequencingError(
+      `Timed out waiting for block ${fromBlock} to mature (latest=${latest}, maturity=${maturity}).`,
+    );
+  const readBlock = async () => {
+    const remaining = deadline - Date.now();
+    latest = await withTimeout(
+      provider.getBlockNumber(),
+      remaining,
+      timedOut(),
+    );
+    return latest;
+  };
+  latest = await readBlock();
   while (fromBlock >= latest - maturity) {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) {
-      throw new SequencingError(
-        `Timed out waiting for block ${fromBlock} to mature (latest=${latest}, maturity=${maturity}).`,
-      );
-    }
+    if (remaining <= 0) throw timedOut();
     await sleep(Math.min(Math.max(1, pollMs), remaining));
-    latest = await provider.getBlockNumber();
+    latest = await readBlock();
   }
 }
 
@@ -591,7 +620,9 @@ export class PrivacyClient {
     }
     for (const transfer of input.transfers ?? []) {
       if (transfer.amount <= 0n) {
-        throw new Error("External invoke transfer amounts must be greater than zero.");
+        throw new Error(
+          "External invoke transfer amounts must be greater than zero.",
+        );
       }
     }
 
@@ -656,9 +687,7 @@ export class PrivacyClient {
           tokenBuilder.surplusTo(this.address, false);
         });
       }
-      return builder
-        .invoke(input.calldata)
-        .execute({ provingBlockId: block });
+      return builder.invoke(input.calldata).execute({ provingBlockId: block });
     });
   }
 

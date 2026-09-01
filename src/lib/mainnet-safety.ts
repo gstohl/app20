@@ -204,6 +204,14 @@ export type AuthorizeValueActionInput = {
   presentMainnet?: MainnetPreflightPresenter;
 };
 
+/** True for the live Starknet mainnet labels used by STRK20 value actions. */
+export function isMainnetValueNetwork(network: string): boolean {
+  const normalized = network.trim().toUpperCase();
+  if (normalized === "MAINNET" || normalized === "SN_MAIN") return true;
+  const compact = normalized.replace(/[^A-Z0-9]/g, "");
+  return compact === "MAINNET" || compact === "SNMAIN";
+}
+
 /**
  * Reads live chain state before opening the wallet. Mainnet additionally needs
  * an explicit human confirmation; Sepolia and localnet keep the same balance
@@ -220,7 +228,7 @@ export async function authorizeStrk20ValueAction({
   presentMainnet = presentMainnetPreflight,
 }: AuthorizeValueActionInput): Promise<ValueActionPreflight> {
   if (amount <= 0n) throw new Error("Value amount must be greater than zero.");
-  const mainnet = network === "MAINNET";
+  const mainnet = isMainnetValueNetwork(network);
   const cover = publicCover ?? publicCoverForAction(action);
 
   let poolFee: bigint;

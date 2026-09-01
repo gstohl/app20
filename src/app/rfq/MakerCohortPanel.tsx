@@ -1,4 +1,5 @@
 import type { SolverQuote } from "@app20/private-intents";
+import { useMemo } from "react";
 import {
   directoryFreshnessState,
   summarizeMakerCohort,
@@ -61,8 +62,14 @@ export default function MakerCohortPanel({
   buySymbol?: string;
   onSelectedExpire?: () => void;
 }) {
-  const quoteByMaker = new Map(quotes.map((quote) => [quote.solverId, quote]));
-  const summary = summarizeMakerCohort(makers, governedMakerCount);
+  const quoteByMaker = useMemo(
+    () => new Map(quotes.map((quote) => [quote.solverId, quote])),
+    [quotes],
+  );
+  const summary = useMemo(
+    () => summarizeMakerCohort(makers, governedMakerCount),
+    [makers, governedMakerCount],
+  );
   const freshness = directory
     ? directoryFreshnessState(directory, now)
     : "unavailable";

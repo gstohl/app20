@@ -217,6 +217,77 @@ describe("new request and quote enforcement", () => {
     ).toContain("REFERENCE_QUANTITY_MISMATCH");
   });
 
+  it("prices reverse USDC to STRK from the USDC sell leg, not the STRK buy leg", () => {
+    const sellUsdc = RFQ_PER_TRADE_CAP_USDC_BASE_UNITS;
+    const referenceStrk = 100n * 10n ** 18n;
+    const offeredStrk =
+      (referenceStrk * BigInt(10_000 - RFQ_MAX_MAKER_SPREAD_BPS)) / 10_000n;
+    const reverse = input({
+      reference: {
+        available: true,
+        marketId: RFQ_REVIEWED_MARKET_ID,
+        observedAt: now - RFQ_REFERENCE_REJECT_AGE_SECONDS,
+        sellTokenId: RFQ_REVIEWED_BUY_TOKEN_ID,
+        sellTokenDecimals: RFQ_REVIEWED_BUY_TOKEN_DECIMALS,
+        buyTokenId: RFQ_REVIEWED_SELL_TOKEN_ID,
+        buyTokenDecimals: RFQ_REVIEWED_SELL_TOKEN_DECIMALS,
+        grossSellAmountBaseUnits: sellUsdc,
+        grossBuyAmountBaseUnits: referenceStrk,
+      },
+      proposal: {
+        marketId: RFQ_REVIEWED_MARKET_ID,
+        makerId: "maker-a",
+        sellTokenId: RFQ_REVIEWED_BUY_TOKEN_ID,
+        sellTokenDecimals: RFQ_REVIEWED_BUY_TOKEN_DECIMALS,
+        buyTokenId: RFQ_REVIEWED_SELL_TOKEN_ID,
+        buyTokenDecimals: RFQ_REVIEWED_SELL_TOKEN_DECIMALS,
+        requestedSellAmountBaseUnits: sellUsdc,
+        offeredSellAmountBaseUnits: sellUsdc,
+        offeredBuyAmountBaseUnits: offeredStrk,
+        usdcEquivalentBaseUnits: sellUsdc,
+        makerSpreadBps: RFQ_MAX_MAKER_SPREAD_BPS,
+        app20FeeBps: RFQ_APP20_FEE_BPS,
+        quoteTtlSeconds: RFQ_MAX_QUOTE_TTL_SECONDS,
+      },
+      accounting: {
+        windowId: "risk-day-2026-01-01",
+        marketId: RFQ_REVIEWED_MARKET_ID,
+        makerId: "maker-a",
+        startsAt: dayStart,
+        endsAt: dayStart + 86_400,
+        observedAt: now,
+        makerCommittedUsdcBaseUnits: 1_000_000_000n,
+        marketCommittedUsdcBaseUnits: 5_000_000_000n,
+      },
+    });
+    expect(evaluateRfqEconomicPolicy(reverse).allowed).toBe(true);
+    expect(
+      codes({
+        ...reverse,
+        proposal: {
+          ...reverse.proposal,
+          usdcEquivalentBaseUnits: 100_000_000n,
+        },
+      }),
+    ).toContain("USDC_EQUIVALENT_MISMATCH");
+    expect(
+      codes({
+        ...reverse,
+        reference: {
+          ...reverse.reference,
+          available: true,
+          grossSellAmountBaseUnits: sellUsdc + 1n,
+        },
+        proposal: {
+          ...reverse.proposal,
+          requestedSellAmountBaseUnits: sellUsdc + 1n,
+          offeredSellAmountBaseUnits: sellUsdc + 1n,
+          usdcEquivalentBaseUnits: sellUsdc + 1n,
+        },
+      }),
+    ).toContain("PER_TRADE_CAP_EXCEEDED");
+  });
+
   it("rejects forged USDC equivalents and derives the cap from reference units", () => {
     const base = input();
     expect(

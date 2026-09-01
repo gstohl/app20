@@ -21,7 +21,15 @@ import {
   myFrontendProviders,
 } from "@/utils/constants";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import DeskMarketBoard from "./DeskMarketBoard";
 import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 import {
@@ -269,7 +277,14 @@ export default function RfqWorkspace() {
   const viewRegionRef = useRef<HTMLElement>(null);
   const viewChangedRef = useRef(false);
   const authorityRefreshesRef = useRef(new Map<string, number>());
-  const [, setAuthorityClock] = useState(0);
+  const recordsRef = useRef(records);
+  recordsRef.current = records;
+  const liveAuthorityKey = records
+    .filter(
+      (record) => record.state === "settled" || record.state === "refunded",
+    )
+    .map((record) => record.rfqId)
+    .join("\0");
   useEffect(() => setPairId(requestedPair), [requestedPair]);
   useEffect(() => {
     if (!viewChangedRef.current) {
@@ -279,13 +294,14 @@ export default function RfqWorkspace() {
     viewRegionRef.current?.focus();
   }, [view]);
 
-  const replaceRecord = (record: RfqLifecycleRecord) =>
+  const replaceRecord = useCallback((record: RfqLifecycleRecord) => {
     setRecords((current) =>
       sortRecords([
         ...current.filter((item) => item.rfqId !== record.rfqId),
         record,
       ]),
     );
+  }, []);
 
   useEffect(() => {
     authorityRefreshesRef.current.clear();
@@ -304,9 +320,11 @@ export default function RfqWorkspace() {
     void storage
       .list(chain, address)
       .then(async (rows) => {
+        if (!active) return;
         const now = Math.floor(Date.now() / 1_000);
         const restored: RfqLifecycleRecord[] = [];
         for (const raw of rows) {
+          if (!active) return;
           let row = restoreRfqLifecycle(raw, {
             chainId: chain,
             account: address,
@@ -449,17 +467,7 @@ export default function RfqWorkspace() {
     let active = true;
     const refresh = () => {
       const now = Date.now();
-      // The live authority capability expires against wall time even between
-      // five-second verifier reads. Tick presentation once per second so an
-      // open tab cannot continue showing finality past validUntil.
-      if (
-        active &&
-        records.some(
-          (record) => record.state === "settled" || record.state === "refunded",
-        )
-      )
-        setAuthorityClock((current) => current + 1);
-      for (const record of records) {
+      for (const record of recordsRef.current) {
         const nextRefreshAt =
           authorityRefreshesRef.current.get(record.rfqId) ?? 0;
         if (
@@ -479,13 +487,13 @@ export default function RfqWorkspace() {
             if (active) replaceRecord(next);
           })
           .catch(() => {
-            // A failed read remains non-authoritative. The one-second
-            // presentation clock above still demotes an expired live mark.
+            // A failed read remains non-authoritative. Authority views subscribe
+            // to the shared presentation clock and demote an expired live mark.
           });
       }
     };
     refresh();
-    const timer = window.setInterval(refresh, 1_000);
+    const timer = window.setInterval(refresh, 5_000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -494,10 +502,11 @@ export default function RfqWorkspace() {
     address,
     chain,
     currentScope,
+    liveAuthorityKey,
     loadState,
     loadedScope,
     providerIndex,
-    records,
+    replaceRecord,
   ]);
 
   async function persist(
@@ -894,12 +903,7 @@ export default function RfqWorkspace() {
                 );
               return durableRecord;
             })()
-          : authorizeLocalnetResumeCommand(
-              record,
-              durableRecord,
-              action,
-              now,
-            );
+          : authorizeLocalnetResumeCommand(record, durableRecord, action, now);
       if (
         action === "accept-and-fund" ||
         action === "request-maker-fill" ||
@@ -1001,6 +1005,10 @@ export default function RfqWorkspace() {
   }
 
   const executable = providerIndex === LOCALNET_PROVIDER_INDEX;
+  const activeRecords = useMemo(
+    () => records.filter((row) => !lifecycleMayForget(row)),
+    [records],
+  );
   const workspaceContextReady = deriveWorkspaceContextReady({
     providerIndex,
     address,
@@ -1061,7 +1069,7 @@ export default function RfqWorkspace() {
       {view === "active" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="Active RFQs">
           <RfqWorkspaceActiveBoundary
-            records={records.filter((row) => !lifecycleMayForget(row))}
+            records={activeRecords}
             providerIndex={providerIndex}
             address={address}
             chain={chain}

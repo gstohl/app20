@@ -225,15 +225,26 @@ function conflict(message: string): Response {
 export const RESERVATION_LEDGER_STORAGE_WRITE_FAILED =
   "Reservation ledger storage write failed.";
 
-function isStorageWriteFailure(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.message === RESERVATION_LEDGER_STORAGE_WRITE_FAILED
-  );
+function isRetryableStorageFailure(error: unknown): boolean {
+  if (error == null) return false;
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return true;
+  }
+  if (!(error instanceof Error)) return false;
+  if (error.message === RESERVATION_LEDGER_STORAGE_WRITE_FAILED) return true;
+  const name = error.name;
+  if (/sqlite/i.test(name) || name === "DOMException") return true;
+  if (/SQLITE_[A-Z0-9]+/i.test(error.message)) return true;
+  if (/durable object storage/i.test(error.message)) return true;
+  if (/storage (write |operation )?failed/i.test(error.message)) return true;
+  if (error.cause !== undefined && error.cause !== error) {
+    return isRetryableStorageFailure(error.cause);
+  }
+  return false;
 }
 
 function transactionFailure(error: unknown, fallback: string): Response {
-  if (isStorageWriteFailure(error)) {
+  if (isRetryableStorageFailure(error)) {
     return noStoreJson(
       { error: RESERVATION_LEDGER_STORAGE_WRITE_FAILED },
       { status: 503 },

@@ -245,6 +245,11 @@ export function mapCrossChainIntentToDryQuote(
   };
 }
 
+const MAX_BASE_UNIT_DIGITS = 78;
+const MAX_TOKEN_CATALOG = 4096;
+const CANONICAL_POSITIVE_AMOUNT = /^[1-9][0-9]*$/;
+const CANONICAL_NON_NEGATIVE_AMOUNT = /^(0|[1-9][0-9]*)$/;
+
 const REQUEST_FIELDS = [
   "dry",
   "swapType",
@@ -362,7 +367,9 @@ export function assertDryQuoteRequest(
   }
   if (
     typeof request.amount !== "string" ||
-    !/^[1-9][0-9]*$/.test(request.amount)
+    request.amount.length === 0 ||
+    request.amount.length > MAX_BASE_UNIT_DIGITS ||
+    !CANONICAL_POSITIVE_AMOUNT.test(request.amount)
   ) {
     throw new Error("amount must be a canonical positive base-unit integer.");
   }
@@ -486,14 +493,20 @@ export function parseStrictDryQuoteResponse(
     "amountOut",
     "minAmountOut",
   ] as const) {
-    if (!/^(0|[1-9][0-9]*)$/.test(quote[key])) {
+    if (
+      quote[key].length > MAX_BASE_UNIT_DIGITS ||
+      !CANONICAL_NON_NEGATIVE_AMOUNT.test(quote[key])
+    ) {
       throw new Error(`quote.${key} must be a canonical base-unit integer.`);
     }
   }
   for (const key of ["refundFee", "withdrawFee"] as const) {
     if (Object.hasOwn(rawQuote, key)) {
       const fee = stringField(rawQuote, key, "quote");
-      if (!/^(0|[1-9][0-9]*)$/.test(fee)) {
+      if (
+        fee.length > MAX_BASE_UNIT_DIGITS ||
+        !CANONICAL_NON_NEGATIVE_AMOUNT.test(fee)
+      ) {
         throw new Error(`quote.${key} must be a canonical base-unit integer.`);
       }
       quote[key] = fee;
@@ -605,17 +618,40 @@ export class DryOnlyNearIntentsClient {
     if (!Array.isArray(tokens)) {
       throw new Error("The 1Click token catalog must be an array.");
     }
-    return tokens.map((token) => {
-      assertOpaqueValue("token.assetId", token.assetId);
-      assertOpaqueValue("token.symbol", token.symbol);
+    if (tokens.length > MAX_TOKEN_CATALOG) {
+      throw new Error("The 1Click token catalog contains too many values.");
+    }
+    return tokens.map((token, index) => {
+      const row = record(token, `token[${index}]`);
+      assertOpaqueValue("token.assetId", row.assetId);
+      assertOpaqueValue("token.symbol", row.symbol);
       if (
-        !Number.isInteger(token.decimals) ||
-        token.decimals < 0 ||
-        token.decimals > 255
+        !Number.isInteger(row.decimals) ||
+        (row.decimals as number) < 0 ||
+        (row.decimals as number) > 255
       ) {
         throw new Error("Token decimals must be an integer between 0 and 255.");
       }
-      return Object.freeze({ ...token });
+      const parsed: OneClickToken = {
+        assetId: row.assetId as string,
+        symbol: row.symbol as string,
+        decimals: row.decimals as number,
+      };
+      if (Object.hasOwn(row, "blockchain")) {
+        assertOpaqueValue("token.blockchain", row.blockchain);
+        parsed.blockchain = row.blockchain;
+      }
+      if (Object.hasOwn(row, "price")) {
+        if (
+          typeof row.price !== "number" ||
+          !Number.isFinite(row.price) ||
+          row.price < 0
+        ) {
+          throw new Error("Token price must be a finite non-negative number.");
+        }
+        parsed.price = row.price;
+      }
+      return Object.freeze(parsed);
     });
   }
 

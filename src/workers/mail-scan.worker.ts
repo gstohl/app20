@@ -23,19 +23,28 @@ const workerScope = globalThis as unknown as {
   postMessage(message: ScanResponse): void;
 };
 
+function wipeWorkerPrivateKey(privateKey: Uint8Array | undefined): void {
+  try {
+    privateKey?.fill(0);
+  } catch {
+    // Detached transferable buffers cannot be overwritten.
+  }
+}
+
 workerScope.addEventListener("message", (event) => {
+  const privateKey = event.data.privateKey;
   void (async () => {
     try {
-      const decrypted = await scanAndDecrypt(
-        event.data.privateKey,
-        event.data.records,
-      );
+      const decrypted = await scanAndDecrypt(privateKey, event.data.records);
       workerScope.postMessage({ ok: true, decrypted });
     } catch (error: unknown) {
       workerScope.postMessage({
         ok: false,
         message: error instanceof Error ? error.message : "Mail scan failed.",
       });
+    } finally {
+      // Structured clone of the mailbox key stays in this worker until wiped.
+      wipeWorkerPrivateKey(privateKey);
     }
   })();
 });

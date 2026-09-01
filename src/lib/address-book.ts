@@ -4,6 +4,8 @@ export const ADDRESS_BOOK_STORAGE_PREFIX = "app20/address-book/v1";
 export const ADDRESS_BOOK_CHANGED_EVENT = "app20:address-book-changed";
 export const ADDRESS_BOOK_MAX_ENTRIES = 200;
 export const ADDRESS_BOOK_MAX_LABEL_LENGTH = 40;
+const ADDRESS_BOOK_MAX_TOMBSTONES = ADDRESS_BOOK_MAX_ENTRIES;
+const ADDRESS_BOOK_CLOCK_SKEW_MS = 5 * 60 * 1_000;
 
 const KEY_BYTES = 32;
 const NONCE_BYTES = 12;
@@ -14,6 +16,17 @@ export type AddressBookEntry = {
   label: string;
   address: string;
   updatedAt: number;
+};
+
+/** Device-local deletion evidence. Never included in on-chain snapshots. */
+type AddressBookTombstone = {
+  label: string;
+  deletedAt: number;
+};
+
+type AddressBookState = {
+  entries: AddressBookEntry[];
+  tombstones: AddressBookTombstone[];
 };
 
 export type ResolvedAddressInput = {
@@ -144,7 +157,7 @@ function sanitizeEntries(value: unknown): AddressBookEntry[] {
       typeof record.updatedAt !== "number" ||
       !Number.isSafeInteger(record.updatedAt) ||
       record.updatedAt < 0 ||
-      record.updatedAt > Date.now() + 5 * 60 * 1_000
+      record.updatedAt > Date.now() + ADDRESS_BOOK_CLOCK_SKEW_MS
     ) {
       throw corruptBookError();
     }
@@ -173,13 +186,104 @@ function sortEntries(entries: AddressBookEntry[]): AddressBookEntry[] {
   });
 }
 
-export async function loadAddressBook(
+function labelKey(label: string): string {
+  return label.toLocaleLowerCase("en-US");
+}
+
+function sanitizeTombstones(value: unknown): AddressBookTombstone[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > ADDRESS_BOOK_MAX_TOMBSTONES) {
+    throw corruptBookError();
+  }
+  const tombstones: AddressBookTombstone[] = [];
+  const labels = new Set<string>();
+  for (const item of value) {
+    if (item === null || typeof item !== "object") throw corruptBookError();
+    const keys = Object.keys(item).sort();
+    if (keys.join(",") !== "deletedAt,label") throw corruptBookError();
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.label !== "string" ||
+      typeof record.deletedAt !== "number" ||
+      !Number.isSafeInteger(record.deletedAt) ||
+      record.deletedAt < 0 ||
+      record.deletedAt > Date.now() + ADDRESS_BOOK_CLOCK_SKEW_MS
+    ) {
+      throw corruptBookError();
+    }
+    const label = validateLabel(record.label);
+    const key = labelKey(label);
+    if (labels.has(key)) throw corruptBookError();
+    labels.add(key);
+    tombstones.push({ label, deletedAt: record.deletedAt });
+  }
+  return tombstones;
+}
+
+function reconcileBookState(state: AddressBookState): AddressBookState {
+  const tombstoneByLabel = new Map<string, AddressBookTombstone>();
+  for (const tombstone of state.tombstones) {
+    const key = labelKey(tombstone.label);
+    const current = tombstoneByLabel.get(key);
+    if (!current || tombstone.deletedAt > current.deletedAt) {
+      tombstoneByLabel.set(key, tombstone);
+    }
+  }
+
+  const entries: AddressBookEntry[] = [];
+  const entryKeys = new Set<string>();
+  for (const entry of sortEntries(state.entries)) {
+    const key = labelKey(entry.label);
+    if (entryKeys.has(key)) continue;
+    const tombstone = tombstoneByLabel.get(key);
+    if (tombstone && entry.updatedAt <= tombstone.deletedAt) continue;
+    entryKeys.add(key);
+    tombstoneByLabel.delete(key);
+    entries.push(entry);
+  }
+
+  const tombstones = [...tombstoneByLabel.values()].sort((left, right) => {
+    if (left.deletedAt !== right.deletedAt) {
+      return right.deletedAt - left.deletedAt;
+    }
+    const leftFolded = labelKey(left.label);
+    const rightFolded = labelKey(right.label);
+    if (leftFolded < rightFolded) return -1;
+    if (leftFolded > rightFolded) return 1;
+    return left.label < right.label ? -1 : left.label > right.label ? 1 : 0;
+  });
+  if (tombstones.length > ADDRESS_BOOK_MAX_TOMBSTONES) {
+    tombstones.length = ADDRESS_BOOK_MAX_TOMBSTONES;
+  }
+  return { entries, tombstones };
+}
+
+function parseBookPlaintext(value: unknown): AddressBookState {
+  if (Array.isArray(value)) {
+    return reconcileBookState({
+      entries: sanitizeEntries(value),
+      tombstones: [],
+    });
+  }
+  if (value === null || typeof value !== "object") throw corruptBookError();
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record).sort();
+  if (keys.join(",") !== "entries" && keys.join(",") !== "entries,tombstones") {
+    throw corruptBookError();
+  }
+  return reconcileBookState({
+    entries: sanitizeEntries(record.entries),
+    tombstones: sanitizeTombstones(record.tombstones),
+  });
+}
+
+async function loadAddressBookState(
   storage: StorageLike,
   selfAddress: string,
-): Promise<AddressBookEntry[]> {
+): Promise<AddressBookState> {
   const bookKey = addressBookStorageKey(selfAddress);
   const raw = storage.getItem(bookKey);
-  if (raw === null) return [];
+  if (raw === null) return { entries: [], tombstones: [] };
   const payload = parsePayload(raw);
   const key = await importBookKey(storage, selfAddress, false);
   if (key === null) throw corruptBookError();
@@ -201,21 +305,37 @@ export async function loadAddressBook(
     throw corruptBookError();
   }
   try {
-    return sanitizeEntries(JSON.parse(new TextDecoder().decode(plaintext)));
+    return parseBookPlaintext(JSON.parse(new TextDecoder().decode(plaintext)));
   } catch {
     throw corruptBookError();
   }
 }
 
-async function encryptBook(
+export async function loadAddressBook(
   storage: StorageLike,
   selfAddress: string,
-  entries: AddressBookEntry[],
-): Promise<void> {
+): Promise<AddressBookEntry[]> {
+  return (await loadAddressBookState(storage, selfAddress)).entries;
+}
+
+async function persistAddressBook(
+  storage: StorageLike,
+  selfAddress: string,
+  state: AddressBookState,
+): Promise<AddressBookState> {
+  const next = reconcileBookState({
+    entries: sortEntries(state.entries),
+    tombstones: state.tombstones,
+  });
   const bookKey = addressBookStorageKey(selfAddress);
   const key = await importBookKey(storage, selfAddress, true);
   if (key === null) throw corruptBookError();
   const nonce = globalThis.crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
+  // Legacy inner JSON stays a bare entry array until a deletion tombstone exists.
+  const inner =
+    next.tombstones.length === 0
+      ? next.entries
+      : { entries: next.entries, tombstones: next.tombstones };
   const ciphertext = new Uint8Array(
     await globalThis.crypto.subtle.encrypt(
       {
@@ -225,7 +345,7 @@ async function encryptBook(
         tagLength: AES_TAG_BITS,
       },
       key,
-      toBuffer(new TextEncoder().encode(JSON.stringify(sortEntries(entries)))),
+      toBuffer(new TextEncoder().encode(JSON.stringify(inner))),
     ),
   );
   const payload: AddressBookPayload = {
@@ -238,6 +358,7 @@ async function encryptBook(
   if (storage.getItem(bookKey) !== encoded) {
     throw new Error("The address book could not be persisted on this device.");
   }
+  return next;
 }
 
 function validateLabel(label: string): string {
@@ -261,19 +382,20 @@ export async function saveAddressBookEntry(
 ): Promise<AddressBookEntry[]> {
   const label = validateLabel(entry.label);
   const address = normalizeStarknetAddress(entry.address);
-  const existing = await loadAddressBook(storage, selfAddress);
-  const kept = existing.filter(
+  const existing = await loadAddressBookState(storage, selfAddress);
+  const kept = existing.entries.filter(
     (item) => item.label.toLowerCase() !== label.toLowerCase(),
   );
   if (kept.length >= ADDRESS_BOOK_MAX_ENTRIES) {
     throw new Error("The address book is full. Remove an entry first.");
   }
-  const next = sortEntries([
-    ...kept,
-    { label, address, updatedAt: Date.now() },
-  ]);
-  await encryptBook(storage, selfAddress, next);
-  return next;
+  const next = await persistAddressBook(storage, selfAddress, {
+    entries: [...kept, { label, address, updatedAt: Date.now() }],
+    tombstones: existing.tombstones.filter(
+      (item) => labelKey(item.label) !== labelKey(label),
+    ),
+  });
+  return next.entries;
 }
 
 export async function removeAddressBookEntry(
@@ -281,12 +403,26 @@ export async function removeAddressBookEntry(
   selfAddress: string,
   label: string,
 ): Promise<AddressBookEntry[]> {
-  const existing = await loadAddressBook(storage, selfAddress);
-  const next = existing.filter(
-    (item) => item.label.toLowerCase() !== label.trim().toLowerCase(),
+  const existing = await loadAddressBookState(storage, selfAddress);
+  const needle = label.trim().toLowerCase();
+  const kept: AddressBookEntry[] = [];
+  const removed: AddressBookEntry[] = [];
+  for (const item of existing.entries) {
+    if (item.label.toLowerCase() === needle) removed.push(item);
+    else kept.push(item);
+  }
+  const deletedAt = Date.now();
+  const tombstones = existing.tombstones.filter(
+    (item) => item.label.toLowerCase() !== needle,
   );
-  await encryptBook(storage, selfAddress, next);
-  return next;
+  for (const entry of removed) {
+    tombstones.push({ label: entry.label, deletedAt });
+  }
+  const next = await persistAddressBook(storage, selfAddress, {
+    entries: kept,
+    tombstones,
+  });
+  return next.entries;
 }
 
 /** Replaces the complete local book only after every imported entry validates. */
@@ -295,14 +431,23 @@ export async function replaceAddressBookEntries(
   selfAddress: string,
   entries: readonly AddressBookEntry[],
 ): Promise<AddressBookEntry[]> {
-  const next = sanitizeEntries(entries);
-  await encryptBook(storage, selfAddress, next);
-  return next;
+  const incoming = sanitizeEntries(entries);
+  const existing = await loadAddressBookState(storage, selfAddress);
+  const incomingKeys = new Set(incoming.map((entry) => labelKey(entry.label)));
+  const next = await persistAddressBook(storage, selfAddress, {
+    entries: incoming,
+    tombstones: existing.tombstones.filter(
+      (item) => !incomingKeys.has(labelKey(item.label)),
+    ),
+  });
+  return next.entries;
 }
 
 /**
  * Additively restores a snapshot. A newer local label wins over an older
  * snapshot entry; a newer authenticated snapshot entry may update that label.
+ * Device-local deletion tombstones suppress replay of an older authenticated
+ * snapshot for that label; a snapshot entry newer than the tombstone may restore it.
  */
 export async function mergeAddressBookEntries(
   storage: StorageLike,
@@ -310,20 +455,33 @@ export async function mergeAddressBookEntries(
   entries: readonly AddressBookEntry[],
 ): Promise<AddressBookEntry[]> {
   const incoming = sanitizeEntries(entries);
-  const existing = await loadAddressBook(storage, selfAddress);
+  const existing = await loadAddressBookState(storage, selfAddress);
   const byLabel = new Map(
-    existing.map((entry) => [entry.label.toLocaleLowerCase("en-US"), entry]),
+    existing.entries.map((entry) => [labelKey(entry.label), entry]),
+  );
+  const tombstones = new Map(
+    existing.tombstones.map((item) => [labelKey(item.label), item]),
   );
   for (const entry of incoming) {
-    const key = entry.label.toLocaleLowerCase("en-US");
+    const key = labelKey(entry.label);
+    const tombstone = tombstones.get(key);
+    if (tombstone && entry.updatedAt <= tombstone.deletedAt) {
+      continue;
+    }
     const current = byLabel.get(key);
     if (!current || entry.updatedAt > current.updatedAt) {
       byLabel.set(key, entry);
+      tombstones.delete(key);
     }
   }
-  const next = sanitizeEntries([...byLabel.values()]);
-  await encryptBook(storage, selfAddress, next);
-  return next;
+  if (byLabel.size > ADDRESS_BOOK_MAX_ENTRIES) {
+    throw new Error("The address book is full. Remove an entry first.");
+  }
+  const next = await persistAddressBook(storage, selfAddress, {
+    entries: [...byLabel.values()],
+    tombstones: [...tombstones.values()],
+  });
+  return next.entries;
 }
 
 export function resolveAddressBookInput(

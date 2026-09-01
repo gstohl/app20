@@ -34,7 +34,9 @@ pub mod ClaimTicket {
         pub const NOT_AUTHORIZED: felt252 = 'NOT_AUTHORIZED';
         pub const ALREADY_MINTED: felt252 = 'ALREADY_MINTED';
         pub const BAD_AMOUNT: felt252 = 'BAD_AMOUNT';
+        pub const BAD_RECIPIENT: felt252 = 'BAD_RECIPIENT';
         pub const ZERO_ADDRESS: felt252 = 'ZERO_ADDRESS';
+        pub const ZERO_DEAL_ID: felt252 = 'ZERO_DEAL_ID';
     }
 
     #[storage]
@@ -79,6 +81,7 @@ pub mod ClaimTicket {
     ) {
         assert(escrow.is_non_zero(), errors::ZERO_ADDRESS);
         assert(pool.is_non_zero(), errors::ZERO_ADDRESS);
+        assert(deal_id.is_non_zero(), errors::ZERO_DEAL_ID);
         self.escrow.write(escrow);
         self.pool.write(pool);
         self.deal_id.write(deal_id);
@@ -181,6 +184,11 @@ pub mod ClaimTicket {
         ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
     ) {
         assert(amount == 1, errors::BAD_AMOUNT);
+        // A public recipient cannot approve a return, so sending the supply-one ticket there would
+        // permanently disable both claim and timeout.
+        assert(
+            recipient == self.escrow.read() || recipient == self.pool.read(), errors::BAD_RECIPIENT,
+        );
         self.balances.entry(sender).write(self.balances.entry(sender).read() - amount);
         self.balances.entry(recipient).write(self.balances.entry(recipient).read() + amount);
         self.emit(Transfer { from: sender, to: recipient, value: amount });

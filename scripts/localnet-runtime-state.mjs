@@ -14,26 +14,35 @@ import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 
 const SCHEMA = "app20/localnet-runtime-epoch/v1";
+const LOCK_SCHEMA = "app20/localnet-runtime-lock/v1";
 const EPOCH = /^[0-9a-f]{32}$/;
+const LOCK_TOKEN = /^[0-9a-f]{64}$/;
 
 function persist(path, value) {
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  chmodSync(temporary, 0o600);
-  const file = openSync(temporary, "r");
+  const temporary = `${path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+  let renamed = false;
   try {
-    fsyncSync(file);
+    writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, {
+      mode: 0o600,
+      flag: "wx",
+    });
+    chmodSync(temporary, 0o600);
+    const file = openSync(temporary, "r");
+    try {
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
+    renameSync(temporary, path);
+    renamed = true;
+    const directory = openSync(dirname(path), "r");
+    try {
+      fsyncSync(directory);
+    } finally {
+      closeSync(directory);
+    }
   } finally {
-    closeSync(file);
-  }
-  renameSync(temporary, path);
-  const directory = openSync(dirname(path), "r");
-  try {
-    fsyncSync(directory);
-  } finally {
-    closeSync(directory);
+    if (!renamed) rmSync(temporary, { force: true });
   }
 }
 
@@ -53,6 +62,91 @@ function newEpoch() {
     epoch: randomBytes(16).toString("hex"),
     createdAt: new Date().toISOString(),
   });
+}
+
+function readRuntimeLock(path) {
+  if (!existsSync(path)) return undefined;
+  const value = JSON.parse(readFileSync(path, "utf8"));
+  if (
+    value?.schema !== LOCK_SCHEMA ||
+    !Number.isSafeInteger(value.pid) ||
+    value.pid <= 0 ||
+    !LOCK_TOKEN.test(value.token) ||
+    typeof value.startedAt !== "string" ||
+    !value.startedAt
+  ) {
+    throw new Error(
+      "Localnet runtime lock is invalid; refusing to guess ownership.",
+    );
+  }
+  return Object.freeze({
+    schema: LOCK_SCHEMA,
+    pid: value.pid,
+    token: value.token,
+    startedAt: value.startedAt,
+  });
+}
+
+/** Acquire an atomic, process-lifetime lock without deleting another owner. */
+export function acquireLocalnetRuntimeLock(path) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const owner = Object.freeze({
+    schema: LOCK_SCHEMA,
+    pid: process.pid,
+    token: randomBytes(32).toString("hex"),
+    startedAt: new Date().toISOString(),
+  });
+  let descriptor;
+  let created = false;
+  try {
+    descriptor = openSync(path, "wx", 0o600);
+    created = true;
+    writeFileSync(descriptor, `${JSON.stringify(owner)}\n`);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    const directory = openSync(dirname(path), "r");
+    try {
+      fsyncSync(directory);
+    } finally {
+      closeSync(directory);
+    }
+    return owner;
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (created) {
+      try {
+        const current = readRuntimeLock(path);
+        if (current?.pid === owner.pid && current.token === owner.token) {
+          rmSync(path, { force: true });
+        }
+      } catch {
+        // A partial or substituted lock remains fail-closed for explicit cleanup.
+      }
+    }
+    throw new Error("Could not acquire the localnet runtime lock.", {
+      cause: error,
+    });
+  }
+}
+
+/** Release only the exact token returned by acquireLocalnetRuntimeLock(). */
+export function releaseLocalnetRuntimeLock(path, owner) {
+  const current = readRuntimeLock(path);
+  if (!current) return false;
+  if (!owner || current.pid !== owner.pid || current.token !== owner.token) {
+    throw new Error(
+      "Refusing to release a localnet runtime lock owned elsewhere.",
+    );
+  }
+  rmSync(path);
+  const directory = openSync(dirname(path), "r");
+  try {
+    fsyncSync(directory);
+  } finally {
+    closeSync(directory);
+  }
+  return true;
 }
 
 export function rotateLocalnetDeploymentEpoch(runtimeDir) {

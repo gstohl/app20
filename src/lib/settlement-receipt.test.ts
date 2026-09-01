@@ -42,19 +42,37 @@ function chainReceipt(): ChainSettlementReceipt {
       {
         stage: "fund",
         transactionHash: "0xf001",
-        event: { blockHash: "0xb10", eventSelector: "0xe1", blockNumber: 10, transactionIndex: 0, eventIndex: 2 },
+        event: {
+          blockHash: "0xb10",
+          eventSelector: "0xe1",
+          blockNumber: 10,
+          transactionIndex: 0,
+          eventIndex: 2,
+        },
         finality: "confirmed",
       },
       {
         stage: "fill",
         transactionHash: "0xf002",
-        event: { blockHash: "0xb11", eventSelector: "0xe2", blockNumber: 11, transactionIndex: 1, eventIndex: 0 },
+        event: {
+          blockHash: "0xb11",
+          eventSelector: "0xe2",
+          blockNumber: 11,
+          transactionIndex: 1,
+          eventIndex: 0,
+        },
         finality: "finalized",
       },
       {
         stage: "claim",
         transactionHash: "0xf003",
-        event: { blockHash: "0xb12", eventSelector: "0xe3", blockNumber: 12, transactionIndex: 0, eventIndex: 3 },
+        event: {
+          blockHash: "0xb12",
+          eventSelector: "0xe3",
+          blockNumber: 12,
+          transactionIndex: 0,
+          eventIndex: 3,
+        },
         finality: "confirmed",
       },
     ],
@@ -220,6 +238,18 @@ describe("canonical settlement receipt", () => {
     expect(() =>
       assertSettlementReceipt({
         ...chainReceipt(),
+        inputAmountBaseUnits: 100_000_001 as unknown as bigint,
+      }),
+    ).toThrow(/positive u256/i);
+    expect(() =>
+      assertSettlementReceipt({
+        ...chainReceipt(),
+        reservationFence: 9 as unknown as bigint,
+      }),
+    ).toThrow(/positive u256/i);
+    expect(() =>
+      assertSettlementReceipt({
+        ...chainReceipt(),
         escrowAddress: "0x0",
       }),
     ).toThrow(/must not be zero/i);
@@ -236,7 +266,13 @@ describe("canonical settlement receipt", () => {
         {
           stage: "timeout",
           transactionHash: "0xf004",
-          event: { blockHash: "0xb22", eventSelector: "0xe4", blockNumber: 22, transactionIndex: 0, eventIndex: 1 },
+          event: {
+            blockHash: "0xb22",
+            eventSelector: "0xe4",
+            blockNumber: 22,
+            transactionIndex: 0,
+            eventIndex: 1,
+          },
           finality: "confirmed",
         },
       ],

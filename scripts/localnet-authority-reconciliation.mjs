@@ -5,6 +5,15 @@ function requiredFunction(value, label) {
   return value;
 }
 
+function requestForIntent(coordinator, intentDigest) {
+  if (typeof coordinator.getRequest === "function") {
+    return coordinator.getRequest(intentDigest);
+  }
+  return coordinator
+    .listRequests()
+    .find((candidate) => candidate.intentDigest === intentDigest);
+}
+
 function exactTerminalAcknowledgement(value, query, expectedTerminal) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Maker terminal acknowledgement is not an exact snapshot.");
@@ -243,9 +252,7 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
 
   const reconcileProjectionUnlocked = async (projection) => {
     const query = chainAuthority.exactQueryForProjection(projection);
-    const requestRecord = coordinator
-      .listRequests()
-      .find((candidate) => candidate.intentDigest === query.intentDigest);
+    const requestRecord = requestForIntent(coordinator, query.intentDigest);
     if (!requestRecord)
       throw new Error(
         "Authority reconciliation has no exact coordinator request.",

@@ -173,11 +173,37 @@ describe("solver quoting", () => {
     const signature = await signCanonicalQuote(canonical, keys.privateKey);
     expect(isCanonicalQuoteSignature(signature)).toBe(true);
     const raw = signature.slice(2);
-    const order = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    const order =
+      0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
     const highS = order - BigInt(`0x${raw.slice(64)}`);
     const twin = `0x${raw.slice(0, 64)}${highS.toString(16).padStart(64, "0")}`;
     expect(isCanonicalQuoteSignature(twin)).toBe(false);
-    await expect(verifyCanonicalQuote(canonical, twin, keys.publicKey)).resolves.toBe(false);
+    await expect(
+      verifyCanonicalQuote(canonical, twin, keys.publicKey),
+    ).resolves.toBe(false);
+  });
+
+  it("refuses to emit a quote whose signer returned a high-S signature", async () => {
+    const keys = await testKeys();
+    const order =
+      0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+    await expect(
+      quotePrivateSwapIntent(
+        intent(),
+        fixturePricing(1_000n * 10n ** 18n),
+        quoteOptions(keys.privateKey, {
+          sign: async (canonical) => {
+            const signature = await signCanonicalQuote(
+              canonical,
+              keys.privateKey,
+            );
+            const raw = signature.slice(2);
+            const highS = order - BigInt(`0x${raw.slice(64)}`);
+            return `0x${raw.slice(0, 64)}${highS.toString(16).padStart(64, "0")}`;
+          },
+        }),
+      ),
+    ).rejects.toThrow(/unusable signature/i);
   });
 
   it("declines when the spread pushes the fill under the floor", async () => {
@@ -544,5 +570,47 @@ describe("restock netting", () => {
     expect(plan.deferred).toEqual([
       { token: canonicalizeStarknetFelt(STRK), amount: 40n },
     ]);
+  });
+
+  it("rejects non-positive, oversized, or same-token fill amounts", () => {
+    const options = { denomination: 50n, minBatch: 50n };
+    expect(() =>
+      planRestock(
+        [{ sellToken: USDC, sellAmount: 0n, buyToken: STRK, buyAmount: 40n }],
+        options,
+      ),
+    ).toThrow(/positive u256/i);
+    expect(() =>
+      planRestock(
+        [
+          {
+            sellToken: USDC,
+            sellAmount: -1n,
+            buyToken: STRK,
+            buyAmount: 40n,
+          },
+        ],
+        options,
+      ),
+    ).toThrow(/positive u256/i);
+    expect(() =>
+      planRestock(
+        [
+          {
+            sellToken: USDC,
+            sellAmount: 1n << 256n,
+            buyToken: STRK,
+            buyAmount: 40n,
+          },
+        ],
+        options,
+      ),
+    ).toThrow(/positive u256/i);
+    expect(() =>
+      planRestock(
+        [{ sellToken: USDC, sellAmount: 10n, buyToken: USDC, buyAmount: 40n }],
+        options,
+      ),
+    ).toThrow(/must differ/i);
   });
 });

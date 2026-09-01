@@ -134,15 +134,89 @@ function ledgerParse<T>(value: string): T {
 }
 
 function ledgerWire(value: unknown): LedgerJsonValue {
-  return JSON.parse(ledgerStringify(value)) as LedgerJsonValue;
+  try {
+    return JSON.parse(ledgerStringify(value)) as LedgerJsonValue;
+  } catch {
+    throw new MakerNodeError("Reservation ledger value cannot be encoded.");
+  }
 }
 
 const HEX_32 = /^0x[0-9a-f]{64}$/;
+const MAX_LEDGER_TEXT_LENGTH = 8192;
+const MAX_LEDGER_RESPONSE_BYTES = 1_048_576;
 
 function requireText(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim())
     throw new MakerNodeError(`${label} is required.`);
-  return value.trim();
+  const normalized = value.trim();
+  if (normalized.length > MAX_LEDGER_TEXT_LENGTH) {
+    throw new MakerNodeError(`${label} exceeds the bounded length.`);
+  }
+  return normalized;
+}
+
+function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function cancelLedgerBody(
+  body: ReadableStream<Uint8Array> | null,
+): Promise<void> {
+  try {
+    await body?.cancel();
+  } catch {
+    // The body may already be cancelled or locked.
+  }
+}
+
+async function readBoundedLedgerBody(response: Response): Promise<string> {
+  const declared = response.headers.get("content-length");
+  if (declared !== null && declared !== "") {
+    const size = Number(declared);
+    if (
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      size > MAX_LEDGER_RESPONSE_BYTES
+    ) {
+      await cancelLedgerBody(response.body);
+      throw new MakerNodeError(
+        "Durable reservation ledger response exceeds the bounded size.",
+      );
+    }
+  }
+  const body = response.body;
+  if (!body) return "";
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > MAX_LEDGER_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new MakerNodeError(
+          "Durable reservation ledger response exceeds the bounded size.",
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // Already released after cancel or completion.
+    }
+  }
+  return new TextDecoder().decode(concatBytes(chunks, total));
 }
 
 function requireTimestamp(value: unknown, label: string): number {
@@ -187,7 +261,7 @@ async function requireLedgerResponse<T>(
   response: Response,
   operation: string,
 ): Promise<T> {
-  const body = await response.text();
+  const body = await readBoundedLedgerBody(response);
   if (!response.ok) {
     let detail = "";
     try {

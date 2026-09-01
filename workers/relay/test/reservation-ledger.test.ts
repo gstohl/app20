@@ -566,6 +566,119 @@ test("a storage write failure mid-attempt does not claim the reservation", async
   assert.equal(sql.attempts.get(ATTEMPT_ID)?.status, "pending");
 });
 
+test("a real SQLite platform write failure is retryable rather than a conflict", async () => {
+  const { target, sql } = durableObject();
+  class SqliteError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "SqliteError";
+    }
+  }
+  sql.failNextWriteWith(new SqliteError("SQLITE_IOERR: disk I/O error"));
+  const failed = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(failed.status, 503);
+  assert.match(await failed.text(), /storage write failed/i);
+  assert.equal(failed.headers.get("cache-control"), "no-store");
+  assert.equal(sql.metadata.revision, 0);
+  assert.equal(sql.records.size, 0);
+
+  const retry = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(retry.status, 200, await retry.text());
+  assert.equal(sql.metadata.revision, 1);
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "reserved");
+});
+
+test("a wrapped Durable Object storage failure does not claim an attempt", async () => {
+  const { target, sql } = durableObject();
+  await createAndSelect(target);
+  sql.failNextWriteWith(
+    new Error("platform storage operation failed", {
+      cause: new Error("SQLITE_BUSY"),
+    }),
+  );
+  const failed = await post(target, "/attempt/begin", attempt);
+  assert.equal(failed.status, 503);
+  assert.match(await failed.text(), /storage write failed/i);
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "selected");
+  assert.equal(sql.attempts.size, 0);
+  assert.equal(sql.metadata.revision, 2);
+
+  const retry = await post(target, "/attempt/begin", attempt);
+  assert.equal(retry.status, 201, await retry.text());
+  assert.equal(sql.records.get(RESERVATION_ID)?.state, "filling");
+});
+
+test("snapshot fails closed on malformed persisted reservation JSON", async () => {
+  const { target, sql } = durableObject();
+  await createAndSelect(target);
+  sql.records.set(RESERVATION_ID, {
+    reservation_id: RESERVATION_ID,
+    record_json: "{not-json",
+    fence: "2",
+    state: "selected",
+  });
+  const response = await target.fetch(
+    new Request("https://reservation-ledger.invalid/snapshot"),
+  );
+  assert.equal(response.status, 400);
+  assert.match(await response.text(), /JSON|invalid|rejected/i);
+});
+
+test("commit growth and fence boundaries reject without writing", async () => {
+  const { target, sql } = durableObject();
+  const tooMany = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: Array.from({ length: 101 }, () => ({
+      record: {},
+      expectedFence: null,
+    })),
+  });
+  assert.equal(tooMany.status, 400);
+  assert.equal(sql.records.size, 0);
+  assert.equal(sql.metadata.revision, 0);
+
+  const zeroFence = await post(target, "/commit", {
+    expectedRevision: 0,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: "0",
+      },
+    ],
+  });
+  assert.equal(zeroFence.status, 409);
+  assert.match(await zeroFence.text(), /positive bigint/i);
+  assert.equal(sql.records.size, 0);
+
+  const staleRevision = await post(target, "/commit", {
+    expectedRevision: -1,
+    mutations: [
+      {
+        record: stored(newReservation(RESERVATION_ID, 1n)),
+        expectedFence: null,
+      },
+    ],
+  });
+  assert.equal(staleRevision.status, 400);
+  assert.equal(sql.metadata.revision, 0);
+});
+
 test("a storage write failure mid-completion leaves the attempt pending and does not consume", async () => {
   const { target, sql } = durableObject();
   await createAndSelect(target);

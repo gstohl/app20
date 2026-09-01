@@ -10,6 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 
 const DOMAIN = "app20/localnet-reservation-coordinator/v3";
@@ -102,6 +103,25 @@ function validateSettlementTerms(value) {
   });
 }
 
+function sameTicketSettlementTerms(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.sellToken === right.sellToken &&
+      left.sellAmount === right.sellAmount &&
+      left.buyToken === right.buyToken &&
+      left.buyAmount === right.buyAmount &&
+      left.deadline === right.deadline,
+  );
+}
+
+function sameSettlementTerms(left, right) {
+  return Boolean(
+    sameTicketSettlementTerms(left, right) &&
+      left.ticketAddress === right.ticketAddress,
+  );
+}
+
 function validateTicketAuthorization(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Coordinator funding-ticket authorization is invalid.");
@@ -111,6 +131,17 @@ function validateTicketAuthorization(value) {
     ticketAddress: requireFelt(value.ticketAddress, "ticketAddress"),
     settlementTerms: validateSettlementTerms(value.settlementTerms),
   });
+}
+
+function sameTicketAuthorization(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.ticketAttemptId === right.ticketAttemptId &&
+      left.dealId === right.dealId &&
+      left.ticketAddress === right.ticketAddress &&
+      sameSettlementTerms(left.settlementTerms, right.settlementTerms),
+  );
 }
 
 function requireMakerPlan(value) {
@@ -133,6 +164,17 @@ function normalizeMakerPlans(value = []) {
     throw new Error("Coordinator maker plans contain a duplicate maker.");
   return Object.freeze(
     plans.sort((a, b) => a.makerId.localeCompare(b.makerId)),
+  );
+}
+
+function sameMakerPlans(left, right) {
+  return (
+    left.length === right.length &&
+    left.every(
+      (plan, index) =>
+        plan.makerId === right[index].makerId &&
+        plan.state === right[index].state,
+    )
   );
 }
 
@@ -265,7 +307,10 @@ function validateRequest(value) {
             value.authorityRevision,
             "authorityRevision",
           ),
-          authorityReason: requireText(value.authorityReason, "authorityReason"),
+          authorityReason: requireText(
+            value.authorityReason,
+            "authorityReason",
+          ),
         }),
     ...(value.settlementTerms === undefined
       ? {}
@@ -336,11 +381,10 @@ function validateRequest(value) {
       (request.ticketDealId !== undefined &&
         request.ticketAuthorization.dealId !== request.ticketDealId) ||
       (request.ticketSettlementTerms !== undefined &&
-        JSON.stringify(request.ticketAuthorization.settlementTerms) !==
-          JSON.stringify({
-            ...request.ticketSettlementTerms,
-            ticketAddress: request.ticketAuthorization.ticketAddress,
-          })))
+        !sameSettlementTerms(request.ticketAuthorization.settlementTerms, {
+          ...request.ticketSettlementTerms,
+          ticketAddress: request.ticketAuthorization.ticketAddress,
+        })))
   )
     throw new Error(
       "Coordinator ticket authorization contradicts its request identity or settlement terms.",
@@ -393,7 +437,23 @@ function sameRequest(left, right) {
     left.createdAt === right.createdAt &&
     left.expiresAt === right.expiresAt &&
     left.market === right.market &&
-    JSON.stringify(left.makerPlans) === JSON.stringify(right.makerPlans)
+    sameMakerPlans(left.makerPlans, right.makerPlans)
+  );
+}
+
+function sameDeal(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.intentDigest === right.intentDigest &&
+      left.rfqId === right.rfqId &&
+      left.account === right.account &&
+      left.chainId === right.chainId &&
+      left.dealId === right.dealId &&
+      left.reservationId === right.reservationId &&
+      left.makerId === right.makerId &&
+      left.fence === right.fence &&
+      left.quoteDigest === right.quoteDigest,
   );
 }
 
@@ -587,16 +647,20 @@ export class LocalnetReservationCoordinator {
     if (serialized === undefined) {
       if (existsSync(this.#path)) unlinkSync(this.#path);
     } else {
-      const rollback = `${this.#path}.${process.pid}.rollback.tmp`;
-      writeFileSync(rollback, serialized, { mode: 0o600 });
-      const file = openSync(rollback, "r");
+      const rollback = `${this.#path}.${process.pid}.${randomBytes(8).toString("hex")}.rollback.tmp`;
       try {
-        fsyncSync(file);
+        writeFileSync(rollback, serialized, { mode: 0o600, flag: "wx" });
+        const file = openSync(rollback, "r");
+        try {
+          fsyncSync(file);
+        } finally {
+          closeSync(file);
+        }
+        renameSync(rollback, this.#path);
+        chmodSync(this.#path, 0o600);
       } finally {
-        closeSync(file);
+        if (existsSync(rollback)) unlinkSync(rollback);
       }
-      renameSync(rollback, this.#path);
-      chmodSync(this.#path, 0o600);
     }
     const directory = openSync(directoryPath, "r");
     try {
@@ -615,13 +679,13 @@ export class LocalnetReservationCoordinator {
     let renamed = false;
     try {
       directoryPath = dirname(this.#path);
-      temporary = `${this.#path}.${process.pid}.tmp`;
+      temporary = `${this.#path}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
       this.#checkpoint("serialize");
       candidate = this.#serializedAuthority();
       this.#checkpoint("mkdir");
       mkdirSync(directoryPath, { recursive: true, mode: 0o700 });
       this.#checkpoint("write");
-      writeFileSync(temporary, candidate, { mode: 0o600 });
+      writeFileSync(temporary, candidate, { mode: 0o600, flag: "wx" });
       const file = openSync(temporary, "r");
       try {
         this.#checkpoint("file-fsync");
@@ -931,15 +995,25 @@ export class LocalnetReservationCoordinator {
   quarantineAuthority(input) {
     return this.#serialize(() => {
       const { request } = this.#exactRequest(input, "Authority quarantine");
-      const revision = requireTimestamp(input.authorityRevision, "authorityRevision");
+      const revision = requireTimestamp(
+        input.authorityRevision,
+        "authorityRevision",
+      );
       const reason = requireText(input.authorityReason, "authorityReason");
       if (request.state === "authority-quarantined") {
-        if (request.authorityRevision === revision && request.authorityReason === reason)
+        if (
+          request.authorityRevision === revision &&
+          request.authorityReason === reason
+        )
           return request;
         if (revision <= request.authorityRevision)
           throw new Error("Authority quarantine revision must increase.");
-      } else if (!["filled", "settled", "expired", "refunded"].includes(request.state)) {
-        throw new Error("Only an observed terminal request can enter authority quarantine.");
+      } else if (
+        !["filled", "settled", "expired", "refunded"].includes(request.state)
+      ) {
+        throw new Error(
+          "Only an observed terminal request can enter authority quarantine.",
+        );
       }
       const next = validateRequest({
         ...request,
@@ -995,8 +1069,10 @@ export class LocalnetReservationCoordinator {
         if (
           request.ticketAttemptId !== attemptId ||
           request.ticketDealId !== target.dealId ||
-          JSON.stringify(request.ticketSettlementTerms) !==
-            JSON.stringify(ticketSettlementTerms)
+          !sameTicketSettlementTerms(
+            request.ticketSettlementTerms,
+            ticketSettlementTerms,
+          )
         )
           throw new Error(
             "Another exact browser funding attempt or settlement target owns the ticket lease.",
@@ -1046,8 +1122,10 @@ export class LocalnetReservationCoordinator {
       const { ticketAddress: _ticketAddress, ...ticketSettlementTerms } =
         settlementTerms;
       if (
-        JSON.stringify(request.ticketSettlementTerms) !==
-        JSON.stringify(ticketSettlementTerms)
+        !sameTicketSettlementTerms(
+          request.ticketSettlementTerms,
+          ticketSettlementTerms,
+        )
       )
         throw new Error(
           "Funding ticket persistence changed its exact pre-side-effect settlement terms.",
@@ -1060,8 +1138,10 @@ export class LocalnetReservationCoordinator {
       });
       if (request.ticketAuthorization) {
         if (
-          JSON.stringify(request.ticketAuthorization) !==
-          JSON.stringify(ticketAuthorization)
+          !sameTicketAuthorization(
+            request.ticketAuthorization,
+            ticketAuthorization,
+          )
         )
           throw new Error(
             "Funding ticket replay changed its exact address or settlement terms.",
@@ -1119,8 +1199,10 @@ export class LocalnetReservationCoordinator {
         );
       if (
         request.ticketAuthorization.dealId !== target.dealId ||
-        JSON.stringify(request.ticketAuthorization.settlementTerms) !==
-          JSON.stringify(settlementTerms)
+        !sameSettlementTerms(
+          request.ticketAuthorization.settlementTerms,
+          settlementTerms,
+        )
       )
         throw new Error(
           "Funding preparation changed the ticket-authorized canonical settlement terms or address.",
@@ -1130,10 +1212,7 @@ export class LocalnetReservationCoordinator {
           throw new Error(
             "Another exact funding attempt already owns the request lease.",
           );
-        if (
-          JSON.stringify(request.settlementTerms) !==
-          JSON.stringify(settlementTerms)
-        )
+        if (!sameSettlementTerms(request.settlementTerms, settlementTerms))
           throw new Error(
             "Funding replay changed the canonical settlement terms.",
           );
@@ -1195,12 +1274,15 @@ export class LocalnetReservationCoordinator {
           request.ticketAuthorization.dealId !== target.dealId ||
           request.ticketAuthorization.ticketAddress !==
             settlementTerms.ticketAddress ||
-          JSON.stringify(request.ticketSettlementTerms) !==
-            JSON.stringify(validateTicketSettlementTerms(settlementTerms)) ||
-          JSON.stringify(request.ticketAuthorization.settlementTerms) !==
-            JSON.stringify(settlementTerms) ||
-          JSON.stringify(request.settlementTerms) !==
-            JSON.stringify(settlementTerms)
+          !sameTicketSettlementTerms(
+            request.ticketSettlementTerms,
+            settlementTerms,
+          ) ||
+          !sameSettlementTerms(
+            request.ticketAuthorization.settlementTerms,
+            settlementTerms,
+          ) ||
+          !sameSettlementTerms(request.settlementTerms, settlementTerms)
         )
           throw new Error(
             "Funding abandonment is funding-closed by a different exact durable ticket attempt, deal, address, or canonical settlement terms.",
@@ -1228,8 +1310,7 @@ export class LocalnetReservationCoordinator {
           );
         if (
           request.settlementTerms &&
-          JSON.stringify(request.settlementTerms) !==
-            JSON.stringify(settlementTerms)
+          !sameSettlementTerms(request.settlementTerms, settlementTerms)
         )
           throw new Error(
             "Funding abandonment replay changed canonical settlement terms.",
@@ -1254,10 +1335,7 @@ export class LocalnetReservationCoordinator {
             throw new Error(
               "This selected quote is funding-closed by a different exact abandoned attempt.",
             );
-          if (
-            JSON.stringify(request.settlementTerms) !==
-            JSON.stringify(settlementTerms)
-          )
+          if (!sameSettlementTerms(request.settlementTerms, settlementTerms))
             throw new Error(
               "Funding abandonment replay changed canonical settlement terms.",
             );
@@ -1279,10 +1357,7 @@ export class LocalnetReservationCoordinator {
         throw new Error(
           "Only an exact selected pre-wallet attempt or its matching pre-submission funding lease may be abandoned.",
         );
-      if (
-        JSON.stringify(request.settlementTerms) !==
-        JSON.stringify(settlementTerms)
-      )
+      if (!sameSettlementTerms(request.settlementTerms, settlementTerms))
         throw new Error(
           "Funding abandonment changed canonical settlement terms.",
         );
@@ -1322,7 +1397,7 @@ export class LocalnetReservationCoordinator {
         );
       const deal = validateDeal(target);
       const prior = this.#deals.get(target.dealId);
-      if (prior && JSON.stringify(prior) !== JSON.stringify(deal))
+      if (prior && !sameDeal(prior, deal))
         throw new Error(
           "Deal identity is already bound to another request or reservation.",
         );
@@ -1343,7 +1418,7 @@ export class LocalnetReservationCoordinator {
         );
       const deal = validateDeal(target);
       const prior = this.#deals.get(target.dealId);
-      if (prior && JSON.stringify(prior) !== JSON.stringify(deal))
+      if (prior && !sameDeal(prior, deal))
         throw new Error(
           "Deal identity is already bound to another request or reservation.",
         );
@@ -1434,7 +1509,7 @@ export class LocalnetReservationCoordinator {
         ...request.selection,
       });
       const prior = this.#deals.get(deal.dealId);
-      if (prior && JSON.stringify(prior) !== JSON.stringify(deal))
+      if (prior && !sameDeal(prior, deal))
         throw new Error(
           "Observed deal conflicts with the durable exact selection.",
         );
@@ -1625,8 +1700,7 @@ export class LocalnetReservationCoordinator {
       const { request, target } = this.#exactRequest(input, "Selected release");
       const deal = this.#deals.get(target.dealId);
       if (
-        !deal ||
-        JSON.stringify(deal) !== JSON.stringify(validateDeal(target)) ||
+        !sameDeal(deal, validateDeal(target)) ||
         !["funded", "expired"].includes(request.state)
       )
         throw new Error(
@@ -1663,10 +1737,7 @@ export class LocalnetReservationCoordinator {
         throw new Error("Coordinator terminal outcome is invalid.");
       const { request, target } = this.#exactRequest(input, "Terminal outcome");
       const deal = this.#deals.get(target.dealId);
-      if (
-        !deal ||
-        JSON.stringify(deal) !== JSON.stringify(validateDeal(target))
-      )
+      if (!sameDeal(deal, validateDeal(target)))
         throw new Error(
           "Terminal target does not match the durable deal association.",
         );
@@ -1737,6 +1808,29 @@ export class LocalnetReservationCoordinator {
     });
   }
 
+  getRequest(intentDigest) {
+    const request = this.#requests.get(
+      requireHex32(intentDigest, "intentDigest"),
+    );
+    return request ? clone(request) : undefined;
+  }
+  getRequestForRfq(rfqId) {
+    const intentDigest = this.#rfqs.get(requireFelt(rfqId, "rfqId"));
+    if (!intentDigest) return undefined;
+    const request = this.#requests.get(intentDigest);
+    return request ? clone(request) : undefined;
+  }
+  getDeal(dealId) {
+    const deal = this.#deals.get(requireFelt(dealId, "dealId"));
+    return deal ? clone(deal) : undefined;
+  }
+  hasDealForIntent(intentDigest) {
+    const digest = requireHex32(intentDigest, "intentDigest");
+    for (const deal of this.#deals.values()) {
+      if (deal.intentDigest === digest) return true;
+    }
+    return false;
+  }
   list() {
     return Object.freeze([...this.#records.values()].map(clone));
   }

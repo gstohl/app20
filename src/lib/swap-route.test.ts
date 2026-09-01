@@ -4,6 +4,7 @@ import {
   marketProposalPath,
   normalizeSwapToken,
   poolCreationPath,
+  resolveSwapRouteForSession,
   resolveSwapRoutePair,
   swapRoutePath,
 } from "./swap-route";
@@ -42,5 +43,24 @@ describe("swap routes", () => {
       "/rfq/markets/eth/usdc/proposal",
     );
     expect(swapRoutePath("bad/path", "usdc")).toBe(DEFAULT_SWAP_ROUTE);
+  });
+
+  it("does not review a pair when the wallet chain and selected provider disagree", () => {
+    expect(
+      resolveSwapRouteForSession(
+        {
+          selectedNetwork: "mainnet",
+          sessionNetwork: "sepolia",
+          connected: true,
+          compatible: false,
+          reason: "Ready account and selected network do not match.",
+        },
+        "strk",
+        "usdc",
+      ),
+    ).toEqual({
+      kind: "invalid",
+      message: "Ready account and selected network do not match.",
+    });
   });
 });
