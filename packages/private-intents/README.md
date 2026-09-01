@@ -67,6 +67,34 @@ infrastructure:
 Directory signatures authenticate canonical epochs. RFQ/receipt/reservation
 digests only bind supplied bytes and never authorize value or prove chain truth.
 
+## RFQ v3
+
+The additive localnet-only RFQ v3 protocol keeps the exact size and floor in the
+browser while binding signed maker schedules to pre-funded escrow locks:
+
+- `size-buckets.ts` defines the fixed STRK/USDC ladder, exact boundary rules,
+  maker-side ladder validation, and compact UI labels.
+- `rfq-v2.ts` canonicalizes bucket-only requests, creates high-entropy taker
+  secrets, derives Cairo-compatible Poseidon commitments, and provides a closed
+  decimal-string wire codec.
+- `schedule.ts` validates one-to-four-point u128 schedules, evaluates them with
+  Cairo-identical floor arithmetic, inverts them, and reports E18 unit prices.
+- `quote-v3.ts` signs canonical lock references and verifies the RFQ, active
+  P-256 key, and caller-supplied `get_lock` state before a quote is eligible.
+- `selection-v3.ts` deterministically chooses one covering lock or greedily
+  assembles up to four fills, then applies the browser-only floor.
+- `transcript.ts` creates digest-bound fair-loss transcripts for every invited
+  maker and verifies each maker's own outcome without disclosing the exact size
+  as a separate transcript field.
+- `mids.ts` validates signed STRK/USDC indicative mids and aggregates their
+  median and full-range dispersion.
+
+The existing HPKE envelope remains intentionally typed to canonical RFQ v1
+plaintext in both its opener and authenticated acceptance path. Generalizing
+that path is not a thin sealing-only change, so this package does not
+misrepresent RFQ v2 as accepted by the reviewed v1 envelope. Production and
+public-network RFQ settlement remain immutable-off.
+
 ## Operations policy
 
 `operations.ts` adds production-shaped but non-custodial controls:

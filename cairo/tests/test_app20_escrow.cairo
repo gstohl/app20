@@ -26,10 +26,15 @@ fn ticket_class_hash() -> ClassHash {
     *declare("ClaimTicket").unwrap().contract_class().class_hash
 }
 
+fn lock_ticket_class_hash() -> ClassHash {
+    *declare("LockTicket").unwrap().contract_class().class_hash
+}
+
 fn deploy_escrow(pool: ContractAddress) -> (ContractAddress, IApp20EscrowDispatcher) {
     let contract = declare("App20Escrow").unwrap().contract_class();
     let mut calldata = array![pool.into()];
     ticket_class_hash().serialize(ref calldata);
+    lock_ticket_class_hash().serialize(ref calldata);
     let (contract_address, _) = contract.deploy(@calldata).unwrap();
     (contract_address, IApp20EscrowDispatcher { contract_address })
 }

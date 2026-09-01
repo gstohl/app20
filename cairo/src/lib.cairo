@@ -141,5 +141,6 @@ pub mod App20Mail {
 }
 pub mod claim_ticket;
 pub mod escrow;
+pub mod lock_ticket;
 
 pub mod mock_erc20;
