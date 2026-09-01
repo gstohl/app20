@@ -166,6 +166,119 @@ test("agreement promotes exact finalized observation and restart restores monoto
   }
 });
 
+test("v3 authority promotes only one exact DealTaken and one LockTaken per expected fill", async () => {
+  const tmp = temporary();
+  const v3 = Object.freeze({
+    lifecycle: "v3",
+    runtimeEpoch: epoch,
+    chainId: artifact.chainId,
+    account: "0xaaa",
+    rfqId: "0xddd",
+    dealId: "0xddd",
+    intentDigest: `0x${"5".repeat(64)}`,
+    rfqDigest: `0x${"6".repeat(64)}`,
+    commitmentDigest: `0x${"7".repeat(64)}`,
+    expected: Object.freeze({
+      tokenA: "0x11",
+      totalA: "100",
+      tokenB: "0x22",
+      totalB: "200",
+      fills: Object.freeze([
+        Object.freeze({ lockId: "0xa", amountA: "40", amountB: "80" }),
+        Object.freeze({ lockId: "0xb", amountA: "60", amountB: "120" }),
+      ]),
+    }),
+    transactions: Object.freeze({ take: "0x201" }),
+  });
+  const v3Observation = () => ({
+    runtimeEpoch: epoch,
+    chainId: artifact.chainId,
+    artifact,
+    observedAt: 1_700_000_000,
+    head: { number: 20, hash: "0x999" },
+    finalizedHead: 20,
+    lifecycle: [
+      {
+        stage: "take",
+        transactionHash: "0x201",
+        blockNumber: 10,
+        blockHash: "0xa",
+        transactionIndex: 0,
+        eventIndex: 2,
+        event: {
+          fromAddress: artifact.escrowAddress,
+          keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xddd"],
+          data: ["0x11", "0x64", "0x22", "0xc8", "0x2"],
+        },
+        fillEvents: [
+          {
+            eventIndex: 0,
+            event: {
+              fromAddress: artifact.escrowAddress,
+              keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xa", "0xddd"],
+              data: ["0x28", "0x50", "0x0"],
+            },
+          },
+          {
+            eventIndex: 1,
+            event: {
+              fromAddress: artifact.escrowAddress,
+              keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xb", "0xddd"],
+              data: ["0x3c", "0x78", "0x0"],
+            },
+          },
+        ],
+        block: { number: 10, hash: "0xa", transactions: ["0x201"] },
+      },
+    ],
+  });
+  try {
+    const authority = createLocalnetChainAuthority({
+      path: tmp.path,
+      artifact,
+      readers: [0, 1].map((index) => ({
+        id: `v3-reader-${index}`,
+        independence: "same-devnet-fixture",
+        observe: async () => v3Observation(),
+      })),
+      now: () => 1_700_000_000,
+      finalityDepth: 2,
+    });
+    const projection = await authority.verify({ query: v3, market: "strk-usdc" });
+    assert.equal(projection.status, "authoritative");
+    assert.deepEqual(
+      authority.reconciliationEvidence(v3).canonicalLifecycle[0].fillEvents.map(
+        ({ lockId }) => lockId,
+      ),
+      ["0xa", "0xb"],
+    );
+    const journal = JSON.parse(readFileSync(tmp.path, "utf8"));
+    assert.equal(journal.rows[0].query.lifecycle, "v3");
+
+    const invalid = createLocalnetChainAuthority({
+      path: join(tmp.directory, "invalid-v3.json"),
+      artifact,
+      readers: [0, 1].map((index) => ({
+        id: `invalid-v3-reader-${index}`,
+        independence: "same-devnet-fixture",
+        observe: async () => {
+          const value = v3Observation();
+          value.lifecycle[0].fillEvents[1].event.data[1] = "0x79";
+          return value;
+        },
+      })),
+      now: () => 1_700_000_000,
+      finalityDepth: 2,
+    });
+    assert.equal(
+      (await invalid.verify({ query: v3, market: "strk-usdc" })).status,
+      "disagreement",
+    );
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("outage, disagreement, stale head, and insufficient finality never promote", async () => {
   for (const value of ["outage", "disagree", "stale", "unfinalized"]) {
     const tmp = temporary();

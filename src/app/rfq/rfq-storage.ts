@@ -3,9 +3,11 @@ import { localnetRuntimeEpoch } from "@/dev/localnet-runtime-epoch";
 import { LOCALNET_CHAIN_ID } from "@/utils/constants";
 import {
   RFQ_LIFECYCLE_SCHEMA_REVISION,
+  RFQ_LIFECYCLE_V2_SCHEMA_REVISION,
   RFQ_LIFECYCLE_V1_SCHEMA_REVISION,
   HISTORICAL_APP20_LOCALNET_CHAIN_ID,
   assertRfqLifecycleAttemptTargets,
+  assertRfqV3LifecycleBindings,
   canonicalLocalRfqId,
   canonicalRfqAccount,
   canonicalRfqChainId,
@@ -33,7 +35,7 @@ export interface RfqStorageTombstone {
 type RfqStoredRow = RfqLifecycleRecord | RfqStorageTombstone;
 
 export const RFQ_STORAGE_DISCLOSURE =
-  "Exact RFQ terms, the selected signed quote metadata, public settlement identifiers, and attempt status are stored in this browser's IndexedDB. Viewing keys, notes, witnesses, proofs, and raw balances are never stored in RFQ records." as const;
+  "Exact RFQ terms, selected quote or lock metadata, public settlement identifiers, attempt status, and the active v3 taker secret are stored in this browser's IndexedDB. The taker secret is removed after Take and from restored backup records. Viewing keys, notes, witnesses, proofs, and raw balances are never stored in RFQ records." as const;
 
 function canonicalStorageRfqId(chainId: string, rfqId: string): string {
   return isLocalRfqChain(chainId) ? canonicalLocalRfqId(rfqId) : rfqId;
@@ -62,6 +64,19 @@ function storagePrefix(
 }
 
 function legacyStorageKey(
+  input: Pick<RfqLifecycleRecord, "chainId" | "account" | "rfqId">,
+  runtimeEpoch?: string,
+): string {
+  return [
+    RFQ_LIFECYCLE_V2_SCHEMA_REVISION,
+    ...(runtimeEpoch ? [runtimeEpoch] : []),
+    canonicalRfqChainId(input.chainId),
+    canonicalRfqAccount(input.account),
+    canonicalStorageRfqId(input.chainId, input.rfqId),
+  ].join("|");
+}
+
+function v1StorageKey(
   input: Pick<RfqLifecycleRecord, "chainId" | "account" | "rfqId">,
   runtimeEpoch?: string,
 ): string {
@@ -330,6 +345,46 @@ export function assertRfqStorageReplacement(
     replacement.transactionHash,
     "funding transaction hash",
   );
+  if (prior.attempts.take?.state !== "reverted") {
+    assertPreserved(
+      prior.takeTransactionHash,
+      replacement.takeTransactionHash,
+      "Take transaction hash",
+    );
+  }
+  if (prior.mode !== replacement.mode)
+    throw new Error("RFQ storage rejected replacement of lifecycle mode.");
+  if (prior.mode === "v3") {
+    if (
+      prior.restoredFromBackup &&
+      (replacement.restoredFromBackup !== true ||
+        replacement.takerSecret !== undefined)
+    ) {
+      throw new Error(
+        "RFQ storage cannot make a backup-restored record executable.",
+      );
+    }
+    assertPreserved(prior.bucket, replacement.bucket, "v3 size bucket");
+    assertPreserved(
+      prior.takerCommitment,
+      replacement.takerCommitment,
+      "v3 taker commitment",
+    );
+    assertPreserved(prior.fills, replacement.fills, "v3 exact fills");
+    assertPreserved(
+      prior.transcriptAcknowledgements,
+      replacement.transcriptAcknowledgements,
+      "v3 transcript acknowledgements",
+    );
+    if (
+      prior.takerSecret !== undefined &&
+      prior.takerSecret !== replacement.takerSecret &&
+      replacement.state !== "settled" &&
+      replacement.restoredFromBackup !== true
+    ) {
+      throw new Error("RFQ storage rejected replacement of the v3 taker secret.");
+    }
+  }
 
   if (prior.latestObservation) {
     const next = replacement.latestObservation;
@@ -362,6 +417,7 @@ export function assertRfqStorageReplacement(
     "claim",
     "refund",
     "reservation-release",
+    "take",
   ] as const) {
     const attempt = prior.attempts?.[phase];
     if (!attempt) continue;
@@ -462,6 +518,7 @@ type ParsedPhysicalKey = Readonly<{
   key: string;
   schema:
     | typeof RFQ_LIFECYCLE_SCHEMA_REVISION
+    | typeof RFQ_LIFECYCLE_V2_SCHEMA_REVISION
     | typeof RFQ_LIFECYCLE_V1_SCHEMA_REVISION;
   chainId: string;
   account: string;
@@ -477,6 +534,7 @@ function parsePhysicalKey(
   const schema = parts.shift();
   if (
     schema !== RFQ_LIFECYCLE_SCHEMA_REVISION &&
+    schema !== RFQ_LIFECYCLE_V2_SCHEMA_REVISION &&
     schema !== RFQ_LIFECYCLE_V1_SCHEMA_REVISION
   )
     return undefined;
@@ -775,7 +833,7 @@ export function planRfqAliasMigration(
   const putEntries: Array<readonly [string, unknown]> = [];
   for (const [rfqId, candidates] of byId) {
     deleteKeys.push(...candidates.map(({ parsed }) => parsed.key));
-    const canonicalV2 = canonicalPhysicalKey(
+    const canonicalCurrent = canonicalPhysicalKey(
       RFQ_LIFECYCLE_SCHEMA_REVISION,
       scope,
       rfqId,
@@ -788,8 +846,8 @@ export function planRfqAliasMigration(
         right.storageRevision > left.storageRevision ? right : left,
       );
       putEntries.push([
-        canonicalV2,
-        Object.freeze({ ...strongest, storageKey: canonicalV2 }),
+        canonicalCurrent,
+        Object.freeze({ ...strongest, storageKey: canonicalCurrent }),
       ]);
       continue;
     }
@@ -801,41 +859,51 @@ export function planRfqAliasMigration(
     }));
     if (canonicalized.some(({ value }) => value === undefined)) {
       putEntries.push([
-        canonicalV2,
+        canonicalCurrent,
         conflictTombstone(
-          canonicalV2,
+          canonicalCurrent,
           canonicalized.map(({ raw }) => raw),
         ),
       ]);
       continue;
     }
-    const v2 = canonicalized
+    const current = canonicalized
       .filter(({ schema }) => schema === RFQ_LIFECYCLE_SCHEMA_REVISION)
       .map(({ value }) => value as RfqLifecycleRecord);
-    let strongestV2: RfqLifecycleRecord | undefined = v2[0];
-    for (const candidate of v2.slice(1)) {
-      strongestV2 = strongerRecord(strongestV2!, candidate);
-      if (!strongestV2) break;
+    let strongestCurrent: RfqLifecycleRecord | undefined = current[0];
+    for (const candidate of current.slice(1)) {
+      strongestCurrent = strongerRecord(strongestCurrent!, candidate);
+      if (!strongestCurrent) break;
     }
+    const v2 = canonicalized.filter(
+      ({ schema }) => schema === RFQ_LIFECYCLE_V2_SCHEMA_REVISION,
+    );
     const v1 = canonicalized.filter(
       ({ schema }) => schema === RFQ_LIFECYCLE_V1_SCHEMA_REVISION,
     );
+    const conflictingV2 =
+      v2.length > 1 && v2.some(({ value }) => !sameJson(value, v2[0]!.value));
     const conflictingV1 =
       v1.length > 1 && v1.some(({ value }) => !sameJson(value, v1[0]!.value));
-    if ((v2.length && !strongestV2) || conflictingV1) {
+    if ((current.length && !strongestCurrent) || conflictingV2 || conflictingV1) {
       putEntries.push([
-        canonicalV2,
+        canonicalCurrent,
         conflictTombstone(
-          canonicalV2,
+          canonicalCurrent,
           canonicalized.map(({ value }) => value),
         ),
       ]);
       continue;
     }
-    if (strongestV2)
+    if (strongestCurrent)
       putEntries.push([
-        canonicalV2,
-        finalizeRfqLifecycleForStorage(strongestV2),
+        canonicalCurrent,
+        finalizeRfqLifecycleForStorage(strongestCurrent),
+      ]);
+    if (v2.length)
+      putEntries.push([
+        canonicalPhysicalKey(RFQ_LIFECYCLE_V2_SCHEMA_REVISION, scope, rfqId),
+        v2[0]!.value,
       ]);
     if (v1.length)
       putEntries.push([
@@ -857,6 +925,7 @@ export function createRfqLifecycleStorage(
       assertSafe(record);
       const canonical = canonicalizeStorageRecord(record);
       assertRfqLifecycleAttemptTargets(canonical);
+      assertRfqV3LifecycleBindings(canonical);
       await migrateAliases(canonical.chainId, canonical.account);
       const key = rfqStorageKey(canonical, runtimeEpoch);
       await backend.compareAndPut(key, canonical);
@@ -868,11 +937,18 @@ export function createRfqLifecycleStorage(
     ): Promise<unknown> {
       await migrateAliases(input.chainId, input.account);
       const row = await backend.get(rfqStorageKey(input, runtimeEpoch));
-      return isRfqStorageTombstone(row) ? undefined : row;
+      if (isRfqStorageTombstone(row)) return undefined;
+      if (row !== undefined) return row;
+      const v2 = await backend.get(legacyStorageKey(input, runtimeEpoch));
+      if (isRfqStorageTombstone(v2)) return undefined;
+      if (v2 !== undefined) return v2;
+      const v1 = await backend.get(v1StorageKey(input, runtimeEpoch));
+      return isRfqStorageTombstone(v1) ? undefined : v1;
     },
     async authorize(record: RfqLifecycleRecord): Promise<RfqLifecycleRecord> {
       const canonical = canonicalizeStorageRecord(record);
       assertRfqLifecycleAttemptTargets(canonical);
+      assertRfqV3LifecycleBindings(canonical);
       await migrateAliases(canonical.chainId, canonical.account);
       const lease = reviseRfqLifecycle(canonical, {
         updatedAt: canonical.updatedAt,
@@ -886,10 +962,18 @@ export function createRfqLifecycleStorage(
     },
     async list(chainId: string, account: string): Promise<unknown[]> {
       await migrateAliases(chainId, account);
-      const [current, legacy] = await Promise.all([
+      const [current, v2, v1] = await Promise.all([
         backend.list(
           storagePrefix(
             RFQ_LIFECYCLE_SCHEMA_REVISION,
+            chainId,
+            account,
+            runtimeEpoch,
+          ),
+        ),
+        backend.list(
+          storagePrefix(
+            RFQ_LIFECYCLE_V2_SCHEMA_REVISION,
             chainId,
             account,
             runtimeEpoch,
@@ -905,46 +989,46 @@ export function createRfqLifecycleStorage(
         ),
       ]);
       const rows: unknown[] = [];
-      const visibleCurrent = current.filter(
-        (value) => !isRfqStorageTombstone(value),
-      );
-      const currentIds = new Set(
-        current.flatMap((value) => {
-          if (isRfqStorageTombstone(value)) {
-            const prefix = storagePrefix(
-              RFQ_LIFECYCLE_SCHEMA_REVISION,
-              chainId,
-              account,
-              runtimeEpoch,
-            );
-            return value.storageKey.startsWith(prefix)
-              ? [value.storageKey.slice(prefix.length)]
-              : [];
-          }
-          const id =
-            value && typeof value === "object" && !Array.isArray(value)
-              ? (value as { rfqId?: unknown }).rfqId
-              : undefined;
-          return typeof id === "string" ? [id] : [];
-        }),
-      );
-      rows.push(...visibleCurrent);
-      const legacyVisible: unknown[] = [];
+      const visibleIds = new Set<string>();
       const shadowedLegacyKeys: string[] = [];
-      for (const value of legacy) {
+      const rowId = (value: unknown): string | undefined => {
+        if (isRfqStorageTombstone(value)) {
+          const marker = value.storageKey.split("|").at(-1);
+          return marker || undefined;
+        }
         const id =
           value && typeof value === "object" && !Array.isArray(value)
             ? (value as { rfqId?: unknown }).rfqId
             : undefined;
-        if (typeof id === "string" && currentIds.has(id)) {
+        return typeof id === "string" ? id : undefined;
+      };
+      for (const value of current) {
+        const id = rowId(value);
+        if (id) visibleIds.add(id);
+        if (!isRfqStorageTombstone(value)) rows.push(value);
+      }
+      for (const value of v2) {
+        const id = rowId(value);
+        if (id && visibleIds.has(id)) {
           shadowedLegacyKeys.push(
             legacyStorageKey({ chainId, account, rfqId: id }, runtimeEpoch),
           );
-        } else {
-          legacyVisible.push(value);
+          continue;
         }
+        if (id) visibleIds.add(id);
+        if (!isRfqStorageTombstone(value)) rows.push(value);
       }
-      rows.push(...legacyVisible);
+      for (const value of v1) {
+        const id = rowId(value);
+        if (id && visibleIds.has(id)) {
+          shadowedLegacyKeys.push(
+            v1StorageKey({ chainId, account, rfqId: id }, runtimeEpoch),
+          );
+          continue;
+        }
+        if (id) visibleIds.add(id);
+        if (!isRfqStorageTombstone(value)) rows.push(value);
+      }
       await Promise.all(
         shadowedLegacyKeys.map((key) =>
           backend.delete(key).catch(() => undefined),
@@ -961,12 +1045,16 @@ export function createRfqLifecycleStorage(
         legacyStorageKey(canonical, runtimeEpoch),
         canonical,
       );
+      await backend.delete(v1StorageKey(canonical, runtimeEpoch));
     },
     async removeLegacy(
       input: Pick<RfqLifecycleRecord, "chainId" | "account" | "rfqId">,
     ): Promise<void> {
       await migrateAliases(input.chainId, input.account);
-      await backend.delete(legacyStorageKey(input, runtimeEpoch));
+      await Promise.all([
+        backend.delete(legacyStorageKey(input, runtimeEpoch)),
+        backend.delete(v1StorageKey(input, runtimeEpoch)),
+      ]);
     },
     async clearAll(
       chainId: string,

@@ -525,6 +525,59 @@ test("status 1 hydration preserves an exact coordinator expiry-recovery barrier"
   assert.equal(exact.coordinator.listRequests()[0].state, "expired");
 });
 
+test("v3 take handlers journal before observation and converge only exact taken or absent chain state", async () => {
+  const calls = [];
+  let observed = null;
+  const coordinator = {
+    prepareTake: async (_target, attemptId) => calls.push(`prepare:${attemptId}`),
+    markTakeUnknown: async (_target, attemptId) => calls.push(`unknown:${attemptId}`),
+    abandonTake: async (_target, attemptId) => calls.push(`abandon:${attemptId}`),
+    observeTaken: async (_target, attemptId) => calls.push(`taken:${attemptId}`),
+    markTakeAbsent: async (_target, attemptId) => calls.push(`absent:${attemptId}`),
+  };
+  const target = {
+    dealId: "0x77",
+    expected: {
+      tokenA: "0x1",
+      totalA: "100",
+      tokenB: "0x2",
+      totalB: "200",
+      fills: [{ lockId: "0xa", amountA: "100", amountB: "200" }],
+    },
+  };
+  const handlers = createLocalnetRfqStateHandlers({
+    coordinator,
+    observeEscrow: async () => ({ status: 0 }),
+    observeTake: async () => observed,
+    validateTakeObservation: (take, expected) => {
+      assert.equal(take.totalA, expected.totalA);
+      calls.push("validated");
+    },
+    release: async () => true,
+    now: () => NOW,
+  });
+  await handlers.prepareTake(target, "take-1");
+  await handlers.markTakeUnknown(target, "take-1");
+  await assert.rejects(handlers.observeTake(target, "take-1"), /not been observed/i);
+  await handlers.convergeTake(target, "take-1", "absent");
+  observed = { totalA: "100" };
+  await handlers.observeTake(target, "take-2");
+  await handlers.convergeTake(target, "take-2", "taken");
+  await assert.rejects(
+    handlers.convergeTake(target, "take-2", "absent"),
+    /contradicts/i,
+  );
+  assert.deepEqual(calls, [
+    "prepare:take-1",
+    "unknown:take-1",
+    "absent:take-1",
+    "validated",
+    "taken:take-2",
+    "validated",
+    "taken:take-2",
+  ]);
+});
+
 test("funded requests reject same and sibling funding preparations", async () => {
   const exact = await fixture({
     observeEscrow: async () => ({ status: 1 }),

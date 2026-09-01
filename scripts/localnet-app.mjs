@@ -21,7 +21,17 @@ import {
   LOCALNET_SECONDARY_SOLVER_KEY_ID,
   LOCALNET_SOLVER_ID,
   LOCALNET_SOLVER_KEY_ID,
+  decodeMakerMid,
+  decodePrivateRfqV2,
+  canonicalSelectionTranscriptBody,
+  decodeSelectionTranscript,
+  decodeSolverQuoteV3,
   digestPrivateRfq,
+  digestPrivateRfqV2,
+  digestSolverQuoteV3,
+  importQuotePublicKey,
+  verifyCanonicalQuote,
+  verifyMakerMid,
   digestPrivateSwapIntent,
 } from "../packages/private-intents/src/index.ts";
 import { localnetEconomicReview } from "../src/app/rfq/rfq-operations.ts";
@@ -47,8 +57,20 @@ import {
 } from "./localnet-release-boundary.mjs";
 import { createLocalnetRfqStateHandlers } from "./localnet-rfq-state-handlers.mjs";
 import { requestLocalnetMaker } from "./localnet-maker-http.mjs";
-import { validateLocalnetDealObservation } from "./localnet-deal-validator.mjs";
-import { listBrowserSafeUnresolvedLocalnetDeals } from "./localnet-unresolved-deals.mjs";
+import {
+  canonicalLocalnetTakeExpected,
+  validateLocalnetDealObservation,
+  validateLocalnetTakeObservation,
+} from "./localnet-deal-validator.mjs";
+import {
+  listBrowserSafeUnresolvedLocalnetDeals,
+  listBrowserSafeUnresolvedLocalnetV3Deals,
+} from "./localnet-unresolved-deals.mjs";
+import {
+  LOCALNET_IPFS_HOST,
+  LOCALNET_IPFS_PORT,
+  createLocalnetIpfsServer,
+} from "./localnet-ipfs.mjs";
 import {
   createLocalnetPrivateBalanceFixture,
   formatLocalnetPrivateBalanceSummary,
@@ -364,6 +386,7 @@ mkdirSync(MAKER_RUNTIME_DIR, { recursive: true, mode: 0o700 });
 let currentStage = "prerequisite check";
 let devnet;
 let apiServer;
+let ipfsServer;
 let viteProcess;
 const makerProcesses = new Map();
 const makerRestartTimers = new Map();
@@ -619,8 +642,49 @@ async function stopMakerNodes() {
   if (failure) throw failure.reason;
 }
 
-async function makerRequest(client, pathname, body) {
-  return requestLocalnetMaker(client, pathname, body);
+async function makerRequest(client, pathname, body, timeoutMs) {
+  return requestLocalnetMaker(client, pathname, body, timeoutMs);
+}
+
+async function makerGet(client, pathname, timeoutMs = 5_000) {
+  const response = await fetch(`${client.endpoint}${pathname}`, {
+    headers: { authorization: `Bearer ${client.authToken}` },
+    redirect: "error",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`${client.solverId}: maker returned unreadable JSON.`);
+  }
+  if (!response.ok || payload?.error) {
+    throw new Error(
+      `${client.solverId}: ${payload?.error ?? `HTTP ${response.status}`}`,
+    );
+  }
+  if (!payload?.result || typeof payload.result !== "object")
+    throw new Error(`${client.solverId}: maker response envelope is malformed.`);
+  return payload.result;
+}
+
+function fixtureQuotePublicJwk(client) {
+  const privateJwk = JSON.parse(readFileSync(client.quoteKeyPath, "utf8"));
+  if (
+    privateJwk?.kty !== "EC" ||
+    privateJwk.crv !== "P-256" ||
+    typeof privateJwk.x !== "string" ||
+    typeof privateJwk.y !== "string"
+  )
+    fail(`${client.solverId} quote JWK fixture is malformed.`);
+  return Object.freeze({
+    kty: "EC",
+    crv: "P-256",
+    x: privateJwk.x,
+    y: privateJwk.y,
+    ext: true,
+    key_ops: ["verify"],
+  });
 }
 
 async function fundMakerPublicUsdc(env, token, accounts, starknet) {
@@ -680,6 +744,9 @@ async function shutdown(exitCode = 0) {
   });
   await cleanup("Local wallet API", async () => {
     if (apiServer) await closeHttpServer(apiServer);
+  });
+  await cleanup("Local IPFS", async () => {
+    if (ipfsServer) await closeHttpServer(ipfsServer.server);
   });
   await cleanup("Maker-node", stopMakerNodes);
   await cleanup("Devnet", async () => {
@@ -878,6 +945,30 @@ async function deployEscrow(env, starknet) {
     ticketDeclaration.transaction_hash,
     "ClaimTicket declaration",
   );
+  const lockTicketSierra = starknet.json.parse(
+    readFileSync(
+      join(artifactRoot, "app20_mail_LockTicket.contract_class.json"),
+      "utf8",
+    ),
+  );
+  const lockTicketCasm = starknet.json.parse(
+    readFileSync(
+      join(
+        artifactRoot,
+        "app20_mail_LockTicket.compiled_contract_class.json",
+      ),
+      "utf8",
+    ),
+  );
+  const lockTicketDeclaration = await env.admin.declare({
+    contract: lockTicketSierra,
+    casm: lockTicketCasm,
+  });
+  await waitForSuccess(
+    env.node,
+    lockTicketDeclaration.transaction_hash,
+    "LockTicket declaration",
+  );
 
   const sierra = starknet.json.parse(
     readFileSync(
@@ -899,7 +990,11 @@ async function deployEscrow(env, starknet) {
   );
   const deployment = await env.admin.deployContract({
     classHash: declaration.class_hash,
-    constructorCalldata: [env.privacy.address, ticketDeclaration.class_hash],
+    constructorCalldata: [
+      env.privacy.address,
+      ticketDeclaration.class_hash,
+      lockTicketDeclaration.class_hash,
+    ],
   });
   await waitForSuccess(
     env.node,
@@ -913,6 +1008,8 @@ async function deployEscrow(env, starknet) {
     classHash: declaration.class_hash,
     ticketClassHash: ticketDeclaration.class_hash,
     ticketDeclareTransactionHash: ticketDeclaration.transaction_hash,
+    lockTicketClassHash: lockTicketDeclaration.class_hash,
+    lockTicketDeclareTransactionHash: lockTicketDeclaration.transaction_hash,
     declareTransactionHash: declaration.transaction_hash,
     deployTransactionHash: deployment.transaction_hash,
   };
@@ -1223,6 +1320,113 @@ async function readLocalEscrowDeal(dealId, env, escrowAddress) {
   };
 }
 
+async function readLocalEscrowLock(lockId, env, escrowAddress, starknet) {
+  const result = await env.node.callContract({
+    contractAddress: escrowAddress,
+    entrypoint: "get_lock",
+    calldata: [lockId],
+  });
+  if (!Array.isArray(result) || result.length !== 20)
+    fail("local escrow returned a malformed v3 lock.");
+  const values = result.map(BigInt);
+  const pointsLen = Number(values[5]);
+  const statusValue = Number(values[19]);
+  if (![0, 1].includes(statusValue) || pointsLen < 0 || pointsLen > 4)
+    fail("local escrow returned an invalid v3 lock status or schedule length.");
+  if (statusValue === 0) {
+    if (values.some((value) => value !== 0n))
+      fail("local escrow returned a contradictory empty v3 lock.");
+  } else if (
+    pointsLen < 1 ||
+    values[0] === 0n ||
+    values[1] === 0n ||
+    values[0] === values[1] ||
+    values[2] === 0n ||
+    values[3] === 0n ||
+    values[4] <= 0n ||
+    values[4] > BigInt(Number.MAX_SAFE_INTEGER) ||
+    values[16] === 0n ||
+    ![0n, 1n].includes(values[17]) ||
+    ![0n, 1n].includes(values[18]) ||
+    values.slice(14, 16).some((value) => value < 0n || value >= 1n << 128n)
+  ) {
+    fail("local escrow returned invalid open v3 lock fields.");
+  }
+  const schedule = [];
+  for (let index = 0; index < 4; index += 1) {
+    const a = values[6 + index * 2];
+    const b = values[7 + index * 2];
+    if (index >= pointsLen) {
+      if (a !== 0n || b !== 0n)
+        fail("local escrow returned nonzero inactive v3 schedule points.");
+      continue;
+    }
+    if (
+      a <= 0n ||
+      b <= 0n ||
+      a >= 1n << 128n ||
+      b >= 1n << 128n ||
+      (schedule.length > 0 &&
+        (a <= BigInt(schedule.at(-1).a) || b < BigInt(schedule.at(-1).b)))
+    )
+      fail("local escrow returned an invalid v3 price schedule.");
+    schedule.push({ a: a.toString(), b: b.toString() });
+  }
+  return Object.freeze({
+    status: statusValue === 0 ? "empty" : "open",
+    tokenA: starknet.num.toHex(result[0]),
+    tokenB: starknet.num.toHex(result[1]),
+    rfqId: starknet.num.toHex(result[2]),
+    takerCommitment: starknet.num.toHex(result[3]),
+    expiry: Number(BigInt(result[4])),
+    schedule: Object.freeze(schedule),
+    remainingB: values[14].toString(),
+    earnedA: values[15].toString(),
+    ticket: starknet.num.toHex(result[16]),
+    proceedsSettled: values[17] === 1n,
+    collateralReleased: values[18] === 1n,
+  });
+}
+
+async function readLocalEscrowTake(dealId, env, escrowAddress, starknet) {
+  const result = await env.node.callContract({
+    contractAddress: escrowAddress,
+    entrypoint: "get_take",
+    calldata: [dealId],
+  });
+  if (!Array.isArray(result) || result.length !== 6)
+    fail("local escrow returned a malformed v3 take.");
+  const values = result.map(BigInt);
+  const fillCount = Number(values[4]);
+  if (fillCount === 0) {
+    if (values.some((value) => value !== 0n))
+      fail("local escrow returned a contradictory empty v3 take.");
+    return null;
+  }
+  if (
+    fillCount < 1 ||
+    fillCount > 4 ||
+    values[0] === 0n ||
+    values[2] === 0n ||
+    values[0] === values[2] ||
+    values[1] <= 0n ||
+    values[1] >= 1n << 128n ||
+    values[3] <= 0n ||
+    values[3] >= 1n << 128n ||
+    values[5] <= 0n ||
+    values[5] > BigInt(Number.MAX_SAFE_INTEGER)
+  )
+    fail("local escrow returned invalid nonempty v3 take fields.");
+  return Object.freeze({
+    tokenA: starknet.num.toHex(result[0]),
+    totalA: BigInt(result[1]),
+    tokenB: starknet.num.toHex(result[2]),
+    totalB: BigInt(result[3]),
+    fillCount,
+    takenAt: Number(BigInt(result[5])),
+  });
+}
+
 async function ensureLocalEscrowTicket(dealId, env, escrowAddress, starknet) {
   const existing = await env.node.callContract({
     contractAddress: escrowAddress,
@@ -1298,6 +1502,113 @@ async function startApi({
   const makerById = new Map(
     makerClients.map((client) => [client.solverId, client]),
   );
+  const makerPublicJwks = new Map(
+    makerClients.map((client) => [
+      client.solverId,
+      fixtureQuotePublicJwk(client),
+    ]),
+  );
+  let midsCache = Object.freeze({ expiresAt: 0, mids: Object.freeze([]) });
+  let midsInFlight;
+  const verifiedMids = async (now) => {
+    if (Date.now() < midsCache.expiresAt) return midsCache.mids;
+    if (midsInFlight) return midsInFlight;
+    midsInFlight = (async () => {
+      const outcomes = await Promise.allSettled(
+        makerClients.map(async (client) => {
+          const result = await makerGet(client, "/v1/mids");
+          const midWire = result.mid ?? result;
+          const mid = decodeMakerMid(midWire);
+          if (
+            mid.makerId !== client.solverId ||
+            mid.quoteKeyId !== client.solverKey
+          )
+            throw new Error(
+              `${client.solverId}: maker mid changed its fixture key binding.`,
+            );
+          await verifyMakerMid(mid, now, {
+            importPublicKey: importQuotePublicKey,
+            verify: verifyCanonicalQuote,
+            resolveKey: (makerId, quoteKeyId) => {
+              const jwk = makerPublicJwks.get(makerId);
+              const expected = makerById.get(makerId);
+              if (!jwk || expected?.solverKey !== quoteKeyId)
+                throw new Error(
+                  "Maker mid named an unknown fixture quote key.",
+                );
+              return jwk;
+            },
+          });
+          return midWire;
+        }),
+      );
+      const mids = Object.freeze(
+        outcomes
+          .filter((outcome) => outcome.status === "fulfilled")
+          .map((outcome) => outcome.value),
+      );
+      midsCache = Object.freeze({ expiresAt: Date.now() + 5_000, mids });
+      return mids;
+    })();
+    try {
+      return await midsInFlight;
+    } finally {
+      midsInFlight = undefined;
+    }
+  };
+  const makerV3StatusCounts = async (now) => {
+    const [lockOutcomes, transcriptOutcomes] = await Promise.all([
+      Promise.allSettled(
+        makerClients.map((client) => makerGet(client, "/v1/locks")),
+      ),
+      Promise.allSettled(
+        makerClients.map((client) => makerGet(client, "/v1/transcripts")),
+      ),
+    ]);
+    const locks = { open: 0, expiredAwaitingSettlement: 0, settled: 0 };
+    for (const outcome of lockOutcomes) {
+      const records =
+        outcome.status === "fulfilled"
+          ? outcome.value.locks ?? outcome.value
+          : undefined;
+      if (!Array.isArray(records)) continue;
+      for (const lock of records) {
+        if (!lock || typeof lock !== "object" || Array.isArray(lock)) continue;
+        if (lock.state === "settled") locks.settled += 1;
+        else if (
+          lock.state === "expired" ||
+          lock.state === "settling" ||
+          (lock.state === "open" &&
+            Number.isSafeInteger(lock.expiry) &&
+            lock.expiry <= now)
+        )
+          locks.expiredAwaitingSettlement += 1;
+        else if (
+          lock.state === "open" &&
+          Number.isSafeInteger(lock.expiry) &&
+          lock.expiry > now
+        )
+          locks.open += 1;
+      }
+    }
+    const transcripts = { received: 0, consistent: 0 };
+    for (const outcome of transcriptOutcomes) {
+      if (
+        outcome.status !== "fulfilled" ||
+        !Array.isArray(outcome.value.transcripts ?? outcome.value)
+      )
+        continue;
+      const records = outcome.value.transcripts ?? outcome.value;
+      transcripts.received += records.length;
+      transcripts.consistent += records.filter(
+        (entry) => entry?.consistent === true,
+      ).length;
+    }
+    return Object.freeze({
+      locks: Object.freeze(locks),
+      transcripts: Object.freeze(transcripts),
+    });
+  };
   const coordinator = createLocalnetReservationCoordinator(
     RESERVATION_COORDINATOR_JOURNAL,
   );
@@ -1458,9 +1769,17 @@ async function startApi({
   const rfqStateHandlers = createLocalnetRfqStateHandlers({
     coordinator,
     observeEscrow: (dealId) => readLocalEscrowDeal(dealId, env, escrowAddress),
+    observeTake: (dealId) =>
+      readLocalEscrowTake(dealId, env, escrowAddress, starknet),
     release: releaseAttempt,
     now: () => Math.floor(Date.now() / 1_000),
     validateFundedObservation: validateCanonicalFundedObservation,
+    validateTakeObservation: (observed, expected) =>
+      validateLocalnetTakeObservation(
+        observed,
+        expected,
+        starknet.num.toBigInt,
+      ),
   });
   const pendingAfterRecovery = await coordinator.recover(
     releaseAttempt,
@@ -1568,6 +1887,10 @@ async function startApi({
         url.pathname === "/rfq/operations/status"
       ) {
         const observedAt = Math.floor(Date.now() / 1_000);
+        const [mids, v3Status] = await Promise.all([
+          verifiedMids(observedAt),
+          makerV3StatusCounts(observedAt),
+        ]);
         const makers = makerClients.map((client) =>
           browserSafeMakerStatus(client, observedAt),
         );
@@ -1602,6 +1925,9 @@ async function startApi({
               ).length,
             },
             makers,
+            mids,
+            locks: v3Status.locks,
+            transcripts: v3Status.transcripts,
             rawInventoryExposed: false,
           },
         });
@@ -1633,8 +1959,20 @@ async function startApi({
       if (url.pathname === "/rfq/unresolved-deals") {
         const account = feltInput(body.account, "account", starknet);
         const chainId = feltInput(body.chainId, "chainId", starknet);
-        const sellToken = feltInput(body.sellToken, "sellToken", starknet);
-        const buyToken = feltInput(body.buyToken, "buyToken", starknet);
+        const unresolvedV3Expected =
+          body.lifecycle === "v3"
+            ? canonicalLocalnetTakeExpected(body.expected)
+            : undefined;
+        const sellToken = feltInput(
+          unresolvedV3Expected?.tokenA ?? body.sellToken,
+          "sellToken",
+          starknet,
+        );
+        const buyToken = feltInput(
+          unresolvedV3Expected?.tokenB ?? body.buyToken,
+          "buyToken",
+          starknet,
+        );
         if (sellToken === buyToken)
           fail(
             "unresolved-deal discovery requires two different market tokens.",
@@ -1642,23 +1980,41 @@ async function startApi({
         const market = [sellToken.toLowerCase(), buyToken.toLowerCase()]
           .sort()
           .join("/");
-        const deals = await listBrowserSafeUnresolvedLocalnetDeals({
-          requests: coordinator.listRequests(),
-          deals: coordinator.listDeals(),
-          account,
-          chainId,
-          market,
-          escrowAddress: starknet.num.toHex(escrowAddress),
-          observeEscrow: (dealId) =>
-            readLocalEscrowDeal(dealId, env, escrowAddress),
-          validateObservation: (observed, terms, status) =>
-            validateLocalnetDealObservation(
-              observed,
-              terms,
-              status,
-              starknet.num.toBigInt,
-            ),
-        });
+        const [legacyDeals, v3Deals] = await Promise.all([
+          listBrowserSafeUnresolvedLocalnetDeals({
+            requests: coordinator.listRequests(),
+            deals: coordinator.listDeals(),
+            account,
+            chainId,
+            market,
+            escrowAddress: starknet.num.toHex(escrowAddress),
+            observeEscrow: (dealId) =>
+              readLocalEscrowDeal(dealId, env, escrowAddress),
+            validateObservation: (observed, terms, status) =>
+              validateLocalnetDealObservation(
+                observed,
+                terms,
+                status,
+                starknet.num.toBigInt,
+              ),
+          }),
+          listBrowserSafeUnresolvedLocalnetV3Deals({
+            requests: coordinator.listV3Requests(),
+            account,
+            chainId,
+            market,
+            escrowAddress: starknet.num.toHex(escrowAddress),
+            observeTake: (dealId) =>
+              readLocalEscrowTake(dealId, env, escrowAddress, starknet),
+            validateObservation: (observed, expected) =>
+              validateLocalnetTakeObservation(
+                observed,
+                expected,
+                starknet.num.toBigInt,
+              ),
+          }),
+        ]);
+        const deals = Object.freeze([...legacyDeals, ...v3Deals]);
         jsonResponse(response, 200, {
           result: {
             schema: "app20/localnet-unresolved-deals/v1",
@@ -1670,6 +2026,79 @@ async function startApi({
         return;
       }
       if (url.pathname === "/rfq/authority/verify") {
+        if (body.lifecycle === "v3") {
+          const rfqId = feltInput(body.rfqId, "rfqId", starknet);
+          const dealId = feltInput(body.dealId, "dealId", starknet);
+          const account = feltInput(body.account, "account", starknet);
+          const chainId = feltInput(body.chainId, "chainId", starknet);
+          const intentDigest = canonicalHex32(
+            body.intentDigest,
+            "intentDigest",
+          );
+          const expected = canonicalLocalnetTakeExpected(body.expected);
+          const requestRecord = coordinator.getV3RequestForRfq(rfqId);
+          if (
+            !requestRecord ||
+            requestRecord.state !== "taken" ||
+            requestRecord.rfqId !== dealId ||
+            requestRecord.account !== account ||
+            requestRecord.chainId !== chainId ||
+            requestRecord.intentDigest !== intentDigest ||
+            JSON.stringify(requestRecord.expected) !== JSON.stringify(expected)
+          )
+            fail("v3 authority query does not match the durable take lease.");
+          const takeTransaction = feltInput(
+            body.transactions?.take,
+            "take transaction",
+            starknet,
+          );
+          if (
+            requestRecord.takeTransactionHash &&
+            requestRecord.takeTransactionHash !== takeTransaction
+          )
+            fail("v3 authority query changed the durable take transaction.");
+          const observed = await readLocalEscrowTake(
+            dealId,
+            env,
+            escrowAddress,
+            starknet,
+          );
+          validateLocalnetTakeObservation(
+            observed,
+            expected,
+            starknet.num.toBigInt,
+          );
+          const commitmentDigest = `0x${createHash("sha256")
+            .update(
+              JSON.stringify({
+                lifecycle: "v3",
+                rfqDigest: requestRecord.rfqDigest,
+                intentDigest,
+                rfqId,
+                dealId,
+                expected,
+              }),
+            )
+            .digest("hex")}`;
+          const projection = await verifyAuthorityOrFailStop({
+            query: {
+              lifecycle: "v3",
+              runtimeEpoch: RUNTIME_EPOCH,
+              chainId,
+              account,
+              rfqId,
+              dealId,
+              intentDigest,
+              rfqDigest: requestRecord.rfqDigest,
+              commitmentDigest,
+              expected,
+              transactions: { take: takeTransaction },
+            },
+            market: requestRecord.market,
+          });
+          jsonResponse(response, 200, { result: projection });
+          return;
+        }
         const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
         const rfqId = feltInput(body.rfqId, "rfqId", starknet);
         const account = feltInput(body.account, "account", starknet);
@@ -1901,7 +2330,204 @@ async function startApi({
         });
         return;
       }
+      if (url.pathname === "/escrow/lock") {
+        const lockId = feltInput(body.lockId, "lockId", starknet);
+        const lock = await readLocalEscrowLock(
+          lockId,
+          env,
+          escrowAddress,
+          starknet,
+        );
+        jsonResponse(response, 200, { result: { lock } });
+        return;
+      }
+      if (url.pathname === "/escrow/take") {
+        const dealId = feltInput(body.dealId, "dealId", starknet);
+        const observed = await readLocalEscrowTake(
+          dealId,
+          env,
+          escrowAddress,
+          starknet,
+        );
+        jsonResponse(response, 200, {
+          result: {
+            take: observed
+              ? {
+                  ...observed,
+                  totalA: observed.totalA.toString(),
+                  totalB: observed.totalB.toString(),
+                }
+              : null,
+          },
+        });
+        return;
+      }
       if (url.pathname === "/private-intents/quotes") {
+        if (body.rfq !== undefined) {
+          assertRfqStartAllowed("New v3 RFQ requests");
+          const now = Math.floor(Date.now() / 1_000);
+          const rfq = decodePrivateRfqV2(body.rfq);
+          if (
+            rfq.chainId !== "starknet:APP20_LOCALNET" ||
+            starknet.num.toBigInt(rfq.settlementHelper) !==
+              starknet.num.toBigInt(escrowAddress) ||
+            rfq.registryRevision !== "app20/token-registry/2026-08-25" ||
+            rfq.directoryEpoch !== 0 ||
+            rfq.expiresAt - rfq.createdAt !== 90 ||
+            rfq.responseDeadline <= now ||
+            rfq.createdAt > now + 30 ||
+            rfq.createdAt < now - 5 * 60
+          )
+            fail(
+              "the private RFQ v2 context is outside the exact localnet fixture window.",
+            );
+          const { sellToken, buyToken } = assertLocalIntentPair(
+            { sellToken: rfq.sellToken, buyToken: rfq.buyToken },
+            env,
+            starknet,
+          );
+          const plannedCohort = body.cohort;
+          const plannedMakers = makerClients.map(({ solverId, solverKey }) => ({
+            makerId: solverId,
+            keyId: solverKey,
+          }));
+          const expectedBinding = [
+            RFQ_OPERATIONS_STATUS_SCHEMA,
+            0,
+            "local-fixture-checkpoint-v1",
+            plannedCohort?.validUntil,
+            ...plannedMakers.flatMap(({ makerId, keyId }) => [makerId, keyId]),
+          ].join("|");
+          if (
+            !plannedCohort ||
+            plannedCohort.epoch !== 0 ||
+            plannedCohort.checkpoint !== "local-fixture-checkpoint-v1" ||
+            !Number.isSafeInteger(plannedCohort.validUntil) ||
+            plannedCohort.validUntil <= now ||
+            plannedCohort.validUntil >
+              now + RFQ_OPERATIONS_STATUS_MAX_AGE_SECONDS ||
+            JSON.stringify(plannedCohort.makers) !==
+              JSON.stringify(plannedMakers) ||
+            plannedCohort.binding !== expectedBinding
+          )
+            fail("the confirmed v3 maker cohort is stale or mismatched.");
+          const account = feltInput(body.account, "account", starknet);
+          const chainId = feltInput(body.chainId, "chainId", starknet);
+          if (chainId !== LOCALNET_CHAIN_ID)
+            fail("the v3 RFQ named another Starknet chain.");
+          const rfqDigest = await digestPrivateRfqV2(rfq);
+          await coordinator.beginV3Request({
+            rfqDigest,
+            intentDigest: rfq.rfqId,
+            rfqId: starknet.num.toHex(rfq.rfqFelt),
+            account,
+            chainId,
+            createdAt: rfq.createdAt,
+            expiresAt: rfq.expiresAt,
+            market: [sellToken.toLowerCase(), buyToken.toLowerCase()]
+              .sort()
+              .join("/"),
+            makerIds: makerClients.map(({ solverId }) => solverId),
+          });
+          const requestBeforeFanout = coordinator.getV3Request(rfqDigest);
+          const planned = requestBeforeFanout.makerPlans.filter(
+            (plan) => plan.state === "planned",
+          );
+          await Promise.all(
+            planned.map(async (plan) => {
+              const client = makerById.get(plan.makerId);
+              if (!client) {
+                await coordinator.recordV3Refusal(
+                  rfqDigest,
+                  plan.makerId,
+                  {
+                    code: "policy",
+                    reason: "The invited local maker is unavailable.",
+                  },
+                  "unavailable",
+                );
+                return;
+              }
+              try {
+                const result = await makerRequest(
+                  client,
+                  "/v1/quotes-v3",
+                  body.rfq,
+                  120_000,
+                );
+                if (result.quote) {
+                  const quote = decodeSolverQuoteV3(result.quote);
+                  if (
+                    quote.solverId !== client.solverId ||
+                    quote.quoteKeyId !== client.solverKey ||
+                    quote.rfqDigest !== rfqDigest
+                  )
+                    throw new Error(
+                      "maker v3 quote changed its authenticated binding",
+                    );
+                  await coordinator.recordV3Quote(rfqDigest, client.solverId, {
+                    quote: result.quote,
+                    quoteDigest: await digestSolverQuoteV3(quote),
+                  });
+                  return;
+                }
+                if (
+                  result.refused &&
+                  typeof result.refused.reason === "string"
+                ) {
+                  await coordinator.recordV3Refusal(
+                    rfqDigest,
+                    client.solverId,
+                    {
+                      code:
+                        typeof result.refused.code === "string"
+                          ? result.refused.code
+                          : "policy",
+                      reason: result.refused.reason,
+                    },
+                  );
+                  return;
+                }
+                throw new Error("maker returned no v3 quote or refusal");
+              } catch (error) {
+                await coordinator.recordV3Refusal(
+                  rfqDigest,
+                  client.solverId,
+                  {
+                    code: "policy",
+                    reason: `${client.solverId} did not return a usable v3 quote.`,
+                  },
+                  "unavailable",
+                );
+                console.warn(
+                  `Invited maker ${client.solverId} v3 fanout failed: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+              }
+            }),
+          );
+          const completed = await coordinator.completeV3Fanout(rfqDigest);
+          jsonResponse(response, 200, {
+            result: {
+              quotes: completed.makerPlans
+                .filter((plan) => plan.state === "quoted")
+                .map((plan) => plan.quote),
+              refusals: completed.makerPlans
+                .filter((plan) =>
+                  plan.state === "refused" || plan.state === "unavailable",
+                )
+                .map((plan) => ({
+                  makerId: plan.makerId,
+                  code: plan.refusal.code,
+                  reason: plan.refusal.reason,
+                  quoteDigest: plan.quoteDigest,
+                })),
+              cohort: plannedCohort,
+            },
+          });
+          return;
+        }
         assertRfqStartAllowed("New RFQ requests");
         const now = Math.floor(Date.now() / 1_000);
         const intentDigest = canonicalHex32(body.intentDigest, "intentDigest");
@@ -2291,6 +2917,138 @@ async function startApi({
                 state: "quarantined",
               }),
         });
+        return;
+      }
+      if (url.pathname === "/private-intents/transcript") {
+        const rfqDigest = canonicalHex32(body.rfqDigest, "rfqDigest");
+        const account = feltInput(body.account, "account", starknet);
+        const chainId = feltInput(body.chainId, "chainId", starknet);
+        const transcript = decodeSelectionTranscript(body.transcript);
+        const { digest: transcriptDigest, ...transcriptBody } = transcript;
+        const computedTranscriptDigest = `0x${createHash("sha256")
+          .update(canonicalSelectionTranscriptBody(transcriptBody))
+          .digest("hex")}`;
+        if (computedTranscriptDigest !== transcriptDigest)
+          fail("selection transcript digest does not match its canonical body.");
+        const requestRecord = coordinator.getV3Request(rfqDigest);
+        if (
+          !requestRecord ||
+          requestRecord.account !== account ||
+          requestRecord.chainId !== chainId ||
+          transcript.rfqDigest !== rfqDigest ||
+          transcript.entries.length !== requestRecord.makerPlans.length ||
+          JSON.stringify(body.makerIds) !==
+            JSON.stringify(
+              requestRecord.makerPlans.map(({ makerId }) => makerId),
+            )
+        )
+          fail("selection transcript does not match the durable v3 RFQ principal.");
+        for (const plan of requestRecord.makerPlans) {
+          const entries = transcript.entries.filter(
+            (entry) => entry.makerId === plan.makerId,
+          );
+          if (
+            entries.length !== 1 ||
+            entries[0].quoteDigest !== plan.quoteDigest ||
+            (plan.state === "quoted" && entries[0].outcome === "refused") ||
+            (plan.state !== "quoted" && entries[0].outcome !== "refused")
+          )
+            fail("selection transcript changed a durable maker outcome digest.");
+        }
+        await coordinator.journalV3Transcript(rfqDigest, transcript.digest);
+        const acknowledgements = await Promise.all(
+          requestRecord.makerPlans.map(async (plan) => {
+            const client = makerById.get(plan.makerId);
+            if (!client)
+              return {
+                makerId: plan.makerId,
+                accepted: false,
+                consistent: false,
+                reason: "The invited local maker is unavailable.",
+              };
+            try {
+              const result = await makerRequest(
+                client,
+                "/v1/transcripts",
+                body.transcript,
+              );
+              if (
+                (result.accepted !== undefined && result.accepted !== true) ||
+                typeof result.consistent !== "boolean" ||
+                (result.reason !== undefined &&
+                  typeof result.reason !== "string")
+              )
+                throw new Error("maker transcript acknowledgement is malformed");
+              return {
+                makerId: plan.makerId,
+                accepted: true,
+                consistent: result.consistent,
+                ...(result.reason ? { reason: result.reason } : {}),
+              };
+            } catch (error) {
+              return {
+                makerId: plan.makerId,
+                accepted: false,
+                consistent: false,
+                reason:
+                  error instanceof Error
+                    ? error.message
+                    : "Maker transcript acknowledgement failed.",
+              };
+            }
+          }),
+        );
+        jsonResponse(response, 200, { result: { acknowledgements } });
+        return;
+      }
+      if (
+        [
+          "/private-intents/take-prepare",
+          "/private-intents/take-unknown",
+          "/private-intents/take-abandon",
+          "/private-intents/take-observe",
+          "/private-intents/take-converge",
+        ].includes(url.pathname)
+      ) {
+        const expected = canonicalLocalnetTakeExpected(body.expected);
+        assertLocalIntentPair(
+          { sellToken: expected.tokenA, buyToken: expected.tokenB },
+          env,
+          starknet,
+        );
+        const target = {
+          account: feltInput(body.account, "account", starknet),
+          chainId: feltInput(body.chainId, "chainId", starknet),
+          rfqId: feltInput(body.rfqId, "rfqId", starknet),
+          dealId: feltInput(body.dealId, "dealId", starknet),
+          expected,
+          ...(body.transactionHash === undefined
+            ? {}
+            : {
+                transactionHash: feltInput(
+                  body.transactionHash,
+                  "transactionHash",
+                  starknet,
+                ),
+              }),
+        };
+        if (url.pathname === "/private-intents/take-prepare") {
+          assertRfqStartAllowed("Wallet v3 take");
+          await rfqStateHandlers.prepareTake(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/take-unknown") {
+          await rfqStateHandlers.markTakeUnknown(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/take-abandon") {
+          await rfqStateHandlers.abandonTake(target, body.attemptId);
+        } else if (url.pathname === "/private-intents/take-observe") {
+          await rfqStateHandlers.observeTake(target, body.attemptId);
+        } else {
+          await rfqStateHandlers.convergeTake(
+            target,
+            body.attemptId,
+            body.observed,
+          );
+        }
+        jsonResponse(response, 200, { result: { ok: true } });
         return;
       }
       if (
@@ -2772,6 +3530,14 @@ try {
     extraAccounts: env.extraAccounts,
   });
 
+  currentStage = "loopback IPFS emulator startup";
+  console.log("\n==> starting loopback-only in-memory IPFS emulator");
+  ipfsServer = createLocalnetIpfsServer({
+    host: LOCALNET_IPFS_HOST,
+    port: LOCALNET_IPFS_PORT,
+  });
+  await ipfsServer.listen();
+
   const config = {
     walletName: "Localnet (dev)",
     runtimeEpoch: RUNTIME_EPOCH,
@@ -2781,6 +3547,9 @@ try {
     helperAddress: helper.address,
     escrowAddress: escrow.address,
     escrowClassHash: escrow.classHash,
+    escrowAbiVersion: 3,
+    lockTicketClassHash: escrow.lockTicketClassHash,
+    ipfsProxyPath: "/__app20_localnet_ipfs",
     tokenAddress: env.strk,
     counterTokenAddress: env.eth,
     usdcTokenAddress: env.usdc,

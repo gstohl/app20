@@ -32,22 +32,136 @@ test("fixed localnet decoder binds exact artifact, selector, lengths, terms, and
     deadline: 1_700_000_000,
     ticketAddress: "0x33",
   });
-  const fill = decodeLocalnetEscrowEvent({
-    fromAddress: artifact.escrowAddress,
-    keys: [LOCALNET_ESCROW_EVENT_SELECTORS.fill, "0xabc"],
-    data: ["0x11", "0x64", "0x22", "0xc8"],
-  }, artifact);
+  const fill = decodeLocalnetEscrowEvent(
+    {
+      fromAddress: artifact.escrowAddress,
+      keys: [LOCALNET_ESCROW_EVENT_SELECTORS.fill, "0xabc"],
+      data: ["0x11", "0x64", "0x22", "0xc8"],
+    },
+    artifact,
+  );
   assert.equal(fill.buyAmount, "200");
-  assert.equal(decodeLocalnetEscrowEvent({
-    fromAddress: artifact.escrowAddress,
-    keys: [LOCALNET_ESCROW_EVENT_SELECTORS.claim, "0xabc"],
-    data: ["0x22", "0xc8"],
-  }, artifact).outcome, "settled");
-  assert.equal(decodeLocalnetEscrowEvent({
-    fromAddress: artifact.escrowAddress,
-    keys: [LOCALNET_ESCROW_EVENT_SELECTORS.timeout, "0xabc"],
-    data: ["0x11", "0x64"],
-  }, artifact).outcome, "refunded");
+  assert.equal(
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.claim, "0xabc"],
+        data: ["0x22", "0xc8"],
+      },
+      artifact,
+    ).outcome,
+    "settled",
+  );
+  assert.equal(
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.timeout, "0xabc"],
+        data: ["0x11", "0x64"],
+      },
+      artifact,
+    ).outcome,
+    "refunded",
+  );
+});
+
+test("v3 lock and take events decode exact keyed identities, schedules, totals, and settlement sides", () => {
+  assert.deepEqual(
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated, "0xaaa", "0xabc"],
+        data: [
+          "0x11",
+          "0x22",
+          "0x6553f100",
+          "0x190",
+          "0x2",
+          "0x64",
+          "0xc8",
+          "0xc8",
+          "0x190",
+          "0x0",
+          "0x0",
+          "0x0",
+          "0x0",
+          "0x777",
+        ],
+      },
+      artifact,
+    ),
+    {
+      stage: "lockCreated",
+      lockId: "0xaaa",
+      rfqId: "0xabc",
+      tokenA: "0x11",
+      tokenB: "0x22",
+      expiry: 1_700_000_000,
+      maxB: "400",
+      pointsLen: 2,
+      schedule: [
+        { a: "100", b: "200" },
+        { a: "200", b: "400" },
+      ],
+      ticket: "0x777",
+    },
+  );
+  assert.deepEqual(
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xaaa", "0xabc"],
+        data: ["0x64", "0xc8", "0x0"],
+      },
+      artifact,
+    ),
+    {
+      stage: "lockTaken",
+      lockId: "0xaaa",
+      dealId: "0xabc",
+      amountA: "100",
+      amountB: "200",
+      remainingB: "0",
+    },
+  );
+  assert.deepEqual(
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xabc"],
+        data: ["0x11", "0x64", "0x22", "0xc8", "0x1"],
+      },
+      artifact,
+    ),
+    {
+      stage: "take",
+      outcome: "settled",
+      dealId: "0xabc",
+      tokenA: "0x11",
+      totalA: "100",
+      tokenB: "0x22",
+      totalB: "200",
+      fillCount: 1,
+    },
+  );
+  for (const stage of ["lockProceedsSettled", "lockCollateralReleased"]) {
+    assert.deepEqual(
+      decodeLocalnetEscrowEvent(
+        {
+          fromAddress: artifact.escrowAddress,
+          keys: [LOCALNET_ESCROW_EVENT_SELECTORS[stage], "0xaaa"],
+          data: [stage === "lockProceedsSettled" ? "0x11" : "0x22", "0x64"],
+        },
+        artifact,
+      ),
+      {
+        stage,
+        lockId: "0xaaa",
+        token: stage === "lockProceedsSettled" ? "0x11" : "0x22",
+        amount: "100",
+      },
+    );
+  }
 });
 
 test("decoder mutations fail closed without callback registration", () => {
@@ -63,6 +177,33 @@ test("decoder mutations fail closed without callback registration", () => {
   ];
   for (const mutation of mutations)
     assert.throws(() => decodeLocalnetEscrowEvent(mutation, artifact));
-  assert.throws(() => assertLocalnetEscrowArtifactIdentity({ ...artifact, abiDigest: "sha256:" + "0".repeat(64) }));
-  assert.throws(() => decodeLocalnetEscrowEvent(base, { ...artifact, escrowClassHash: "0x0" }));
+  assert.throws(() =>
+    assertLocalnetEscrowArtifactIdentity({
+      ...artifact,
+      abiDigest: "sha256:" + "0".repeat(64),
+    }),
+  );
+  assert.throws(() =>
+    decodeLocalnetEscrowEvent(base, { ...artifact, escrowClassHash: "0x0" }),
+  );
+  assert.throws(() =>
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xabc"],
+        data: ["0x11", "0x64", "0x22", "0xc8", "0x5"],
+      },
+      artifact,
+    ),
+  );
+  assert.throws(() =>
+    decodeLocalnetEscrowEvent(
+      {
+        fromAddress: artifact.escrowAddress,
+        keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xaaa"],
+        data: ["0x64", "0xc8", "0x0"],
+      },
+      artifact,
+    ),
+  );
 });

@@ -109,6 +109,12 @@ function reconcilerOptions(path, overrides = {}) {
     releaseTerminal: overrides.releaseTerminal ?? (async () => undefined),
     quarantineAuthority:
       overrides.quarantineAuthority ?? (async () => undefined),
+    ...(overrides.releaseV3Terminal
+      ? { releaseV3Terminal: overrides.releaseV3Terminal }
+      : {}),
+    ...(overrides.quarantineV3Authority
+      ? { quarantineV3Authority: overrides.quarantineV3Authority }
+      : {}),
     ...(overrides.faultInjector
       ? { faultInjector: overrides.faultInjector }
       : {}),
@@ -160,6 +166,127 @@ test("exact authoritative terminal releases once and restart revalidates current
       "released-terminal",
     );
     assert.equal(effects.length, 1);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
+test("v3 take reconciliation binds each LockTaken to one quoted maker and posts terminal once", async () => {
+  const tmp = temporary();
+  const v3Query = Object.freeze({
+    lifecycle: "v3",
+    runtimeEpoch: epoch,
+    chainId: "0x123",
+    account: "0xaaa",
+    rfqId: "0xbbb",
+    dealId: "0xbbb",
+    intentDigest: `0x${"5".repeat(64)}`,
+    rfqDigest: `0x${"6".repeat(64)}`,
+    commitmentDigest: `0x${"7".repeat(64)}`,
+    expected: Object.freeze({
+      tokenA: "0x11",
+      totalA: "100",
+      tokenB: "0x22",
+      totalB: "200",
+      fills: Object.freeze([
+        Object.freeze({ lockId: "0xa", amountA: "40", amountB: "80" }),
+        Object.freeze({ lockId: "0xb", amountA: "60", amountB: "120" }),
+      ]),
+    }),
+    transactions: Object.freeze({ take: "0x201" }),
+  });
+  const v3Coordinator = {
+    lifecycle: "v3",
+    state: "taken",
+    rfqDigest: v3Query.rfqDigest,
+    intentDigest: v3Query.intentDigest,
+    rfqId: v3Query.rfqId,
+    account: v3Query.account,
+    chainId: v3Query.chainId,
+    expected: v3Query.expected,
+    makerPlans: [
+      {
+        makerId: "maker-a",
+        state: "quoted",
+        quoteDigest: `0x${"8".repeat(64)}`,
+        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest },
+      },
+      {
+        makerId: "maker-b",
+        state: "quoted",
+        quoteDigest: `0x${"9".repeat(64)}`,
+        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest },
+      },
+    ],
+  };
+  const v3Authority = {
+    status: "authoritative",
+    revision: 3,
+    queryDigest: digestLocalnetAuthorityQuery(v3Query),
+    marketQuarantined: false,
+    canonicalLifecycle: [
+      {
+        stage: "take",
+        transactionHash: "0x201",
+        fillEvents: [
+          { stage: "lockTaken", lockId: "0xa", transactionHash: "0x201" },
+          { stage: "lockTaken", lockId: "0xb", transactionHash: "0x201" },
+        ],
+      },
+    ],
+  };
+  const effects = [];
+  try {
+    let reconciler = createLocalnetMakerReconciler(
+      reconcilerOptions(tmp.path, {
+        releaseV3Terminal: async (effect) => effects.push(effect),
+      }),
+    );
+    const result = await reconciler.reconcile({
+      query: v3Query,
+      coordinator: v3Coordinator,
+      authorityEvidence: v3Authority,
+    });
+    assert.equal(result.status, "released-terminal");
+    assert.deepEqual(
+      effects[0].fills.map(({ makerId, lockId }) => [makerId, lockId]),
+      [
+        ["maker-a", "0xa"],
+        ["maker-b", "0xb"],
+      ],
+    );
+
+    reconciler = createLocalnetMakerReconciler(
+      reconcilerOptions(tmp.path, {
+        releaseV3Terminal: async (effect) => effects.push(effect),
+      }),
+    );
+    await reconciler.reconcile({
+      query: v3Query,
+      coordinator: v3Coordinator,
+      authorityEvidence: v3Authority,
+    });
+    assert.equal(effects.length, 1);
+
+    await assert.rejects(
+      createLocalnetMakerReconciler(
+        reconcilerOptions(`${tmp.path}.mutated`, {
+          releaseV3Terminal: async () => undefined,
+        }),
+      ).reconcile({
+        query: v3Query,
+        coordinator: {
+          ...v3Coordinator,
+          makerPlans: v3Coordinator.makerPlans.map((plan, index) =>
+            index === 0
+              ? { ...plan, quote: { ...plan.quote, lockId: "0xc" } }
+              : plan,
+          ),
+        },
+        authorityEvidence: v3Authority,
+      }),
+      /one maker owner/i,
+    );
   } finally {
     tmp.cleanup();
   }

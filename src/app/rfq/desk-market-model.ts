@@ -1,3 +1,4 @@
+import type { AggregatedMids } from "@app20/private-intents";
 import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 
 export const LOCALNET_REFERENCE_STRK_USDC = 2;
@@ -31,12 +32,17 @@ function afterSpread(value: number): number {
   return value * (1 - LOCALNET_DESK_SPREAD_BPS / 10_000);
 }
 
-export function deskMarketModel(pairId: LocalnetMarketPairId): DeskMarketModel {
+function buildDeskMarketModel(
+  pairId: LocalnetMarketPairId,
+  referenceStrkUsdc: number,
+): DeskMarketModel {
+  if (!Number.isFinite(referenceStrkUsdc) || referenceStrkUsdc <= 0)
+    throw new Error("A positive maker reference mid is required.");
   const strkToUsdc = pairId === "STRK_USDC";
   const sizes = strkToUsdc ? [0, 1, 5, 10, 25, 50] : [0, 2, 10, 20, 50, 100];
   const grossRate = strkToUsdc
-    ? LOCALNET_REFERENCE_STRK_USDC
-    : 1 / LOCALNET_REFERENCE_STRK_USDC;
+    ? referenceStrkUsdc
+    : 1 / referenceStrkUsdc;
   const clientRate = afterSpread(grossRate);
   const points = sizes.map((sell) => ({
     sell,
@@ -49,15 +55,29 @@ export function deskMarketModel(pairId: LocalnetMarketPairId): DeskMarketModel {
     sellSymbol: strkToUsdc ? "STRK" : "USDC",
     buySymbol: strkToUsdc ? "USDC" : "STRK",
     referencePair: "STRK / USDC",
-    referencePrice: LOCALNET_REFERENCE_STRK_USDC,
+    referencePrice: referenceStrkUsdc,
     clientRate,
     clientRateLabel: strkToUsdc
       ? `${clientRate.toFixed(4)} USDC / STRK`
       : `${clientRate.toFixed(4)} STRK / USDC`,
     sizes,
     points,
-    bid: afterSpread(LOCALNET_REFERENCE_STRK_USDC),
-    midpoint: LOCALNET_REFERENCE_STRK_USDC,
-    ask: LOCALNET_REFERENCE_STRK_USDC / (1 - LOCALNET_DESK_SPREAD_BPS / 10_000),
+    bid: afterSpread(referenceStrkUsdc),
+    midpoint: referenceStrkUsdc,
+    ask: referenceStrkUsdc / (1 - LOCALNET_DESK_SPREAD_BPS / 10_000),
   };
+}
+
+export function deskMarketModel(pairId: LocalnetMarketPairId): DeskMarketModel {
+  return buildDeskMarketModel(pairId, LOCALNET_REFERENCE_STRK_USDC);
+}
+
+/** Builds the non-executable board from the browser-verified maker median. */
+export function deskMarketModelFromMakerMids(
+  pairId: LocalnetMarketPairId,
+  mids: AggregatedMids,
+): DeskMarketModel {
+  if (mids.count < 1 || mids.medianE18 <= 0n)
+    throw new Error("A verified maker indicative mid is unavailable.");
+  return buildDeskMarketModel(pairId, Number(mids.medianE18) / 1e18);
 }

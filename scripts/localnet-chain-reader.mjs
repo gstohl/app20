@@ -110,9 +110,11 @@ export function createLocalnetRpcReader(options) {
           "Localnet RPC reader observed another escrow class hash.",
         );
       const stages =
-        query.outcome === "settled"
-          ? ["fund", "fill", "claim"]
-          : ["fund", "timeout"];
+        query.lifecycle === "v3"
+          ? ["take"]
+          : query.outcome === "settled"
+            ? ["fund", "fill", "claim"]
+            : ["fund", "timeout"];
       const blocks = new Map();
       const canonicalBlock = async (number) => {
         if (blocks.has(number)) return blocks.get(number);
@@ -186,6 +188,37 @@ export function createLocalnetRpcReader(options) {
           throw new Error(
             "Lifecycle transaction does not contain one exact pinned escrow event.",
           );
+        let fillEvents;
+        if (stage === "take") {
+          const expectedFills = query.expected?.fills;
+          if (!Array.isArray(expectedFills) || expectedFills.length < 1)
+            throw new Error("V3 take query has no exact expected fills.");
+          const lockMatches = events
+            .map((event, eventIndex) => ({ event, eventIndex }))
+            .filter(
+              ({ event }) =>
+                event.fromAddress === artifact.escrowAddress &&
+                event.keys[0] === LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken &&
+                event.keys.length === 3 &&
+                event.keys[2] === query.dealId,
+            );
+          if (lockMatches.length !== expectedFills.length)
+            throw new Error(
+              "Take transaction does not contain one LockTaken per expected fill.",
+            );
+          fillEvents = expectedFills.map((fill) => {
+            const exact = lockMatches.filter(
+              ({ event }) => event.keys[1] === fill.lockId,
+            );
+            if (exact.length !== 1)
+              throw new Error(
+                "Take transaction changed an expected LockTaken identity.",
+              );
+            return Object.freeze(exact[0]);
+          });
+          if (new Set(fillEvents.map(({ eventIndex }) => eventIndex)).size !== fillEvents.length)
+            throw new Error("Take transaction reused one LockTaken event.");
+        }
         lifecycle.push(
           Object.freeze({
             stage,
@@ -195,6 +228,7 @@ export function createLocalnetRpcReader(options) {
             transactionIndex,
             eventIndex: matches[0].eventIndex,
             event: matches[0].event,
+            ...(fillEvents ? { fillEvents: Object.freeze(fillEvents) } : {}),
             block,
           }),
         );

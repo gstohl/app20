@@ -1,3 +1,15 @@
+import {
+  aggregateMids,
+  decodeMakerMid,
+  importQuotePublicKey,
+  verifyCanonicalQuote,
+  verifyMakerMid,
+  type AggregatedMids,
+  type MakerIndicativeMidV1,
+  type MakerMidVerification,
+} from "@app20/private-intents";
+import { resolveLocalnetQuoteKey } from "@/lib/localnet-quote-authority";
+
 export const LOCALNET_OPERATIONS_SCHEMA =
   "app20/rfq-operations-status/v1" as const;
 export const LOCALNET_ECONOMIC_POLICY_ID =
@@ -52,6 +64,17 @@ export type MakerCohortSummary = Readonly<{
 
 export type DirectoryFreshnessState = "fresh" | "expiring" | "expired";
 
+export type RfqLockCounts = Readonly<{
+  open: number;
+  expiredAwaitingSettlement: number;
+  settled: number;
+}>;
+
+export type RfqTranscriptCounts = Readonly<{
+  received: number;
+  consistent: number;
+}>;
+
 export type RfqOperationsStatus = Readonly<{
   schema: typeof LOCALNET_OPERATIONS_SCHEMA;
   environment: "localnet";
@@ -63,6 +86,11 @@ export type RfqOperationsStatus = Readonly<{
   directory: MakerDirectoryStatus;
   cohort: MakerCohortSummary;
   makers: readonly BrowserSafeMakerStatus[];
+  mids?: readonly MakerIndicativeMidV1[];
+  locks?: RfqLockCounts;
+  transcripts?: RfqTranscriptCounts;
+  /** Present only after every mid has passed browser-side fixture-key verification. */
+  midAggregate?: AggregatedMids;
   rawInventoryExposed: false;
 }>;
 
@@ -72,6 +100,10 @@ export type OperationsAvailability = Readonly<{
   claimsAndRefundsEnabled: true;
   asOf: number;
   status?: RfqOperationsStatus;
+  verifiedMids?: readonly MakerIndicativeMidV1[];
+  midAggregate?: AggregatedMids;
+  locks?: RfqLockCounts;
+  transcripts?: RfqTranscriptCounts;
 }>;
 
 const SAFE_TEXT = /^[a-zA-Z0-9 .,:;/_()\-·]+$/;
@@ -310,6 +342,9 @@ export function normalizeRfqOperationsStatus(
       "directory",
       "cohort",
       "makers",
+      "mids",
+      "locks",
+      "transcripts",
       "rawInventoryExposed",
     ],
     "RFQ operations status",
@@ -353,6 +388,48 @@ export function normalizeRfqOperationsStatus(
   );
   const makers = normalizeMakerCohort(status.makers, observedAt);
   const cohort = normalizeCohortSummary(status.cohort, makers);
+  if (!Array.isArray(status.mids))
+    throw new Error("Maker indicative mids are malformed.");
+  const mids = status.mids.map((mid) => decodeMakerMid(mid));
+  if (new Set(mids.map((mid) => mid.makerId)).size !== mids.length)
+    throw new Error("Maker indicative mids contain duplicate identities.");
+  for (const mid of mids) {
+    const maker = makers.find(({ makerId }) => makerId === mid.makerId);
+    if (!maker || maker.keyId !== mid.quoteKeyId)
+      throw new Error("Maker indicative mid key binding is not governed.");
+  }
+  const locks = record(status.locks, "RFQ lock counts");
+  exactKeys(
+    locks,
+    ["open", "expiredAwaitingSettlement", "settled"],
+    "RFQ lock counts",
+  );
+  const normalizedLocks = Object.freeze({
+    open: nonNegativeInteger(locks.open, "Open lock count"),
+    expiredAwaitingSettlement: nonNegativeInteger(
+      locks.expiredAwaitingSettlement,
+      "Expired lock count",
+    ),
+    settled: nonNegativeInteger(locks.settled, "Settled lock count"),
+  });
+  const transcripts = record(status.transcripts, "RFQ transcript counts");
+  exactKeys(
+    transcripts,
+    ["received", "consistent"],
+    "RFQ transcript counts",
+  );
+  const normalizedTranscripts = Object.freeze({
+    received: nonNegativeInteger(
+      transcripts.received,
+      "Received transcript count",
+    ),
+    consistent: nonNegativeInteger(
+      transcripts.consistent,
+      "Consistent transcript count",
+    ),
+  });
+  if (normalizedTranscripts.consistent > normalizedTranscripts.received)
+    throw new Error("RFQ transcript counts are contradictory.");
   return Object.freeze({
     schema: LOCALNET_OPERATIONS_SCHEMA,
     environment: "localnet",
@@ -368,7 +445,30 @@ export function normalizeRfqOperationsStatus(
     }),
     cohort,
     makers: Object.freeze(makers),
+    mids: Object.freeze(mids),
+    locks: normalizedLocks,
+    transcripts: normalizedTranscripts,
     rawInventoryExposed: false,
+  });
+}
+
+export async function verifyRfqOperationsMids(
+  status: RfqOperationsStatus,
+  now: number,
+  verification: MakerMidVerification = {
+    importPublicKey: importQuotePublicKey,
+    verify: verifyCanonicalQuote,
+    resolveKey: resolveLocalnetQuoteKey,
+  },
+): Promise<RfqOperationsStatus> {
+  const mids = status.mids ?? [];
+  await Promise.all(
+    mids.map((mid) => verifyMakerMid(mid, now, verification)),
+  );
+  return Object.freeze({
+    ...status,
+    mids: Object.freeze(mids),
+    midAggregate: aggregateMids(mids),
   });
 }
 
@@ -427,6 +527,8 @@ export function operationsAvailability(
       reason: "Browser-safe localnet operations status is unavailable.",
       claimsAndRefundsEnabled: true,
       asOf: now,
+      verifiedMids: Object.freeze([]),
+      midAggregate: Object.freeze({ medianE18: 0n, dispersionBps: 0, count: 0 }),
     });
   if (status.observedAt > now + 5) {
     return Object.freeze({
@@ -434,6 +536,12 @@ export function operationsAvailability(
       reason: "Localnet operations status is dated in the future.",
       claimsAndRefundsEnabled: true,
       asOf: now,
+      verifiedMids: status.midAggregate
+        ? (status.mids ?? Object.freeze([]))
+        : Object.freeze([]),
+      midAggregate: status.midAggregate,
+      locks: status.locks,
+      transcripts: status.transcripts,
     });
   }
   if (
@@ -446,6 +554,12 @@ export function operationsAvailability(
       claimsAndRefundsEnabled: true,
       asOf: now,
       status,
+      verifiedMids: status.midAggregate
+        ? (status.mids ?? Object.freeze([]))
+        : Object.freeze([]),
+      midAggregate: status.midAggregate,
+      locks: status.locks,
+      transcripts: status.transcripts,
     });
   }
   return Object.freeze({
@@ -454,12 +568,18 @@ export function operationsAvailability(
     claimsAndRefundsEnabled: true,
     asOf: now,
     status,
+    verifiedMids: status.midAggregate
+      ? (status.mids ?? Object.freeze([]))
+      : Object.freeze([]),
+    midAggregate: status.midAggregate,
+    locks: status.locks,
+    transcripts: status.transcripts,
   });
 }
 
 export function gateRfqAction(
   availability: OperationsAvailability,
-  action: "request" | "fund" | "fill" | "claim" | "refund",
+  action: "request" | "fund" | "fill" | "take" | "claim" | "refund",
   selectedMakerId?: string,
 ): Readonly<{ allowed: boolean; reason: string }> {
   if (action === "claim" || action === "refund") {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   validateFinalReview,
+  validateLiveV3FinalReview,
+  validateV3FinalReview,
   type RfqFinalReviewTerms,
 } from "./rfq-final-review";
 
@@ -139,4 +141,88 @@ describe("RFQ final review", () => {
       expect(result.blockers.join(" ")).toMatch(pattern);
     },
   );
+});
+
+describe("RFQ v3 final review", () => {
+  const v3Terms = {
+    mode: "v3" as const,
+    rfqId: "0x77",
+    sellAddress: "0x1",
+    exactSellAmount: 100n,
+    buyAddress: "0x2",
+    totalBuyAmount: 200n,
+    floorBuyAmount: 190n,
+    fills: [
+      {
+        makerId: "maker-a",
+        lockId: "0x41",
+        amountA: 100n,
+        amountB: 200n,
+        lockExpiresAt: 300,
+      },
+    ],
+    feeBps: 0,
+    app20FeeAmount: 0n,
+  };
+
+  it("accepts exact fills, fresh locks, floor, balance, and zero fees", () => {
+    expect(
+      validateV3FinalReview({
+        initial,
+        current: { ...initial, shieldedBalance: 100n },
+        terms: v3Terms,
+        now: 150,
+      }),
+    ).toEqual({ ok: true, blockers: [] });
+  });
+
+  it("rereads the selected lock immediately before Take", async () => {
+    await expect(
+      validateLiveV3FinalReview({
+        initial,
+        current: { ...initial, shieldedBalance: 100n },
+        terms: v3Terms,
+        now: 150,
+        readLock: async () => ({
+          status: "open",
+          tokenA: "0x1",
+          tokenB: "0x2",
+          rfqId: "0x77",
+          takerCommitment: "0x55",
+          expiry: 300,
+          schedule: [{ a: 100n, b: 200n }],
+          remainingB: 200n,
+          earnedA: 0n,
+          ticket: "0x44",
+          proceedsSettled: false,
+          collateralReleased: false,
+        }),
+      }),
+    ).resolves.toEqual({ ok: true, blockers: [] });
+  });
+
+  it("blocks fill drift, expired locks, floor failure, missing balance, and fees", () => {
+    const result = validateV3FinalReview({
+      initial,
+      current: { ...initial, shieldedBalance: undefined },
+      terms: {
+        ...v3Terms,
+        totalBuyAmount: 180n,
+        feeBps: 1,
+        fills: [
+          {
+            ...v3Terms.fills[0]!,
+            amountA: 99n,
+            amountB: 180n,
+            lockExpiresAt: 150,
+          },
+        ],
+      },
+      now: 150,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.blockers.join(" ")).toMatch(
+      /sell amounts|lock expired|local floor|unavailable|0 bps/i,
+    );
+  });
 });

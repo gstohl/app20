@@ -20,6 +20,26 @@ const LABELS: Readonly<Record<RfqLifecycleState, string>> = Object.freeze({
   quarantined: "Quarantined",
 });
 
-export function rfqStateLabel(state: RfqLifecycleState): string {
-  return LABELS[state];
+const V3_LABELS: Readonly<Record<RfqLifecycleState, string>> = Object.freeze({
+  ...LABELS,
+  requesting: "Asking makers to lock",
+  quoted: "Locked quotes received",
+  reviewing: "Ready for final Take review",
+  "submission-unknown": "Take outcome unknown",
+  settled: "Received atomically (locally observed)",
+  refused: "No executable locked quote",
+});
+
+export function rfqStateLabel(
+  state: RfqLifecycleState,
+  mode: "v2" | "v3" = "v2",
+): string {
+  return mode === "v3" ? V3_LABELS[state] : LABELS[state];
+}
+
+export function rfqStateLabelForRecord(input: {
+  state: RfqLifecycleState;
+  mode: "v2" | "v3";
+}): string {
+  return rfqStateLabel(input.state, input.mode);
 }

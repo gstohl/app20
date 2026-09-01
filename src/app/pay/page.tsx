@@ -25,6 +25,7 @@ import {
   encodePaymentLinkFragment,
   paymentLinkChainIdsEqual,
   paymentLinkNetworkLabel,
+  paymentLinkSupportsUsdc,
   type PaymentLinkAuthenticity,
 } from "@/lib/payment-link";
 import { loadPendingPayment, storePendingPayment } from "@/lib/pending-payment";
@@ -48,6 +49,7 @@ export default function PayPage() {
   const [mailPassphrase, setMailPassphrase] = useState("");
   const [handoffError, setHandoffError] = useState("");
   const [pendingConflict, setPendingConflict] = useState(false);
+  const [requestToken, setRequestToken] = useState<"STRK" | "USDC">("STRK");
   const [amount, setAmount] = useState("0.1");
   const [memo, setMemo] = useState("");
   const [expiryHours, setExpiryHours] = useState(
@@ -114,6 +116,7 @@ export default function PayPage() {
   }, [address, chainId]);
 
   useEffect(() => {
+    setRequestToken("STRK");
     setGeneratedRequest(null);
     setGeneratedLink("");
     setGeneratedAuthenticity({ kind: "unsigned" });
@@ -223,6 +226,7 @@ export default function PayPage() {
         expiryHours,
         requester: address,
         chainId,
+        token: requestToken,
       });
       const link = createSignedPaymentLink(
         created,
@@ -250,7 +254,10 @@ export default function PayPage() {
     }
   }
 
-  function updateCreatorField(setter: (value: string) => void, value: string) {
+  function updateCreatorField<Value extends string>(
+    setter: (value: Value) => void,
+    value: Value,
+  ) {
     setter(value);
     setGeneratedRequest(null);
     setGeneratedLink("");
@@ -261,8 +268,8 @@ export default function PayPage() {
   const expired = request ? paymentRequestIsExpired(request) : false;
   const wrongNetwork = Boolean(
     request?.chainId &&
-      chainId &&
-      !paymentLinkChainIdsEqual(request.chainId, chainId),
+    chainId &&
+    !paymentLinkChainIdsEqual(request.chainId, chainId),
   );
   const requestedNetwork = request?.chainId
     ? paymentLinkNetworkLabel(request.chainId)
@@ -285,7 +292,7 @@ export default function PayPage() {
           <p>
             {hasFragment
               ? "APP20 verifies signed request terms in your browser. Legacy unsigned links remain visibly unverified. The URL fragment is not sent in an HTTP request."
-              : "Create a Mail-signed STRK request without sending mail or touching the pool. The recipient address, amount, memo, expiry, and Mail signing keys are visible to anyone who receives the link."}
+              : "Create a Mail-signed private payment request without sending mail or touching the pool. The recipient address, token, amount, memo, expiry, and Mail signing keys are visible to anyone who receives the link."}
           </p>
         </header>
 
@@ -399,7 +406,7 @@ export default function PayPage() {
               MAIL-SIGNED REQUEST / NO TRANSACTION
             </p>
             <h2 id="payment-link-create-title" className={styles.cardTitle}>
-              Request private STRK
+              Request a private payment
             </h2>
             <p className={styles.notice} role="status">
               {creatorReadiness}
@@ -424,8 +431,29 @@ export default function PayPage() {
                   controls this wallet.
                 </span>
               </div>
+              {chainId && paymentLinkSupportsUsdc(chainId) ? (
+                <label className={styles.field}>
+                  Token requested
+                  <select
+                    value={requestToken}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (value === "STRK" || value === "USDC") {
+                        updateCreatorField(setRequestToken, value);
+                      }
+                    }}
+                  >
+                    <option value="STRK">STRK</option>
+                    <option value="USDC">USDC (localnet)</option>
+                  </select>
+                  <small>
+                    USDC is enabled only for the reviewed localnet registry
+                    entry.
+                  </small>
+                </label>
+              ) : null}
               <label className={styles.field}>
-                STRK requested
+                {requestToken} requested
                 <input
                   value={amount}
                   onChange={(event) =>
@@ -436,7 +464,10 @@ export default function PayPage() {
                   placeholder="0.1"
                   required
                 />
-                <small>Exact decimal amount; STRK has 18 decimal places.</small>
+                <small>
+                  Exact decimal amount; {requestToken} has{" "}
+                  {requestToken === "STRK" ? 18 : 6} decimal places.
+                </small>
               </label>
               <label className={styles.field}>
                 Expiry in hours

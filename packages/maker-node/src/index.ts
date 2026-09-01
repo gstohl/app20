@@ -16,29 +16,54 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
 import {
+  MAKER_MID_DOMAIN,
   QUOTE_DOMAIN,
   QUOTE_V2_DOMAIN,
+  QUOTE_V3_DOMAIN,
+  assertLadderBucket,
+  assertPriceSchedule,
+  assertPrivateRfqV2,
+  canonicalMakerMid,
   canonicalMakerReservation,
   canonicalPrivateRfq,
   canonicalSolverQuote,
   canonicalSolverQuoteV2,
-  digestPrivateRfq,
-  digestSolverQuoteV2,
+  canonicalSolverQuoteV3,
   createMakerReservation,
   decodeStoredMakerReservation,
+  digestPrivateRfq,
+  digestPrivateRfqV2,
+  digestSolverQuoteV2,
+  digestSolverQuoteV3,
+  isCanonicalQuoteSignature,
+  scheduleUnitPriceE18,
   transitionMakerReservation,
+  verifySelectionTranscriptForMaker,
+  type MakerIndicativeMidV1,
   type MakerReservationV1,
+  type PriceSchedule,
   type PrivateRfqV1,
+  type PrivateRfqV2,
+  type SelectionTranscriptV1,
+  type SizeBucketSymbol,
   type SolverQuote,
+  type SolverQuoteV3,
   type StarknetPool,
   type UnsignedSolverQuote,
   type UnsignedSolverQuoteV2,
+  type UnsignedSolverQuoteV3,
 } from "@app20/private-intents";
+import type {
+  DurableMakerTranscriptJournal,
+  MakerTranscriptRecord,
+} from "./transcript-journal.ts";
 
 const WAL_DOMAIN = "app20/maker-reservation-wal/v1" as const;
 const HEX_32_PATTERN = /^0x[0-9a-f]{64}$/;
 const FELT_HEX_PATTERN = /^0x[0-9a-f]{1,64}$/;
 const MAX_U128 = (1n << 128n) - 1n;
+const STARK_FIELD_PRIME =
+  0x0800000000000011000000000000000000000000000000000000000000000001n;
 const MAX_TEXT_LENGTH = 8192;
 const MAX_FELT_HEX_LENGTH = 66;
 const MAX_LOCK_FILE_BYTES = 4096;
@@ -191,10 +216,193 @@ export type MakerFillRequest = Readonly<{
   ticketAddress: string;
 }>;
 
+export type LockRecordV1State =
+  | "locking"
+  | "open"
+  | "taken"
+  | "expired"
+  | "settling"
+  | "settled"
+  | "quarantined";
+
+export type LockRecordV1 = Readonly<{
+  lockId: string;
+  rfqDigest: string;
+  rfqFelt: string;
+  takerCommitment: string;
+  tokenA: string;
+  tokenB: string;
+  schedule: PriceSchedule;
+  maxB: bigint;
+  expiry: number;
+  ticket: string;
+  lockTxHash: string;
+  state: LockRecordV1State;
+  takenA: bigint;
+  takenB: bigint;
+  proceedsTxHash?: string;
+  releaseTxHash?: string;
+  quoteDigest?: string;
+}>;
+
+export type LockRecordV1Wire = Readonly<{
+  lockId: string;
+  rfqDigest: string;
+  rfqFelt: string;
+  takerCommitment: string;
+  tokenA: string;
+  tokenB: string;
+  schedule: readonly Readonly<{ a: string; b: string }>[];
+  maxB: string;
+  expiry: number;
+  ticket: string;
+  lockTxHash: string;
+  state: LockRecordV1State;
+  takenA: string;
+  takenB: string;
+  proceedsTxHash?: string;
+  releaseTxHash?: string;
+  quoteDigest?: string;
+}>;
+
+export type MakerOnChainLock = Readonly<{
+  tokenA: string;
+  tokenB: string;
+  rfqId: string;
+  takerCommitment: string;
+  expiry: number;
+  schedule: PriceSchedule;
+  remainingB: bigint;
+  earnedA: bigint;
+  ticket: string;
+  proceedsSettled: boolean;
+  collateralReleased: boolean;
+  status: "empty" | "open";
+}>;
+
+export type MakerLockRequest = Readonly<{
+  lockId: string;
+  rfqFelt: string;
+  takerCommitment: string;
+  tokenA: string;
+  tokenB: string;
+  schedule: PriceSchedule;
+  expiry: number;
+}>;
+
+export type MakerLockSettlementRequest = Readonly<{
+  lockId: string;
+  ticket: string;
+  outputToken: string;
+}>;
+
+export class MakerWalletOperationError extends Error {
+  readonly outcome: "reverted" | "unknown";
+
+  constructor(
+    outcome: "reverted" | "unknown",
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "MakerWalletOperationError";
+    this.outcome = outcome;
+  }
+}
+
 export type MakerWalletAdapter = Readonly<{
   settlementAccount: string;
   privateBalance: (asset: string) => Promise<bigint>;
   fill: (request: MakerFillRequest) => Promise<{ transactionHash: string }>;
+  lock?: (request: MakerLockRequest) => Promise<{
+    ticket: string;
+    transactionHash: string;
+    lock: MakerOnChainLock;
+  }>;
+  getLock?: (lockId: string) => Promise<MakerOnChainLock>;
+  settleProceeds?: (
+    request: MakerLockSettlementRequest,
+  ) => Promise<{ transactionHash: string }>;
+  releaseCollateral?: (
+    request: MakerLockSettlementRequest,
+  ) => Promise<{ transactionHash: string }>;
+}>;
+
+export type MakerQuoteV3RefusalCode =
+  | "bucket"
+  | "insufficient-inventory"
+  | "policy"
+  | "lock-failed"
+  | "expired";
+
+export type MakerQuoteV3Result =
+  | Readonly<{
+      quote: SolverQuoteV3;
+      lock: Readonly<{
+        lockId: string;
+        ticket: string;
+        transactionHash: string;
+      }>;
+    }>
+  | Readonly<{
+      refused: Readonly<{ code: MakerQuoteV3RefusalCode; reason: string }>;
+    }>;
+
+export type MakerScheduleV3Request = Readonly<{
+  rfq: PrivateRfqV2;
+  bucketSymbol: SizeBucketSymbol;
+  availableBuyInventory: bigint;
+  now: number;
+}>;
+
+export type MakerScheduleV3Result = Readonly<{
+  schedule: PriceSchedule;
+  spreadBps: number;
+  pricingProvenance: string;
+}>;
+
+export type MakerEconomicPolicyV3Input = Readonly<{
+  rfq: PrivateRfqV2;
+  rfqDigest: string;
+  schedule: PriceSchedule;
+  amountA: bigint;
+  amountB: bigint;
+  quoteTtlSeconds: number;
+  now: number;
+}>;
+
+export type MakerNodeV3Config = Readonly<{
+  tokenSymbol: (token: string) => SizeBucketSymbol | undefined;
+  buildSchedule: (
+    request: MakerScheduleV3Request,
+  ) => Promise<MakerScheduleV3Result | null> | MakerScheduleV3Result | null;
+  economicPolicy: Readonly<{
+    evaluate: (input: MakerEconomicPolicyV3Input) =>
+      | Promise<
+          Readonly<{
+            allowed: boolean;
+            reason?: string;
+            commitmentUsdcBaseUnits?: bigint;
+          }>
+        >
+      | Readonly<{
+          allowed: boolean;
+          reason?: string;
+          commitmentUsdcBaseUnits?: bigint;
+        }>;
+    commit?: (
+      input: MakerEconomicPolicyV3Input &
+        Readonly<{
+          lockId: string;
+          commitmentUsdcBaseUnits: bigint;
+        }>,
+    ) => Promise<void> | void;
+  }>;
+  midE18: bigint;
+  transcriptJournal: DurableMakerTranscriptJournal;
+  clock?: () => number;
+  randomFelt?: () => string;
+  randomNonce?: () => string;
 }>;
 
 export type MakerNodeConfig = Readonly<{
@@ -211,6 +419,7 @@ export type MakerNodeConfig = Readonly<{
   signer: (canonical: string) => Promise<string>;
   wallet: MakerWalletAdapter;
   randomId?: () => string;
+  v3?: MakerNodeV3Config;
 }>;
 
 type StoredWire = Readonly<{
@@ -247,8 +456,29 @@ type StoredWire = Readonly<{
   };
 }>;
 
+type StoredLockRecord = LockRecordV1 &
+  Readonly<{
+    nonce: string;
+    quotedAt: number;
+    spreadBps: number;
+    pricingProvenance: string;
+    signature?: string;
+    settlingAction?: "proceeds" | "release";
+  }>;
+
+type StoredLockWire = LockRecordV1Wire &
+  Readonly<{
+    nonce: string;
+    quotedAt: number;
+    spreadBps: number;
+    pricingProvenance: string;
+    signature?: string;
+    settlingAction?: "proceeds" | "release";
+  }>;
+
 type WalPayload = Readonly<{
   records: readonly StoredWire[];
+  locks?: readonly StoredLockWire[];
 }>;
 
 type WalEntry = Readonly<{
@@ -457,6 +687,188 @@ function deserializeStored(wire: StoredWire): StoredMakerReservation {
   });
 }
 
+const LOCK_RECORD_STATES = new Set<LockRecordV1State>([
+  "locking",
+  "open",
+  "taken",
+  "expired",
+  "settling",
+  "settled",
+  "quarantined",
+]);
+
+function requireNonnegativeAmount(value: bigint, label: string): bigint {
+  if (typeof value !== "bigint" || value < 0n || value > MAX_U128) {
+    throw new MakerNodeError(`${label} must be a non-negative u128 value.`);
+  }
+  return value;
+}
+
+function canonicalStoredLock(record: StoredLockRecord): StoredLockRecord {
+  assertPriceSchedule(record.schedule);
+  const schedule = Object.freeze(
+    record.schedule.map((point) =>
+      Object.freeze({
+        a: requireAmount(point.a, "lock schedule amount"),
+        b: requireAmount(point.b, "lock schedule payout"),
+      }),
+    ),
+  );
+  const maxB = requireAmount(record.maxB, "lock maxB");
+  if (schedule[schedule.length - 1]!.b !== maxB) {
+    throw new MakerNodeError(
+      "Lock maxB must equal the schedule maximum payout.",
+    );
+  }
+  if (!LOCK_RECORD_STATES.has(record.state)) {
+    throw new MakerNodeError("Lock record state is invalid.");
+  }
+  const spreadBps = requireSpread(record.spreadBps);
+  const quoteDigestValue =
+    record.quoteDigest === undefined
+      ? undefined
+      : requireHex32(record.quoteDigest, "lock quoteDigest");
+  if (
+    record.settlingAction !== undefined &&
+    record.settlingAction !== "proceeds" &&
+    record.settlingAction !== "release"
+  ) {
+    throw new MakerNodeError("Lock settlement action is invalid.");
+  }
+  return Object.freeze({
+    lockId: requireFeltText(record.lockId, "lockId"),
+    rfqDigest: requireHex32(record.rfqDigest, "lock rfqDigest"),
+    rfqFelt: requireFeltText(record.rfqFelt, "lock rfqFelt"),
+    takerCommitment: requireFeltText(
+      record.takerCommitment,
+      "lock takerCommitment",
+    ),
+    tokenA: requireFeltText(record.tokenA, "lock tokenA"),
+    tokenB: requireFeltText(record.tokenB, "lock tokenB"),
+    schedule,
+    maxB,
+    expiry: requireTimestamp(record.expiry, "lock expiry"),
+    ticket: requireFeltText(record.ticket, "lock ticket"),
+    lockTxHash: requireFeltText(record.lockTxHash, "lock transaction hash"),
+    state: record.state,
+    takenA: requireNonnegativeAmount(record.takenA, "lock takenA"),
+    takenB: requireNonnegativeAmount(record.takenB, "lock takenB"),
+    ...(record.proceedsTxHash === undefined
+      ? {}
+      : {
+          proceedsTxHash: requireFeltText(
+            record.proceedsTxHash,
+            "lock proceeds transaction hash",
+          ),
+        }),
+    ...(record.releaseTxHash === undefined
+      ? {}
+      : {
+          releaseTxHash: requireFeltText(
+            record.releaseTxHash,
+            "lock release transaction hash",
+          ),
+        }),
+    ...(quoteDigestValue === undefined
+      ? {}
+      : { quoteDigest: quoteDigestValue }),
+    nonce: requireHex32(record.nonce, "lock nonce"),
+    quotedAt: requireTimestamp(record.quotedAt, "lock quotedAt"),
+    spreadBps,
+    pricingProvenance: requireText(
+      record.pricingProvenance,
+      "lock pricingProvenance",
+    ),
+    ...(record.signature === undefined
+      ? {}
+      : { signature: requireText(record.signature, "lock signature") }),
+    ...(record.settlingAction === undefined
+      ? {}
+      : { settlingAction: record.settlingAction }),
+  });
+}
+
+function serializeStoredLock(record: StoredLockRecord): StoredLockWire {
+  const canonical = canonicalStoredLock(record);
+  return {
+    ...canonical,
+    schedule: canonical.schedule.map((point) => ({
+      a: point.a.toString(),
+      b: point.b.toString(),
+    })),
+    maxB: canonical.maxB.toString(),
+    takenA: canonical.takenA.toString(),
+    takenB: canonical.takenB.toString(),
+  };
+}
+
+function deserializeStoredLock(wire: StoredLockWire): StoredLockRecord {
+  return canonicalStoredLock({
+    ...wire,
+    schedule: wire.schedule.map((point) => ({
+      a: BigInt(point.a),
+      b: BigInt(point.b),
+    })),
+    maxB: BigInt(wire.maxB),
+    takenA: BigInt(wire.takenA),
+    takenB: BigInt(wire.takenB),
+  });
+}
+
+export function encodeLockRecordV1(record: LockRecordV1): LockRecordV1Wire {
+  assertPriceSchedule(record.schedule);
+  requireAmount(record.maxB, "lock maxB");
+  requireNonnegativeAmount(record.takenA, "lock takenA");
+  requireNonnegativeAmount(record.takenB, "lock takenB");
+  if (!LOCK_RECORD_STATES.has(record.state)) {
+    throw new MakerNodeError("Lock record state is invalid.");
+  }
+  return Object.freeze({
+    lockId: requireFeltText(record.lockId, "lockId"),
+    rfqDigest: requireHex32(record.rfqDigest, "lock rfqDigest"),
+    rfqFelt: requireFeltText(record.rfqFelt, "lock rfqFelt"),
+    takerCommitment: requireFeltText(
+      record.takerCommitment,
+      "lock takerCommitment",
+    ),
+    tokenA: requireFeltText(record.tokenA, "lock tokenA"),
+    tokenB: requireFeltText(record.tokenB, "lock tokenB"),
+    schedule: Object.freeze(
+      record.schedule.map((point) =>
+        Object.freeze({ a: point.a.toString(), b: point.b.toString() }),
+      ),
+    ),
+    maxB: record.maxB.toString(),
+    expiry: requireTimestamp(record.expiry, "lock expiry"),
+    ticket: requireFeltText(record.ticket, "lock ticket"),
+    lockTxHash: requireFeltText(record.lockTxHash, "lock transaction hash"),
+    state: record.state,
+    takenA: record.takenA.toString(),
+    takenB: record.takenB.toString(),
+    ...(record.proceedsTxHash === undefined
+      ? {}
+      : {
+          proceedsTxHash: requireFeltText(
+            record.proceedsTxHash,
+            "lock proceeds transaction hash",
+          ),
+        }),
+    ...(record.releaseTxHash === undefined
+      ? {}
+      : {
+          releaseTxHash: requireFeltText(
+            record.releaseTxHash,
+            "lock release transaction hash",
+          ),
+        }),
+    ...(record.quoteDigest === undefined
+      ? {}
+      : {
+          quoteDigest: requireHex32(record.quoteDigest, "lock quoteDigest"),
+        }),
+  });
+}
+
 function canonicalWalEntry(
   sequence: number,
   previousDigest: string | null,
@@ -478,6 +890,17 @@ function cloneRecords(
     [...records.entries()].map(([id, record]) => [
       id,
       deserializeStored(serializeStored(record)),
+    ]),
+  );
+}
+
+function cloneLocks(
+  records: ReadonlyMap<string, StoredLockRecord>,
+): Map<string, StoredLockRecord> {
+  return new Map(
+    [...records.entries()].map(([id, record]) => [
+      id,
+      deserializeStoredLock(serializeStoredLock(record)),
     ]),
   );
 }
@@ -518,6 +941,7 @@ export class DurableReservationStore {
   readonly #faultInjector?: (stage: string) => void;
   readonly #fileSystem: DurableReservationFileSystem;
   #records = new Map<string, StoredMakerReservation>();
+  #locks = new Map<string, StoredLockRecord>();
   #sequence = 0;
   #headDigest: string | null = null;
   #durableSerialized = "";
@@ -562,6 +986,12 @@ export class DurableReservationStore {
     );
   }
 
+  listLocks(): readonly StoredLockRecord[] {
+    return [...this.#locks.values()].map((record) =>
+      deserializeStoredLock(serializeStoredLock(record)),
+    );
+  }
+
   async close(): Promise<void> {
     if (this.#closed) return;
     await this.#tail;
@@ -602,7 +1032,50 @@ export class DurableReservationStore {
       }
       try {
         const value = await mutate(draft, this.#sequence + 1);
-        this.#appendSnapshot(draft);
+        this.#appendSnapshot(draft, cloneLocks(this.#locks));
+        resolveResult(value);
+      } catch (error) {
+        rejectResult(error);
+      }
+    });
+    this.#tail = run.catch(() => undefined);
+    await run;
+    return result;
+  }
+
+  async lockTransaction<T>(
+    mutate: (
+      draft: Map<string, StoredLockRecord>,
+      nextSequence: number,
+    ) => Promise<T> | T,
+  ): Promise<T> {
+    if (this.#closed) throw new MakerNodeError("Reservation store is closed.");
+    let resolveResult!: (value: T) => void;
+    let rejectResult!: (reason: unknown) => void;
+    const result = new Promise<T>((resolve, reject) => {
+      resolveResult = resolve;
+      rejectResult = reject;
+    });
+    const run = this.#tail.then(async () => {
+      if (this.#closed)
+        throw new MakerNodeError("Reservation store is closed.");
+      if (this.#failed)
+        throw new MakerNodeError(
+          "Reservation store is fail-stopped after an uncertain WAL transition; reopen it from disk before retrying.",
+        );
+      let draft: Map<string, StoredLockRecord>;
+      try {
+        draft = cloneLocks(this.#locks);
+      } catch (error) {
+        this.#failed = true;
+        throw new MakerNodeError(
+          "Reservation WAL serialization failed; the store is fail-stopped.",
+          { cause: error },
+        );
+      }
+      try {
+        const value = await mutate(draft, this.#sequence + 1);
+        this.#appendSnapshot(cloneRecords(this.#records), draft);
         resolveResult(value);
       } catch (error) {
         rejectResult(error);
@@ -729,7 +1202,18 @@ export class DurableReservationStore {
         }
         next.set(id, record);
       }
+      const nextLocks = new Map<string, StoredLockRecord>();
+      for (const wire of entry.payload.locks ?? []) {
+        const record = deserializeStoredLock(wire);
+        if (nextLocks.has(record.lockId)) {
+          throw new MakerNodeError(
+            `Reservation WAL line ${index + 1} repeats lock ${record.lockId}.`,
+          );
+        }
+        nextLocks.set(record.lockId, record);
+      }
       this.#records = next;
+      this.#locks = nextLocks;
       this.#sequence = entry.sequence;
       this.#headDigest = entry.digest;
     }
@@ -801,7 +1285,10 @@ export class DurableReservationStore {
     }
   }
 
-  #appendSnapshot(records: Map<string, StoredMakerReservation>): void {
+  #appendSnapshot(
+    records: Map<string, StoredMakerReservation>,
+    locks: Map<string, StoredLockRecord>,
+  ): void {
     try {
       this.#checkpoint("serialize");
       const sequence = this.#sequence + 1;
@@ -813,6 +1300,9 @@ export class DurableReservationStore {
             ),
           )
           .map(serializeStored),
+        locks: [...locks.values()]
+          .sort((left, right) => left.lockId.localeCompare(right.lockId))
+          .map(serializeStoredLock),
       } satisfies WalPayload;
       const canonical = canonicalWalEntry(sequence, this.#headDigest, payload);
       const entry: WalEntry = {
@@ -827,6 +1317,7 @@ export class DurableReservationStore {
       const candidate = `${this.#durableSerialized}${serializedEntry}`;
       this.#replaceDurableFile(candidate, String(sequence));
       this.#records = records;
+      this.#locks = locks;
       this.#sequence = sequence;
       this.#headDigest = entry.digest;
       this.#durableSerialized = candidate;
@@ -1067,12 +1558,204 @@ function reconciliationSnapshot(
   });
 }
 
+function sameFelt(left: string, right: string): boolean {
+  try {
+    return BigInt(left) === BigInt(right);
+  } catch {
+    return false;
+  }
+}
+
+function schedulesMatch(left: PriceSchedule, right: PriceSchedule): boolean {
+  try {
+    assertPriceSchedule(left);
+    assertPriceSchedule(right);
+    return (
+      left.length === right.length &&
+      left.every(
+        (point, index) =>
+          point.a === right[index]!.a && point.b === right[index]!.b,
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+function requireOpenChainLock(
+  chain: MakerOnChainLock,
+  record: StoredLockRecord,
+): MakerOnChainLock {
+  if (!chain || chain.status !== "open") {
+    throw new MakerNodeError("Escrow lock is not open on chain.");
+  }
+  assertPriceSchedule(chain.schedule);
+  requireTimestamp(chain.expiry, "on-chain lock expiry");
+  requireNonnegativeAmount(chain.remainingB, "on-chain remaining collateral");
+  requireNonnegativeAmount(chain.earnedA, "on-chain earned proceeds");
+  const takenB = record.maxB - chain.remainingB;
+  if (
+    takenB < 0n ||
+    !sameFelt(chain.rfqId, record.rfqFelt) ||
+    !sameFelt(chain.takerCommitment, record.takerCommitment) ||
+    !sameFelt(chain.tokenA, record.tokenA) ||
+    !sameFelt(chain.tokenB, record.tokenB) ||
+    chain.expiry !== record.expiry ||
+    !schedulesMatch(chain.schedule, record.schedule) ||
+    !sameFelt(chain.ticket, record.ticket)
+  ) {
+    throw new MakerNodeError(
+      "On-chain lock does not match its durable maker binding.",
+    );
+  }
+  return chain;
+}
+
+function lockStateFromChain(
+  record: StoredLockRecord,
+  chain: MakerOnChainLock,
+  now: number,
+): StoredLockRecord {
+  const open = requireOpenChainLock(chain, record);
+  const proceedsComplete = open.earnedA === 0n || open.proceedsSettled;
+  const collateralComplete = open.remainingB === 0n || open.collateralReleased;
+  const state: LockRecordV1State =
+    proceedsComplete && collateralComplete
+      ? "settled"
+      : now >= record.expiry
+        ? "expired"
+        : open.earnedA > 0n
+          ? "taken"
+          : "open";
+  return canonicalStoredLock({
+    ...record,
+    state,
+    takenA: open.earnedA,
+    takenB: record.maxB - open.remainingB,
+    settlingAction: undefined,
+  });
+}
+
+function publicLockRecord(record: StoredLockRecord): LockRecordV1 {
+  const canonical = canonicalStoredLock(record);
+  return Object.freeze({
+    lockId: canonical.lockId,
+    rfqDigest: canonical.rfqDigest,
+    rfqFelt: canonical.rfqFelt,
+    takerCommitment: canonical.takerCommitment,
+    tokenA: canonical.tokenA,
+    tokenB: canonical.tokenB,
+    schedule: canonical.schedule,
+    maxB: canonical.maxB,
+    expiry: canonical.expiry,
+    ticket: canonical.ticket,
+    lockTxHash: canonical.lockTxHash,
+    state: canonical.state,
+    takenA: canonical.takenA,
+    takenB: canonical.takenB,
+    ...(canonical.proceedsTxHash === undefined
+      ? {}
+      : { proceedsTxHash: canonical.proceedsTxHash }),
+    ...(canonical.releaseTxHash === undefined
+      ? {}
+      : { releaseTxHash: canonical.releaseTxHash }),
+    ...(canonical.quoteDigest === undefined
+      ? {}
+      : { quoteDigest: canonical.quoteDigest }),
+  });
+}
+
+function unsignedQuoteV3For(
+  record: StoredLockRecord,
+  config: MakerNodeConfig,
+): UnsignedSolverQuoteV3 {
+  return {
+    domain: QUOTE_V3_DOMAIN,
+    version: 3,
+    solverId: config.makerId,
+    quoteKeyId: config.solverKey,
+    nonce: record.nonce,
+    pool: config.pool,
+    helper: config.helper,
+    escrowAddress: config.helper,
+    rfqDigest: record.rfqDigest,
+    rfqFelt: record.rfqFelt,
+    sellToken: record.tokenA,
+    buyToken: record.tokenB,
+    schedule: record.schedule,
+    lockId: record.lockId,
+    lockTicket: record.ticket,
+    lockTransactionHash: record.lockTxHash,
+    lockExpiresAt: record.expiry,
+    spreadBps: record.spreadBps,
+    pricingProvenance: record.pricingProvenance,
+    quotedAt: record.quotedAt,
+    quoteExpiresAt: record.expiry,
+  };
+}
+
+function quoteV3Refusal(
+  code: MakerQuoteV3RefusalCode,
+  reason: string,
+): MakerQuoteV3Result {
+  return Object.freeze({
+    refused: Object.freeze({ code, reason: requireText(reason, "reason") }),
+  });
+}
+
+function settlingActionConfirmed(
+  record: StoredLockRecord,
+  chain: MakerOnChainLock,
+): boolean {
+  if (record.state !== "settling") return true;
+  if (record.settlingAction === "release") return chain.collateralReleased;
+  if (record.settlingAction === "proceeds") return chain.proceedsSettled;
+  return (
+    (chain.earnedA === 0n || chain.proceedsSettled) &&
+    (chain.remainingB === 0n || chain.collateralReleased)
+  );
+}
+
+function terminalLockState(state: LockRecordV1State): boolean {
+  return state === "settled" || state === "quarantined";
+}
+
 export class DurableMakerNode {
   readonly #store: DurableReservationStore;
   readonly #config: MakerNodeConfig;
 
   constructor(store: DurableReservationStore, config: MakerNodeConfig) {
     this.#store = store;
+    if (config.v3) {
+      if (config.pool !== "starknet:APP20_LOCALNET") {
+        throw new MakerNodeError(
+          "RFQ v3 maker support is restricted to APP20 localnet.",
+        );
+      }
+      if (typeof config.v3.midE18 !== "bigint" || config.v3.midE18 <= 0n) {
+        throw new MakerNodeError("Maker v3 midE18 must be positive.");
+      }
+      if (
+        typeof config.v3.tokenSymbol !== "function" ||
+        typeof config.v3.buildSchedule !== "function" ||
+        typeof config.v3.economicPolicy?.evaluate !== "function" ||
+        typeof config.v3.transcriptJournal?.append !== "function" ||
+        typeof config.v3.transcriptJournal?.list !== "function" ||
+        (config.v3.clock !== undefined && typeof config.v3.clock !== "function")
+      ) {
+        throw new MakerNodeError("Maker v3 configuration is incomplete.");
+      }
+      if (
+        typeof config.wallet.lock !== "function" ||
+        typeof config.wallet.getLock !== "function" ||
+        typeof config.wallet.settleProceeds !== "function" ||
+        typeof config.wallet.releaseCollateral !== "function"
+      ) {
+        throw new MakerNodeError(
+          "Maker v3 requires lock reads and both settlement wallet actions.",
+        );
+      }
+    }
     this.#config = {
       ...config,
       makerId: requireText(config.makerId, "makerId"),
@@ -1103,6 +1786,551 @@ export class DurableMakerNode {
     return this.#config.wallet.settlementAccount;
   }
 
+  listLocks(): readonly LockRecordV1Wire[] {
+    return this.#store
+      .listLocks()
+      .map((record) => encodeLockRecordV1(publicLockRecord(record)));
+  }
+
+  listTranscripts(): readonly MakerTranscriptRecord[] {
+    return this.#v3().transcriptJournal.list();
+  }
+
+  async indicativeMid(now: number): Promise<MakerIndicativeMidV1> {
+    requireTimestamp(now, "now");
+    const v3 = this.#v3();
+    const unsigned = {
+      version: 1 as const,
+      domain: MAKER_MID_DOMAIN,
+      makerId: this.#config.makerId,
+      quoteKeyId: this.#config.solverKey,
+      marketId: "STRK_USDC" as const,
+      midE18: v3.midE18,
+      observedAt: now,
+      validUntil: now + 30,
+    };
+    const signature = requireText(
+      await this.#config.signer(canonicalMakerMid(unsigned)),
+      "maker mid signature",
+    );
+    if (!isCanonicalQuoteSignature(signature)) {
+      throw new MakerNodeError(
+        "Maker mid signer returned a non-canonical P-256 signature.",
+      );
+    }
+    return Object.freeze({ ...unsigned, signature });
+  }
+
+  async journalTranscript(
+    transcript: SelectionTranscriptV1,
+    now: number,
+  ): Promise<
+    Readonly<{ accepted: true; consistent: boolean; reason?: string }>
+  > {
+    requireTimestamp(now, "now");
+    const v3 = this.#v3();
+    const own = this.#store
+      .listLocks()
+      .find(
+        (record) =>
+          record.rfqDigest === transcript.rfqDigest.toLowerCase() &&
+          record.quoteDigest !== undefined,
+      );
+    const verification = own
+      ? await verifySelectionTranscriptForMaker(transcript, {
+          makerId: this.#config.makerId,
+          ownQuoteDigest: own.quoteDigest!,
+          ownUnitPriceE18: scheduleUnitPriceE18(
+            own.schedule,
+            own.schedule[own.schedule.length - 1]!.a,
+          ),
+        })
+      : Object.freeze({
+          consistent: false,
+          reason: "Maker has no signed quote for this RFQ digest.",
+        });
+    const record = v3.transcriptJournal.append(transcript, verification, now);
+    return Object.freeze({
+      accepted: true,
+      consistent: record.consistent,
+      ...(record.reason === undefined ? {} : { reason: record.reason }),
+    });
+  }
+
+  async quoteV3(rfq: PrivateRfqV2, now: number): Promise<MakerQuoteV3Result> {
+    requireTimestamp(now, "now");
+    assertPrivateRfqV2(rfq);
+    const v3 = this.#v3();
+    if (
+      rfq.chainId !== this.#config.pool ||
+      !sameFelt(rfq.settlementHelper, this.#config.helper)
+    ) {
+      throw new MakerNodeError(
+        "RFQ v2 does not match this maker's localnet settlement context.",
+      );
+    }
+    if (rfq.responseDeadline <= now || rfq.expiresAt <= now) {
+      return quoteV3Refusal("expired", "RFQ response or lock window expired.");
+    }
+    const quoteTtlSeconds = rfq.lockExpiresAt - now;
+    if (
+      rfq.lockExpiresAt - rfq.createdAt > 90 ||
+      quoteTtlSeconds <= 0 ||
+      quoteTtlSeconds > 90
+    ) {
+      return quoteV3Refusal(
+        "policy",
+        "RFQ lock TTL must not exceed 90 seconds.",
+      );
+    }
+    const bucketSymbol = v3.tokenSymbol(rfq.sellToken);
+    if (!bucketSymbol) {
+      return quoteV3Refusal(
+        "policy",
+        "Maker supports only the reviewed STRK/USDC market.",
+      );
+    }
+    try {
+      assertLadderBucket(bucketSymbol, {
+        min: rfq.sellBucketMinBaseUnits,
+        max: rfq.sellBucketMaxBaseUnits,
+      });
+    } catch (error) {
+      return quoteV3Refusal(
+        "bucket",
+        error instanceof Error
+          ? error.message
+          : "RFQ size bucket is not reviewed.",
+      );
+    }
+    const rfqDigest = await digestPrivateRfqV2(rfq);
+    const acquisition = await this.#store.lockTransaction(async (draft) => {
+      const prior = [...draft.values()].find(
+        (record) => record.rfqDigest === rfqDigest,
+      );
+      if (prior) {
+        if (
+          prior.signature &&
+          prior.quoteDigest &&
+          prior.state === "open" &&
+          prior.takenA === 0n &&
+          prior.takenB === 0n &&
+          prior.expiry > now
+        ) {
+          return { kind: "existing" as const, record: prior };
+        }
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "RFQ digest is fenced by its durable lock history.",
+          ),
+        };
+      }
+      let walletBalance: bigint;
+      try {
+        walletBalance = requireNonnegativeAmount(
+          await this.#config.wallet.privateBalance(rfq.buyToken),
+          "private inventory",
+        );
+      } catch {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "insufficient-inventory",
+            "Private maker inventory is unavailable.",
+          ),
+        };
+      }
+      const unresolved = [...draft.values()]
+        .filter(
+          (record) =>
+            (record.state === "locking" || record.state === "quarantined") &&
+            sameFelt(record.tokenB, rfq.buyToken),
+        )
+        .reduce((total, record) => total + record.maxB, 0n);
+      const legacyReserved = this.#store
+        .list()
+        .filter(
+          (record) =>
+            capacityLockedState(record.reservation.state) &&
+            sameFelt(record.buyToken, rfq.buyToken),
+        )
+        .reduce((total, record) => total + record.buyAmount, 0n);
+      const unavailable = unresolved + legacyReserved;
+      const availableBuyInventory =
+        walletBalance > unavailable ? walletBalance - unavailable : 0n;
+      let built: MakerScheduleV3Result | null;
+      try {
+        built = await v3.buildSchedule({
+          rfq,
+          bucketSymbol,
+          availableBuyInventory,
+          now,
+        });
+      } catch (error) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            error instanceof Error
+              ? error.message
+              : "Maker schedule construction failed closed.",
+          ),
+        };
+      }
+      if (!built) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "insufficient-inventory",
+            "Private maker inventory cannot cover the bucket minimum.",
+          ),
+        };
+      }
+      try {
+        assertPriceSchedule(built.schedule);
+        requireSpread(built.spreadBps);
+        requireText(built.pricingProvenance, "pricing provenance");
+      } catch (error) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            error instanceof Error
+              ? error.message
+              : "Maker produced an invalid schedule.",
+          ),
+        };
+      }
+      const first = built.schedule[0]!;
+      const last = built.schedule[built.schedule.length - 1]!;
+      if (
+        first.a !== rfq.sellBucketMinBaseUnits ||
+        last.a > rfq.sellBucketMaxBaseUnits ||
+        last.b > availableBuyInventory
+      ) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            last.b > availableBuyInventory
+              ? "insufficient-inventory"
+              : "policy",
+            "Maker schedule is outside the authenticated bucket or inventory cap.",
+          ),
+        };
+      }
+      const economicInput: MakerEconomicPolicyV3Input = Object.freeze({
+        rfq,
+        rfqDigest,
+        schedule: built.schedule,
+        amountA: last.a,
+        amountB: last.b,
+        quoteTtlSeconds,
+        now,
+      });
+      let decision: Awaited<
+        ReturnType<MakerNodeV3Config["economicPolicy"]["evaluate"]>
+      >;
+      try {
+        decision = await v3.economicPolicy.evaluate(economicInput);
+      } catch (error) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            error instanceof Error
+              ? error.message
+              : "RFQ economic policy was unavailable.",
+          ),
+        };
+      }
+      if (!decision || typeof decision.allowed !== "boolean") {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "RFQ economic policy returned an invalid decision.",
+          ),
+        };
+      }
+      if (!decision.allowed) {
+        const reason =
+          typeof decision.reason === "string" && decision.reason.trim()
+            ? decision.reason
+            : "RFQ economic policy refused the schedule.";
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal("policy", reason),
+        };
+      }
+      if (
+        v3.economicPolicy.commit &&
+        (typeof decision.commitmentUsdcBaseUnits !== "bigint" ||
+          decision.commitmentUsdcBaseUnits <= 0n)
+      ) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "RFQ economic policy did not produce a durable commitment amount.",
+          ),
+        };
+      }
+      const randomFelt =
+        v3.randomFelt ?? (() => `0x${randomBytes(31).toString("hex")}`);
+      const randomNonce =
+        v3.randomNonce ?? (() => `0x${randomBytes(32).toString("hex")}`);
+      let candidateValue: bigint;
+      let nonce: string;
+      try {
+        candidateValue = BigInt(requireFeltText(randomFelt(), "lockId"));
+        nonce = requireHex32(randomNonce(), "lock nonce");
+      } catch {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "Maker lock identity generator returned invalid output.",
+          ),
+        };
+      }
+      if (candidateValue === 0n || candidateValue >= STARK_FIELD_PRIME) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "Maker lock identity generator returned an invalid felt.",
+          ),
+        };
+      }
+      const lockId = `0x${candidateValue.toString(16)}`;
+      if (draft.has(lockId)) {
+        return {
+          kind: "refused" as const,
+          result: quoteV3Refusal(
+            "policy",
+            "Maker lock identity collided with durable history.",
+          ),
+        };
+      }
+      const record = canonicalStoredLock({
+        lockId,
+        rfqDigest,
+        rfqFelt: rfq.rfqFelt,
+        takerCommitment: rfq.takerCommitment,
+        tokenA: rfq.sellToken,
+        tokenB: rfq.buyToken,
+        schedule: built.schedule,
+        maxB: last.b,
+        expiry: rfq.lockExpiresAt,
+        ticket: "0x0",
+        lockTxHash: "0x0",
+        state: "locking",
+        takenA: 0n,
+        takenB: 0n,
+        nonce,
+        quotedAt: now,
+        spreadBps: built.spreadBps,
+        pricingProvenance: built.pricingProvenance,
+      });
+      draft.set(lockId, record);
+      return {
+        kind: "new" as const,
+        record,
+        economicInput,
+        commitmentUsdcBaseUnits: decision.commitmentUsdcBaseUnits,
+      };
+    });
+    if (acquisition.kind === "refused") return acquisition.result;
+    if (acquisition.kind === "existing") {
+      const unsigned = unsignedQuoteV3For(acquisition.record, this.#config);
+      const quote = Object.freeze({
+        ...unsigned,
+        signature: acquisition.record.signature!,
+      });
+      canonicalSolverQuoteV3(quote);
+      return Object.freeze({
+        quote,
+        lock: Object.freeze({
+          lockId: acquisition.record.lockId,
+          ticket: acquisition.record.ticket,
+          transactionHash: acquisition.record.lockTxHash,
+        }),
+      });
+    }
+
+    const walletLock = this.#config.wallet.lock!;
+    let confirmed: StoredLockRecord;
+    try {
+      const result = await walletLock({
+        lockId: acquisition.record.lockId,
+        rfqFelt: acquisition.record.rfqFelt,
+        takerCommitment: acquisition.record.takerCommitment,
+        tokenA: acquisition.record.tokenA,
+        tokenB: acquisition.record.tokenB,
+        schedule: acquisition.record.schedule,
+        expiry: acquisition.record.expiry,
+      });
+      const ticket = requireFeltText(result.ticket, "lock ticket");
+      const lockTxHash = requireFeltText(
+        result.transactionHash,
+        "lock transaction hash",
+      );
+      if (BigInt(ticket) === 0n || BigInt(lockTxHash) === 0n) {
+        throw new MakerNodeError(
+          "Confirmed lock omitted its ticket or transaction hash.",
+        );
+      }
+      confirmed = lockStateFromChain(
+        canonicalStoredLock({
+          ...acquisition.record,
+          ticket,
+          lockTxHash,
+          state: "open",
+        }),
+        result.lock,
+        now,
+      );
+      if (
+        confirmed.state !== "open" ||
+        confirmed.takenA !== 0n ||
+        confirmed.takenB !== 0n
+      ) {
+        throw new MakerNodeError(
+          "New on-chain lock was not fully collateralized and untouched.",
+        );
+      }
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(confirmed.lockId);
+        if (!current || current.state !== "locking") {
+          throw new MakerNodeError(
+            "Durable lock changed during on-chain submission.",
+          );
+        }
+        draft.set(confirmed.lockId, confirmed);
+      });
+    } catch (error) {
+      const knownRevert =
+        error instanceof MakerWalletOperationError &&
+        error.outcome === "reverted";
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(acquisition.record.lockId);
+        if (!current) return;
+        if (knownRevert) draft.delete(current.lockId);
+        else draft.set(current.lockId, { ...current, state: "quarantined" });
+      });
+      return quoteV3Refusal(
+        "lock-failed",
+        knownRevert
+          ? "On-chain lock transaction reverted."
+          : "On-chain lock outcome is unknown; collateral was quarantined.",
+      );
+    }
+
+    let completedAt: number;
+    try {
+      completedAt = requireTimestamp(
+        v3.clock?.() ?? now,
+        "quote completion time",
+      );
+    } catch {
+      return quoteV3Refusal(
+        "lock-failed",
+        "Maker clock was unavailable after lock confirmation.",
+      );
+    }
+    if (completedAt >= confirmed.expiry) {
+      return quoteV3Refusal(
+        "expired",
+        "RFQ lock expired before quote signing completed.",
+      );
+    }
+
+    if (
+      v3.economicPolicy.commit &&
+      acquisition.commitmentUsdcBaseUnits !== undefined
+    ) {
+      try {
+        await v3.economicPolicy.commit({
+          ...acquisition.economicInput,
+          lockId: confirmed.lockId,
+          commitmentUsdcBaseUnits: acquisition.commitmentUsdcBaseUnits,
+        });
+      } catch (error) {
+        return quoteV3Refusal(
+          "policy",
+          error instanceof Error
+            ? error.message
+            : "RFQ economic commitment failed closed.",
+        );
+      }
+    }
+
+    const unsigned = unsignedQuoteV3For(confirmed, this.#config);
+    let signature: string;
+    try {
+      signature = requireText(
+        await this.#config.signer(canonicalSolverQuoteV3(unsigned)),
+        "quote v3 signature",
+      );
+      if (!isCanonicalQuoteSignature(signature)) {
+        throw new MakerNodeError(
+          "Quote v3 signer returned a non-canonical P-256 signature.",
+        );
+      }
+    } catch (error) {
+      return quoteV3Refusal(
+        "lock-failed",
+        error instanceof Error ? error.message : "Quote v3 signing failed.",
+      );
+    }
+    if (v3.clock) {
+      let signedAt: number;
+      try {
+        signedAt = requireTimestamp(v3.clock(), "quote signing time");
+      } catch {
+        return quoteV3Refusal(
+          "lock-failed",
+          "Maker clock was unavailable after quote signing.",
+        );
+      }
+      if (signedAt >= confirmed.expiry) {
+        return quoteV3Refusal(
+          "expired",
+          "RFQ lock expired before quote signing completed.",
+        );
+      }
+    }
+    const quote = Object.freeze({ ...unsigned, signature });
+    const quoteDigestValue = await digestSolverQuoteV3(quote);
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(confirmed.lockId);
+      if (
+        !current ||
+        terminalLockState(current.state) ||
+        current.lockTxHash !== confirmed.lockTxHash
+      ) {
+        throw new MakerNodeError(
+          "Confirmed lock changed before quote signing completed.",
+        );
+      }
+      draft.set(current.lockId, {
+        ...current,
+        signature,
+        quoteDigest: quoteDigestValue,
+      });
+    });
+    return Object.freeze({
+      quote,
+      lock: Object.freeze({
+        lockId: confirmed.lockId,
+        ticket: confirmed.ticket,
+        transactionHash: confirmed.lockTxHash,
+      }),
+    });
+  }
+
   async recoverAfterRestart(now: number): Promise<void> {
     requireTimestamp(now, "now");
     await this.#store.transaction((draft) => {
@@ -1120,6 +2348,265 @@ export class DurableMakerNode {
         });
       }
     });
+    if (this.#store.listLocks().length === 0) return;
+    const getLock = this.#v3Wallet().getLock;
+    for (const record of this.#store.listLocks()) {
+      if (terminalLockState(record.state)) continue;
+      try {
+        const chain = await getLock(record.lockId);
+        if (chain.status !== "open") {
+          await this.#quarantineLock(record.lockId);
+          continue;
+        }
+        const candidate =
+          record.state === "locking"
+            ? canonicalStoredLock({ ...record, ticket: chain.ticket })
+            : record;
+        const open = requireOpenChainLock(chain, candidate);
+        if (!settlingActionConfirmed(record, open)) {
+          await this.#quarantineLock(record.lockId);
+          continue;
+        }
+        const recovered = lockStateFromChain(candidate, open, now);
+        await this.#store.lockTransaction((draft) => {
+          const current = draft.get(record.lockId);
+          if (current && !terminalLockState(current.state)) {
+            draft.set(record.lockId, recovered);
+          }
+        });
+      } catch {
+        await this.#quarantineLock(record.lockId);
+      }
+    }
+  }
+
+  async settleExpiredLocks(now: number): Promise<void> {
+    requireTimestamp(now, "now");
+    for (const snapshot of this.#store.listLocks()) {
+      if (terminalLockState(snapshot.state) || snapshot.expiry > now) continue;
+      await this.#settleExpiredLock(snapshot.lockId, now);
+    }
+  }
+
+  async #settleExpiredLock(lockId: string, now: number): Promise<void> {
+    const wallet = this.#v3Wallet();
+    let record = this.#store
+      .listLocks()
+      .find((candidate) => candidate.lockId === lockId);
+    if (!record || terminalLockState(record.state)) return;
+    let chain: MakerOnChainLock;
+    try {
+      chain = await wallet.getLock(lockId);
+      if (chain.status !== "open") {
+        await this.#quarantineLock(lockId);
+        return;
+      }
+      const candidate =
+        record.state === "locking"
+          ? canonicalStoredLock({ ...record, ticket: chain.ticket })
+          : record;
+      const open = requireOpenChainLock(chain, candidate);
+      if (!settlingActionConfirmed(record, open)) {
+        await this.#quarantineLock(lockId);
+        return;
+      }
+      record = lockStateFromChain(candidate, open, now);
+      await this.#store.lockTransaction((draft) => {
+        if (draft.has(lockId)) draft.set(lockId, record!);
+      });
+      chain = open;
+    } catch {
+      return;
+    }
+    if (record.state === "settled") return;
+
+    if (chain.earnedA > 0n && !chain.proceedsSettled) {
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(lockId);
+        if (current && !terminalLockState(current.state)) {
+          draft.set(lockId, {
+            ...current,
+            state: "settling",
+            settlingAction: "proceeds",
+          });
+        }
+      });
+      let transactionHash: string;
+      try {
+        transactionHash = requireFeltText(
+          (
+            await wallet.settleProceeds({
+              lockId,
+              ticket: record.ticket,
+              outputToken: record.tokenA,
+            })
+          ).transactionHash,
+          "proceeds transaction hash",
+        );
+        if (BigInt(transactionHash) === 0n) {
+          throw new MakerNodeError("Proceeds settlement returned a zero hash.");
+        }
+      } catch (error) {
+        if (
+          error instanceof MakerWalletOperationError &&
+          error.outcome === "reverted"
+        ) {
+          await this.#resetKnownRevertedSettlement(lockId, now);
+        } else {
+          await this.#quarantineLock(lockId);
+        }
+        return;
+      }
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(lockId);
+        if (current && !terminalLockState(current.state)) {
+          draft.set(lockId, {
+            ...current,
+            state: "settling",
+            proceedsTxHash: transactionHash,
+            settlingAction: "proceeds",
+          });
+        }
+      });
+      try {
+        chain = await wallet.getLock(lockId);
+        const current = this.#store
+          .listLocks()
+          .find((candidate) => candidate.lockId === lockId)!;
+        const open = requireOpenChainLock(chain, current);
+        if (!open.proceedsSettled) {
+          await this.#quarantineLock(lockId);
+          return;
+        }
+        record = lockStateFromChain(current, open, now);
+        await this.#store.lockTransaction((draft) => {
+          if (draft.has(lockId)) draft.set(lockId, record!);
+        });
+        chain = open;
+      } catch {
+        return;
+      }
+    }
+
+    if (chain.remainingB > 0n && !chain.collateralReleased) {
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(lockId);
+        if (current && !terminalLockState(current.state)) {
+          draft.set(lockId, {
+            ...current,
+            state: "settling",
+            settlingAction: "release",
+          });
+        }
+      });
+      let transactionHash: string;
+      try {
+        transactionHash = requireFeltText(
+          (
+            await wallet.releaseCollateral({
+              lockId,
+              ticket: record.ticket,
+              outputToken: record.tokenB,
+            })
+          ).transactionHash,
+          "collateral transaction hash",
+        );
+        if (BigInt(transactionHash) === 0n) {
+          throw new MakerNodeError("Collateral release returned a zero hash.");
+        }
+      } catch (error) {
+        if (
+          error instanceof MakerWalletOperationError &&
+          error.outcome === "reverted"
+        ) {
+          await this.#resetKnownRevertedSettlement(lockId, now);
+        } else {
+          await this.#quarantineLock(lockId);
+        }
+        return;
+      }
+      await this.#store.lockTransaction((draft) => {
+        const current = draft.get(lockId);
+        if (current && !terminalLockState(current.state)) {
+          draft.set(lockId, {
+            ...current,
+            state: "settling",
+            releaseTxHash: transactionHash,
+            settlingAction: "release",
+          });
+        }
+      });
+      try {
+        chain = await wallet.getLock(lockId);
+        const current = this.#store
+          .listLocks()
+          .find((candidate) => candidate.lockId === lockId)!;
+        const open = requireOpenChainLock(chain, current);
+        if (!open.collateralReleased) {
+          await this.#quarantineLock(lockId);
+          return;
+        }
+        record = lockStateFromChain(current, open, now);
+        await this.#store.lockTransaction((draft) => {
+          if (draft.has(lockId)) draft.set(lockId, record!);
+        });
+      } catch {
+        return;
+      }
+    }
+  }
+
+  async #resetKnownRevertedSettlement(
+    lockId: string,
+    now: number,
+  ): Promise<void> {
+    const record = this.#store
+      .listLocks()
+      .find((candidate) => candidate.lockId === lockId);
+    if (!record) return;
+    try {
+      const chain = requireOpenChainLock(
+        await this.#v3Wallet().getLock(lockId),
+        record,
+      );
+      const refreshed = lockStateFromChain(record, chain, now);
+      await this.#store.lockTransaction((draft) => {
+        if (draft.has(lockId)) draft.set(lockId, refreshed);
+      });
+    } catch {
+      await this.#quarantineLock(lockId);
+    }
+  }
+
+  async #quarantineLock(lockId: string): Promise<void> {
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (current && current.state !== "settled") {
+        draft.set(lockId, { ...current, state: "quarantined" });
+      }
+    });
+  }
+
+  #v3(): MakerNodeV3Config {
+    if (!this.#config.v3) {
+      throw new MakerNodeError("Maker v3 is not configured.");
+    }
+    return this.#config.v3;
+  }
+
+  #v3Wallet(): Required<
+    Pick<
+      MakerWalletAdapter,
+      "getLock" | "lock" | "releaseCollateral" | "settleProceeds"
+    >
+  > {
+    this.#v3();
+    return this.#config.wallet as Required<
+      Pick<
+        MakerWalletAdapter,
+        "getLock" | "lock" | "releaseCollateral" | "settleProceeds"
+      >
+    >;
   }
 
   async reserve(
@@ -1193,7 +2680,18 @@ export class DurableMakerNode {
             record.buyToken.toLowerCase() === request.buyToken.toLowerCase(),
         )
         .reduce((total, record) => total + record.buyAmount, 0n);
-      if (buyAmount > walletBalance - reserved) {
+      const unresolvedLocks = this.#store
+        .listLocks()
+        .filter(
+          (record) =>
+            (record.state === "locking" || record.state === "quarantined") &&
+            sameFelt(record.tokenB, request.buyToken),
+        )
+        .reduce((total, record) => total + record.maxB, 0n);
+      if (
+        reserved + unresolvedLocks >= walletBalance ||
+        buyAmount > walletBalance - reserved - unresolvedLocks
+      ) {
         throw new MakerNodeError(
           "Private maker inventory cannot cover this RFQ.",
         );
@@ -1893,5 +3391,6 @@ export class DurableMakerNode {
 }
 
 export type { SolverQuote };
+export * from "./transcript-journal.ts";
 export * from "#hpke-ingress";
 export * from "#production-ports";

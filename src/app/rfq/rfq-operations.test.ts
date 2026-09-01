@@ -9,6 +9,7 @@ import {
   normalizeRfqOperationsStatus,
   operationsAvailability,
   shouldPublishOperationsClock,
+  verifyRfqOperationsMids,
 } from "./rfq-operations";
 
 const NOW = 2_000_000_000;
@@ -56,6 +57,9 @@ function wire(overrides: Record<string, unknown> = {}) {
         rationale: "Excluded because the exact reviewed clip was refused.",
       },
     ],
+    mids: [],
+    locks: { open: 0, expiredAwaitingSettlement: 0, settled: 0 },
+    transcripts: { received: 0, consistent: 0 },
     rawInventoryExposed: false,
     ...overrides,
   };
@@ -97,6 +101,7 @@ describe("browser-safe localnet RFQ operations", () => {
       expect(gateRfqAction(availability, "request").allowed).toBe(false);
       expect(gateRfqAction(availability, "fund").allowed).toBe(false);
       expect(gateRfqAction(availability, "fill").allowed).toBe(false);
+      expect(gateRfqAction(availability, "take").allowed).toBe(false);
       expect(gateRfqAction(availability, "claim").allowed).toBe(true);
       expect(gateRfqAction(availability, "refund").allowed).toBe(true);
     },
@@ -265,6 +270,42 @@ describe("browser-safe localnet RFQ operations", () => {
     expect(shouldPublishOperationsClock(status, NOW + 1, NOW + 2)).toBe(false);
     expect(shouldPublishOperationsClock(status, NOW + 19, NOW + 20)).toBe(true);
     expect(shouldPublishOperationsClock(null, NOW, NOW + 1)).toBe(false);
+  });
+
+  it("verifies maker mids in the browser before exposing the aggregate", async () => {
+    const signature = `0x${"0".repeat(63)}1${"0".repeat(63)}1`;
+    const status = normalizeRfqOperationsStatus(
+      wire({
+        mids: [
+          {
+            version: 1,
+            domain: "app20/maker-indicative-mid/v1",
+            makerId: "app20-localnet-solver",
+            quoteKeyId: "app20-localnet-solver/ecdsa-p256-v1",
+            marketId: "STRK_USDC",
+            midE18: "2000000000000000000",
+            observedAt: NOW,
+            validUntil: NOW + 20,
+            signature,
+          },
+        ],
+      }),
+    );
+    const verified = await verifyRfqOperationsMids(status, NOW + 1, {
+      importPublicKey: async () => ({}) as CryptoKey,
+      verify: async () => true,
+      resolveKey: async () => ({ kty: "EC", crv: "P-256", x: "x", y: "y" }),
+    });
+    expect(verified.midAggregate).toEqual({
+      medianE18: 2_000_000_000_000_000_000n,
+      dispersionBps: 0,
+      count: 1,
+    });
+    expect(verified.locks).toEqual({
+      open: 0,
+      expiredAwaitingSettlement: 0,
+      settled: 0,
+    });
   });
 
   it("rejects raw health, PID, account, log, inventory, or balance fields", () => {

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listBrowserSafeUnresolvedLocalnetDeals } from "./localnet-unresolved-deals.mjs";
+import {
+  listBrowserSafeUnresolvedLocalnetDeals,
+  listBrowserSafeUnresolvedLocalnetV3Deals,
+} from "./localnet-unresolved-deals.mjs";
 
 const digest = `0x${"11".repeat(32)}`;
 const reservationId = `0x${"22".repeat(32)}`;
@@ -83,6 +86,57 @@ test("projects only account-bound unresolved deal recovery metadata", async () =
   assert.equal(result[0].observation.legBAmount, "99");
   const serialized = JSON.stringify(result);
   assert.doesNotMatch(serialized, /rawInventory|privateKey|secret inventory|secret key/);
+});
+
+test("projects exact v3 take leases without lock secrets and validates any observed take", async () => {
+  let validated = 0;
+  const result = await listBrowserSafeUnresolvedLocalnetV3Deals({
+    requests: [
+      {
+        lifecycle: "v3",
+        rfqDigest: `0x${"44".repeat(32)}`,
+        intentDigest: digest,
+        rfqId: "0x88",
+        account,
+        chainId,
+        market,
+        createdAt: 100,
+        expiresAt: 200,
+        state: "take-unknown",
+        takeAttemptId: "take-attempt",
+        takeTransactionHash: "0xabc",
+        expected: {
+          tokenA: "0x1",
+          totalA: "100",
+          tokenB: "0x2",
+          totalB: "200",
+          fills: [{ lockId: "0xa", amountA: "100", amountB: "200" }],
+        },
+        takerSecret: "must never be projected",
+      },
+    ],
+    account,
+    chainId,
+    market,
+    escrowAddress: "0xe5c",
+    observeTake: async () => ({
+      tokenA: "0x1",
+      totalA: 100n,
+      tokenB: "0x2",
+      totalB: 200n,
+      fillCount: 1,
+      takenAt: 150,
+    }),
+    validateObservation: (_observed, expected) => {
+      validated += 1;
+      assert.equal(expected.fills[0].lockId, "0xa");
+    },
+  });
+  assert.equal(validated, 1);
+  assert.equal(result[0].lifecycle, "v3");
+  assert.equal(result[0].transactions.take, "0xabc");
+  assert.equal(result[0].take.totalB, "200");
+  assert.doesNotMatch(JSON.stringify(result), /takerSecret|must never/);
 });
 
 test("omits empty and already-terminal escrow rows", async () => {

@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
+import ContactSnapshotCard from "./ContactSnapshotCard";
 import { ChainRecordPanel, type LocalMailMessage } from "./Thread";
 
 const message: LocalMailMessage = {
@@ -19,6 +20,25 @@ const message: LocalMailMessage = {
   transactionHash: "0x7",
   direction: "incoming",
 };
+
+describe("versioned backup cards", () => {
+  it("renders RFQ pointer restore copy without changing legacy contact defaults", () => {
+    const rfq = renderToStaticMarkup(
+      <ContactSnapshotCard
+        kind="rfq-resume"
+        pointer
+        onMerge={() => undefined}
+      />,
+    );
+    expect(rfq).toContain("RFQ HISTORY BACKUP");
+    expect(rfq).toContain("CID-verified");
+    expect(rfq).toContain("Merge verified RFQ history");
+
+    const legacy = renderToStaticMarkup(<ContactSnapshotCard />);
+    expect(legacy).toContain("CONTACT BACKUP");
+    expect(legacy).toContain("Unlock the mailbox");
+  });
+});
 
 describe("mail chain evidence", () => {
   it("is collapsed by default", () => {

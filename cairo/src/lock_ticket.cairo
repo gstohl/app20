@@ -184,10 +184,13 @@ pub mod LockTicket {
     fn transfer_balance(
         ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256,
     ) {
-        assert(amount == 1, errors::BAD_AMOUNT);
-        assert(
-            recipient == self.escrow.read() || recipient == self.pool.read(), errors::BAD_RECIPIENT,
-        );
+        let escrow = self.escrow.read();
+        let pool = self.pool.read();
+        // The pool pulls the whole minted supply (2) out of the escrow when it deposits the
+        // maker's OPEN note; every later movement spends exactly one settlement unit.
+        let full_supply_deposit = amount == 2 && sender == escrow && recipient == pool;
+        assert(amount == 1 || full_supply_deposit, errors::BAD_AMOUNT);
+        assert(recipient == escrow || recipient == pool, errors::BAD_RECIPIENT);
         self.balances.entry(sender).write(self.balances.entry(sender).read() - amount);
         self.balances.entry(recipient).write(self.balances.entry(recipient).read() + amount);
         self.emit(Transfer { from: sender, to: recipient, value: amount });

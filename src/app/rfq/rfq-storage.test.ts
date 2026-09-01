@@ -140,18 +140,75 @@ async function persistBeforeSink(
 }
 
 describe("RFQ lifecycle storage", () => {
-  it("keys v2 records by schema, chain, account, and RFQ ID", async () => {
+  it("keys current records by schema, chain, account, and RFQ ID", async () => {
     const row = createRfqLifecycleRecord({
       chainId: "0x1",
       account: "0xABC",
       rfqId: "r1",
       now: 100,
     });
-    expect(rfqStorageKey(row)).toContain("app20/rfq-lifecycle/v2|0x1|0xabc|r1");
+    expect(rfqStorageKey(row)).toContain("app20/rfq-lifecycle/v3|0x1|0xabc|r1");
     const storage = createRfqLifecycleStorage(memoryBackend().backend);
     await storage.save(row);
     expect(await storage.load(row)).toEqual(row);
     expect(await storage.list("0x1", "0xabc")).toEqual([row]);
+  });
+
+  it("persists a live v3 secret but strips it from a backup restore", async () => {
+    const source = createRfqLifecycleRecord({
+      mode: "v3",
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "v3-secret",
+      state: "reviewing",
+      now: 100,
+      requestDigest: `0x${"11".repeat(32)}`,
+      terms: {
+        pairId: "STRK_USDC",
+        sellSymbol: "STRK",
+        sellAddress: "0x1",
+        sellDecimals: 18,
+        sellAmount: "100",
+        buySymbol: "USDC",
+        buyAddress: "0x2",
+        buyDecimals: 6,
+        minBuyAmount: "190",
+        buyAmount: "200",
+        rfqExpiresAt: 200,
+      },
+      settlement: {
+        version: "Localnet V3",
+        escrowAddress: "0x5",
+        dealId: "v3-secret",
+        deadline: 200,
+      },
+      bucket: { min: "50", max: "100" },
+      takerCommitment: "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+      takerSecret: "0x66",
+      fills: [
+        {
+          makerId: "maker-a",
+          lockId: "0x41",
+          amountA: "100",
+          amountB: "200",
+          lockExpiresAt: 200,
+        },
+      ],
+    });
+    const live = createRfqLifecycleStorage(memoryBackend().backend);
+    await expect(live.save(source)).resolves.toBeUndefined();
+    expect(await live.load(source)).toMatchObject({ takerSecret: "0x66" });
+
+    const restored = restoreRfqLifecycle(structuredClone(source), {
+      chainId: source.chainId,
+      account: source.account,
+      now: 101,
+      fromBackup: true,
+    });
+    expect(restored).not.toHaveProperty("takerSecret");
+    const backup = createRfqLifecycleStorage(memoryBackend().backend);
+    await expect(backup.save(restored)).resolves.toBeUndefined();
+    expect(await backup.load(restored)).not.toHaveProperty("takerSecret");
   });
 
   it("canonicalizes padded accounts and named/felt-equivalent chains at every boundary", async () => {
@@ -174,7 +231,7 @@ describe("RFQ lifecycle storage", () => {
     await storage.clearAll(sepoliaFelt, "0xabc", [row]);
     expect(await storage.list("SN_SEPOLIA", padded)).toEqual([]);
     expect([...rows.keys()]).toEqual([
-      `app20/rfq-lifecycle/v2|${sepoliaFelt}|0xabc|canonical-scope`,
+      `app20/rfq-lifecycle/v3|${sepoliaFelt}|0xabc|canonical-scope`,
     ]);
   });
 
@@ -216,9 +273,10 @@ describe("RFQ lifecycle storage", () => {
       `app20/rfq-lifecycle/v1|${epoch}|${chain}|${padded}|${rfqId}`;
     rows.set(oldV2(`starknet:${LOCALNET_CHAIN_ID}`, visible.rfqId), {
       ...visible,
+      schemaRevision: "app20/rfq-lifecycle/v2",
       chainId: `starknet:${LOCALNET_CHAIN_ID}`,
       account: padded,
-    });
+    } as unknown as RfqLifecycleRecord);
     rows.set(oldV1(HISTORICAL_APP20_LOCALNET_CHAIN_ID, legacy.rfqId), legacy);
     const oldForgottenKey = oldV2("APP20_LOCALNET", forgotten.rfqId);
     rows.set(oldForgottenKey, {
@@ -229,9 +287,10 @@ describe("RFQ lifecycle storage", () => {
     });
     rows.set(oldV2("QUIETLINE_LOCAL", forgotten.rfqId), {
       ...forgotten,
+      schemaRevision: "app20/rfq-lifecycle/v2",
       chainId: "QUIETLINE_LOCAL",
       account: padded,
-    });
+    } as unknown as RfqLifecycleRecord);
 
     expect(await storage.list("starknet:APP20_LOCALNET", padded)).toEqual([
       expect.objectContaining({
@@ -260,9 +319,10 @@ describe("RFQ lifecycle storage", () => {
     // cannot fork the canonical tombstone/CAS authority.
     rows.set(oldV2(HISTORICAL_APP20_LOCALNET_CHAIN_ID, forgotten.rfqId), {
       ...forgotten,
+      schemaRevision: "app20/rfq-lifecycle/v2",
       chainId: HISTORICAL_APP20_LOCALNET_CHAIN_ID,
       account: padded,
-    });
+    } as unknown as RfqLifecycleRecord);
     expect(await storage.load(forgotten)).toBeUndefined();
     expect(
       rows.has(oldV2(HISTORICAL_APP20_LOCALNET_CHAIN_ID, forgotten.rfqId)),
@@ -383,7 +443,7 @@ describe("RFQ lifecycle storage", () => {
     expect(await epochA.list("0x1", "0xabc")).toEqual([row]);
     expect(await epochB.list("0x1", "0xabc")).toEqual([]);
     expect(rfqStorageKey(row, "epoch-a")).toContain(
-      "app20/rfq-lifecycle/v2|epoch-a|0x1|0xabc|epoch-bound",
+      "app20/rfq-lifecycle/v3|epoch-a|0x1|0xabc|epoch-bound",
     );
   });
 

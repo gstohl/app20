@@ -23,6 +23,7 @@ import {
   RFQ_REVIEWED_MARKET_ID,
   RFQ_REVIEWED_SELL_TOKEN_ID,
   UNAPPROVED_LOCALNET_FIXTURE_ACCOUNTING,
+  buildLocalnetMakerSchedule,
   buildLocalnetRfqEconomicPolicyInput,
   createLocalnetRfqEconomics,
   deriveLocalnetReferenceBuyAmount,
@@ -112,6 +113,111 @@ test("both directions preserve exact 18↔6 decimal reference, spread, and USDC 
     sellTokenId: "USDC",
     buyTokenId: "STRK",
   });
+});
+
+test("maker schedules use the fixed localnet prices, shapes, tier, and inventory cap", () => {
+  const bucketMinBaseUnits = 5n * 10n ** 17n;
+  const bucketMaxBaseUnits = 10n ** 18n;
+  const makerA = buildLocalnetMakerSchedule({
+    maker: "A",
+    direction: "STRK_USDC",
+    bucketMinBaseUnits,
+    bucketMaxBaseUnits,
+    availableBuyBaseUnits: 10_000_000n,
+  });
+  assert.deepEqual(makerA.schedule, [
+    { a: bucketMinBaseUnits, b: 997_000n },
+    { a: bucketMaxBaseUnits, b: 1_994_000n },
+  ]);
+  assert.equal(makerA.midE18, 2n * 10n ** 18n);
+  assert.equal(makerA.spreadBps, 30);
+
+  const makerB = buildLocalnetMakerSchedule({
+    maker: "B",
+    direction: "STRK_USDC",
+    bucketMinBaseUnits,
+    bucketMaxBaseUnits,
+    availableBuyBaseUnits: 10_000_000n,
+  });
+  assert.equal(makerB.schedule.length, 3);
+  assert.deepEqual(makerB.schedule, [
+    { a: bucketMinBaseUnits, b: 1_002_990n },
+    { a: 75n * 10n ** 16n, b: 1_504_485n },
+    { a: bucketMaxBaseUnits, b: 2_006_482n },
+  ]);
+  assert.equal(makerB.midE18, 2_010_000_000_000_000_000n);
+  assert.equal(makerB.spreadBps, 20);
+
+  const capped = buildLocalnetMakerSchedule({
+    maker: "A",
+    direction: "USDC_STRK",
+    bucketMinBaseUnits: 1_000_000n,
+    bucketMaxBaseUnits: 2_500_000n,
+    availableBuyBaseUnits: 600_000_000_000_000_000n,
+  });
+  assert.ok(capped.aMax < 2_500_000n);
+  assert.ok(capped.maxB <= 600_000_000_000_000_000n);
+  assert.equal(
+    buildLocalnetMakerSchedule({
+      maker: "B",
+      direction: "USDC_STRK",
+      bucketMinBaseUnits: 1_000_000n,
+      bucketMaxBaseUnits: 2_500_000n,
+      availableBuyBaseUnits: 500_000_000_000_000_000n,
+    }),
+    null,
+  );
+});
+
+test("schedule economics evaluates only the authenticated maximum point", () => {
+  const economics = createLocalnetRfqEconomics();
+  const schedule = Object.freeze([
+    Object.freeze({ a: SELL / 2n, b: OFFERED_30_BPS / 2n }),
+    Object.freeze({ a: SELL, b: OFFERED_30_BPS }),
+  ]);
+  const decision = economics.evaluateSchedule({
+    action: "quote",
+    decisionAt: NOW,
+    makerId: "app20-localnet-solver",
+    sellTokenId: "STRK",
+    buyTokenId: "USDC",
+    schedule,
+    quoteTtlSeconds: RFQ_MAX_QUOTE_TTL_SECONDS,
+    referenceObservedAt: NOW - 1,
+    requestedSellAmountBaseUnits: 1n,
+    offeredBuyAmountBaseUnits: 1n,
+  });
+  assert.equal(decision.allowed, true);
+  assert.equal(decision.derivedMakerSpreadBps, 30);
+  assert.equal(decision.derivedUsdcEquivalentBaseUnits, REFERENCE_BUY);
+  const makerBReverse = buildLocalnetMakerSchedule({
+    maker: "B",
+    direction: "USDC_STRK",
+    bucketMinBaseUnits: 1_000_000n,
+    bucketMaxBaseUnits: 2_500_000n,
+    availableBuyBaseUnits: 10n ** 19n,
+  });
+  const makerBDecision = economics.evaluateSchedule({
+    action: "quote",
+    decisionAt: NOW,
+    makerId: "app20-localnet-solver-b",
+    sellTokenId: "USDC",
+    buyTokenId: "STRK",
+    schedule: makerBReverse.schedule,
+    quoteTtlSeconds: RFQ_MAX_QUOTE_TTL_SECONDS,
+    referenceObservedAt: NOW,
+    referenceMidE18: makerBReverse.midE18,
+  });
+  assert.equal(makerBDecision.allowed, true);
+  assert.ok(makerBDecision.derivedMakerSpreadBps <= 20);
+
+  const malformed = economics.evaluateSchedule({
+    action: "quote",
+    decisionAt: NOW,
+    schedule: [],
+  });
+  assert.equal(malformed.allowed, false);
+  assert.ok(codes(malformed).includes("ACTION_UNSUPPORTED"));
 });
 
 test("self-reported spread and USDC-equivalent are ignored when building policy input", () => {

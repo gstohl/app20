@@ -43,6 +43,7 @@ async function serveAsset(request: Request, env: RelayEnv): Promise<Response> {
   for (const [name, value] of spaSecurityHeaders({
     privyFrameOrigins: configuredOrigins(env.PRIVY_FRAME_ORIGINS),
     privyConnectOrigins: configuredOrigins(env.PRIVY_CONNECT_ORIGINS),
+    ipfsOrigins: env.IPFS_ORIGINS,
   })) {
     headers.set(name, value);
   }

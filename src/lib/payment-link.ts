@@ -14,12 +14,15 @@ import {
 } from "./mail-auth";
 import {
   createRequestId,
-  isCanonicalStrkToken,
   isRandom32ByteId,
   parseDecimalToBaseUnits,
   parsePaymentRequestPayload,
   type PaymentRequestPayload,
 } from "./otc";
+import {
+  resolveCanonicalToken,
+  type App20TokenNetwork,
+} from "./token-registry";
 
 export const PAYMENT_LINK_PATH = "/pay";
 export const PAYMENT_LINK_VERSION = "app20p2" as const;
@@ -36,6 +39,7 @@ export type PaymentLinkRequestInput = {
   expiryHours: string;
   requester: string;
   chainId: string;
+  token?: "STRK" | "USDC";
 };
 
 export type PaymentLinkRequestOptions = {
@@ -175,16 +179,26 @@ export function paymentLinkNetworkLabel(chainId: string): string {
   return "Localnet (dev)";
 }
 
+function paymentLinkTokenNetwork(chainId: string): App20TokenNetwork {
+  const normalized = normalizePaymentLinkChainId(chainId);
+  if (normalized === "SN_MAIN") return "mainnet";
+  if (normalized === "SN_SEPOLIA") return "sepolia";
+  return "localnet";
+}
+
+export function paymentLinkSupportsUsdc(chainId: string): boolean {
+  try {
+    return paymentLinkTokenNetwork(chainId) === "localnet";
+  } catch {
+    return false;
+  }
+}
+
 function normalizePaymentRequest(
   value: PaymentRequestPayload,
 ): PaymentRequestPayload {
   if (!isObject(value) || !isObject(value.token)) {
     throw new Error("Payment link request is malformed.");
-  }
-  if (!isCanonicalStrkToken(value.token)) {
-    throw new Error(
-      "Payment links require canonical STRK metadata (address, symbol, and 18 decimals).",
-    );
   }
   if (!isRandom32ByteId(value.requestId)) {
     throw new Error("Payment link requestId must be a 32-byte hexadecimal id.");
@@ -196,13 +210,33 @@ function normalizePaymentRequest(
     throw new Error("Payment links must name their Starknet network.");
   }
   const chainId = normalizePaymentLinkChainId(value.chainId);
+  const network = paymentLinkTokenNetwork(chainId);
+  const tokenAddress = value.token.address;
+  const tokenResolution =
+    typeof tokenAddress === "string"
+      ? resolveCanonicalToken(network, tokenAddress)
+      : null;
+  const token = tokenResolution?.ok ? tokenResolution.token : null;
+  const tokenAllowed =
+    token !== null &&
+    (token.key === "strk" ||
+      (network === "localnet" && token.key === "usdc")) &&
+    value.token.symbol === token.symbol &&
+    value.token.decimals === token.decimals;
+  if (!tokenAllowed || !token) {
+    throw new Error(
+      network === "localnet"
+        ? "Localnet payment links require registry-resolved STRK or USDC metadata."
+        : "Payment links require canonical STRK metadata (address, symbol, and 18 decimals) on public networks.",
+    );
+  }
 
   if (
     typeof value.amount === "string" &&
     /^(?:0|[1-9]\d*)$/.test(value.amount) &&
     BigInt(value.amount) > MAX_UINT256
   ) {
-    throw new Error("Payment link amount exceeds the uint256 STRK limit.");
+    throw new Error("Payment link amount exceeds the uint256 token limit.");
   }
 
   const parsed = parsePaymentRequestPayload(value);
@@ -220,7 +254,11 @@ function normalizePaymentRequest(
 
   return {
     requestId: parsed.requestId.toLowerCase(),
-    token: parsed.token,
+    token: {
+      address: token.key === "strk" ? addrSTRK : token.address,
+      symbol: token.symbol,
+      decimals: token.decimals,
+    },
     amount: parsed.amount,
     expiresAt: parsed.expiresAt,
     requester: canonicalizeStarknetAddress(parsed.requester),
@@ -304,7 +342,7 @@ export function verifyPaymentLinkRequestSignature(
   };
 }
 
-/** Build one canonical, unsigned STRK request from user-entered link fields. */
+/** Build one canonical, unsigned reviewed-token request from user-entered fields. */
 export function createPaymentLinkRequest(
   input: PaymentLinkRequestInput,
   options: PaymentLinkRequestOptions = {},
@@ -333,14 +371,34 @@ export function createPaymentLinkRequest(
   if (memo.length > 512) {
     throw new Error("Payment link memo must be at most 512 characters.");
   }
+  const chainId = normalizePaymentLinkChainId(input.chainId);
+  const network = paymentLinkTokenNetwork(chainId);
+  const requestedSymbol = input.token ?? "STRK";
+  const resolution = resolveCanonicalToken(
+    network,
+    requestedSymbol.toLowerCase(),
+  );
+  if (
+    !resolution.ok ||
+    (resolution.token.key === "usdc" && network !== "localnet")
+  ) {
+    throw new Error(
+      "USDC payment links are available only for the registry-resolved localnet token; public networks remain STRK-only.",
+    );
+  }
+  const token = resolution.token;
 
   return normalizePaymentRequest({
     requestId: options.requestId ?? createRequestId(),
-    token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
-    amount: parseDecimalToBaseUnits(input.amount, 18),
+    token: {
+      symbol: token.symbol,
+      address: token.key === "strk" ? addrSTRK : token.address,
+      decimals: token.decimals,
+    },
+    amount: parseDecimalToBaseUnits(input.amount, token.decimals),
     expiresAt: expiryHours === 0 ? 0 : atSeconds + expiryHours * 60 * 60,
     requester: input.requester,
-    chainId: input.chainId,
+    chainId,
     ...(memo ? { memo } : {}),
   });
 }

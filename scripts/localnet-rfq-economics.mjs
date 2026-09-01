@@ -27,6 +27,10 @@ import {
 } from "node:fs";
 import { dirname } from "node:path";
 import {
+  assertPriceSchedule,
+  evaluatePriceSchedule,
+} from "../packages/private-intents/src/index.ts";
+import {
   RFQ_APP20_FEE_BPS,
   RFQ_ECONOMIC_POLICY_ID,
   RFQ_MAX_QUOTE_TTL_SECONDS,
@@ -50,6 +54,11 @@ const ACCOUNTING_JOURNAL_DOMAIN = "app20/localnet-rfq-accounting/v1";
 const STRK_SCALE = 10n ** 18n;
 const USDC_SCALE = 10n ** 6n;
 const LOCALNET_USDC_PER_STRK = 2n;
+const MAKER_A_MID_USDC_BASE_UNITS = 2_000_000n;
+const MAKER_B_MID_USDC_BASE_UNITS = 2_010_000n;
+const MAKER_A_SPREAD_BPS = 30;
+const MAKER_B_SPREAD_BPS = 20;
+const MAKER_B_TIER_IMPROVEMENT_BPS = 10;
 const RECOVERY_ACTIONS = new Set(["claim", "timeout", "refund"]);
 
 function journalText(value, label) {
@@ -112,6 +121,117 @@ export function localnetPairTokenIds(direction) {
   throw new Error("localnet RFQ direction is outside the USDC↔STRK pair.");
 }
 
+function makerScheduleRatio(direction, midUsdcBaseUnits, spreadBps) {
+  const multiplier = BigInt(10_000 - spreadBps);
+  if (direction === "STRK_USDC") {
+    return Object.freeze({
+      numerator: midUsdcBaseUnits * multiplier,
+      denominator: STRK_SCALE * BPS_SCALE,
+    });
+  }
+  if (direction === "USDC_STRK") {
+    return Object.freeze({
+      numerator: STRK_SCALE * multiplier,
+      denominator: midUsdcBaseUnits * BPS_SCALE,
+    });
+  }
+  throw new Error("localnet RFQ direction is outside the USDC↔STRK pair.");
+}
+
+function ratioPayout(amount, ratio) {
+  return (amount * ratio.numerator) / ratio.denominator;
+}
+
+export function buildLocalnetMakerSchedule({
+  maker,
+  direction,
+  bucketMinBaseUnits,
+  bucketMaxBaseUnits,
+  availableBuyBaseUnits,
+}) {
+  if (maker !== "A" && maker !== "B") {
+    throw new Error("Localnet maker schedule requires maker A or B.");
+  }
+  if (
+    typeof bucketMinBaseUnits !== "bigint" ||
+    typeof bucketMaxBaseUnits !== "bigint" ||
+    bucketMinBaseUnits <= 0n ||
+    bucketMaxBaseUnits <= bucketMinBaseUnits
+  ) {
+    throw new Error(
+      "Localnet maker schedule bucket must be positive and ordered.",
+    );
+  }
+  if (typeof availableBuyBaseUnits !== "bigint" || availableBuyBaseUnits < 0n) {
+    throw new Error("Localnet maker schedule inventory must be non-negative.");
+  }
+  const isMakerB = maker === "B";
+  const midUsdcBaseUnits = isMakerB
+    ? MAKER_B_MID_USDC_BASE_UNITS
+    : MAKER_A_MID_USDC_BASE_UNITS;
+  const spreadBps = isMakerB ? MAKER_B_SPREAD_BPS : MAKER_A_SPREAD_BPS;
+  const baseRatio = makerScheduleRatio(direction, midUsdcBaseUnits, spreadBps);
+  const improvedRatio = makerScheduleRatio(
+    direction,
+    midUsdcBaseUnits,
+    spreadBps - MAKER_B_TIER_IMPROVEMENT_BPS,
+  );
+  const midpoint =
+    bucketMinBaseUnits + (bucketMaxBaseUnits - bucketMinBaseUnits) / 2n;
+  const payoutAtMaximum = (amount) => {
+    if (!isMakerB || amount <= midpoint) return ratioPayout(amount, baseRatio);
+    return (
+      ratioPayout(midpoint, baseRatio) +
+      ratioPayout(amount - midpoint, improvedRatio)
+    );
+  };
+  if (payoutAtMaximum(bucketMinBaseUnits) > availableBuyBaseUnits) {
+    return null;
+  }
+  let low = bucketMinBaseUnits;
+  let high = bucketMaxBaseUnits;
+  while (low < high) {
+    const middle = low + (high - low + 1n) / 2n;
+    if (payoutAtMaximum(middle) <= availableBuyBaseUnits) low = middle;
+    else high = middle - 1n;
+  }
+  const aMax = low;
+  if (aMax <= bucketMinBaseUnits || (isMakerB && aMax <= midpoint)) {
+    return null;
+  }
+  const schedule = isMakerB
+    ? Object.freeze([
+        Object.freeze({
+          a: bucketMinBaseUnits,
+          b: ratioPayout(bucketMinBaseUnits, baseRatio),
+        }),
+        Object.freeze({
+          a: midpoint,
+          b: ratioPayout(midpoint, baseRatio),
+        }),
+        Object.freeze({
+          a: aMax,
+          b: payoutAtMaximum(aMax),
+        }),
+      ])
+    : Object.freeze([
+        Object.freeze({
+          a: bucketMinBaseUnits,
+          b: ratioPayout(bucketMinBaseUnits, baseRatio),
+        }),
+        Object.freeze({ a: aMax, b: payoutAtMaximum(aMax) }),
+      ]);
+  assertPriceSchedule(schedule);
+  return Object.freeze({
+    schedule,
+    aMax,
+    maxB: evaluatePriceSchedule(schedule, aMax),
+    midE18: midUsdcBaseUnits * 10n ** 12n,
+    spreadBps,
+    pricingProvenance: `localnet:fixed-${isMakerB ? "2.01" : "2.00"}-usdc-per-strk:${maker.toLowerCase()}`,
+  });
+}
+
 function decimalsForLocalnetToken(tokenId) {
   if (tokenId === RFQ_REVIEWED_SELL_TOKEN_ID)
     return RFQ_REVIEWED_SELL_TOKEN_DECIMALS;
@@ -124,8 +244,14 @@ export function deriveLocalnetReferenceBuyAmount({
   sellTokenId,
   buyTokenId,
   sellAmountBaseUnits,
+  referenceMidE18 = LOCALNET_USDC_PER_STRK * 10n ** 18n,
 }) {
-  if (typeof sellAmountBaseUnits !== "bigint" || sellAmountBaseUnits <= 0n) {
+  if (
+    typeof sellAmountBaseUnits !== "bigint" ||
+    sellAmountBaseUnits <= 0n ||
+    typeof referenceMidE18 !== "bigint" ||
+    referenceMidE18 <= 0n
+  ) {
     return undefined;
   }
   let buy;
@@ -134,14 +260,15 @@ export function deriveLocalnetReferenceBuyAmount({
     buyTokenId === RFQ_REVIEWED_BUY_TOKEN_ID
   ) {
     buy =
-      (sellAmountBaseUnits * LOCALNET_USDC_PER_STRK * USDC_SCALE) / STRK_SCALE;
+      (sellAmountBaseUnits * referenceMidE18 * USDC_SCALE) /
+      (STRK_SCALE * 10n ** 18n);
   } else if (
     sellTokenId === RFQ_REVIEWED_BUY_TOKEN_ID &&
     buyTokenId === RFQ_REVIEWED_SELL_TOKEN_ID
   ) {
     buy =
-      (sellAmountBaseUnits * STRK_SCALE) /
-      (LOCALNET_USDC_PER_STRK * USDC_SCALE);
+      (sellAmountBaseUnits * STRK_SCALE * 10n ** 18n) /
+      (referenceMidE18 * USDC_SCALE);
   } else {
     return undefined;
   }
@@ -290,6 +417,7 @@ export function buildLocalnetRfqEconomicPolicyInput(
     sellTokenId,
     buyTokenId,
     sellAmountBaseUnits: input.requestedSellAmountBaseUnits,
+    referenceMidE18: input.referenceMidE18,
   });
   const offeredBuy = input.offeredBuyAmountBaseUnits;
   const derivedMakerSpreadBps = deriveMakerSpreadBps(referenceBuy, offeredBuy);
@@ -584,6 +712,27 @@ export function createLocalnetRfqEconomics(options = {}) {
     });
   }
 
+  function evaluateSchedule(input) {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      return evaluate(input);
+    }
+    try {
+      assertPriceSchedule(input.schedule);
+      const last = input.schedule[input.schedule.length - 1];
+      return evaluate({
+        ...input,
+        requestedSellAmountBaseUnits: last.a,
+        offeredSellAmountBaseUnits: last.a,
+        offeredBuyAmountBaseUnits: evaluatePriceSchedule(
+          input.schedule,
+          last.a,
+        ),
+      });
+    } catch {
+      return evaluate(null);
+    }
+  }
+
   function commit(makerId, usdcEquivalentBaseUnits, decisionAt, commitmentId) {
     assertAvailable();
     const canonicalMakerId = journalText(makerId, "Committed makerId");
@@ -638,6 +787,7 @@ export function createLocalnetRfqEconomics(options = {}) {
 
   return Object.freeze({
     evaluate,
+    evaluateSchedule,
     commit,
     marketState: () => marketState,
     accountingSnapshot: snapshotAccounting,

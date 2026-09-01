@@ -25,6 +25,8 @@ export function createLocalnetRfqStateHandlers({
   release,
   now,
   validateFundedObservation = () => undefined,
+  observeTake = async () => null,
+  validateTakeObservation = () => undefined,
   beforeReleaseObservation = async () => undefined,
   afterReleaseObservation = async () => undefined,
 }) {
@@ -101,6 +103,44 @@ export function createLocalnetRfqStateHandlers({
         attemptId,
       });
       return observed;
+    },
+
+    prepareTake(target, attemptId) {
+      return coordinator.prepareTake(target, attemptId);
+    },
+
+    markTakeUnknown(target, attemptId) {
+      return coordinator.markTakeUnknown(target, attemptId);
+    },
+
+    abandonTake(target, attemptId) {
+      return coordinator.abandonTake(target, attemptId);
+    },
+
+    async observeTake(target, attemptId) {
+      const observed = await observeTake(target.dealId);
+      if (!observed)
+        throw new Error("Exact v3 escrow take has not been observed.");
+      validateTakeObservation(observed, target.expected);
+      await coordinator.observeTaken(target, attemptId);
+      return observed;
+    },
+
+    async convergeTake(target, attemptId, expectedObservation) {
+      if (expectedObservation !== "taken" && expectedObservation !== "absent")
+        throw new Error("V3 take convergence observation is invalid.");
+      const observed = await observeTake(target.dealId);
+      if (expectedObservation === "taken") {
+        if (!observed)
+          throw new Error("Exact v3 escrow take changed before convergence.");
+        validateTakeObservation(observed, target.expected);
+        await coordinator.observeTaken(target, attemptId);
+        return observed;
+      }
+      if (observed)
+        throw new Error("V3 take absence contradicts an on-chain take record.");
+      await coordinator.markTakeAbsent(target, attemptId);
+      return null;
     },
 
     /** Exact status convergence used by hydration and every browser action. */

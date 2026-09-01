@@ -197,6 +197,24 @@ describe("RFQ lifecycle restore of malformed, stale, and cross-scope records", (
     ).toBe("reviewing");
   });
 
+  it("restores lifecycle v2 rows as readable legacy-mode v3 records", () => {
+    const current = quotedRecord();
+    const { mode: _mode, ...withoutMode } = structuredClone(current);
+    const restored = restoreRfqLifecycle(
+      {
+        ...withoutMode,
+        schemaRevision: "app20/rfq-lifecycle/v2",
+      },
+      { chainId: current.chainId, account: current.account, now: NOW },
+    );
+    expect(restored).toMatchObject({
+      schemaRevision: RFQ_LIFECYCLE_SCHEMA_REVISION,
+      mode: "v2",
+      rfqId: current.rfqId,
+    });
+    expect(restored.state).not.toBe("quarantined");
+  });
+
   it("round-trips hash-only v1 migration evidence without dropping the hash", () => {
     const restored = restoreRfqLifecycle(
       {

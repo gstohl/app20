@@ -9,6 +9,7 @@ import {
   isCanonicalStrkToken,
   normalizeTokenRef,
   paymentRequestIsExpired,
+  resolvePaymentRequestTokenForChain,
   type PaymentRequestPayload,
   type PaymentStatus,
 } from "@/lib/otc";
@@ -37,7 +38,13 @@ type InvoiceCardProps = {
   shareInitiallyOpen?: boolean;
   shareLinkOverride?: string;
   linkAuthenticity?: PaymentLinkAuthenticity;
+  maturity?: {
+    mature: boolean;
+    matureAtBlock: number;
+    blocksRemaining: number;
+  };
   onPay?: () => void;
+  onPayPrivatelyWithStrk?: () => void;
 };
 
 export default function InvoiceCard({
@@ -54,7 +61,9 @@ export default function InvoiceCard({
   shareInitiallyOpen = false,
   shareLinkOverride,
   linkAuthenticity = { kind: "unsigned" },
+  maturity,
   onPay,
+  onPayPrivatelyWithStrk,
 }: InvoiceCardProps) {
   const connectedChainId = useStoreWallet((state) => state.chain);
   const [ignored, setIgnored] = useState(false);
@@ -71,6 +80,22 @@ export default function InvoiceCard({
   const amount = formatBaseUnits(request.amount, token.decimals);
   const metadataConsistent = hasConsistentTokenMetadata(request.token);
   const isStrk = isCanonicalStrkToken(request.token);
+  let tokenAllowed = false;
+  let isLocalnetUsdc = false;
+  try {
+    if (connectedChainId) {
+      const resolved = resolvePaymentRequestTokenForChain(
+        request,
+        connectedChainId,
+      );
+      tokenAllowed = true;
+      isLocalnetUsdc = resolved.symbol === "USDC";
+    } else {
+      tokenAllowed = isStrk;
+    }
+  } catch {
+    // Unsupported token/network combinations remain display-only.
+  }
   const expired = status === "expired" || paymentRequestIsExpired(request);
   const memo =
     request.memo === undefined
@@ -98,19 +123,29 @@ export default function InvoiceCard({
   }
   const networkMismatch = Boolean(
     request.chainId &&
-      connectedChainId &&
-      !paymentLinkChainIdsEqual(request.chainId, connectedChainId),
+    connectedChainId &&
+    !paymentLinkChainIdsEqual(request.chainId, connectedChainId),
   );
   const canPay =
     status === "requested" &&
     !expired &&
     !networkMismatch &&
-    isStrk &&
+    tokenAllowed &&
+    (isStrk || (isLocalnetUsdc && maturity?.mature === true)) &&
     claimedPaymentAddress !== null &&
     !ignored &&
     Boolean(onPay);
+  const canStartPrivateRfq =
+    status === "requested" &&
+    !expired &&
+    !networkMismatch &&
+    isLocalnetUsdc &&
+    maturity === undefined &&
+    claimedPaymentAddress !== null &&
+    !ignored &&
+    Boolean(onPayPrivatelyWithStrk);
   const canShare =
-    isStrk && claimedPaymentAddress !== null && shareChainId !== null;
+    tokenAllowed && claimedPaymentAddress !== null && shareChainId !== null;
   const mailSignatureVerified = linkAuthenticity.kind === "verified";
   const signerFingerprint =
     linkAuthenticity.kind === "verified"
@@ -271,10 +306,12 @@ export default function InvoiceCard({
       ) : null}
       <p className={styles.riskCopy}>
         <strong>
-          {amount} <bdi>{token.symbol}</bdi> moves now, privately.
+          {isLocalnetUsdc && maturity === undefined
+            ? "Private STRK can first be exchanged for the requested localnet USDC."
+            : `${amount} ${token.symbol} moves only after explicit wallet approval.`}
         </strong>{" "}
-        Anything else quoted is NOT settled by Mail — you are trusting the
-        counterparty. Not an atomic swap.
+        Mail coordinates the invoice but does not authenticate the person behind
+        it. Verify the requester and terms independently.
       </p>
       <p className={styles.sheetMeta}>
         {request.expiresAt === 0
@@ -358,21 +395,29 @@ export default function InvoiceCard({
 
       {claimedPaymentAddress ? (
         metadataConsistent ? (
-          isStrk ? (
-            expired ? (
-              <p className={styles.actionWarning}>
-                This payment request has expired.
+          expired ? (
+            <p className={styles.actionWarning}>
+              This payment request has expired.
+            </p>
+          ) : tokenAllowed ? (
+            maturity && !maturity.mature ? (
+              <p className={styles.actionWarning} role="status">
+                The USDC note from the private exchange matures at block{" "}
+                {maturity.matureAtBlock}
+                {` (${maturity.blocksRemaining} block${maturity.blocksRemaining === 1 ? "" : "s"} left)`}
+                . Complete payment becomes available after maturity.
               </p>
             ) : null
           ) : (
             <p className={styles.actionWarning}>
-              Non-STRK requests are display-only. Mail will not send this token.
+              Public networks remain STRK-only. USDC invoices are executable
+              only for the registry-resolved localnet token.
             </p>
           )
         ) : (
           <p className={styles.actionWarning}>
-            Mail refuses this request: its STRK address has inconsistent token
-            metadata.
+            Mail refuses this request because its token metadata is
+            inconsistent.
           </p>
         )
       ) : (
@@ -391,7 +436,21 @@ export default function InvoiceCard({
               onClick={onPay}
               disabled={busy}
             >
-              {busy ? "Waiting for wallet…" : `Pay ${amount} STRK privately`}
+              {busy
+                ? "Waiting for wallet…"
+                : isLocalnetUsdc
+                  ? "Complete payment"
+                  : `Pay ${amount} STRK privately`}
+            </button>
+          ) : null}
+          {canStartPrivateRfq ? (
+            <button
+              className={styles.primaryButton}
+              type="button"
+              onClick={onPayPrivatelyWithStrk}
+              disabled={busy}
+            >
+              Pay privately with STRK
             </button>
           ) : null}
           <button

@@ -47,6 +47,46 @@ test("abort scope enforces timeout and parent disconnect", async () => {
   disconnected.close();
 });
 
+test("SPA headers keep CSP byte-identical when optional IPFS origins are unset", () => {
+  const config = {
+    privyFrameOrigins: ["https://auth-frame.example.invalid"],
+    privyConnectOrigins: ["https://auth-connect.example.invalid"],
+  };
+  const unset = spaSecurityHeaders(config).get("content-security-policy");
+  const empty = spaSecurityHeaders({ ...config, ipfsOrigins: "" }).get(
+    "content-security-policy",
+  );
+  assert.equal(empty, unset);
+});
+
+test("SPA headers append only validated HTTPS IPFS origins", () => {
+  const config = {
+    privyFrameOrigins: [],
+    privyConnectOrigins: [],
+  };
+  const csp = spaSecurityHeaders({
+    ...config,
+    ipfsOrigins:
+      "https://ipfs-rpc.example.invalid, https://ipfs-gateway.example.invalid",
+  }).get("content-security-policy");
+  assert.match(
+    csp ?? "",
+    /connect-src[^;]*https:\/\/ipfs-rpc\.example\.invalid/,
+  );
+  assert.match(
+    csp ?? "",
+    /connect-src[^;]*https:\/\/ipfs-gateway\.example\.invalid/,
+  );
+  for (const ipfsOrigins of [
+    "http://ipfs.example.invalid",
+    "https://*.example.invalid",
+    "https://user@ipfs.example.invalid",
+    "https://ipfs.example.invalid/path",
+  ]) {
+    assert.throws(() => spaSecurityHeaders({ ...config, ipfsOrigins }));
+  }
+});
+
 test("SPA headers deny framing/sniffing/referrers and use reviewed Privy origins", () => {
   const headers = spaSecurityHeaders({
     privyFrameOrigins: ["https://auth-frame.example.invalid"],

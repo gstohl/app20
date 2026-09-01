@@ -1,5 +1,7 @@
 import {
+  LOCALNET_SECONDARY_SOLVER_ID,
   LOCALNET_SECONDARY_SOLVER_KEY_ID,
+  LOCALNET_SOLVER_ID,
   LOCALNET_SOLVER_KEY_ID,
   importQuotePublicKey,
   verifyCanonicalQuote,
@@ -29,6 +31,29 @@ export const LOCALNET_SOLVER_PUBLIC_JWKS: Readonly<Record<string, JsonWebKey>> =
 export const LOCALNET_SOLVER_PUBLIC_JWK = LOCALNET_SOLVER_PUBLIC_JWKS[
   LOCALNET_SOLVER_KEY_ID
 ] as JsonWebKey;
+
+const LOCALNET_SOLVER_KEYS_BY_ID: Readonly<Record<string, string>> =
+  Object.freeze({
+    [LOCALNET_SOLVER_ID]: LOCALNET_SOLVER_KEY_ID,
+    [LOCALNET_SECONDARY_SOLVER_ID]: LOCALNET_SECONDARY_SOLVER_KEY_ID,
+  });
+
+/** Resolves only the named localnet fixture maker/key pairing. */
+export function resolveLocalnetQuoteKey(
+  solverId: string,
+  quoteKeyId: string,
+  _at: number,
+): JsonWebKey {
+  if (LOCALNET_SOLVER_KEYS_BY_ID[solverId] !== quoteKeyId) {
+    throw new Error("The local maker quote key is not recognized.");
+  }
+  const key = LOCALNET_SOLVER_PUBLIC_JWKS[quoteKeyId];
+  if (!key) throw new Error("The local maker quote key is not recognized.");
+  return key;
+}
+
+export const importLocalnetQuotePublicKey = importQuotePublicKey;
+export const verifyLocalnetCanonicalQuote = verifyCanonicalQuote;
 
 const cachedPublicKeys = new Map<string, CryptoKey>();
 const inflightPublicKeys = new Map<string, Promise<CryptoKey>>();

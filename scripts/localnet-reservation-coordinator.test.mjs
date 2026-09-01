@@ -12,7 +12,14 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
-import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
+import {
+  createLocalnetReservationCoordinator,
+  digestLocalnetV3Refusal,
+} from "./localnet-reservation-coordinator.mjs";
+import {
+  decodeSolverQuoteV3,
+  digestSolverQuoteV3,
+} from "../packages/private-intents/src/index.ts";
 import {
   acquireReleaseHttpTargetThroughCoordinator,
   bindExpiryHttpTargetThroughCoordinator,
@@ -1697,6 +1704,192 @@ test("authority reorg quarantine durably reclaims the terminal market lease", as
     }),
     /market lease/i,
   );
+});
+
+test("v4 journals v3 quote/refusal fanout by RFQ digest without selection or loser release", async () => {
+  const path = journalPath();
+  const coordinator = createLocalnetReservationCoordinator(path);
+  const rfqDigest = `0x${"a1".repeat(32)}`;
+  const signature = `0x${"0".repeat(63)}1${"0".repeat(63)}1`;
+  const quote = {
+    domain: "app20/private-intent-quote/v3",
+    version: 3,
+    solverId: "maker-a",
+    quoteKeyId: "maker-a/key",
+    nonce: `0x${"12".repeat(32)}`,
+    pool: "starknet:APP20_LOCALNET",
+    helper: "0xe5c",
+    escrowAddress: "0xe5c",
+    rfqDigest,
+    rfqFelt: "0x901",
+    sellToken: "0x1",
+    buyToken: "0x2",
+    schedule: [
+      { a: "40", b: "80" },
+      { a: "100", b: "200" },
+    ],
+    lockId: "0xa01",
+    lockTicket: "0xb01",
+    lockTransactionHash: "0xc01",
+    lockExpiresAt: NOW + 90,
+    spreadBps: 30,
+    pricingProvenance: "fixture:v3",
+    quotedAt: NOW,
+    quoteExpiresAt: NOW + 60,
+    signature,
+  };
+  await coordinator.beginV3Request({
+    rfqDigest,
+    intentDigest: `0x${"a2".repeat(32)}`,
+    rfqId: "0x901",
+    account: "0xabc",
+    chainId: "0x1",
+    createdAt: NOW,
+    expiresAt: NOW + 90,
+    market: "0x1/0x2",
+    makerIds: ["maker-a", "maker-b"],
+  });
+  const quoteDigest = await digestSolverQuoteV3(decodeSolverQuoteV3(quote));
+  await coordinator.recordV3Quote(rfqDigest, "maker-a", { quote, quoteDigest });
+  await coordinator.recordV3Refusal(rfqDigest, "maker-b", {
+    code: "insufficient-inventory",
+    reason: "No bucket inventory is available.",
+  });
+  const completed = await coordinator.completeV3Fanout(rfqDigest);
+  assert.equal(completed.fanoutComplete, true);
+  assert.equal(completed.selection, undefined);
+  assert.deepEqual(
+    completed.makerPlans.map(({ makerId, state }) => ({ makerId, state })),
+    [
+      { makerId: "maker-a", state: "quoted" },
+      { makerId: "maker-b", state: "refused" },
+    ],
+  );
+  assert.equal(
+    completed.makerPlans[1].quoteDigest,
+    digestLocalnetV3Refusal({
+      makerId: "maker-b",
+      code: "insufficient-inventory",
+      reason: "No bucket inventory is available.",
+    }),
+  );
+  const journal = JSON.parse(readFileSync(path, "utf8"));
+  assert.equal(journal.domain, "app20/localnet-reservation-coordinator/v4");
+  assert.equal(journal.version, 4);
+  assert.equal(journal.v3Requests.length, 1);
+  assert.equal(
+    createLocalnetReservationCoordinator(path).getV3Request(rfqDigest)
+      .fanoutComplete,
+    true,
+  );
+});
+
+test("v3 take lease is exact, restart-safe, idempotent, and supports proven absence retry", async () => {
+  const path = journalPath();
+  const coordinator = createLocalnetReservationCoordinator(path);
+  const rfqDigest = `0x${"b1".repeat(32)}`;
+  const quote = {
+    domain: "app20/private-intent-quote/v3",
+    version: 3,
+    solverId: "maker-a",
+    quoteKeyId: "maker-a/key",
+    nonce: `0x${"13".repeat(32)}`,
+    pool: "starknet:APP20_LOCALNET",
+    helper: "0xe5c",
+    escrowAddress: "0xe5c",
+    rfqDigest,
+    rfqFelt: "0x902",
+    sellToken: "0x1",
+    buyToken: "0x2",
+    schedule: [{ a: "100", b: "200" }],
+    lockId: "0xa02",
+    lockTicket: "0xb02",
+    lockTransactionHash: "0xc02",
+    lockExpiresAt: NOW + 90,
+    spreadBps: 30,
+    pricingProvenance: "fixture:v3",
+    quotedAt: NOW,
+    quoteExpiresAt: NOW + 60,
+    signature: `0x${"0".repeat(63)}1${"0".repeat(63)}1`,
+  };
+  await coordinator.beginV3Request({
+    rfqDigest,
+    intentDigest: `0x${"b2".repeat(32)}`,
+    rfqId: "0x902",
+    account: "0xabc",
+    chainId: "0x1",
+    createdAt: NOW,
+    expiresAt: NOW + 90,
+    market: "0x1/0x2",
+    makerIds: ["maker-a"],
+  });
+  await coordinator.recordV3Quote(rfqDigest, "maker-a", {
+    quote,
+    quoteDigest: await digestSolverQuoteV3(decodeSolverQuoteV3(quote)),
+  });
+  await coordinator.completeV3Fanout(rfqDigest);
+  await coordinator.journalV3Transcript(rfqDigest, `0x${"d1".repeat(32)}`);
+  const target = {
+    rfqId: "0x902",
+    dealId: "0x902",
+    account: "0xabc",
+    chainId: "0x1",
+    expected: {
+      tokenA: "0x1",
+      totalA: "100",
+      tokenB: "0x2",
+      totalB: "200",
+      fills: [{ lockId: "0xa02", amountA: "100", amountB: "200" }],
+    },
+  };
+  assert.equal((await coordinator.prepareTake(target, "take-1")).state, "take-pending");
+  await assert.rejects(coordinator.prepareTake(target, "take-2"), /another exact/i);
+  await coordinator.markTakeUnknown(
+    { ...target, transactionHash: "0xd02" },
+    "take-1",
+  );
+  const restarted = createLocalnetReservationCoordinator(path);
+  assert.equal(restarted.getV3Request(rfqDigest).state, "take-unknown");
+  await restarted.observeTaken(
+    { ...target, transactionHash: "0xd02" },
+    "take-1",
+  );
+  assert.equal(restarted.getV3RequestForRfq("0x902").state, "taken");
+
+  const secondPath = journalPath();
+  const second = createLocalnetReservationCoordinator(secondPath);
+  const secondDigest = `0x${"c1".repeat(32)}`;
+  const secondQuote = { ...quote, rfqDigest: secondDigest, rfqFelt: "0x903", lockId: "0xa03" };
+  await second.beginV3Request({
+    rfqDigest: secondDigest,
+    intentDigest: `0x${"c2".repeat(32)}`,
+    rfqId: "0x903",
+    account: "0xabc",
+    chainId: "0x1",
+    createdAt: NOW,
+    expiresAt: NOW + 90,
+    market: "0x1/0x2",
+    makerIds: ["maker-a"],
+  });
+  await second.recordV3Quote(secondDigest, "maker-a", {
+    quote: secondQuote,
+    quoteDigest: await digestSolverQuoteV3(decodeSolverQuoteV3(secondQuote)),
+  });
+  await second.completeV3Fanout(secondDigest);
+  await second.journalV3Transcript(secondDigest, `0x${"d2".repeat(32)}`);
+  const secondTarget = {
+    ...target,
+    rfqId: "0x903",
+    dealId: "0x903",
+    expected: {
+      ...target.expected,
+      fills: [{ lockId: "0xa03", amountA: "100", amountB: "200" }],
+    },
+  };
+  await second.prepareTake(secondTarget, "reverted-1");
+  await second.markTakeAbsent(secondTarget, "reverted-1");
+  assert.equal((await second.prepareTake(secondTarget, "retry-2")).state, "take-pending");
+  await assert.rejects(second.prepareTake(secondTarget, "reverted-1"), /durably closed/i);
 });
 
 for (const outcome of ["filled", "expired"]) {

@@ -1,6 +1,12 @@
+import {
+  PRIVATE_RFQ_V2_DOMAIN,
+  type PrivateRfqV2,
+  type SelectionTranscriptV1,
+} from "@app20/private-intents";
 import { describe, expect, it, vi } from "vitest";
 import {
   abandonLocalnetFunding,
+  abandonLocalnetTake,
   askLocalnetSolverToFill,
   buildLocalnetIntentPayoutActions,
   convergeLocalnetPrivateIntent,
@@ -10,14 +16,23 @@ import {
   formatLocalnetTokenAmount,
   fundingTicketAttemptTarget,
   markLocalnetFundingUnknown,
+  markLocalnetTakeUnknown,
   observeLocalnetFunding,
+  observeLocalnetTake,
   parseLocalnetTokenAmount,
+  postSelectionTranscript,
   prepareLocalnetFunding,
+  prepareLocalnetTake,
+  readEscrowLock,
+  readEscrowTake,
   readLocalnetEscrowDeal,
   readLocalnetRfqOperationsStatus,
+  readLocalnetUnresolvedDealsV3,
   releaseLocalnetRfqReservations,
   requestLocalnetSolverQuotes,
+  requestQuotesV3,
   signLocalnetSolverQuote,
+  convergeLocalnetTake,
   type LocalnetMarketToken,
 } from "./localnet-private-intents";
 
@@ -326,6 +341,9 @@ describe("localnet private-intent adapter", () => {
                   rationale: "Eligible under named localnet fixture policy.",
                 },
               ],
+              mids: [],
+              locks: { open: 0, expiredAwaitingSettlement: 0, settled: 0 },
+              transcripts: { received: 0, consistent: 0 },
               rawInventoryExposed: false,
             },
           }),
@@ -435,6 +453,292 @@ describe("localnet private-intent adapter", () => {
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(observed?.aborted).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it("strictly decodes RFQ v3 quotes and refusal digests", async () => {
+    const rfq: PrivateRfqV2 = {
+      version: 2,
+      domain: PRIVATE_RFQ_V2_DOMAIN,
+      rfqId: `0x${"11".repeat(32)}`,
+      rfqFelt: "0x77",
+      takerCommitment: "0x55",
+      chainId: "starknet:APP20_LOCALNET",
+      registryRevision: "registry-v1",
+      directoryEpoch: 0,
+      settlementHelper: "0x5",
+      sellToken: "0x1",
+      buyToken: "0x2",
+      sellBucketMinBaseUnits: 50n,
+      sellBucketMaxBaseUnits: 100n,
+      createdAt: 1_800_000_000,
+      responseDeadline: 1_800_000_030,
+      expiresAt: 1_800_000_090,
+      lockExpiresAt: 1_800_000_090,
+    };
+    const cohort = {
+      epoch: 0,
+      checkpoint: "local-fixture-checkpoint-v1",
+      validUntil: 1_800_000_030,
+      makers: [
+        { makerId: "maker-a", keyId: "maker-a/key" },
+        { makerId: "maker-b", keyId: "maker-b/key" },
+      ],
+      binding: "bound-cohort",
+    };
+    const signature = `0x${"0".repeat(63)}1${"0".repeat(63)}1`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            result: {
+              quotes: [
+                {
+                  domain: "app20/private-intent-quote/v3",
+                  version: 3,
+                  solverId: "maker-a",
+                  quoteKeyId: "maker-a/key",
+                  nonce: `0x${"22".repeat(32)}`,
+                  pool: "starknet:APP20_LOCALNET",
+                  helper: "0x5",
+                  escrowAddress: "0x5",
+                  rfqDigest: `0x${"33".repeat(32)}`,
+                  rfqFelt: "0x77",
+                  sellToken: "0x1",
+                  buyToken: "0x2",
+                  schedule: [{ a: "50", b: "100" }, { a: "100", b: "200" }],
+                  lockId: "0x41",
+                  lockTicket: "0x51",
+                  lockTransactionHash: "0x61",
+                  lockExpiresAt: 1_800_000_090,
+                  spreadBps: 20,
+                  pricingProvenance: "fixture",
+                  quotedAt: 1_800_000_001,
+                  quoteExpiresAt: 1_800_000_030,
+                  signature,
+                },
+              ],
+              refusals: [
+                {
+                  makerId: "maker-b",
+                  reason: "No inventory in this bucket.",
+                  quoteDigest: `0x${"44".repeat(32)}`,
+                },
+              ],
+              cohort,
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(
+      requestQuotesV3({ account: "0xabc", chainId: "0x1", rfq, cohort }),
+    ).resolves.toMatchObject({
+      quotes: [
+        {
+          solverId: "maker-a",
+          schedule: [
+            { a: 50n, b: 100n },
+            { a: 100n, b: 200n },
+          ],
+        },
+      ],
+      refusals: [{ makerId: "maker-b", reason: "No inventory in this bucket." }],
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("decodes escrow reads and journals every exact Take boundary", async () => {
+    const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string, init?: RequestInit) => {
+        const path = new URL(input).pathname;
+        const body = init?.body
+          ? (JSON.parse(String(init.body)) as Record<string, unknown>)
+          : {};
+        calls.push({ path, body });
+        const result = path.endsWith("/escrow/lock")
+          ? {
+              lock: {
+                status: "open",
+                tokenA: "0x1",
+                tokenB: "0x2",
+                rfqId: "0x77",
+                takerCommitment: "0x55",
+                expiry: 1_800_000_090,
+                schedule: [{ a: "50", b: "100" }, { a: "100", b: "200" }],
+                remainingB: "200",
+                earnedA: "0",
+                ticket: "0x51",
+                proceedsSettled: false,
+                collateralReleased: false,
+              },
+            }
+          : path.endsWith("/escrow/take")
+            ? {
+                take: {
+                  tokenA: "0x1",
+                  totalA: "100",
+                  tokenB: "0x2",
+                  totalB: "200",
+                  fillCount: 1,
+                  takenAt: 1_800_000_010,
+                },
+              }
+            : path.endsWith("/transcript")
+              ? {
+                  acknowledgements: [
+                    { makerId: "maker-a", accepted: true, consistent: true },
+                  ],
+                }
+              : { ok: true };
+        return new Response(JSON.stringify({ result }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    await expect(readEscrowLock("0x41")).resolves.toMatchObject({
+      status: "open",
+      schedule: [
+        { a: 50n, b: 100n },
+        { a: 100n, b: 200n },
+      ],
+      remainingB: 200n,
+    });
+    await expect(readEscrowTake("0x77")).resolves.toMatchObject({
+      totalA: 100n,
+      totalB: 200n,
+      fillCount: 1,
+    });
+    const target = {
+      account: "0xabc",
+      chainId: "0x1",
+      rfqId: "0x77",
+      dealId: "0x77",
+      expected: {
+        tokenA: "0x1",
+        totalA: 100n,
+        tokenB: "0x2",
+        totalB: 200n,
+        fills: [{ lockId: "0x41", amountA: 100n, amountB: 200n }],
+      },
+    };
+    await prepareLocalnetTake(target, "take-1");
+    await markLocalnetTakeUnknown(target, "take-1");
+    await abandonLocalnetTake(target, "take-1");
+    await observeLocalnetTake(target, "take-1");
+    await convergeLocalnetTake(target, "take-1", "taken");
+    const transcript: SelectionTranscriptV1 = {
+      version: 1,
+      domain: "app20/rfq-selection-transcript/v1",
+      rfqDigest: `0x${"11".repeat(32)}`,
+      rule: "app20/rfq-selection/v3",
+      bucket: { min: "50", max: "100" },
+      createdAt: 1_800_000_010,
+      entries: [
+        {
+          makerId: "maker-a",
+          quoteDigest: `0x${"22".repeat(32)}`,
+          outcome: "lost",
+          rank: 1,
+        },
+      ],
+      clearingUnitPriceE18: "2000000000000000000",
+      digest: `0x${"33".repeat(32)}`,
+    };
+    await expect(
+      postSelectionTranscript({
+        account: "0xabc",
+        chainId: "0x1",
+        rfqDigest: transcript.rfqDigest,
+        transcript,
+      }),
+    ).resolves.toEqual([
+      { makerId: "maker-a", accepted: true, consistent: true },
+    ]);
+    const takeCalls = calls.filter(({ path }) => path.includes("/take-"));
+    expect(takeCalls).toHaveLength(5);
+    expect(takeCalls[0]!.body).toMatchObject({
+      runtimeEpoch: expect.any(String),
+      rfqId: "0x77",
+      dealId: "0x77",
+      expected: {
+        totalA: "100",
+        totalB: "200",
+        fills: [{ lockId: "0x41", amountA: "100", amountB: "200" }],
+      },
+      attemptId: "take-1",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("restores strict browser-safe unresolved v3 Take rows", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            result: {
+              schema: "app20/localnet-unresolved-deals/v1",
+              environment: "localnet",
+              rawInventoryExposed: false,
+              deals: [
+                {
+                  source: "localnet-coordinator-and-chain",
+                  authority: "server-derived-resume-only",
+                  lifecycle: "v3",
+                  account: "0xabc",
+                  chainId: "0x1",
+                  market: "0x1/0x2",
+                  rfqId: "0x77",
+                  dealId: "0x77",
+                  intentDigest: `0x${"11".repeat(32)}`,
+                  createdAt: 1_800_000_000,
+                  expiresAt: 1_800_000_090,
+                  expected: {
+                    tokenA: "0x1",
+                    totalA: "100",
+                    tokenB: "0x2",
+                    totalB: "200",
+                    fills: [
+                      { lockId: "0x41", amountA: "100", amountB: "200" },
+                    ],
+                  },
+                  transactions: { take: "0xabc" },
+                  observation: { status: "taken" },
+                  escrowAddress: "0x5",
+                },
+              ],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    await expect(
+      readLocalnetUnresolvedDealsV3({
+        account: "0xabc",
+        chainId: "0x1",
+        sellToken: "0x1",
+        buyToken: "0x2",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        lifecycle: "v3",
+        expected: {
+          tokenA: "0x1",
+          totalA: "100",
+          tokenB: "0x2",
+          totalB: "200",
+          fills: [{ lockId: "0x41", amountA: "100", amountB: "200" }],
+        },
+        transactions: { take: "0xabc" },
+      }),
+    ]);
     vi.unstubAllGlobals();
   });
 });

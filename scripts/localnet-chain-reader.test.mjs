@@ -193,6 +193,78 @@ test("raw receipt, class, event, and canonical block mutations fail closed", asy
   for (const run of cases) await assert.rejects(run);
 });
 
+test("v3 reader requires one DealTaken plus one distinct LockTaken for every expected fill", async () => {
+  const v3 = {
+    runtimeEpoch: artifact.runtimeEpoch,
+    chainId: artifact.chainId,
+    lifecycle: "v3",
+    dealId: "0xdef",
+    transactions: { take: "0x201" },
+    expected: {
+      fills: [
+        { lockId: "0xa", amountA: "40", amountB: "80" },
+        { lockId: "0xb", amountA: "60", amountB: "120" },
+      ],
+    },
+  };
+  const rpc = async (method, params) => {
+    if (method === "starknet_getClassHashAt") return artifact.escrowClassHash;
+    if (method === "starknet_getBlockWithTxHashes" && params.block_id === "latest")
+      return { block_number: 20, block_hash: "0x999", transactions: [] };
+    if (method === "starknet_getTransactionReceipt")
+      return {
+        transaction_hash: v3.transactions.take,
+        block_number: 10,
+        block_hash: "0xa",
+        execution_status: "SUCCEEDED",
+        events: [
+          {
+            from_address: artifact.escrowAddress,
+            keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xa", v3.dealId],
+            data: ["0x28", "0x50", "0x0"],
+          },
+          {
+            from_address: artifact.escrowAddress,
+            keys: [LOCALNET_ESCROW_EVENT_SELECTORS.lockTaken, "0xb", v3.dealId],
+            data: ["0x3c", "0x78", "0x0"],
+          },
+          {
+            from_address: artifact.escrowAddress,
+            keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, v3.dealId],
+            data: ["0x11", "0x64", "0x22", "0xc8", "0x2"],
+          },
+        ],
+      };
+    if (method === "starknet_getBlockWithTxHashes")
+      return {
+        block_number: 10,
+        block_hash: "0xa",
+        transactions: [v3.transactions.take],
+      };
+    throw new Error("unexpected RPC");
+  };
+  const reader = createLocalnetRpcReader({ id: "v3", artifact, rpc });
+  const observation = await reader.observe(v3);
+  assert.equal(observation.lifecycle[0].stage, "take");
+  assert.deepEqual(
+    observation.lifecycle[0].fillEvents.map(({ event }) => event.keys[1]),
+    ["0xa", "0xb"],
+  );
+
+  await assert.rejects(
+    createLocalnetRpcReader({
+      id: "v3-mutation",
+      artifact,
+      rpc: async (method, params) => {
+        const value = await rpc(method, params);
+        if (method === "starknet_getTransactionReceipt") value.events.splice(0, 1);
+        return value;
+      },
+    }).observe(v3),
+    /one LockTaken per expected fill/i,
+  );
+});
+
 test("lifecycle transactions sharing a block reuse one canonical block read", async () => {
   let canonicalBlockReads = 0;
   const rpc = rpcFixture((value, method, stage) => {

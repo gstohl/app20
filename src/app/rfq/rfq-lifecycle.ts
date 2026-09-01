@@ -1,7 +1,10 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
+import { takerCommitmentFor } from "@app20/private-intents";
 import { LOCALNET_CHAIN_ID } from "@/utils/constants";
 
-export const RFQ_LIFECYCLE_SCHEMA_REVISION = "app20/rfq-lifecycle/v2" as const;
+export const RFQ_LIFECYCLE_SCHEMA_REVISION = "app20/rfq-lifecycle/v3" as const;
+export const RFQ_LIFECYCLE_V2_SCHEMA_REVISION =
+  "app20/rfq-lifecycle/v2" as const;
 export const RFQ_LIFECYCLE_V1_SCHEMA_REVISION =
   "app20/rfq-lifecycle/v1" as const;
 export const RFQ_RESUME_AUTHORITY_LABEL =
@@ -32,6 +35,7 @@ export type RfqAttemptPhase =
   | "claim"
   | "refund"
   | "reservation-release";
+export type RfqLifecycleAttemptPhase = RfqAttemptPhase | "take";
 export type RfqAttemptState =
   | "not-started"
   | "preparing"
@@ -100,10 +104,39 @@ export type RfqMakerFillAttemptTarget = Readonly<{
   ticketAddress: string;
 }>;
 
+export type RfqV3Fill = Readonly<{
+  makerId: string;
+  lockId: string;
+  amountA: string;
+  amountB: string;
+  lockExpiresAt: number;
+}>;
+
+export type RfqTakeAttemptTarget = Readonly<{
+  operation: "take";
+  chainId: string;
+  account: string;
+  rfqId: string;
+  requestDigest: string;
+  dealId: string;
+  expected: Readonly<{
+    tokenA: string;
+    totalA: string;
+    tokenB: string;
+    totalB: string;
+    fills: readonly Readonly<{
+      lockId: string;
+      amountA: string;
+      amountB: string;
+    }>[];
+  }>;
+}>;
+
 export type RfqAttemptTarget =
   | RfqReleaseAttemptTarget
   | RfqFundingTicketAttemptTarget
   | RfqMakerFillAttemptTarget;
+export type RfqLifecycleAttemptTarget = RfqAttemptTarget | RfqTakeAttemptTarget;
 
 export type RfqPhaseAttempt = Readonly<{
   attemptId: string;
@@ -115,6 +148,10 @@ export type RfqPhaseAttempt = Readonly<{
   walletBoundary?: "not-entered" | "entered";
   target?: RfqAttemptTarget;
 }>;
+
+export type RfqTakePhaseAttempt = Readonly<
+  Omit<RfqPhaseAttempt, "target"> & { target?: RfqTakeAttemptTarget }
+>;
 
 export type RfqExactTerms = Readonly<{
   pairId: string;
@@ -150,12 +187,19 @@ export type RfqSelectedQuote = Readonly<{
 }>;
 
 export type RfqSettlementIdentity = Readonly<{
-  version: "Localnet V2";
+  version: "Localnet V2" | "Localnet V3";
   escrowAddress: string;
   dealId: string;
   ticketAddress?: string;
   commitmentDigest?: string;
   deadline: number;
+}>;
+
+export type RfqTranscriptAcknowledgement = Readonly<{
+  makerId: string;
+  accepted: boolean;
+  consistent: boolean;
+  reason?: string;
 }>;
 
 export type RfqLocalDealObservation = Readonly<{
@@ -191,6 +235,7 @@ export type RfqEvidenceAuthority = Readonly<{
 export type RfqLifecycleRecord = Readonly<{
   schemaRevision: typeof RFQ_LIFECYCLE_SCHEMA_REVISION;
   authority: typeof RFQ_RESUME_AUTHORITY_LABEL;
+  mode: "v2" | "v3";
   chainId: string;
   account: string;
   rfqId: string;
@@ -203,13 +248,23 @@ export type RfqLifecycleRecord = Readonly<{
   terms?: RfqExactTerms;
   selectedQuote?: RfqSelectedQuote;
   settlement?: RfqSettlementIdentity;
-  attempts: Readonly<Partial<Record<RfqAttemptPhase, RfqPhaseAttempt>>>;
+  attempts: Readonly<
+    Partial<Record<RfqAttemptPhase, RfqPhaseAttempt>> & {
+      take?: RfqTakePhaseAttempt;
+    }
+  >;
   latestObservation?: RfqLocalDealObservation;
   evidenceAuthority: RfqEvidenceAuthority;
   requestDigest?: string;
   quoteExpiresAt?: number;
   reservationExpiresAt?: number;
   transactionHash?: string;
+  bucket?: Readonly<{ min: string; max: string }>;
+  takerCommitment?: string;
+  takerSecret?: string;
+  fills?: readonly RfqV3Fill[];
+  takeTransactionHash?: string;
+  transcriptAcknowledgements?: readonly RfqTranscriptAcknowledgement[];
   reason?: string;
   /** Convenience provenance only; never settlement or chain authority. */
   recoverySource?: "server-derived";
@@ -218,6 +273,8 @@ export type RfqLifecycleRecord = Readonly<{
     detail: string;
     observedAt: number;
   }>;
+  /** Backup imports carry no execution secret and remain verification-only. */
+  restoredFromBackup?: true;
 }>;
 
 const STATES = new Set<RfqLifecycleState>([
@@ -247,7 +304,13 @@ const ALLOWED: Readonly<
   requesting: ["quoted", "refused", "cancel-pending", "quarantined"],
   quoted: ["reviewing", "expired", "cancel-pending", "quarantined"],
   reviewing: ["submission-unknown", "expired", "cancel-pending", "quarantined"],
-  "submission-unknown": ["reviewing", "funded", "refundable", "quarantined"],
+  "submission-unknown": [
+    "reviewing",
+    "funded",
+    "settled",
+    "refundable",
+    "quarantined",
+  ],
   funded: ["filled", "expired", "refundable", "quarantined"],
   filled: ["claimable", "quarantined"],
   claimable: ["settled", "quarantined"],
@@ -423,11 +486,17 @@ export function createRfqLifecycleRecord(input: {
   account: string;
   rfqId: string;
   state?: RfqLifecycleState;
+  mode?: "v2" | "v3";
   now: number;
   terms?: RfqExactTerms;
   selectedQuote?: RfqSelectedQuote;
   settlement?: RfqSettlementIdentity;
   requestDigest?: string;
+  bucket?: Readonly<{ min: string; max: string }>;
+  takerCommitment?: string;
+  takerSecret?: string;
+  fills?: readonly RfqV3Fill[];
+  transcriptAcknowledgements?: readonly RfqTranscriptAcknowledgement[];
 }): RfqLifecycleRecord {
   const now = timestamp(input.now, "now");
   const chainId = canonicalRfqChainId(input.chainId);
@@ -451,9 +520,92 @@ export function createRfqLifecycleRecord(input: {
     throw new Error(
       "Local deal identity must equal the canonical RFQ identity.",
     );
+  const mode = input.mode ?? "v2";
+  const selectedV3State = [
+    "quoted",
+    "reviewing",
+    "submission-unknown",
+    "settled",
+  ].includes(input.state ?? "draft");
+  if (
+    mode === "v3" &&
+    (!input.bucket ||
+      !input.takerCommitment ||
+      !input.takerSecret ||
+      (selectedV3State && (!input.fills || input.fills.length < 1)))
+  ) {
+    throw new Error(
+      "RFQ v3 requires its bucket, taker commitment, secret, and any selected fills.",
+    );
+  }
+  if (
+    mode === "v2" &&
+    (input.bucket ||
+      input.takerCommitment ||
+      input.takerSecret ||
+      input.fills ||
+      input.transcriptAcknowledgements)
+  ) {
+    throw new Error("Legacy RFQs must not carry v3 execution bindings.");
+  }
+  const bucket = input.bucket ? parseBucket(input.bucket)! : undefined;
+  const fills = input.fills ? parseV3Fills(input.fills)! : undefined;
+  const takerCommitment = input.takerCommitment
+    ? canonicalLocalRfqId(input.takerCommitment)
+    : undefined;
+  const takerSecret = input.takerSecret
+    ? canonicalLocalRfqId(input.takerSecret)
+    : undefined;
+  if (
+    mode === "v3" &&
+    (!takerSecret ||
+      takerSecret === "0x0" ||
+      !takerCommitment ||
+      takerCommitment === "0x0" ||
+      takerCommitmentFor(takerSecret) !== takerCommitment)
+  ) {
+    throw new Error("RFQ v3 taker secret does not match its commitment.");
+  }
+  if (
+    mode === "v3" &&
+    input.state !== "draft" &&
+    (!input.requestDigest || !/^0x[0-9a-f]{64}$/.test(input.requestDigest))
+  ) {
+    throw new Error("RFQ v3 requires its canonical request digest.");
+  }
+  if (
+    mode === "v3" &&
+    selectedV3State &&
+    (!input.requestDigest ||
+      !input.terms ||
+      !settlement ||
+      settlement.version !== "Localnet V3" ||
+      !fills)
+  ) {
+    throw new Error("Selected RFQ v3 records require exact Take bindings.");
+  }
+  if (mode === "v3" && selectedV3State && input.terms && settlement && fills && bucket) {
+    const totalA = fills.reduce((sum, fill) => sum + BigInt(fill.amountA), 0n);
+    const totalB = fills.reduce((sum, fill) => sum + BigInt(fill.amountB), 0n);
+    if (
+      !sameIdentity(settlement.dealId, rfqId) ||
+      sameIdentity(input.terms.sellAddress, input.terms.buyAddress) ||
+      totalA.toString() !== input.terms.sellAmount ||
+      totalB.toString() !== input.terms.buyAmount ||
+      (input.terms.minBuyAmount !== undefined &&
+        totalB < BigInt(input.terms.minBuyAmount)) ||
+      totalA < BigInt(bucket.min) ||
+      totalA > BigInt(bucket.max) ||
+      input.terms.rfqExpiresAt !== settlement.deadline ||
+      fills.some((fill) => fill.lockExpiresAt !== settlement.deadline)
+    ) {
+      throw new Error("Selected RFQ v3 fills contradict their exact terms.");
+    }
+  }
   return Object.freeze({
     schemaRevision: RFQ_LIFECYCLE_SCHEMA_REVISION,
     authority: RFQ_RESUME_AUTHORITY_LABEL,
+    mode,
     chainId,
     account: canonicalRfqAccount(input.account),
     rfqId,
@@ -467,6 +619,17 @@ export function createRfqLifecycleRecord(input: {
     ...(settlement ? { settlement } : {}),
     ...(input.requestDigest
       ? { requestDigest: text(input.requestDigest, "requestDigest") }
+      : {}),
+    ...(bucket ? { bucket } : {}),
+    ...(takerCommitment ? { takerCommitment } : {}),
+    ...(takerSecret ? { takerSecret } : {}),
+    ...(fills ? { fills } : {}),
+    ...(input.transcriptAcknowledgements
+      ? {
+          transcriptAcknowledgements: parseTranscriptAcknowledgements(
+            input.transcriptAcknowledgements,
+          )!,
+        }
       : {}),
     attempts: Object.freeze({}),
     evidenceAuthority: defaultEvidenceAuthority(now),
@@ -502,8 +665,28 @@ export function transitionRfqLifecycle(
       `RFQ lifecycle cannot transition from ${record.state} to ${state}.`,
     );
   }
+  if (
+    record.mode === "v3" &&
+    ["funded", "filled", "claimable", "refundable", "refunded"].includes(
+      state,
+    )
+  ) {
+    throw new Error(`RFQ v3 cannot enter the legacy ${state} state.`);
+  }
+  if (
+    record.mode !== "v3" &&
+    state === "settled" &&
+    record.state === "submission-unknown"
+  ) {
+    throw new Error(
+      "Legacy RFQs cannot settle directly from submission-unknown.",
+    );
+  }
   if (state === "submission-unknown") {
-    const attempt = patch.attempts?.funding ?? record.attempts.funding;
+    const attempt =
+      record.mode === "v3"
+        ? patch.attempts?.take ?? record.attempts.take
+        : patch.attempts?.funding ?? record.attempts.funding;
     if (
       !attempt ||
       !(
@@ -519,25 +702,51 @@ export function transitionRfqLifecycle(
     }
   }
   if (record.state === "submission-unknown" && state === "reviewing") {
-    const attempt = patch.attempts?.funding ?? record.attempts.funding;
+    const attempt =
+      record.mode === "v3"
+        ? patch.attempts?.take ?? record.attempts.take
+        : patch.attempts?.funding ?? record.attempts.funding;
     if (!attempt || attempt.state !== "reverted") {
       throw new Error(
-        "Only a proven reverted funding attempt may return to deliberate review.",
+        `Only a proven reverted ${record.mode === "v3" ? "Take" : "funding"} attempt may return to deliberate review.`,
       );
+    }
+  }
+  if (record.mode === "v3" && state === "settled") {
+    const attempt = patch.attempts?.take ?? record.attempts.take;
+    if (
+      !attempt ||
+      attempt.state !== "confirmed" ||
+      (!attempt.transactionHash && attempt.walletBoundary !== "entered")
+    ) {
+      throw new Error("RFQ v3 settlement requires a confirmed exact Take attempt.");
     }
   }
   const next = reviseRfqLifecycle(record, {
     ...patch,
     state,
+    ...(record.mode === "v3" && state === "settled"
+      ? {
+          takerSecret: undefined,
+          takeTransactionHash:
+            patch.attempts?.take?.transactionHash ??
+            record.attempts.take?.transactionHash,
+        }
+      : {}),
     updatedAt: timestamp(now, "now"),
   });
   assertRfqLifecycleAttemptTargets(next);
+  assertRfqV3LifecycleBindings(next);
+  if (record.mode === "v3" && state === "settled") {
+    const { takerSecret: _secret, ...withoutSecret } = next;
+    return Object.freeze(withoutSecret);
+  }
   return next;
 }
 
 function targetCommonMatchesRecord(
   record: RfqLifecycleRecord,
-  target: RfqAttemptTarget,
+  target: RfqLifecycleAttemptTarget,
 ): boolean {
   return (
     canonicalRfqChainId(target.chainId) ===
@@ -605,6 +814,163 @@ export function fundingTicketAttemptTargetFromLifecycle(
   });
 }
 
+export function assertRfqV3LifecycleBindings(
+  record: RfqLifecycleRecord,
+): void {
+  if (record.mode !== "v3") {
+    if (
+      record.bucket ||
+      record.takerCommitment ||
+      record.takerSecret ||
+      record.fills ||
+      record.takeTransactionHash ||
+      record.transcriptAcknowledgements ||
+      record.attempts.take ||
+      record.restoredFromBackup
+    ) {
+      throw new Error("Legacy RFQs must not carry v3 execution bindings.");
+    }
+    return;
+  }
+  if (
+    !record.bucket ||
+    !record.takerCommitment ||
+    record.takerCommitment === "0x0" ||
+    (record.restoredFromBackup && record.takerSecret !== undefined) ||
+    (record.takerSecret !== undefined &&
+      (record.takerSecret === "0x0" ||
+        takerCommitmentFor(record.takerSecret) !== record.takerCommitment)) ||
+    (record.state !== "settled" &&
+      !record.restoredFromBackup &&
+      !record.takerSecret)
+  ) {
+    throw new Error("RFQ v3 execution commitment bindings are invalid.");
+  }
+  const selectedState = [
+    "quoted",
+    "reviewing",
+    "submission-unknown",
+    "settled",
+  ].includes(record.state);
+  if (!selectedState) {
+    if (
+      record.state !== "draft" &&
+      (!record.requestDigest ||
+        !/^0x[0-9a-f]{64}$/.test(record.requestDigest))
+    ) {
+      throw new Error("Requested RFQ v3 records require their request digest.");
+    }
+    return;
+  }
+  if (!record.requestDigest || !/^0x[0-9a-f]{64}$/.test(record.requestDigest)) {
+    throw new Error("Selected RFQ v3 records require their request digest.");
+  }
+  if (
+    !record.requestDigest ||
+    !record.terms ||
+    !record.terms.buyAmount ||
+    !record.settlement ||
+    record.settlement.version !== "Localnet V3" ||
+    !record.fills ||
+    record.fills.length < 1 ||
+    record.fills.length > 4 ||
+    !sameIdentity(record.settlement.dealId, record.rfqId)
+  ) {
+    throw new Error("Selected RFQ v3 records require exact Take bindings.");
+  }
+  const expected = takeAttemptTargetFromLifecycle(record).expected;
+  const totalA = BigInt(expected.totalA);
+  const totalB = BigInt(expected.totalB);
+  if (
+    totalA < BigInt(record.bucket.min) ||
+    totalA > BigInt(record.bucket.max) ||
+    (record.terms.minBuyAmount !== undefined &&
+      totalB < BigInt(record.terms.minBuyAmount)) ||
+    record.terms.rfqExpiresAt !== record.settlement.deadline ||
+    record.fills.some(
+      (fill) => fill.lockExpiresAt !== record.settlement!.deadline,
+    )
+  ) {
+    throw new Error("Selected RFQ v3 fills contradict their exact terms.");
+  }
+}
+
+export function takeAttemptTargetFromLifecycle(
+  record: RfqLifecycleRecord,
+): RfqTakeAttemptTarget {
+  if (
+    record.mode !== "v3" ||
+    !record.requestDigest ||
+    !record.terms ||
+    !record.settlement ||
+    !record.fills ||
+    record.fills.length < 1
+  ) {
+    throw new Error(
+      "RFQ v3 exact request, terms, settlement, and fills are required for Take.",
+    );
+  }
+  const fills = record.fills.map((fill) =>
+    Object.freeze({
+      lockId: canonicalLocalRfqId(fill.lockId),
+      amountA: decimal(fill.amountA, "fill amountA", true),
+      amountB: decimal(fill.amountB, "fill amountB", true),
+    }),
+  );
+  const totalA = fills.reduce((sum, fill) => sum + BigInt(fill.amountA), 0n);
+  const totalB = fills.reduce((sum, fill) => sum + BigInt(fill.amountB), 0n);
+  if (
+    totalA.toString() !== record.terms.sellAmount ||
+    (record.terms.buyAmount !== undefined &&
+      totalB.toString() !== record.terms.buyAmount)
+  ) {
+    throw new Error("RFQ v3 exact fills contradict the persisted total terms.");
+  }
+  return Object.freeze({
+    operation: "take",
+    chainId: record.chainId,
+    account: record.account,
+    rfqId: record.rfqId,
+    requestDigest: record.requestDigest,
+    dealId: record.settlement.dealId,
+    expected: Object.freeze({
+      tokenA: record.terms.sellAddress,
+      totalA: totalA.toString(),
+      tokenB: record.terms.buyAddress,
+      totalB: totalB.toString(),
+      fills: Object.freeze(fills),
+    }),
+  });
+}
+
+function takeTargetMatchesRecord(
+  record: RfqLifecycleRecord,
+  target: RfqTakeAttemptTarget,
+): boolean {
+  try {
+    const expected = takeAttemptTargetFromLifecycle(record);
+    return (
+      targetCommonMatchesRecord(record, target) &&
+      sameIdentity(target.dealId, expected.dealId) &&
+      sameIdentity(target.expected.tokenA, expected.expected.tokenA) &&
+      target.expected.totalA === expected.expected.totalA &&
+      sameIdentity(target.expected.tokenB, expected.expected.tokenB) &&
+      target.expected.totalB === expected.expected.totalB &&
+      target.expected.fills.length === expected.expected.fills.length &&
+      target.expected.fills.every((fill, index) => {
+        const expectedFill = expected.expected.fills[index]!;
+        return (
+          sameIdentity(fill.lockId, expectedFill.lockId) &&
+          fill.amountA === expectedFill.amountA &&
+          fill.amountB === expectedFill.amountB
+        );
+      })
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Enforces the phase/target matrix against immutable lifecycle bindings. */
 export function assertRfqLifecycleAttemptTargets(
   record: RfqLifecycleRecord,
@@ -615,6 +981,7 @@ export function assertRfqLifecycleAttemptTargets(
     "claim",
     "refund",
     "reservation-release",
+    "take",
   ] as const) {
     const attempt = record.attempts[phase];
     if (!attempt) continue;
@@ -622,6 +989,12 @@ export function assertRfqLifecycleAttemptTargets(
     if (phase === "claim" || phase === "refund") {
       if (target) throw new Error(`${phase} must not carry an attempt target.`);
       continue;
+    }
+    if (record.mode === "v3" && phase !== "take") {
+      throw new Error(`RFQ v3 must not carry a legacy ${phase} attempt.`);
+    }
+    if (record.mode !== "v3" && phase === "take") {
+      throw new Error("Legacy RFQs must not carry a Take attempt.");
     }
     if (!target) {
       // Hash-only v1 migration evidence is persistable quarantine, not a ticket.
@@ -655,6 +1028,11 @@ export function assertRfqLifecycleAttemptTargets(
         throw new Error("maker-fill target contradicts immutable terms.");
       continue;
     }
+    if (phase === "take") {
+      if (target.operation !== "take" || !takeTargetMatchesRecord(record, target))
+        throw new Error("Take target contradicts immutable v3 fills.");
+      continue;
+    }
     if (
       target.operation !== "request-reservations" &&
       target.operation !== "funded-settlement-expiry"
@@ -680,20 +1058,36 @@ export function assertRfqLifecycleAttemptTargets(
 
 export function beginRfqPhaseAttempt(
   record: RfqLifecycleRecord,
-  phase: RfqAttemptPhase,
+  phase: RfqLifecycleAttemptPhase,
   attemptId: string,
   now: number,
-  target?: RfqAttemptTarget,
+  target?: RfqLifecycleAttemptTarget,
 ): RfqLifecycleRecord {
   const allowedStates: Readonly<
-    Record<RfqAttemptPhase, readonly RfqLifecycleState[]>
+    Record<RfqLifecycleAttemptPhase, readonly RfqLifecycleState[]>
   > = {
     funding: ["reviewing"],
     fill: ["funded"],
     claim: ["claimable"],
     refund: ["refundable"],
     "reservation-release": ["quoted", "reviewing", "cancel-pending", "funded"],
+    take: ["reviewing"],
   };
+  if (
+    (record.mode === "v3" && phase !== "take") ||
+    (record.mode !== "v3" && phase === "take")
+  ) {
+    throw new Error(`${phase} is unavailable for RFQ ${record.mode}.`);
+  }
+  assertRfqV3LifecycleBindings(record);
+  if (
+    phase === "take" &&
+    (record.restoredFromBackup || !record.takerSecret)
+  ) {
+    throw new Error(
+      "Backup-restored RFQ v3 records are verification-only; start a fresh request.",
+    );
+  }
   if (!allowedStates[phase].includes(record.state)) {
     throw new Error(`${phase} cannot begin while the RFQ is ${record.state}.`);
   }
@@ -702,6 +1096,9 @@ export function beginRfqPhaseAttempt(
     throw new Error(
       `${phase} is already confirmed and cannot be submitted again.`,
     );
+  }
+  if (existing?.state === "reverted" && existing.attemptId === attemptId) {
+    throw new Error(`${phase} retry requires a new deliberate attempt id.`);
   }
   if (
     existing &&
@@ -721,28 +1118,34 @@ export function beginRfqPhaseAttempt(
       targetOperation !== "funded-settlement-expiry") ||
     (phase === "funding" && targetOperation !== "funding-ticket") ||
     (phase === "fill" && targetOperation !== "maker-fill") ||
+    (phase === "take" && targetOperation !== "take") ||
     ((phase === "claim" || phase === "refund") && target)
   ) {
     throw new Error(`${phase} requires its exact immutable attempt target.`);
   }
-  const attempt: RfqPhaseAttempt = Object.freeze({
+  const attempt = Object.freeze({
     attemptId: text(attemptId, "attemptId"),
-    state: "preparing",
+    state: "preparing" as const,
     createdAt: stamp,
     updatedAt: stamp,
     ...(target ? { target: Object.freeze({ ...target }) } : {}),
-  });
-  const next = reviseRfqLifecycle(record, {
+  }) as RfqPhaseAttempt | RfqTakePhaseAttempt;
+  const revised = reviseRfqLifecycle(record, {
     attempts: Object.freeze({ ...record.attempts, [phase]: attempt }),
     updatedAt: stamp,
   });
+  const next =
+    phase === "take" && existing?.state === "reverted"
+      ? (({ takeTransactionHash: _oldHash, ...withoutOldHash }) =>
+          Object.freeze(withoutOldHash))(revised)
+      : revised;
   assertRfqLifecycleAttemptTargets(next);
   return next;
 }
 
 export function updateRfqPhaseAttempt(
   record: RfqLifecycleRecord,
-  phase: RfqAttemptPhase,
+  phase: RfqLifecycleAttemptPhase,
   state: Exclude<RfqAttemptState, "not-started" | "preparing">,
   now: number,
   patch: Pick<
@@ -783,8 +1186,95 @@ export function updateRfqPhaseAttempt(
     ...(phase === "funding" && attempt.transactionHash
       ? { transactionHash: attempt.transactionHash }
       : {}),
+    ...(phase === "take" && attempt.transactionHash
+      ? { takeTransactionHash: attempt.transactionHash }
+      : {}),
     updatedAt: stamp,
   });
+}
+
+function parseBucket(
+  value: unknown,
+): Readonly<{ min: string; max: string }> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error();
+  const row = value as Record<string, unknown>;
+  const min = decimal(row.min, "bucket.min", true);
+  const max = decimal(row.max, "bucket.max", true);
+  const maxU128 = (1n << 128n) - 1n;
+  if (BigInt(max) <= BigInt(min) || BigInt(max) > maxU128) throw new Error();
+  return Object.freeze({ min, max });
+}
+
+function parseV3Fills(value: unknown): readonly RfqV3Fill[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4)
+    throw new Error();
+  const fills = value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+      throw new Error();
+    const row = candidate as Record<string, unknown>;
+    const lockId = canonicalLocalRfqId(
+      text(row.lockId, `fills[${index}].lockId`),
+    );
+    const amountA = decimal(row.amountA, `fills[${index}].amountA`, true);
+    const amountB = decimal(row.amountB, `fills[${index}].amountB`, true);
+    const maxU128 = (1n << 128n) - 1n;
+    if (
+      lockId === "0x0" ||
+      BigInt(amountA) > maxU128 ||
+      BigInt(amountB) > maxU128
+    ) {
+      throw new Error();
+    }
+    return Object.freeze({
+      makerId: text(row.makerId, `fills[${index}].makerId`),
+      lockId,
+      amountA,
+      amountB,
+      lockExpiresAt: timestamp(
+        row.lockExpiresAt,
+        `fills[${index}].lockExpiresAt`,
+      ),
+    });
+  });
+  if (
+    new Set(fills.map((fill) => fill.makerId)).size !== fills.length ||
+    new Set(fills.map((fill) => fill.lockId)).size !== fills.length
+  ) {
+    throw new Error();
+  }
+  return Object.freeze(fills);
+}
+
+function parseTranscriptAcknowledgements(
+  value: unknown,
+): readonly RfqTranscriptAcknowledgement[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error();
+  const acknowledgements = value.map((candidate, index) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+      throw new Error();
+    const row = candidate as Record<string, unknown>;
+    if (typeof row.accepted !== "boolean" || typeof row.consistent !== "boolean")
+      throw new Error();
+    return Object.freeze({
+      makerId: text(row.makerId, `acknowledgements[${index}].makerId`),
+      accepted: row.accepted,
+      consistent: row.consistent,
+      ...(row.reason === undefined
+        ? {}
+        : { reason: text(row.reason, `acknowledgements[${index}].reason`) }),
+    });
+  });
+  if (
+    new Set(acknowledgements.map(({ makerId }) => makerId)).size !==
+    acknowledgements.length
+  ) {
+    throw new Error();
+  }
+  return Object.freeze(acknowledgements);
 }
 
 function parseTerms(value: unknown): RfqExactTerms | undefined {
@@ -862,7 +1352,8 @@ function parseSettlement(
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error();
   const row = value as Record<string, unknown>;
-  if (row.version !== "Localnet V2") throw new Error();
+  if (row.version !== "Localnet V2" && row.version !== "Localnet V3")
+    throw new Error();
   return Object.freeze({
     version: row.version,
     escrowAddress: text(row.escrowAddress, "escrowAddress"),
@@ -883,7 +1374,7 @@ function parseSettlement(
   });
 }
 
-function parseAttemptTarget(value: unknown): RfqAttemptTarget {
+function parseAttemptTarget(value: unknown): RfqLifecycleAttemptTarget {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error();
   const row = value as Record<string, unknown>;
@@ -927,6 +1418,50 @@ function parseAttemptTarget(value: unknown): RfqAttemptTarget {
       buyToken: text(row.buyToken, "target buyToken"),
       buyAmount: decimal(row.buyAmount, "target buyAmount", true),
       deadline: timestamp(row.deadline, "target deadline"),
+    });
+  }
+  if (row.operation === "take") {
+    if (!row.expected || typeof row.expected !== "object" || Array.isArray(row.expected))
+      throw new Error();
+    const expected = row.expected as Record<string, unknown>;
+    if (!Array.isArray(expected.fills) || expected.fills.length < 1 || expected.fills.length > 4)
+      throw new Error();
+    const fills = expected.fills.map((candidate, index) => {
+      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+        throw new Error();
+      const fill = candidate as Record<string, unknown>;
+      return Object.freeze({
+        lockId: canonicalLocalRfqId(
+          text(fill.lockId, `target fills[${index}].lockId`),
+        ),
+        amountA: decimal(
+          fill.amountA,
+          `target fills[${index}].amountA`,
+          true,
+        ),
+        amountB: decimal(
+          fill.amountB,
+          `target fills[${index}].amountB`,
+          true,
+        ),
+      });
+    });
+    if (new Set(fills.map(({ lockId }) => lockId)).size !== fills.length)
+      throw new Error();
+    return Object.freeze({
+      operation: row.operation,
+      ...common,
+      dealId: canonicalExecutableId(
+        text(row.dealId, "target dealId"),
+        targetChainId,
+      ),
+      expected: Object.freeze({
+        tokenA: text(expected.tokenA, "target tokenA"),
+        totalA: decimal(expected.totalA, "target totalA", true),
+        tokenB: text(expected.tokenB, "target tokenB"),
+        totalB: decimal(expected.totalB, "target totalB", true),
+        fills: Object.freeze(fills),
+      }),
     });
   }
   if (row.operation === "maker-fill") {
@@ -977,14 +1512,20 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
   if (value === undefined) return Object.freeze({});
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error();
-  const phases: readonly RfqAttemptPhase[] = [
+  const phases: readonly RfqLifecycleAttemptPhase[] = [
     "funding",
     "fill",
     "claim",
     "refund",
     "reservation-release",
+    "take",
   ];
-  const result: Partial<Record<RfqAttemptPhase, RfqPhaseAttempt>> = {};
+  const result: Partial<
+    Record<
+      RfqLifecycleAttemptPhase,
+      RfqPhaseAttempt | RfqTakePhaseAttempt
+    >
+  > = {};
   for (const phase of phases) {
     const candidate = (value as Record<string, unknown>)[phase];
     if (candidate === undefined) continue;
@@ -1001,7 +1542,7 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
       ].includes(String(row.state))
     )
       throw new Error();
-    result[phase] = Object.freeze({
+    const parsedAttempt = Object.freeze({
       attemptId: text(row.attemptId, "attemptId"),
       state: row.state as RfqPhaseAttempt["state"],
       createdAt: timestamp(row.createdAt, "createdAt"),
@@ -1024,12 +1565,12 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
         ? {}
         : { target: parseAttemptTarget(row.target) }),
     });
-    const targetOperation = result[phase]?.target?.operation;
+    const targetOperation = parsedAttempt.target?.operation;
     const hashOnlyFunding =
       phase === "funding" &&
       targetOperation === undefined &&
-      result[phase]?.state === "submitted-unknown" &&
-      Boolean(result[phase]?.transactionHash);
+      parsedAttempt.state === "submitted-unknown" &&
+      Boolean(parsedAttempt.transactionHash);
     if (
       (phase === "reservation-release" &&
         targetOperation !== "request-reservations" &&
@@ -1038,21 +1579,23 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
         !hashOnlyFunding &&
         targetOperation !== "funding-ticket") ||
       (phase === "fill" && targetOperation !== "maker-fill") ||
+      (phase === "take" && targetOperation !== "take") ||
       ((phase === "claim" || phase === "refund") && targetOperation)
     )
       throw new Error();
     if (
-      result[phase]?.state === "submitted-unknown" &&
-      !result[phase]?.transactionHash
+      parsedAttempt.state === "submitted-unknown" &&
+      !parsedAttempt.transactionHash
     )
       throw new Error();
     if (
-      result[phase]?.state === "wallet-boundary-unknown" &&
-      result[phase]?.walletBoundary !== "entered"
+      parsedAttempt.state === "wallet-boundary-unknown" &&
+      parsedAttempt.walletBoundary !== "entered"
     )
       throw new Error();
+    (result as Record<string, unknown>)[phase] = parsedAttempt;
   }
-  return Object.freeze(result);
+  return Object.freeze(result) as RfqLifecycleRecord["attempts"];
 }
 
 function parseObservation(
@@ -1149,6 +1692,7 @@ function quarantine(
   return Object.freeze({
     schemaRevision: RFQ_LIFECYCLE_SCHEMA_REVISION,
     authority: RFQ_RESUME_AUTHORITY_LABEL,
+    mode: "v2",
     chainId: canonicalRfqChainId(context.chainId),
     account: canonicalRfqAccount(context.account),
     rfqId,
@@ -1205,7 +1749,12 @@ function migrateV1(
 
 export function restoreRfqLifecycle(
   value: unknown,
-  context: { chainId: string; account: string; now: number },
+  context: {
+    chainId: string;
+    account: string;
+    now: number;
+    fromBackup?: boolean;
+  },
 ): RfqLifecycleRecord {
   try {
     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -1213,11 +1762,14 @@ export function restoreRfqLifecycle(
     const row = value as Record<string, unknown>;
     if (row.schemaRevision === RFQ_LIFECYCLE_V1_SCHEMA_REVISION)
       return migrateV1(row, context);
+    const legacyV2 = row.schemaRevision === RFQ_LIFECYCLE_V2_SCHEMA_REVISION;
     if (
-      row.schemaRevision !== RFQ_LIFECYCLE_SCHEMA_REVISION ||
+      (!legacyV2 && row.schemaRevision !== RFQ_LIFECYCLE_SCHEMA_REVISION) ||
       row.authority !== RFQ_RESUME_AUTHORITY_LABEL
     )
       throw new Error();
+    const mode = legacyV2 ? "v2" : row.mode;
+    if (mode !== "v2" && mode !== "v3") throw new Error();
     const state = row.state;
     if (typeof state !== "string" || !STATES.has(state as RfqLifecycleState))
       throw new Error();
@@ -1228,9 +1780,18 @@ export function restoreRfqLifecycle(
     const selectedQuote = parseSelectedQuote(row.selectedQuote);
     const settlement = parseSettlement(row.settlement, local);
     const latestObservation = parseObservation(row.latestObservation, local);
+    const bucket = parseBucket(row.bucket);
+    const fills = parseV3Fills(row.fills);
+    const transcriptAcknowledgements = parseTranscriptAcknowledgements(
+      row.transcriptAcknowledgements,
+    );
+    const restoredFromBackup =
+      mode === "v3" &&
+      (context.fromBackup === true || row.restoredFromBackup === true);
     const record: RfqLifecycleRecord = {
       schemaRevision: RFQ_LIFECYCLE_SCHEMA_REVISION,
       authority: RFQ_RESUME_AUTHORITY_LABEL,
+      mode,
       chainId,
       account: canonicalRfqAccount(text(row.account, "account")),
       rfqId: canonicalExecutableId(text(row.rfqId, "rfqId"), chainId),
@@ -1266,6 +1827,34 @@ export function restoreRfqLifecycle(
       ...(row.transactionHash === undefined
         ? {}
         : { transactionHash: text(row.transactionHash, "transactionHash") }),
+      ...(bucket ? { bucket } : {}),
+      ...(row.takerCommitment === undefined
+        ? {}
+        : {
+            takerCommitment: canonicalLocalRfqId(
+              text(row.takerCommitment, "takerCommitment"),
+            ),
+          }),
+      ...(row.takerSecret === undefined || state === "settled" || restoredFromBackup
+        ? {}
+        : {
+            takerSecret: canonicalLocalRfqId(
+              text(row.takerSecret, "takerSecret"),
+            ),
+          }),
+      ...(fills ? { fills } : {}),
+      ...(row.takeTransactionHash === undefined
+        ? {}
+        : {
+            takeTransactionHash: text(
+              row.takeTransactionHash,
+              "takeTransactionHash",
+            ),
+          }),
+      ...(transcriptAcknowledgements
+        ? { transcriptAcknowledgements }
+        : {}),
+      ...(restoredFromBackup ? { restoredFromBackup: true as const } : {}),
       ...(row.reason === undefined
         ? {}
         : { reason: text(row.reason, "reason") }),
@@ -1312,6 +1901,7 @@ export function restoreRfqLifecycle(
     let targetMatchesRecord = true;
     try {
       assertRfqLifecycleAttemptTargets(record);
+      assertRfqV3LifecycleBindings(record);
     } catch {
       targetMatchesRecord = false;
     }
@@ -1332,7 +1922,7 @@ export function restoreRfqLifecycle(
         record.selectedQuote.intentDigest === record.requestDigest) &&
       (!record.settlement ||
         sameIdentity(record.settlement.dealId, record.rfqId));
-    const requiresTermsAndQuote = [
+    const exactStates = [
       "quoted",
       "reviewing",
       "submission-unknown",
@@ -1342,7 +1932,8 @@ export function restoreRfqLifecycle(
       "settled",
       "refundable",
       "refunded",
-    ].includes(record.state);
+    ];
+    const requiresExactTerms = exactStates.includes(record.state);
     const requiresSettlement = [
       "submission-unknown",
       "funded",
@@ -1352,23 +1943,95 @@ export function restoreRfqLifecycle(
       "refundable",
       "refunded",
     ].includes(record.state);
+    const v3LegacyState =
+      record.mode === "v3" &&
+      ["funded", "filled", "claimable", "refundable", "refunded"].includes(
+        record.state,
+      );
+    const v3BindingsOk = (() => {
+      if (record.mode !== "v3") return true;
+      const selectedState = [
+        "quoted",
+        "reviewing",
+        "submission-unknown",
+        "settled",
+      ].includes(record.state);
+      if (
+        !record.bucket ||
+        !record.takerCommitment ||
+        record.takerCommitment === "0x0" ||
+        (record.takerSecret !== undefined &&
+          (record.takerSecret === "0x0" ||
+            takerCommitmentFor(record.takerSecret) !== record.takerCommitment)) ||
+        (record.state !== "settled" &&
+          !record.restoredFromBackup &&
+          !record.takerSecret) ||
+        (record.state !== "draft" && !record.requestDigest)
+      ) {
+        return false;
+      }
+      if (!selectedState) return true;
+      if (
+        !record.fills ||
+        !record.terms ||
+        !record.requestDigest ||
+        record.fills.length < 1 ||
+        record.fills.length > 4 ||
+        record.settlement?.version !== "Localnet V3"
+      ) {
+        return false;
+      }
+      const totalA = record.fills.reduce(
+        (sum, fill) => sum + BigInt(fill.amountA),
+        0n,
+      );
+      const totalB = record.fills.reduce(
+        (sum, fill) => sum + BigInt(fill.amountB),
+        0n,
+      );
+      return (
+        BigInt(record.bucket.min) <= totalA &&
+        totalA <= BigInt(record.bucket.max) &&
+        totalA.toString() === record.terms.sellAmount &&
+        record.terms.buyAmount === totalB.toString() &&
+        (record.terms.minBuyAmount === undefined ||
+          totalB >= BigInt(record.terms.minBuyAmount)) &&
+        record.fills.every(
+          (fill) => fill.lockExpiresAt === record.settlement!.deadline,
+        ) &&
+        record.terms.rfqExpiresAt === record.settlement.deadline
+      );
+    })();
     const terminalInvariantOk =
       record.state === "settled"
-        ? record.latestObservation?.status === 3 &&
-          record.attempts.claim?.state === "confirmed"
+        ? record.mode === "v3"
+          ? record.attempts.take?.state === "confirmed" &&
+            (record.attempts.take.transactionHash
+              ? record.takeTransactionHash ===
+                record.attempts.take.transactionHash
+              : record.attempts.take.walletBoundary === "entered" &&
+                record.takeTransactionHash === undefined) &&
+            record.takerSecret === undefined
+          : record.latestObservation?.status === 3 &&
+            record.attempts.claim?.state === "confirmed"
         : record.state === "refunded"
           ? record.latestObservation?.status === 4 &&
             record.attempts.refund?.state === "confirmed"
           : true;
+    const activeAttempt =
+      record.mode === "v3" ? record.attempts.take : record.attempts.funding;
     const submissionInvariantOk =
       record.state !== "submission-unknown" ||
-      (record.attempts.funding?.state === "submitted-unknown" &&
-        Boolean(record.attempts.funding.transactionHash)) ||
-      (record.attempts.funding?.state === "wallet-boundary-unknown" &&
-        record.attempts.funding.walletBoundary === "entered");
+      (activeAttempt?.state === "submitted-unknown" &&
+        Boolean(activeAttempt.transactionHash)) ||
+      (activeAttempt?.state === "wallet-boundary-unknown" &&
+        activeAttempt.walletBoundary === "entered");
     if (
-      (requiresTermsAndQuote && (!record.terms || !record.selectedQuote)) ||
+      (requiresExactTerms &&
+        (!record.terms || (record.mode !== "v3" && !record.selectedQuote))) ||
       (requiresSettlement && !record.settlement) ||
+      v3LegacyState ||
+      !v3BindingsOk ||
       !terminalInvariantOk ||
       !submissionInvariantOk ||
       !targetMatchesRecord ||
@@ -1381,13 +2044,17 @@ export function restoreRfqLifecycle(
         updatedAt: context.now,
       });
     }
+    const activeQuoteExpiresAt =
+      record.mode === "v3"
+        ? (record.settlement?.deadline ?? 0)
+        : (record.quoteExpiresAt ?? record.selectedQuote?.quoteExpiresAt ?? 0);
     if (
       (record.state === "quoted" || record.state === "reviewing") &&
-      ((record.quoteExpiresAt ?? record.selectedQuote?.quoteExpiresAt ?? 0) <=
-        context.now ||
-        (record.reservationExpiresAt ??
-          record.selectedQuote?.reservationExpiresAt ??
-          0) <= context.now)
+      (activeQuoteExpiresAt <= context.now ||
+        (record.mode !== "v3" &&
+          (record.reservationExpiresAt ??
+            record.selectedQuote?.reservationExpiresAt ??
+            0) <= context.now))
     ) {
       return reviseRfqLifecycle(record, {
         state: "expired",
@@ -1406,7 +2073,8 @@ export function restoreRfqLifecycle(
 }
 
 export function rfqHasFundingEvidence(record: RfqLifecycleRecord): boolean {
-  const attempt = record.attempts.funding;
+  const attempt =
+    record.mode === "v3" ? record.attempts.take : record.attempts.funding;
   return Boolean(
     (attempt &&
       (attempt.walletBoundary === "entered" ||
@@ -1438,16 +2106,104 @@ export function lifecycleMaySubmit(
   record: RfqLifecycleRecord,
   now: number,
 ): boolean {
-  const funding = record.attempts.funding;
+  const attempt =
+    record.mode === "v3" ? record.attempts.take : record.attempts.funding;
+  const submissionExpiresAt =
+    record.mode === "v3"
+      ? (record.settlement?.deadline ?? 0)
+      : (record.quoteExpiresAt ?? record.selectedQuote?.quoteExpiresAt ?? 0);
   return (
     record.state === "reviewing" &&
-    !funding &&
-    (record.quoteExpiresAt ?? record.selectedQuote?.quoteExpiresAt ?? 0) >
-      now &&
-    (record.reservationExpiresAt ??
-      record.selectedQuote?.reservationExpiresAt ??
-      0) > now
+    (!attempt || (record.mode === "v3" && attempt.state === "reverted")) &&
+    !record.restoredFromBackup &&
+    submissionExpiresAt > now &&
+    (record.mode === "v3" ||
+      (record.reservationExpiresAt ??
+        record.selectedQuote?.reservationExpiresAt ??
+        0) > now)
   );
+}
+
+export function confirmRfqV3Take(
+  record: RfqLifecycleRecord,
+  take: Readonly<{
+    tokenA: string;
+    totalA: bigint;
+    tokenB: string;
+    totalB: bigint;
+    fillCount: number;
+  }>,
+  now: number,
+): RfqLifecycleRecord {
+  if (
+    record.mode !== "v3" ||
+    record.state !== "submission-unknown" ||
+    !record.terms ||
+    !record.fills
+  ) {
+    throw new Error("Only an unknown RFQ v3 Take can be confirmed.");
+  }
+  const attempt = record.attempts.take;
+  if (
+    !attempt ||
+    (!attempt.transactionHash && attempt.walletBoundary !== "entered")
+  ) {
+    throw new Error(
+      "RFQ v3 Take confirmation requires a submitted or hashless wallet-boundary attempt.",
+    );
+  }
+  const expected = takeAttemptTargetFromLifecycle(record).expected;
+  if (
+    !sameIdentity(take.tokenA, expected.tokenA) ||
+    take.totalA.toString() !== expected.totalA ||
+    !sameIdentity(take.tokenB, expected.tokenB) ||
+    take.totalB.toString() !== expected.totalB ||
+    take.fillCount !== expected.fills.length
+  ) {
+    return quarantineRecord(
+      record,
+      now,
+      "Observed Take totals contradict the persisted exact v3 fills.",
+    );
+  }
+  const confirmed = updateRfqPhaseAttempt(
+    record,
+    "take",
+    "confirmed",
+    now,
+    { observation: "Exact Take record observed on local devnet." },
+  );
+  return transitionRfqLifecycle(confirmed, "settled", now);
+}
+
+export function revertRfqV3Take(
+  record: RfqLifecycleRecord,
+  now: number,
+  observation = "The exact Take transaction reverted.",
+): RfqLifecycleRecord {
+  if (record.mode !== "v3" || record.state !== "submission-unknown") {
+    throw new Error("Only an unknown RFQ v3 Take can be marked reverted.");
+  }
+  const reverted = updateRfqPhaseAttempt(record, "take", "reverted", now, {
+    observation,
+  });
+  return transitionRfqLifecycle(reverted, "reviewing", now);
+}
+
+export function recordRfqV3TranscriptAcknowledgements(
+  record: RfqLifecycleRecord,
+  acknowledgements: readonly RfqTranscriptAcknowledgement[],
+  now: number,
+): RfqLifecycleRecord {
+  if (record.mode !== "v3" || !["quoted", "reviewing"].includes(record.state)) {
+    throw new Error("Transcript acknowledgements belong to a selected RFQ v3.");
+  }
+  return reviseRfqLifecycle(record, {
+    transcriptAcknowledgements: parseTranscriptAcknowledgements(
+      acknowledgements,
+    ),
+    updatedAt: timestamp(now, "now"),
+  });
 }
 
 function sameFelt(left: string, right: string): boolean {
@@ -1523,6 +2279,13 @@ export function reconcileRfqLifecycleWithLocalDeal(
   now: number,
 ): RfqLifecycleRecord {
   try {
+    if (record.mode === "v3") {
+      return quarantineRecord(
+        record,
+        now,
+        "RFQ v3 must reconcile through its exact Take observation.",
+      );
+    }
     if (!record.settlement || !record.terms || !record.selectedQuote) {
       return quarantineRecord(
         record,

@@ -427,6 +427,7 @@ test("serves SPA assets with strict security headers and keeps unknown APIs clos
   const environment = env({
     PRIVY_FRAME_ORIGINS: "https://auth.privy.io",
     PRIVY_CONNECT_ORIGINS: "https://auth.privy.io,https://api.privy.io",
+    IPFS_ORIGINS: "https://ipfs.example.invalid",
     ASSETS: {
       fetch: async () => {
         assetRequests += 1;
@@ -451,6 +452,10 @@ test("serves SPA assets with strict security headers and keeps unknown APIs clos
   assert.match(
     asset.headers.get("content-security-policy") ?? "",
     /frame-src 'self' https:\/\/auth\.privy\.io/,
+  );
+  assert.match(
+    asset.headers.get("content-security-policy") ?? "",
+    /connect-src[^;]*https:\/\/ipfs\.example\.invalid/,
   );
   assert.equal(asset.headers.get("x-frame-options"), "DENY");
 

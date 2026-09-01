@@ -10,10 +10,17 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
+import {
+  decodeSolverQuoteV3,
+  digestSolverQuoteV3,
+  evaluatePriceSchedule,
+} from "../packages/private-intents/src/index.ts";
+import { canonicalLocalnetTakeExpected } from "./localnet-deal-validator.mjs";
 
-const DOMAIN = "app20/localnet-reservation-coordinator/v3";
+const DOMAIN = "app20/localnet-reservation-coordinator/v4";
+const PREVIOUS_DOMAIN = "app20/localnet-reservation-coordinator/v3";
 const LEGACY_DOMAIN = "app20/localnet-reservation-coordinator/v2";
 const HEX_32 = /^0x[0-9a-f]{64}$/;
 const REQUEST_STATES = new Set([
@@ -392,6 +399,175 @@ function validateRequest(value) {
   return clone(request);
 }
 
+const V3_REQUEST_STATES = new Set([
+  "open",
+  "take-pending",
+  "take-unknown",
+  "taken",
+]);
+const V3_REFUSAL_CODES = new Set([
+  "bucket",
+  "insufficient-inventory",
+  "policy",
+  "lock-failed",
+  "expired",
+]);
+
+function jsonObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error(`${label} must be an object.`);
+  try {
+    return Object.freeze(structuredClone(value));
+  } catch {
+    throw new Error(`${label} must contain only cloneable wire values.`);
+  }
+}
+
+function validateV3MakerPlan(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Coordinator v3 maker plan must be an object.");
+  const makerId = requireText(value.makerId, "makerId");
+  const state = value.state;
+  if (!["planned", "quoted", "refused", "unavailable"].includes(state))
+    throw new Error("Coordinator v3 maker plan state is invalid.");
+  if (state === "planned") return Object.freeze({ makerId, state });
+  const quoteDigest = requireHex32(value.quoteDigest, "quoteDigest");
+  if (state === "quoted") {
+    const quote = jsonObject(value.quote, "Coordinator v3 quote wire");
+    const decoded = decodeSolverQuoteV3(quote);
+    if (decoded.solverId !== makerId)
+      throw new Error("Coordinator v3 quote changed its maker identity.");
+    return Object.freeze({ makerId, state, quoteDigest, quote });
+  }
+  const refusal = jsonObject(value.refusal, "Coordinator v3 refusal wire");
+  if (!V3_REFUSAL_CODES.has(refusal.code))
+    throw new Error("Coordinator v3 refusal code is invalid.");
+  const reason = requireText(refusal.reason, "refusal reason");
+  return Object.freeze({
+    makerId,
+    state,
+    quoteDigest,
+    refusal: Object.freeze({ code: refusal.code, reason }),
+  });
+}
+
+function validateClosedTake(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Coordinator closed take attempt is invalid.");
+  return Object.freeze({
+    attemptId: requireText(value.attemptId, "closed take attemptId"),
+    expected: canonicalLocalnetTakeExpected(value.expected),
+  });
+}
+
+function validateV3Request(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Coordinator v3 request must be an object.");
+  if (!Array.isArray(value.makerPlans))
+    throw new Error("Coordinator v3 maker plans must be an array.");
+  const makerPlans = value.makerPlans.map(validateV3MakerPlan);
+  makerPlans.sort((left, right) => left.makerId.localeCompare(right.makerId));
+  if (new Set(makerPlans.map((plan) => plan.makerId)).size !== makerPlans.length)
+    throw new Error("Coordinator v3 maker plans contain a duplicate maker.");
+  const closedTakeAttempts = (value.closedTakeAttempts ?? []).map(validateClosedTake);
+  if (
+    new Set(closedTakeAttempts.map((attempt) => attempt.attemptId)).size !==
+    closedTakeAttempts.length
+  )
+    throw new Error("Coordinator v3 closed take attempts contain a duplicate.");
+  const request = {
+    lifecycle: "v3",
+    rfqDigest: requireHex32(value.rfqDigest, "rfqDigest"),
+    intentDigest: requireHex32(value.intentDigest, "intentDigest"),
+    rfqId: requireFelt(value.rfqId, "rfqId"),
+    account: requireFelt(value.account, "account"),
+    chainId: requireText(value.chainId, "chainId").toLowerCase(),
+    createdAt: requireTimestamp(value.createdAt, "createdAt"),
+    expiresAt: requireTimestamp(value.expiresAt, "expiresAt"),
+    market: requireText(value.market, "market").toLowerCase(),
+    fanoutComplete: value.fanoutComplete === true,
+    makerPlans: Object.freeze(makerPlans),
+    state: value.state,
+    closedTakeAttempts: Object.freeze(closedTakeAttempts),
+    ...(value.expected === undefined
+      ? {}
+      : { expected: canonicalLocalnetTakeExpected(value.expected) }),
+    ...(value.takeAttemptId === undefined
+      ? {}
+      : { takeAttemptId: requireText(value.takeAttemptId, "takeAttemptId") }),
+    ...(value.takeTransactionHash === undefined
+      ? {}
+      : {
+          takeTransactionHash: requireFelt(
+            value.takeTransactionHash,
+            "takeTransactionHash",
+          ),
+        }),
+    ...(value.transcriptDigest === undefined
+      ? {}
+      : {
+          transcriptDigest: requireHex32(
+            value.transcriptDigest,
+            "transcriptDigest",
+          ),
+        }),
+  };
+  if (value.lifecycle !== "v3" || !V3_REQUEST_STATES.has(request.state))
+    throw new Error("Coordinator v3 request lifecycle or state is invalid.");
+  if (request.expiresAt <= request.createdAt)
+    throw new Error("Coordinator v3 request expiry must follow creation.");
+  if (
+    request.fanoutComplete &&
+    makerPlans.some((plan) => plan.state === "planned")
+  )
+    throw new Error("Coordinator v3 fanout completion contradicts maker outcomes.");
+  if (
+    ["take-pending", "take-unknown", "taken"].includes(request.state) &&
+    (!request.takeAttemptId || !request.expected)
+  )
+    throw new Error("Coordinator v3 take state requires an exact attempt and terms.");
+  if (
+    request.state === "open" &&
+    (request.takeAttemptId || request.expected || request.takeTransactionHash)
+  )
+    throw new Error("Coordinator open v3 request contains an active take lease.");
+  return Object.freeze(request);
+}
+
+function sameV3Request(left, right) {
+  return (
+    left.rfqDigest === right.rfqDigest &&
+    left.intentDigest === right.intentDigest &&
+    left.rfqId === right.rfqId &&
+    left.account === right.account &&
+    left.chainId === right.chainId &&
+    left.createdAt === right.createdAt &&
+    left.expiresAt === right.expiresAt &&
+    left.market === right.market &&
+    left.makerPlans.length === right.makerPlans.length &&
+    left.makerPlans.every(
+      (plan, index) => plan.makerId === right.makerPlans[index].makerId,
+    )
+  );
+}
+
+function sameTakeExpected(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function digestLocalnetV3Refusal(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("V3 refusal wire is required.");
+  const wire = {
+    makerId: requireText(value.makerId, "makerId"),
+    code: value.code,
+    reason: requireText(value.reason, "refusal reason"),
+  };
+  if (!V3_REFUSAL_CODES.has(wire.code))
+    throw new Error("V3 refusal code is invalid.");
+  return `0x${createHash("sha256").update(JSON.stringify(wire)).digest("hex")}`;
+}
+
 function validateDeal(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Coordinator deal association must be an object.");
@@ -491,6 +667,8 @@ export class LocalnetReservationCoordinator {
   #requests = new Map();
   #deals = new Map();
   #rfqs = new Map();
+  #v3Requests = new Map();
+  #v3Rfqs = new Map();
   #tail = Promise.resolve();
   #activeLoserReleases = new Map();
   #durableAuthority;
@@ -507,13 +685,16 @@ export class LocalnetReservationCoordinator {
     }
     this.#durableSerialized = readFileSync(path, "utf8");
     const journal = JSON.parse(this.#durableSerialized);
-    const current = journal?.domain === DOMAIN && journal?.version === 3;
+    const current = journal?.domain === DOMAIN && journal?.version === 4;
+    const previous =
+      journal?.domain === PREVIOUS_DOMAIN && journal?.version === 3;
     const legacy = journal?.domain === LEGACY_DOMAIN && journal?.version === 2;
     if (
-      (!current && !legacy) ||
+      (!current && !previous && !legacy) ||
       !Array.isArray(journal.records) ||
       !Array.isArray(journal.requests) ||
-      !Array.isArray(journal.deals)
+      !Array.isArray(journal.deals) ||
+      (current && !Array.isArray(journal.v3Requests))
     )
       throw new Error("Localnet reservation coordinator journal is invalid.");
     for (const value of journal.requests) {
@@ -592,6 +773,16 @@ export class LocalnetReservationCoordinator {
         );
       this.#deals.set(deal.dealId, deal);
     }
+    for (const value of journal.v3Requests ?? []) {
+      const request = validateV3Request(value);
+      if (this.#v3Requests.has(request.rfqDigest))
+        throw new Error("Coordinator journal contains a duplicate v3 request.");
+      const prior = this.#v3Rfqs.get(request.rfqId);
+      if (prior && prior !== request.rfqDigest)
+        throw new Error("Coordinator journal contains a duplicate v3 RFQ felt.");
+      this.#v3Requests.set(request.rfqDigest, request);
+      this.#v3Rfqs.set(request.rfqId, request.rfqDigest);
+    }
     this.#durableAuthority = this.#captureAuthority();
     if (this.#serializedAuthority() !== this.#durableSerialized)
       this.#persist();
@@ -603,6 +794,8 @@ export class LocalnetReservationCoordinator {
       requests: new Map(this.#requests),
       deals: new Map(this.#deals),
       rfqs: new Map(this.#rfqs),
+      v3Requests: new Map(this.#v3Requests),
+      v3Rfqs: new Map(this.#v3Rfqs),
     });
   }
 
@@ -611,6 +804,8 @@ export class LocalnetReservationCoordinator {
     this.#requests = new Map(authority.requests);
     this.#deals = new Map(authority.deals);
     this.#rfqs = new Map(authority.rfqs);
+    this.#v3Requests = new Map(authority.v3Requests);
+    this.#v3Rfqs = new Map(authority.v3Rfqs);
   }
 
   #serializedAuthority() {
@@ -623,7 +818,10 @@ export class LocalnetReservationCoordinator {
     const deals = [...this.#deals.values()].sort((a, b) =>
       a.dealId.localeCompare(b.dealId),
     );
-    return `${JSON.stringify({ version: 3, domain: DOMAIN, requests, records, deals }, null, 2)}\n`;
+    const v3Requests = [...this.#v3Requests.values()].sort((a, b) =>
+      a.rfqDigest.localeCompare(b.rfqDigest),
+    );
+    return `${JSON.stringify({ version: 4, domain: DOMAIN, requests, records, deals, v3Requests }, null, 2)}\n`;
   }
 
   #serialize(operation) {
@@ -1763,6 +1961,380 @@ export class LocalnetReservationCoordinator {
     });
   }
 
+  beginV3Request(input) {
+    return this.#serialize(() => {
+      if (!Array.isArray(input.makerIds) || input.makerIds.length === 0)
+        throw new Error("Coordinator v3 request requires an invited maker cohort.");
+      const request = validateV3Request({
+        lifecycle: "v3",
+        rfqDigest: input.rfqDigest,
+        intentDigest: input.intentDigest,
+        rfqId: input.rfqId,
+        account: input.account,
+        chainId: input.chainId,
+        createdAt: input.createdAt,
+        expiresAt: input.expiresAt,
+        market: input.market,
+        fanoutComplete: false,
+        makerPlans: input.makerIds.map((makerId) => ({
+          makerId,
+          state: "planned",
+        })),
+        state: "open",
+        closedTakeAttempts: [],
+      });
+      const prior = this.#v3Requests.get(request.rfqDigest);
+      if (prior) {
+        if (!sameV3Request(prior, request))
+          throw new Error(
+            "V3 RFQ digest was reused with another principal or request binding.",
+          );
+        return prior;
+      }
+      const owner = this.#v3Rfqs.get(request.rfqId) ?? this.#rfqs.get(request.rfqId);
+      if (owner && owner !== request.rfqDigest)
+        throw new Error("V3 RFQ felt is already reserved by another request.");
+      this.#v3Requests.set(request.rfqDigest, request);
+      this.#v3Rfqs.set(request.rfqId, request.rfqDigest);
+      this.#persist();
+      return request;
+    });
+  }
+
+  recordV3Quote(rfqDigest, makerId, value) {
+    return this.#serialize(async () => {
+      const digest = requireHex32(rfqDigest, "rfqDigest");
+      const maker = requireText(makerId, "makerId");
+      const request = this.#v3Requests.get(digest);
+      if (!request) throw new Error("Cannot journal a quote for an unknown v3 request.");
+      const plan = request.makerPlans.find((entry) => entry.makerId === maker);
+      if (!plan) throw new Error("V3 quote maker was not in the durable cohort.");
+      const quote = jsonObject(value.quote, "Coordinator v3 quote wire");
+      const decoded = decodeSolverQuoteV3(quote);
+      const quoteDigest = requireHex32(value.quoteDigest, "quoteDigest");
+      if (
+        decoded.solverId !== maker ||
+        decoded.rfqDigest !== digest ||
+        (await digestSolverQuoteV3(decoded)) !== quoteDigest
+      )
+        throw new Error("V3 quote does not match its durable maker and RFQ digest.");
+      if (plan.state === "quoted") {
+        if (
+          plan.quoteDigest !== quoteDigest ||
+          JSON.stringify(plan.quote) !== JSON.stringify(quote)
+        )
+          throw new Error("V3 maker replay changed its quote wire.");
+        return request;
+      }
+      if (plan.state !== "planned")
+        throw new Error("V3 maker outcome cannot change after journaling.");
+      const next = validateV3Request({
+        ...request,
+        makerPlans: request.makerPlans.map((entry) =>
+          entry.makerId === maker
+            ? { makerId: maker, state: "quoted", quoteDigest, quote }
+            : entry,
+        ),
+      });
+      this.#v3Requests.set(digest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  recordV3Refusal(rfqDigest, makerId, refusal, state = "refused") {
+    return this.#serialize(() => {
+      const digest = requireHex32(rfqDigest, "rfqDigest");
+      const maker = requireText(makerId, "makerId");
+      if (state !== "refused" && state !== "unavailable")
+        throw new Error("V3 refusal journal state is invalid.");
+      const wire = {
+        code: refusal?.code,
+        reason: requireText(refusal?.reason, "refusal reason"),
+      };
+      if (!V3_REFUSAL_CODES.has(wire.code))
+        throw new Error("V3 refusal code is invalid.");
+      const quoteDigest = digestLocalnetV3Refusal({ makerId: maker, ...wire });
+      const request = this.#v3Requests.get(digest);
+      if (!request) throw new Error("Cannot journal a refusal for an unknown v3 request.");
+      const plan = request.makerPlans.find((entry) => entry.makerId === maker);
+      if (!plan) throw new Error("V3 refusal maker was not in the durable cohort.");
+      if (plan.state === state) {
+        if (
+          plan.quoteDigest !== quoteDigest ||
+          JSON.stringify(plan.refusal) !== JSON.stringify(wire)
+        )
+          throw new Error("V3 maker replay changed its refusal wire.");
+        return request;
+      }
+      if (plan.state !== "planned")
+        throw new Error("V3 maker outcome cannot change after journaling.");
+      const next = validateV3Request({
+        ...request,
+        makerPlans: request.makerPlans.map((entry) =>
+          entry.makerId === maker
+            ? {
+                makerId: maker,
+                state,
+                quoteDigest,
+                refusal: wire,
+              }
+            : entry,
+        ),
+      });
+      this.#v3Requests.set(digest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  completeV3Fanout(rfqDigest) {
+    return this.#serialize(() => {
+      const digest = requireHex32(rfqDigest, "rfqDigest");
+      const request = this.#v3Requests.get(digest);
+      if (!request) throw new Error("Cannot complete an unknown v3 fanout.");
+      if (request.makerPlans.some((plan) => plan.state === "planned"))
+        throw new Error("Cannot complete v3 fanout with an ambiguous maker outcome.");
+      if (request.fanoutComplete) return request;
+      const next = validateV3Request({ ...request, fanoutComplete: true });
+      this.#v3Requests.set(digest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  journalV3Transcript(rfqDigest, transcriptDigest) {
+    return this.#serialize(() => {
+      const digest = requireHex32(rfqDigest, "rfqDigest");
+      const transcript = requireHex32(transcriptDigest, "transcriptDigest");
+      const request = this.#v3Requests.get(digest);
+      if (!request) throw new Error("Cannot journal a transcript for an unknown v3 request.");
+      if (!request.fanoutComplete)
+        throw new Error("V3 transcript requires a complete durable fanout.");
+      if (request.transcriptDigest) {
+        if (request.transcriptDigest !== transcript)
+          throw new Error("Another transcript digest is already bound to this v3 RFQ.");
+        return request;
+      }
+      const next = validateV3Request({ ...request, transcriptDigest: transcript });
+      this.#v3Requests.set(digest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  #exactV3Take(input, action) {
+    const rfqId = requireFelt(input.rfqId, "rfqId");
+    const dealId = requireFelt(input.dealId, "dealId");
+    if (rfqId !== dealId)
+      throw new Error("V3 take deal identity must equal its RFQ felt.");
+    const digest = this.#v3Rfqs.get(rfqId);
+    const request = digest ? this.#v3Requests.get(digest) : undefined;
+    if (
+      !request ||
+      request.account !== requireFelt(input.account, "account") ||
+      request.chainId !== requireText(input.chainId, "chainId").toLowerCase() ||
+      (input.intentDigest !== undefined &&
+        request.intentDigest !== requireHex32(input.intentDigest, "intentDigest"))
+    )
+      throw new Error(`${action} does not match the durable v3 RFQ principal.`);
+    if (!request.fanoutComplete)
+      throw new Error(`${action} requires a complete durable v3 fanout.`);
+    if (!request.transcriptDigest)
+      throw new Error(`${action} requires a durable fair-loss transcript.`);
+    const expected = canonicalLocalnetTakeExpected(input.expected);
+    for (const fill of expected.fills) {
+      const plan = request.makerPlans.find(
+        (candidate) =>
+          candidate.state === "quoted" &&
+          decodeSolverQuoteV3(candidate.quote).lockId === fill.lockId,
+      );
+      if (!plan)
+        throw new Error("V3 take contains a lock outside its durable quote fanout.");
+      const quote = decodeSolverQuoteV3(plan.quote);
+      if (
+        quote.sellToken !== expected.tokenA ||
+        quote.buyToken !== expected.tokenB ||
+        evaluatePriceSchedule(quote.schedule, BigInt(fill.amountA)) !==
+          BigInt(fill.amountB)
+      )
+        throw new Error("V3 take fill does not match its quoted schedule and tokens.");
+    }
+    return { request, expected };
+  }
+
+  #takeHash(request, input) {
+    if (input.transactionHash === undefined) return request.takeTransactionHash;
+    const transactionHash = requireFelt(input.transactionHash, "transactionHash");
+    if (
+      request.takeTransactionHash &&
+      request.takeTransactionHash !== transactionHash
+    )
+      throw new Error("V3 take attempt changed its transaction hash.");
+    return transactionHash;
+  }
+
+  prepareTake(input, attemptId) {
+    return this.#serialize(() => {
+      const { request, expected } = this.#exactV3Take(input, "V3 take preparation");
+      const attempt = requireText(attemptId, "attemptId");
+      const closed = request.closedTakeAttempts.find(
+        (entry) => entry.attemptId === attempt,
+      );
+      if (closed)
+        throw new Error("V3 take attempt is durably closed and cannot be prepared again.");
+      if (request.state === "take-unknown")
+        throw new Error("V3 take outcome is unknown; reconcile the exact attempt first.");
+      if (request.state === "taken")
+        throw new Error("V3 take is already authoritatively recorded.");
+      if (request.state === "take-pending") {
+        if (
+          request.takeAttemptId !== attempt ||
+          !sameTakeExpected(request.expected, expected)
+        )
+          throw new Error("Another exact v3 take attempt owns the durable lease.");
+        return request;
+      }
+      const next = validateV3Request({
+        ...request,
+        state: "take-pending",
+        takeAttemptId: attempt,
+        expected,
+      });
+      this.#v3Requests.set(request.rfqDigest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  markTakeUnknown(input, attemptId) {
+    return this.#serialize(() => {
+      const { request, expected } = this.#exactV3Take(input, "V3 take unknown");
+      const attempt = requireText(attemptId, "attemptId");
+      if (
+        !["take-pending", "take-unknown"].includes(request.state) ||
+        request.takeAttemptId !== attempt ||
+        !sameTakeExpected(request.expected, expected)
+      )
+        throw new Error("Only the exact active v3 take lease may become unknown.");
+      const takeTransactionHash = this.#takeHash(request, input);
+      if (request.state === "take-unknown" &&
+          request.takeTransactionHash === takeTransactionHash)
+        return request;
+      const next = validateV3Request({
+        ...request,
+        state: "take-unknown",
+        ...(takeTransactionHash ? { takeTransactionHash } : {}),
+      });
+      this.#v3Requests.set(request.rfqDigest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  abandonTake(input, attemptId) {
+    return this.#serialize(() => {
+      const { request, expected } = this.#exactV3Take(input, "V3 take abandonment");
+      const attempt = requireText(attemptId, "attemptId");
+      const closed = request.closedTakeAttempts.find(
+        (entry) => entry.attemptId === attempt,
+      );
+      if (closed) {
+        if (!sameTakeExpected(closed.expected, expected))
+          throw new Error("V3 take abandonment replay changed its exact terms.");
+        return request;
+      }
+      if (request.state === "take-unknown" || request.state === "taken")
+        throw new Error("Only an absent pre-submission v3 take may be abandoned.");
+      if (
+        request.state === "take-pending" &&
+        (request.takeAttemptId !== attempt ||
+          !sameTakeExpected(request.expected, expected))
+      )
+        throw new Error("Another exact v3 take attempt owns the durable lease.");
+      const {
+        expected: _expected,
+        takeAttemptId: _takeAttemptId,
+        takeTransactionHash: _takeTransactionHash,
+        ...rest
+      } = request;
+      const next = validateV3Request({
+        ...rest,
+        state: "open",
+        closedTakeAttempts: [
+          ...request.closedTakeAttempts,
+          { attemptId: attempt, expected },
+        ],
+      });
+      this.#v3Requests.set(request.rfqDigest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  observeTaken(input, attemptId) {
+    return this.#serialize(() => {
+      const { request, expected } = this.#exactV3Take(input, "V3 take observation");
+      const attempt = requireText(attemptId, "attemptId");
+      if (
+        !["take-pending", "take-unknown", "taken"].includes(request.state) ||
+        request.takeAttemptId !== attempt ||
+        !sameTakeExpected(request.expected, expected)
+      )
+        throw new Error("Observed v3 take does not own the exact durable lease.");
+      const takeTransactionHash = this.#takeHash(request, input);
+      if (request.state === "taken" &&
+          request.takeTransactionHash === takeTransactionHash)
+        return request;
+      const next = validateV3Request({
+        ...request,
+        state: "taken",
+        ...(takeTransactionHash ? { takeTransactionHash } : {}),
+      });
+      this.#v3Requests.set(request.rfqDigest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
+  markTakeAbsent(input, attemptId) {
+    return this.#serialize(() => {
+      const { request, expected } = this.#exactV3Take(input, "V3 take absence");
+      const attempt = requireText(attemptId, "attemptId");
+      const closed = request.closedTakeAttempts.find(
+        (entry) => entry.attemptId === attempt,
+      );
+      if (closed) {
+        if (!sameTakeExpected(closed.expected, expected))
+          throw new Error("V3 take absence replay changed its exact terms.");
+        return request;
+      }
+      if (
+        !["take-pending", "take-unknown"].includes(request.state) ||
+        request.takeAttemptId !== attempt ||
+        !sameTakeExpected(request.expected, expected)
+      )
+        throw new Error("V3 take absence does not own the exact durable lease.");
+      const {
+        expected: _expected,
+        takeAttemptId: _takeAttemptId,
+        takeTransactionHash: _takeTransactionHash,
+        ...rest
+      } = request;
+      const next = validateV3Request({
+        ...rest,
+        state: "open",
+        closedTakeAttempts: [
+          ...request.closedTakeAttempts,
+          { attemptId: attempt, expected },
+        ],
+      });
+      this.#v3Requests.set(request.rfqDigest, next);
+      this.#persist();
+      return next;
+    });
+  }
+
   recover(release, now) {
     return this.#serialize(async () => {
       const stamp = requireTimestamp(now, "now");
@@ -1808,6 +2380,19 @@ export class LocalnetReservationCoordinator {
     });
   }
 
+  getV3Request(rfqDigest) {
+    const request = this.#v3Requests.get(requireHex32(rfqDigest, "rfqDigest"));
+    return request ? clone(request) : undefined;
+  }
+  getV3RequestForRfq(rfqId) {
+    const digest = this.#v3Rfqs.get(requireFelt(rfqId, "rfqId"));
+    if (!digest) return undefined;
+    const request = this.#v3Requests.get(digest);
+    return request ? clone(request) : undefined;
+  }
+  listV3Requests() {
+    return Object.freeze([...this.#v3Requests.values()].map(clone));
+  }
   getRequest(intentDigest) {
     const request = this.#requests.get(
       requireHex32(intentDigest, "intentDigest"),

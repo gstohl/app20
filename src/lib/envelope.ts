@@ -15,7 +15,9 @@ export type EnvelopeType =
   | "escrow_claim"
   | "escrow_timeout"
   | "composite"
-  | "contact_snapshot";
+  | "contact_snapshot"
+  | "backup_snapshot"
+  | "backup_pointer";
 
 type CompositeWirePayload = {
   documentId: string;
@@ -75,6 +77,8 @@ export const ENVELOPE_TYPE_BYTES: Readonly<Record<EnvelopeType, number>> = {
   escrow_timeout: 0x0a,
   composite: 0x0b,
   contact_snapshot: 0x0c,
+  backup_snapshot: 0x0d,
+  backup_pointer: 0x0e,
 };
 
 const TYPES_BY_BYTE = new Map<number, EnvelopeType>(

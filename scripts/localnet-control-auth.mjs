@@ -27,6 +27,8 @@ export function assertLocalnetRuntimeEpoch(pathname, body, expectedEpoch) {
     pathname === "/balances" ||
     pathname.startsWith("/private-intents/") ||
     pathname.startsWith("/escrow/ensure-") ||
+    pathname === "/escrow/lock" ||
+    pathname === "/escrow/take" ||
     pathname === "/rfq/authority/verify" ||
     pathname === "/rfq/unresolved-deals";
   if (epochBound && body?.runtimeEpoch !== expectedEpoch) {

@@ -154,13 +154,14 @@ fn pull_payout(pool: ContractAddress, escrow_address: ContractAddress, deposit: 
     assert(token.transfer_from(escrow_address, pool, deposit.amount.into()), 'payout pull failed');
 }
 
+/// The genuine pool deposits the returned OPEN note with one `transfer_from` of the
+/// whole minted supply, so the harness must pull both units in a single call.
 fn pull_lock_ticket_units(
     pool: ContractAddress, escrow_address: ContractAddress, ticket_address: ContractAddress,
 ) {
     let ticket = ILockTicketDispatcher { contract_address: ticket_address };
-    cheat_caller_address(ticket_address, pool, CheatSpan::TargetCalls(2));
-    assert(ticket.transfer_from(escrow_address, pool, 1), 'first ticket pull failed');
-    assert(ticket.transfer_from(escrow_address, pool, 1), 'second ticket pull failed');
+    cheat_caller_address(ticket_address, pool, CheatSpan::TargetCalls(1));
+    assert(ticket.transfer_from(escrow_address, pool, 2), 'ticket supply pull failed');
 }
 
 fn return_lock_ticket(
@@ -1158,4 +1159,34 @@ fn nothing_to_settle_revert_preserves_ticket_and_lock() {
     assert(lock.remaining_b == 200, 'collateral changed');
     assert(ticket.balance_of(escrow_address) == 1, 'ticket unit consumed');
     assert(ticket.total_supply() == 2, 'ticket supply changed');
+}
+
+#[test]
+fn lock_ticket_supply_leaves_escrow_in_one_pull_and_returns_one_unit_at_a_time() {
+    let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
+        fixture();
+    let ticket_deposit = create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let ticket = ILockTicketDispatcher { contract_address: ticket_deposit.token };
+    assert(ticket_deposit.amount == 2, 'lock deposit is not the supply');
+    pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
+    assert(ticket.balance_of(pool) == 2, 'pool did not receive supply');
+    assert(ticket.balance_of(escrow_address) == 0, 'escrow kept units');
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    assert(ticket.balance_of(escrow_address) == 1, 'single unit not returned');
+}
+
+#[test]
+#[should_panic(expected: ('BAD_AMOUNT',))]
+fn lock_ticket_rejects_two_unit_return_to_escrow() {
+    let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
+        fixture();
+    let ticket_deposit = create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
+    let ticket = ILockTicketDispatcher { contract_address: ticket_deposit.token };
+    cheat_caller_address(ticket_deposit.token, pool, CheatSpan::TargetCalls(1));
+    ticket.transfer(escrow_address, 2);
 }

@@ -57,7 +57,9 @@ function nonnegativeInteger(value, label) {
   return value;
 }
 function reconciliationKey(query) {
-  return `${query.runtimeEpoch}|${query.chainId}|${query.account}|${query.rfqId}|${query.reservationId}`;
+  return query.lifecycle === "v3"
+    ? `${query.runtimeEpoch}|${query.chainId}|${query.account}|${query.rfqId}|v3-take`
+    : `${query.runtimeEpoch}|${query.chainId}|${query.account}|${query.rfqId}|${query.reservationId}`;
 }
 function effectAttemptId(query, authorityRevision, effect) {
   return `${effect}:${createHash("sha256")
@@ -161,6 +163,60 @@ function exactCoordinator(value, query) {
     throw new Error("Coordinator does not bind the exact authority query.");
   return value;
 }
+function exactV3Coordinator(value, query, authority) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("V3 coordinator reconciliation input is missing.");
+  if (
+    value.lifecycle !== "v3" ||
+    value.state !== "taken" ||
+    value.rfqDigest !== query.rfqDigest ||
+    value.intentDigest !== query.intentDigest ||
+    value.rfqId !== query.rfqId ||
+    value.account !== query.account ||
+    value.chainId !== query.chainId ||
+    JSON.stringify(value.expected) !== JSON.stringify(query.expected) ||
+    !Array.isArray(value.makerPlans)
+  )
+    throw new Error("V3 coordinator does not bind the exact authority query.");
+  const take = authority?.canonicalLifecycle?.[0];
+  if (
+    authority?.status === "authoritative" &&
+    (authority.canonicalLifecycle.length !== 1 ||
+      take?.stage !== "take" ||
+      take.transactionHash !== query.transactions.take ||
+      !Array.isArray(take.fillEvents) ||
+      take.fillEvents.length !== query.expected.fills.length)
+  )
+    throw new Error("V3 authority lifecycle is not an exact take.");
+  const fills = query.expected.fills.map((fill, index) => {
+    const event = take?.fillEvents?.[index];
+    if (
+      authority?.status === "authoritative" &&
+      (event.stage !== "lockTaken" ||
+        event.lockId !== fill.lockId ||
+        event.transactionHash !== query.transactions.take)
+    )
+      throw new Error("V3 authority changed an expected LockTaken binding.");
+    const owners = value.makerPlans.filter(
+      (plan) =>
+        plan?.state === "quoted" &&
+        plan.quote?.lockId === fill.lockId &&
+        plan.quote?.rfqDigest === query.rfqDigest &&
+        plan.quoteDigest,
+    );
+    if (owners.length !== 1)
+      throw new Error("V3 coordinator cannot prove one maker owner for a taken lock.");
+    return Object.freeze({
+      makerId: text(owners[0].makerId, "v3 lock owner makerId"),
+      quoteDigest: hex32(owners[0].quoteDigest, "v3 lock owner quote digest"),
+      lockId: fill.lockId,
+      amountA: fill.amountA,
+      amountB: fill.amountB,
+    });
+  });
+  return Object.freeze(fills);
+}
+
 function exactAuthority(value, query) {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -191,6 +247,25 @@ function exactAuthority(value, query) {
                 item?.transactionHash,
                 "authority lifecycle transaction",
               ),
+              ...(Array.isArray(item?.fillEvents)
+                ? {
+                    fillEvents: Object.freeze(
+                      item.fillEvents.map((fill) =>
+                        Object.freeze({
+                          stage: text(
+                            fill?.stage,
+                            "authority fill lifecycle stage",
+                          ),
+                          lockId: text(fill?.lockId, "authority fill lock id"),
+                          transactionHash: text(
+                            fill?.transactionHash,
+                            "authority fill transaction",
+                          ),
+                        }),
+                      ),
+                    ),
+                  }
+                : {}),
             }),
           ),
         )
@@ -270,6 +345,8 @@ export class LocalnetMakerReconciler {
   #now;
   #releaseTerminal;
   #quarantineAuthority;
+  #releaseV3Terminal;
+  #quarantineV3Authority;
   #faultInjector;
   #failed = false;
   #tail = Promise.resolve();
@@ -289,6 +366,18 @@ export class LocalnetMakerReconciler {
       );
     this.#releaseTerminal = options.releaseTerminal;
     this.#quarantineAuthority = options.quarantineAuthority;
+    this.#releaseV3Terminal = options.releaseV3Terminal;
+    this.#quarantineV3Authority = options.quarantineV3Authority;
+    if (
+      this.#releaseV3Terminal !== undefined &&
+      typeof this.#releaseV3Terminal !== "function"
+    )
+      throw new Error("Maker v3 terminal adapter must be a function.");
+    if (
+      this.#quarantineV3Authority !== undefined &&
+      typeof this.#quarantineV3Authority !== "function"
+    )
+      throw new Error("Maker v3 quarantine adapter must be a function.");
     this.#now = options.now ?? (() => Math.floor(Date.now() / 1_000));
     this.#faultInjector = options.faultInjector;
     mkdirSync(dirname(this.#path), { recursive: true, mode: 0o700 });
@@ -451,6 +540,113 @@ export class LocalnetMakerReconciler {
         throw new Error(
           "Maker reconciliation rejected same-revision authority equivocation.",
         );
+
+      if (query.lifecycle === "v3") {
+        if (!authority)
+          return this.#publish(
+            this.#next(
+              query,
+              "pending",
+              "authority-unavailable",
+              undefined,
+              "none",
+            ),
+          );
+        const ownedFills = exactV3Coordinator(
+          input.coordinator,
+          query,
+          authority,
+        );
+        if (
+          !authorityRequiresQuarantine(authority) &&
+          authority.status !== "authoritative"
+        )
+          return this.#publish(
+            this.#next(
+              query,
+              "pending",
+              "authority-not-currently-final",
+              authority,
+              "none",
+            ),
+          );
+        if (authorityRequiresQuarantine(authority)) {
+          if (
+            prior?.status === "quarantined" &&
+            prior.authorityRevision === authority.revision &&
+            prior.authorityStatus === authority.status &&
+            prior.marketQuarantined === authority.marketQuarantined
+          )
+            return prior;
+          if (typeof this.#quarantineV3Authority !== "function")
+            throw new Error("Maker v3 authority quarantine adapter is unavailable.");
+          const pending = this.#publish(
+            this.#next(
+              query,
+              "quarantine-pending",
+              "maker-v3-authority-quarantine-pending",
+              authority,
+              "authority-quarantine",
+            ),
+          );
+          await this.#quarantineV3Authority({
+            attemptId: pending.effectAttemptId,
+            authorityDigest: authority.queryDigest,
+            authorityRevision: authority.revision,
+            query,
+            fills: ownedFills,
+            reason:
+              authority.status === "reorged" || authority.marketQuarantined
+                ? "authority-reorged"
+                : "authority-disagreement",
+          });
+          this.#faultInjector?.("after-quarantine-ack");
+          return this.#publish(
+            this.#next(
+              query,
+              "quarantined",
+              "exact-maker-v3-authority-quarantine",
+              authority,
+              "authority-quarantine",
+            ),
+          );
+        }
+        if (
+          prior?.status === "released-terminal" &&
+          prior.authorityRevision === authority.revision &&
+          prior.authorityStatus === authority.status
+        )
+          return prior;
+        if (typeof this.#releaseV3Terminal !== "function")
+          throw new Error("Maker v3 terminal reconciliation adapter is unavailable.");
+        const pending = this.#publish(
+          this.#next(
+            query,
+            "release-pending",
+            "v3-terminal-release-pending",
+            authority,
+            "terminal-reconciliation",
+          ),
+        );
+        await this.#releaseV3Terminal({
+          attemptId: pending.effectAttemptId,
+          authorityDigest: authority.queryDigest,
+          authorityRevision: authority.revision,
+          query,
+          fills: ownedFills,
+          settlementTransactionHash: query.transactions.take,
+        });
+        this.#faultInjector?.("after-terminal-ack");
+        return this.#publish(
+          this.#next(
+            query,
+            "released-terminal",
+            "exact-authoritative-v3-terminal",
+            authority,
+            "terminal-reconciliation",
+          ),
+        );
+      }
 
       exactCoordinator(input.coordinator, query);
       if (!authority)

@@ -1,12 +1,14 @@
 import { reservationReleaseReconciliationRoute } from "./localnet-release-recovery";
 import {
   rfqHasFundingEvidence,
-  type RfqAttemptPhase,
+  type RfqLifecycleAttemptPhase,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
 
 export type LocalnetResumeAction =
   | "accept-and-fund"
+  | "take"
+  | "verify-take"
   | "verify-funding"
   | "verify-deal"
   | "request-maker-fill"
@@ -32,13 +34,14 @@ export type LocalnetResumeDecision = Readonly<{
 
 function unknownAttempt(
   record: RfqLifecycleRecord,
-): RfqAttemptPhase | undefined {
-  const phases: readonly RfqAttemptPhase[] = [
+): RfqLifecycleAttemptPhase | undefined {
+  const phases: readonly RfqLifecycleAttemptPhase[] = [
     "funding",
     "fill",
     "claim",
     "refund",
     "reservation-release",
+    "take",
   ];
   return phases.find((phase) => {
     const state = record.attempts[phase]?.state;
@@ -100,6 +103,60 @@ export function localnetResumeDecision(
     );
   }
   const unknown = unknownAttempt(record);
+  if (record.mode === "v3") {
+    if (unknown === "take") {
+      const takeState = record.attempts.take?.state;
+      return decision(
+        "verify-take",
+        takeState === "preparing"
+          ? "Check pre-submission Take lease"
+          : takeState === "wallet-boundary-unknown"
+            ? "Verify hashless wallet-boundary Take"
+            : "Verify submitted Take",
+        takeState === "preparing"
+          ? "A Take lease may exist without wallet-boundary evidence. Verify the exact lease and escrow record; nothing is resubmitted."
+          : "The wallet boundary was entered or Take was submitted. Read the exact escrow Take record and never retry this attempt.",
+      );
+    }
+    if (record.state === "submission-unknown") {
+      return decision(
+        "verify-take",
+        "Verify submitted Take",
+        "Take outcome is unknown; verification reads the exact escrow record and never resubmits it.",
+      );
+    }
+    if (record.state === "reviewing") {
+      if (record.restoredFromBackup || !record.takerSecret) {
+        return decision(
+          "none",
+          "Verify-only restored RFQ",
+          "The restored record intentionally carries no taker secret and cannot submit a Take.",
+          true,
+        );
+      }
+      return decision(
+        "take",
+        record.attempts.take?.state === "reverted" ? "Retry Take" : "Take",
+        record.attempts.take?.state === "reverted"
+          ? "The prior exact transaction was proven reverted; a new deliberate Take attempt may be created."
+          : "Submit the reviewed exact fills atomically from the open maker locks.",
+      );
+    }
+    if (record.state === "settled") {
+      return decision(
+        "none",
+        "Complete",
+        "The exact Take is settled; no further value action is available.",
+        true,
+      );
+    }
+    return decision(
+      "none",
+      "No safe v3 action",
+      "This RFQ v3 phase has no resumable value-moving command.",
+      true,
+    );
+  }
   if (unknown === "funding") {
     const fundingState = record.attempts.funding?.state;
     return decision(

@@ -1,5 +1,6 @@
 "use client";
 
+import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
@@ -21,7 +22,10 @@ import {
 import { loadAliases, type AliasRecord } from "@/lib/aliases";
 import { feltEquals } from "@/lib/addresses";
 import { parseCompositePayload } from "@/lib/composite";
-import { consumeDeskHandoff } from "@/lib/desk-handoff";
+import {
+  consumeDeskHandoff,
+  storeInvoiceDeskHandoff,
+} from "@/lib/desk-handoff";
 import {
   createBlankDraft,
   deleteDraft,
@@ -32,8 +36,26 @@ import {
 import {
   decodeEnvelope,
   encodeEnvelope,
-  envelopeByteLength,
+  MAX_COMPOSITE_ENVELOPE_BYTES,
 } from "@/lib/envelope";
+import {
+  backupBlobDigest,
+  openBackupBlob,
+  parseBackupPointer,
+  sealBackupBlob,
+} from "@/lib/backup-blob";
+import {
+  createIpfsBlobStore,
+  createUnavailableBlobStore,
+  resolveBlobStoreConfig,
+  type BlobStore,
+} from "@/lib/blob-store";
+import {
+  createBackupSnapshot,
+  nextBackupSequence,
+  verifyBackupSnapshot,
+  type BackupKind,
+} from "@/lib/backup-snapshot";
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
@@ -83,10 +105,7 @@ import {
   type MailEvent,
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
-import {
-  createContactSnapshot,
-  verifyContactSnapshot,
-} from "@/lib/contact-backup";
+import { verifyContactSnapshot } from "@/lib/contact-backup";
 import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
@@ -102,6 +121,7 @@ import {
 import {
   acceptPayloadForOffer,
   claimOtcAccept,
+  claimMatureInvoicePayment,
   claimPayment,
   confirmOtcAccept,
   confirmPayment,
@@ -122,6 +142,7 @@ import {
   recordUnverifiedPaymentClaim,
   releaseOtcAccept,
   releasePayment,
+  resolvePaymentRequestTokenForChain,
   type AcceptPayload,
   type OfferPayload,
   type OtcState,
@@ -140,6 +161,13 @@ import {
   submitOtcAccept,
 } from "@/lib/strk20";
 import { loadSentMail, saveSentMail } from "@/lib/sent-mail";
+import { createIndexedDbRfqStorage } from "@/app/rfq/rfq-storage";
+import {
+  exportRfqHistory,
+  importRfqHistory,
+  isRfqHistoryAutoBackupEnabled,
+  setRfqHistoryAutoBackupEnabled,
+} from "@/lib/rfq-history-backup";
 import {
   loadMailAssignments,
   saveMailAssignment,
@@ -165,6 +193,7 @@ import {
   mailKeyFingerprint,
   mergeMailMessages,
   mergeDisplayAliases,
+  newestBackupMessages,
   sortMailMessages,
   storedSentToLocal,
   paymentLinkToLocal,
@@ -178,6 +207,7 @@ import {
 } from "./mailbox-model";
 
 export default function InboxPage() {
+  const navigate = useNavigate();
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
@@ -229,9 +259,8 @@ export default function InboxPage() {
     [aliases, bookEntries],
   );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
-  const [escrowState, setEscrowState] = useState<EscrowState>(
-    emptyEscrowState(),
-  );
+  const [escrowState, setEscrowState] =
+    useState<EscrowState>(emptyEscrowState());
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});
@@ -268,6 +297,10 @@ export default function InboxPage() {
     Record<string, MailAssignment>
   >({});
   const [proofs, setProofs] = useState<Record<string, SenderProof>>({});
+  const [invoiceMaturityHeadBlock, setInvoiceMaturityHeadBlock] = useState<
+    number | undefined
+  >();
+  const [rfqAutoBackupEnabled, setRfqAutoBackupEnabled] = useState(false);
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -601,8 +634,50 @@ export default function InboxPage() {
     }
   }, [address, chainId, pendingPayment]);
 
+  useEffect(() => {
+    if (!address || !chainId) {
+      setRfqAutoBackupEnabled(false);
+      return;
+    }
+    const enabled = isRfqHistoryAutoBackupEnabled(
+      window.localStorage,
+      chainId,
+      address,
+    );
+    if (enabled !== rfqAutoBackupEnabled) setRfqAutoBackupEnabled(enabled);
+  }, [address, chainId, rfqAutoBackupEnabled]);
+
+  useEffect(() => {
+    const awaiting = Object.values(otcState.payments).some(
+      (payment) => payment.paymentOperation?.state === "awaiting-note-maturity",
+    );
+    if (!address || !chainId || !awaiting) {
+      setInvoiceMaturityHeadBlock(undefined);
+      return;
+    }
+    let cancelled = false;
+    const provider = constants.myFrontendProviders[providerIndex];
+    const refresh = async () => {
+      try {
+        const head = await provider.getBlockNumber();
+        if (!cancelled && Number.isSafeInteger(head) && head >= 0) {
+          setInvoiceMaturityHeadBlock(head);
+        }
+      } catch {
+        if (!cancelled) setInvoiceMaturityHeadBlock(undefined);
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [address, chainId, otcState, providerIndex]);
+
   const mailboxView = useMemo(() => {
-    const folders = partitionMailboxFolders(messages);
+    const visibleMessages = newestBackupMessages(messages);
+    const folders = partitionMailboxFolders(visibleMessages);
     const folderMessages = mailFolder === "sent" ? folders.sent : folders.inbox;
     const typeCounts =
       mailFolder === "drafts"
@@ -781,6 +856,7 @@ export default function InboxPage() {
     action: string,
     amount: string,
     privateBatchAmounts: readonly (string | bigint)[],
+    tokenAddress = constants.addrSTRK,
   ) {
     const poolAddress = constants.strk20PoolForProviderIndex(providerIndex);
     if (!poolAddress) {
@@ -789,7 +865,7 @@ export default function InboxPage() {
     context.policy();
     await assertPrivateStrk20BatchBalance(
       context.walletAccount,
-      constants.addrSTRK,
+      tokenAddress,
       privateBatchAmounts,
     );
     await authorizeStrk20ValueAction({
@@ -1194,57 +1270,159 @@ export default function InboxPage() {
     }
   }
 
-  async function handleContactBackup() {
-    const actionKey = "contacts:backup";
+  async function readLocalBackupConfig(): Promise<Record<string, unknown>> {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5_000);
+    try {
+      const response = await fetch("/config", {
+        signal: controller.signal,
+        credentials: "same-origin",
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+        headers: { Accept: "application/json" },
+      });
+      if (!response.ok || !response.body) {
+        throw new Error(
+          `Local configuration returned HTTP ${response.status}.`,
+        );
+      }
+      const declaredHeader = response.headers.get("content-length");
+      if (
+        declaredHeader !== null &&
+        (!/^(?:0|[1-9][0-9]*)$/.test(declaredHeader) ||
+          Number(declaredHeader) > 64 * 1_024)
+      ) {
+        throw new Error("Local configuration has an invalid response length.");
+      }
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.length;
+        if (total > 64 * 1_024) {
+          await reader.cancel();
+          throw new Error("Local configuration exceeds the response limit.");
+        }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.length;
+      }
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Local configuration is malformed.");
+      }
+      return Object.fromEntries(Object.entries(parsed));
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  async function inboxBlobStore(): Promise<BlobStore> {
+    const localnet = providerIndex === constants.LOCALNET_PROVIDER_INDEX;
+    try {
+      const env: Record<string, unknown> = { ...import.meta.env };
+      const resolution = resolveBlobStoreConfig({
+        localnetConfig: localnet ? await readLocalBackupConfig() : undefined,
+        env,
+      });
+      return resolution.available
+        ? createIpfsBlobStore({
+            rpcOrigin: resolution.rpcOrigin,
+            gatewayOrigins: resolution.gatewayOrigins,
+          })
+        : createUnavailableBlobStore(resolution.reason);
+    } catch (error: unknown) {
+      return createUnavailableBlobStore(
+        error instanceof Error
+          ? `Backup blob storage is unavailable: ${error.message}`
+          : "Backup blob storage is unavailable.",
+      );
+    }
+  }
+
+  async function postAuthenticatedBackup(
+    kind: BackupKind,
+    payload: unknown,
+    itemCount: number,
+  ) {
+    const actionKey = `${kind}:backup`;
     try {
       const context = requireActionContext();
       if (!keypair || !mailSeed || !keyFingerprint) {
         throw new Error(
-          "Unlock the mailbox and save its recovery phrase before backing up contacts.",
+          "Unlock the mailbox and save its recovery phrase before backing up.",
         );
       }
       setActionState(actionKey, {
         pending: true,
-        message: "Authenticating and sizing the encrypted contact snapshot…",
+        message: "Authenticating and sizing the versioned backup snapshot…",
         startedAt: Date.now(),
       });
-      const entries = await loadAddressBook(
-        window.localStorage,
-        context.address,
-      );
-      const snapshot = createContactSnapshot({
+      const seq = nextBackupSequence(window.localStorage, {
+        owner: context.address,
+        chainId: context.chainId,
+        helperAddress: context.helperAddress,
+        mailboxFingerprint: keyFingerprint,
+        kind,
+      });
+      const snapshot = createBackupSnapshot({
         owner: context.address,
         chainId: context.chainId,
         helperAddress: context.helperAddress,
         mailboxFingerprint: keyFingerprint,
         mailboxSeed: mailSeed,
-        entries,
+        kind,
+        seq,
+        payload,
       });
-      const encoded = encodeEnvelope("contact_snapshot", snapshot);
-      const plaintextBytes = envelopeByteLength("contact_snapshot", snapshot);
-      const size = projectEncryptedMailSize(plaintextBytes, 1);
-      if (!size.fits) {
-        throw new Error(
-          `This ${entries.length}-contact snapshot is ${plaintextBytes - size.maxPlaintextBytes} encoded bytes over the one-letter limit. Nothing was submitted; remove contacts or use a future chunked backup.`,
-        );
+      const inline = encodeEnvelope("backup_snapshot", snapshot);
+      let envelope = inline;
+      let external = false;
+      if (
+        inline.length > MAX_COMPOSITE_ENVELOPE_BYTES ||
+        !projectEncryptedMailSize(inline.length, 1).fits
+      ) {
+        const store = await inboxBlobStore();
+        const blob = await sealBackupBlob({
+          mailboxSeed: mailSeed,
+          owner: context.address,
+          chainId: context.chainId,
+          kind,
+          seq,
+          bytes: inline,
+        });
+        const { cid } = await store.put(blob);
+        envelope = encodeEnvelope("backup_pointer", {
+          kind,
+          seq,
+          cid,
+          bucketBytes: blob.length,
+          blobDigest: backupBlobDigest(blob),
+        });
+        if (
+          envelope.length > MAX_COMPOSITE_ENVELOPE_BYTES ||
+          !projectEncryptedMailSize(envelope.length, 1).fits
+        ) {
+          throw new Error(
+            "The verified backup pointer exceeds one Mail letter.",
+          );
+        }
+        external = true;
       }
       await authorizeValueAction(
         context,
-        "Back up contacts to encrypted Mail",
+        `Back up ${kind === "contacts" ? "contacts" : "RFQ history"} to encrypted Mail`,
         APP20_HELPER_FUNDING_BASE_UNITS.toString(),
         [APP20_HELPER_FUNDING_BASE_UNITS],
       );
-      setActionState(actionKey, {
-        pending: true,
-        message: "Encrypting the snapshot to this mailbox key…",
-        startedAt: Date.now(),
-      });
-      const record = await encryptMail(keypair.publicKey, encoded);
-      setActionState(actionKey, {
-        pending: true,
-        message: "Waiting for the wallet to post encrypted self-mail…",
-        startedAt: Date.now(),
-      });
+      const record = await encryptMail(keypair.publicKey, envelope);
       const result = await submitMail({
         account: context.walletAccount,
         provider: context.provider,
@@ -1257,11 +1435,11 @@ export default function InboxPage() {
       });
       setActionState(actionKey, {
         pending: false,
-        message: `Encrypted ${entries.length}-contact snapshot posted in ${result.transactionHash.slice(0, 12)}… Check for new mail to restore it.`,
+        message: `${itemCount} ${kind === "contacts" ? "contact" : "RFQ record"}${itemCount === 1 ? "" : "s"} backed up ${external ? "through a CID-verified encrypted blob pointer" : "inline"} in ${result.transactionHash.slice(0, 12)}…`,
       });
       setStorageNotice({
         kind: "ok",
-        message: `Contact plaintext never left this browser. The chain received mailbox ciphertext; wallet plus mailbox recovery phrase are required to decrypt it. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
+        message: `Backup plaintext never left this browser. Wallet plus mailbox recovery phrase are required to decrypt it. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -1269,7 +1447,231 @@ export default function InboxPage() {
         message:
           error instanceof Error
             ? error.message
-            : "The encrypted contact backup failed.",
+            : "The encrypted backup failed.",
+      });
+    }
+  }
+
+  async function handleContactBackup() {
+    if (!address) return;
+    try {
+      const entries = await loadAddressBook(window.localStorage, address);
+      await postAuthenticatedBackup("contacts", { entries }, entries.length);
+    } catch (error: unknown) {
+      setActionState("contacts:backup", {
+        pending: false,
+        message:
+          error instanceof Error ? error.message : "The contact export failed.",
+      });
+    }
+  }
+
+  async function handleRfqHistoryBackup() {
+    if (!address || !chainId) return;
+    try {
+      const history = await exportRfqHistory(
+        createIndexedDbRfqStorage(),
+        chainId,
+        address,
+      );
+      await postAuthenticatedBackup("rfq-resume", history, history.count);
+    } catch (error: unknown) {
+      setActionState("rfq-resume:backup", {
+        pending: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The RFQ history export failed.",
+      });
+    }
+  }
+
+  function updateRfqAutoBackup(enabled: boolean) {
+    if (!address || !chainId) return;
+    setRfqHistoryAutoBackupEnabled(
+      window.localStorage,
+      chainId,
+      address,
+      enabled,
+    );
+    setRfqAutoBackupEnabled(enabled);
+    setStorageNotice({
+      kind: "ok",
+      message: enabled
+        ? "Automatic RFQ history backup is opted in for confirmed settlements. It never submits or proves a settlement."
+        : "Automatic RFQ history backup is off.",
+    });
+  }
+
+  async function restoreAuthenticatedBackup(
+    _payload: unknown,
+    sourceMessage: LocalMailMessage,
+  ) {
+    const actionKey = "backup:restore";
+    try {
+      if (
+        !address ||
+        !chainId ||
+        !helperAddress ||
+        !keypair ||
+        !mailSeed ||
+        !keyFingerprint
+      ) {
+        throw new Error(
+          "Connect the matching wallet and unlock its mailbox recovery phrase first.",
+        );
+      }
+      setActionState(actionKey, {
+        pending: true,
+        message: "Verifying the authenticated backup…",
+        startedAt: Date.now(),
+      });
+      let candidate: unknown;
+      let expectedKind: BackupKind | undefined;
+      let expectedSeq: number | undefined;
+      if (sourceMessage.envelope.type === "backup_snapshot") {
+        candidate = sourceMessage.envelope.payload;
+      } else if (sourceMessage.envelope.type === "backup_pointer") {
+        const pointer = parseBackupPointer(sourceMessage.envelope.payload);
+        expectedKind = pointer.kind;
+        expectedSeq = pointer.seq;
+        setActionState(actionKey, {
+          pending: true,
+          message: "Fetching and CID-verifying the bounded encrypted blob…",
+          startedAt: Date.now(),
+        });
+        const store = await inboxBlobStore();
+        const blob = await store.get(pointer.cid);
+        if (
+          blob.length !== pointer.bucketBytes ||
+          backupBlobDigest(blob) !== pointer.blobDigest
+        ) {
+          throw new Error(
+            "The fetched backup blob does not match its authenticated pointer.",
+          );
+        }
+        const opened = await openBackupBlob({
+          mailboxSeed: mailSeed,
+          owner: address,
+          chainId,
+          kind: pointer.kind,
+          seq: pointer.seq,
+          blob,
+        });
+        const decoded = decodeEnvelope(opened);
+        if (decoded.type !== "backup_snapshot") {
+          throw new Error(
+            "The backup blob does not contain a versioned snapshot envelope.",
+          );
+        }
+        candidate = decoded.payload;
+      } else {
+        throw new Error("This message is not a versioned backup.");
+      }
+      const snapshot = verifyBackupSnapshot(candidate, {
+        owner: address,
+        chainId,
+        helperAddress,
+        mailboxFingerprint: keyFingerprint,
+        mailboxSeed: mailSeed,
+        ...(expectedKind ? { kind: expectedKind } : {}),
+        ...(expectedSeq === undefined ? {} : { seq: expectedSeq }),
+      });
+
+      if (snapshot.kind === "contacts") {
+        const value = snapshot.payload;
+        if (
+          value === null ||
+          typeof value !== "object" ||
+          Array.isArray(value) ||
+          Object.keys(value).join(",") !== "entries" ||
+          !("entries" in value) ||
+          !Array.isArray(value.entries)
+        ) {
+          throw new Error("The contact backup payload is malformed.");
+        }
+        const entries = value.entries.map((item) => {
+          if (
+            item === null ||
+            typeof item !== "object" ||
+            Array.isArray(item) ||
+            !("label" in item) ||
+            !("address" in item) ||
+            !("updatedAt" in item) ||
+            typeof item.label !== "string" ||
+            typeof item.address !== "string" ||
+            typeof item.updatedAt !== "number"
+          ) {
+            throw new Error("The contact backup entry is malformed.");
+          }
+          return {
+            label: item.label,
+            address: item.address,
+            updatedAt: item.updatedAt,
+          };
+        });
+        if (
+          !window.confirm(
+            `Merge ${entries.length} authenticated contact${entries.length === 1 ? "" : "s"} from backup sequence ${snapshot.seq}? Newer local labels win.`,
+          )
+        ) {
+          throw new Error(
+            "Backup restore cancelled; local data was untouched.",
+          );
+        }
+        const restored = await mergeAddressBookEntries(
+          window.localStorage,
+          address,
+          entries,
+        );
+        window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
+        setActionState(actionKey, {
+          pending: false,
+          message: `${restored.length} contact${restored.length === 1 ? "" : "s"} restored with keep-newer merge rules.`,
+        });
+      } else {
+        const value = snapshot.payload;
+        if (
+          value === null ||
+          typeof value !== "object" ||
+          Array.isArray(value) ||
+          !("count" in value) ||
+          typeof value.count !== "number" ||
+          !Number.isSafeInteger(value.count)
+        ) {
+          throw new Error("The RFQ history backup payload is malformed.");
+        }
+        if (
+          !window.confirm(
+            `Merge ${value.count} authenticated RFQ history record${value.count === 1 ? "" : "s"} from backup sequence ${snapshot.seq}? Existing newer records win.`,
+          )
+        ) {
+          throw new Error(
+            "Backup restore cancelled; local data was untouched.",
+          );
+        }
+        const result = await importRfqHistory(
+          createIndexedDbRfqStorage(),
+          value,
+          { onConflict: "keep-newer" },
+        );
+        setActionState(actionKey, {
+          pending: false,
+          message: `${result.imported} RFQ record${result.imported === 1 ? "" : "s"} restored; ${result.skipped} newer or identical local record${result.skipped === 1 ? " was" : "s were"} kept.`,
+        });
+      }
+      setStorageNotice({
+        kind: "ok",
+        message:
+          "Authenticated backup restored. Mail and IPFS supplied encrypted evidence only; neither proves settlement.",
+      });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "The backup could not be restored.",
       });
     }
   }
@@ -1694,6 +2096,55 @@ export default function InboxPage() {
     }
   }
 
+  function handlePayPrivatelyWithStrk(request: PaymentRequestPayload) {
+    const actionKey = `payment:${request.requestId}`;
+    try {
+      const context = requireActionContext();
+      if (providerIndex !== constants.LOCALNET_PROVIDER_INDEX) {
+        throw new Error("USDC invoice RFQ handoff is localnet-only.");
+      }
+      if (
+        request.chainId &&
+        !paymentLinkChainIdsEqual(request.chainId, context.chainId)
+      ) {
+        throw new Error(
+          "This invoice is bound to another Starknet network. Switch the wallet before opening the RFQ desk.",
+        );
+      }
+      const token = resolvePaymentRequestTokenForChain(
+        request,
+        context.chainId,
+      );
+      if (token.symbol !== "USDC") {
+        throw new Error(
+          "Only a registry-resolved USDC invoice uses this RFQ handoff.",
+        );
+      }
+      storeInvoiceDeskHandoff(
+        window.sessionStorage,
+        {
+          requestId: request.requestId,
+          payee: request.requester,
+          buyToken: token.address,
+          targetBuyBaseUnits: request.amount,
+          ...(request.memo ? { memo: request.memo } : {}),
+          returnTo: "/mail/inbox",
+        },
+        { account: context.address, chainId: context.chainId },
+      );
+      setActionState(actionKey, {
+        pending: false,
+        message: "Opening the RFQ desk with these exact invoice terms…",
+      });
+      void navigate({ to: "/rfq" });
+    } catch (error: unknown) {
+      setActionState(actionKey, {
+        pending: false,
+        message: strk20ErrorMessage(error),
+      });
+    }
+  }
+
   async function handlePay(request: PaymentRequestPayload) {
     const actionKey = `payment:${request.requestId}`;
     let claimed = false;
@@ -1708,14 +2159,38 @@ export default function InboxPage() {
           "This payment link is bound to another Starknet network. Switch the wallet before paying.",
         );
       }
-      const reservedPayment = claimPayment(
+      const currentPayment = loadOtcState(
         window.localStorage,
         context.chainId,
         context.address,
-        request,
-      );
+      ).payments[request.requestId];
+      const reservedPayment =
+        currentPayment?.paymentOperation?.state === "awaiting-note-maturity"
+          ? claimMatureInvoicePayment(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              request,
+              invoiceMaturityHeadBlock ?? 0,
+            )
+          : claimPayment(
+              window.localStorage,
+              context.chainId,
+              context.address,
+              request,
+            );
       const payableRequest = reservedPayment.request;
-      const attemptId = reservedPayment.paymentOperation?.attemptId;
+      const payableToken = resolvePaymentRequestTokenForChain(
+        payableRequest,
+        context.chainId,
+      );
+      const paymentOperation = reservedPayment.paymentOperation;
+      if (!paymentOperation || paymentOperation.state !== "reserved") {
+        throw new Error(
+          "The payer-owned payment reservation was not persisted.",
+        );
+      }
+      const attemptId = paymentOperation.attemptId;
       if (!attemptId) {
         throw new Error(
           "The payer-owned payment attempt id was not persisted.",
@@ -1734,10 +2209,11 @@ export default function InboxPage() {
         "Invoice private payment",
         payableRequest.amount,
         [payableRequest.amount, APP20_HELPER_FUNDING_BASE_UNITS],
+        payableToken.address,
       );
       setActionState(actionKey, {
         pending: true,
-        message: "Preparing one private STRK payment and payment memo…",
+        message: `Preparing one private ${payableToken.symbol} payment and payment memo…`,
         startedAt: Date.now(),
       });
       const transfer = {
@@ -1763,7 +2239,7 @@ export default function InboxPage() {
           provider: context.provider,
           helperAddress: context.helperAddress,
           recoveryAddress: context.address,
-          tokenAddress: constants.addrSTRK,
+          tokenAddress: payableToken.address,
           recipient: payableRequest.requester,
           amount: payableRequest.amount,
           record,
@@ -1784,7 +2260,7 @@ export default function InboxPage() {
             refreshOtcState();
             setActionState(actionKey, {
               pending: true,
-              message: `Private STRK payment submitted (${transactionHash}); confirmation pending.`,
+              message: `Private ${payableToken.symbol} payment submitted (${transactionHash}); confirmation pending.`,
               startedAt: Date.now(),
             });
           },
@@ -1802,7 +2278,7 @@ export default function InboxPage() {
       refreshOtcState();
       setActionState(actionKey, {
         pending: false,
-        message: "Private STRK payment and encrypted memo confirmed.",
+        message: `Private ${payableToken.symbol} payment and encrypted memo confirmed.`,
       });
       void scanInbox();
     } catch (error: unknown) {
@@ -2583,10 +3059,11 @@ export default function InboxPage() {
             aria-labelledby="contact-backup-title"
           >
             <strong id="contact-backup-title">
-              Encrypted contact recovery
+              Encrypted mailbox recovery
             </strong>
             <p>
-              Post a self-addressed encrypted snapshot. The same wallet locates
+              Post authenticated contact or RFQ-history self-mail. Oversized
+              ciphertext uses a verified CID pointer. The same wallet locates
               it; the mailbox recovery phrase decrypts it. Wallet alone is not
               enough. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
             </p>
@@ -2597,7 +3074,8 @@ export default function InboxPage() {
                 !keypair ||
                 !mailSeed ||
                 !helperAddress ||
-                actionStates["contacts:backup"]?.pending
+                actionStates["contacts:backup"]?.pending ||
+                actionStates["rfq-resume:backup"]?.pending
               }
               onClick={() => void handleContactBackup()}
             >
@@ -2610,6 +3088,36 @@ export default function InboxPage() {
                 {actionStates["contacts:backup"].message}
               </p>
             ) : null}
+            <button
+              className={styles.secondaryButton}
+              type="button"
+              disabled={
+                !keypair ||
+                !mailSeed ||
+                !helperAddress ||
+                actionStates["contacts:backup"]?.pending ||
+                actionStates["rfq-resume:backup"]?.pending
+              }
+              onClick={() => void handleRfqHistoryBackup()}
+            >
+              {actionStates["rfq-resume:backup"]?.pending
+                ? "Backing up…"
+                : "Back up RFQ history"}
+            </button>
+            {actionStates["rfq-resume:backup"]?.message ? (
+              <p className={styles.scanMessage} role="status">
+                {actionStates["rfq-resume:backup"].message}
+              </p>
+            ) : null}
+            <label>
+              <input
+                type="checkbox"
+                checked={rfqAutoBackupEnabled}
+                disabled={!address || !chainId}
+                onChange={(event) => updateRfqAutoBackup(event.target.checked)}
+              />{" "}
+              Automatically back up RFQ history after settlement (opt in)
+            </label>
           </section>
 
           <details className={styles.forgetDevice}>
@@ -2763,6 +3271,8 @@ export default function InboxPage() {
                 onDecline={(offer) => void handleDecline(offer)}
                 onPostReceipt={(offer) => void handlePostReceipt(offer)}
                 onPay={(request) => void handlePay(request)}
+                onPayPrivatelyWithStrk={handlePayPrivatelyWithStrk}
+                invoiceMaturityHeadBlock={invoiceMaturityHeadBlock}
                 onEscrowFill={(fund) => void handleEscrowFill(fund)}
                 onEscrowClaim={
                   providerIndex === constants.LOCALNET_PROVIDER_INDEX
@@ -2777,9 +3287,13 @@ export default function InboxPage() {
                 onRestoreContacts={(payload, message) =>
                   void restoreContactBackup(payload, message)
                 }
+                onRestoreBackup={(payload, message) =>
+                  void restoreAuthenticatedBackup(payload, message)
+                }
                 contactRestorePending={
                   actionStates["contacts:restore"]?.pending
                 }
+                backupRestorePending={actionStates["backup:restore"]?.pending}
                 onReply={openComposerForRecipient}
                 onAssign={assignMessageAddress}
                 onProve={(messageId, assigned) =>

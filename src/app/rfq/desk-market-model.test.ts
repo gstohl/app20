@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   deskMarketModel,
+  deskMarketModelFromMakerMids,
   LOCALNET_DESK_SPREAD_BPS,
   LOCALNET_FIXTURE_SPREAD_RANGE_BPS,
   LOCALNET_REFERENCE_STRK_USDC,
@@ -19,6 +20,16 @@ describe("desk market model", () => {
     });
     expect(LOCALNET_DESK_SPREAD_BPS).toBe(30);
     expect(LOCALNET_FIXTURE_SPREAD_RANGE_BPS).toEqual({ minimum: 20, maximum: 30 });
+  });
+
+  it("uses a browser-verified maker median as the indicative reference", () => {
+    const model = deskMarketModelFromMakerMids("STRK_USDC", {
+      medianE18: 2_005_000_000_000_000_000n,
+      dispersionBps: 49,
+      count: 2,
+    });
+    expect(model.referencePrice).toBeCloseTo(2.005);
+    expect(model.midpoint).toBeCloseTo(2.005);
   });
 
   it("uses the reciprocal reference for USDC to STRK", () => {

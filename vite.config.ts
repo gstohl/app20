@@ -73,6 +73,11 @@ export default defineConfig(({ command, mode }) => {
       changeOrigin: false,
       rewrite: (path) => path.replace(LOCALNET_RPC_PATH, "/"),
     };
+    proxy["/__app20_localnet_ipfs"] = {
+      target: "http://127.0.0.1:5054",
+      changeOrigin: false,
+      rewrite: (path) => path.replace(/^\/__app20_localnet_ipfs/, ""),
+    };
   }
 
   return {

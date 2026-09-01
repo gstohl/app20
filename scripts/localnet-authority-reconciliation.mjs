@@ -14,6 +14,72 @@ function requestForIntent(coordinator, intentDigest) {
     .find((candidate) => candidate.intentDigest === intentDigest);
 }
 
+function v3RequestForQuery(coordinator, query) {
+  if (typeof coordinator.getV3Request === "function")
+    return coordinator.getV3Request(query.rfqDigest);
+  return coordinator
+    .listV3Requests()
+    .find((candidate) => candidate.rfqDigest === query.rfqDigest);
+}
+
+function v3MakerTargetFromAuthorityFill(query, fill) {
+  return Object.freeze({
+    lifecycle: "v3",
+    rfqDigest: query.rfqDigest,
+    intentDigest: query.intentDigest,
+    rfqId: query.rfqId,
+    dealId: query.dealId,
+    quoteDigest: fill.quoteDigest,
+    lockId: fill.lockId,
+    tokenA: query.expected.tokenA,
+    amountA: fill.amountA,
+    tokenB: query.expected.tokenB,
+    amountB: fill.amountB,
+  });
+}
+
+function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Maker v3 reconciliation acknowledgement is not exact.");
+  for (const field of [
+    "rfqDigest",
+    "intentDigest",
+    "rfqId",
+    "lockId",
+    "quoteDigest",
+    "tokenA",
+    "tokenB",
+  ])
+    if (value[field] !== target[field])
+      throw new Error(`Maker v3 acknowledgement changed ${field}.`);
+  if (
+    String(value.takenA) !== target.amountA ||
+    String(value.takenB) !== target.amountB
+  )
+    throw new Error("Maker v3 acknowledgement changed exact taken amounts.");
+  const metadata = quarantine
+    ? value.authorityQuarantine
+    : value.terminalReconciliation;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
+    throw new Error("Maker v3 acknowledgement lacks durable authority metadata.");
+  for (const [field, expected] of [
+    ["attemptId", expectedEffect.attemptId],
+    ["authorityDigest", expectedEffect.authorityDigest],
+    ["authorityRevision", expectedEffect.authorityRevision],
+  ])
+    if (metadata[field] !== expected)
+      throw new Error(`Maker v3 acknowledgement changed authority ${field}.`);
+  if (quarantine) {
+    if (value.state !== "quarantined" || metadata.reason !== expectedEffect.reason)
+      throw new Error("Maker v3 quarantine acknowledgement is not terminal.");
+  } else if (
+    !["taken", "expired", "settling", "settled"].includes(value.state)
+  ) {
+    throw new Error("Maker v3 terminal acknowledgement has an invalid lock state.");
+  }
+  return value;
+}
+
 function exactTerminalAcknowledgement(value, query, expectedTerminal) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Maker terminal acknowledgement is not an exact snapshot.");
@@ -218,6 +284,76 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
         reason,
       });
     },
+    releaseV3Terminal: async ({
+      attemptId,
+      authorityDigest,
+      authorityRevision,
+      query,
+      fills,
+      settlementTransactionHash,
+    }) => {
+      await Promise.all(
+        fills.map(async (fill) => {
+          const client = makerClientForId(fill.makerId);
+          if (!client)
+            throw new Error("Exact v3 maker is unavailable for terminal reconciliation.");
+          const target = v3MakerTargetFromAuthorityFill(query, fill);
+          const acknowledgement = await requestMaker(
+            client,
+            "/v1/reconciliation/terminal",
+            {
+              target,
+              attemptId,
+              authorityDigest,
+              authorityRevision,
+              outcome: "settled",
+              settlementTransactionHash,
+            },
+          );
+          exactV3Acknowledgement(
+            acknowledgement,
+            target,
+            { attemptId, authorityDigest, authorityRevision },
+            false,
+          );
+        }),
+      );
+    },
+    quarantineV3Authority: async ({
+      attemptId,
+      authorityDigest,
+      authorityRevision,
+      query,
+      fills,
+      reason,
+    }) => {
+      await Promise.all(
+        fills.map(async (fill) => {
+          const client = makerClientForId(fill.makerId);
+          if (!client)
+            throw new Error("Exact v3 maker is unavailable for authority quarantine.");
+          const target = v3MakerTargetFromAuthorityFill(query, fill);
+          const acknowledgement = await requestMaker(
+            client,
+            "/v1/reconciliation/quarantine",
+            {
+              target,
+              attemptId,
+              authorityDigest,
+              authorityRevision,
+              outcome: "settled",
+              reason,
+            },
+          );
+          exactV3Acknowledgement(
+            acknowledgement,
+            target,
+            { attemptId, authorityDigest, authorityRevision, reason },
+            true,
+          );
+        }),
+      );
+    },
     releaseTerminal: async ({
       attemptId,
       authorityDigest,
@@ -252,7 +388,10 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
 
   const reconcileProjectionUnlocked = async (projection) => {
     const query = chainAuthority.exactQueryForProjection(projection);
-    const requestRecord = requestForIntent(coordinator, query.intentDigest);
+    const requestRecord =
+      query.lifecycle === "v3"
+        ? v3RequestForQuery(coordinator, query)
+        : requestForIntent(coordinator, query.intentDigest);
     if (!requestRecord)
       throw new Error(
         "Authority reconciliation has no exact coordinator request.",
@@ -269,7 +408,10 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
       );
 
     let reservation;
-    if (authorityEvidence.status === "authoritative") {
+    if (
+      query.lifecycle !== "v3" &&
+      authorityEvidence.status === "authoritative"
+    ) {
       const client = makerClientForId(query.makerId);
       if (!client)
         throw new Error("Authority reconciliation maker is unavailable.");

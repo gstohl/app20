@@ -125,6 +125,7 @@ export type RfqAuthorityProjection = Readonly<{
   account: string;
   rfqId: string;
   dealId: string;
+  lifecycle?: "v2" | "v3";
   status: RfqAuthorityStatus;
   revision: number;
   observedAt: number;
@@ -177,6 +178,16 @@ export function normalizeRfqAuthorityProjection(
   const runtimeEpoch = exactText(row.runtimeEpoch, "runtime epoch");
   if (!/^[0-9a-f]{32}$/.test(runtimeEpoch))
     throw new Error("The authority projection runtime epoch is invalid.");
+  const lifecycle =
+    row.lifecycle === undefined
+      ? undefined
+      : row.lifecycle === "v2" || row.lifecycle === "v3"
+        ? row.lifecycle
+        : (() => {
+            throw new Error(
+              "The authority projection lifecycle is not recognized.",
+            );
+          })();
   const observedAt = exactInteger(row.observedAt, "observation time", 1);
   const validUntil = exactInteger(row.validUntil, "validity deadline", 1);
   if (validUntil <= observedAt)
@@ -190,6 +201,7 @@ export function normalizeRfqAuthorityProjection(
     account: canonicalRfqAccount(exactText(row.account, "account")),
     rfqId: exactText(row.rfqId, "RFQ id"),
     dealId: exactText(row.dealId, "deal id"),
+    ...(lifecycle ? { lifecycle } : {}),
     status: status as RfqAuthorityStatus,
     revision: exactInteger(row.revision, "revision", 1),
     observedAt,
@@ -214,6 +226,8 @@ export function rfqAuthoritySignalForRecord(
     throw new Error("The authority projection is bound to another account.");
   if (projection.rfqId !== record.rfqId)
     throw new Error("The authority projection is bound to another RFQ.");
+  if (projection.lifecycle && projection.lifecycle !== record.mode)
+    throw new Error("The authority projection is bound to another lifecycle.");
   const dealId = record.settlement?.dealId;
   if (!dealId || projection.dealId !== dealId)
     throw new Error("The authority projection is bound to another deal.");

@@ -63,7 +63,89 @@ function record(
   });
 }
 
+function v3Record() {
+  return createRfqLifecycleRecord({
+    mode: "v3",
+    chainId: "0x1",
+    account: "0xabc",
+    rfqId: "0x77",
+    state: "reviewing",
+    now: NOW,
+    requestDigest: `0x${"ef".repeat(32)}`,
+    terms: {
+      pairId: "STRK_USDC",
+      sellSymbol: "STRK",
+      sellAddress: "0x1",
+      sellDecimals: 18,
+      sellAmount: "100",
+      buySymbol: "USDC",
+      buyAddress: "0x2",
+      buyDecimals: 6,
+      minBuyAmount: "190",
+      buyAmount: "200",
+      rfqExpiresAt: NOW + 20,
+    },
+    settlement: {
+      version: "Localnet V3",
+      escrowAddress: "0x5",
+      dealId: "0x77",
+      deadline: NOW + 20,
+    },
+    bucket: { min: "50", max: "100" },
+    takerCommitment: "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+    takerSecret: "0x66",
+    fills: [
+      {
+        makerId: "maker-a",
+        lockId: "0x41",
+        amountA: "100",
+        amountB: "200",
+        lockExpiresAt: NOW + 20,
+      },
+    ],
+  });
+}
+
 describe("localnet resume controller", () => {
+  it("uses Take-only resume rules for RFQ v3", () => {
+    const reviewing = v3Record();
+    expect(localnetResumeDecision(reviewing, NOW + 1)).toMatchObject({
+      action: "take",
+      disabled: false,
+    });
+    const preparing = beginRfqPhaseAttempt(
+      reviewing,
+      "take",
+      "take-1",
+      NOW + 1,
+      {
+        operation: "take",
+        chainId: reviewing.chainId,
+        account: reviewing.account,
+        rfqId: reviewing.rfqId,
+        requestDigest: reviewing.requestDigest!,
+        dealId: reviewing.settlement!.dealId,
+        expected: {
+          tokenA: "0x1",
+          totalA: "100",
+          tokenB: "0x2",
+          totalB: "200",
+          fills: [{ lockId: "0x41", amountA: "100", amountB: "200" }],
+        },
+      },
+    );
+    expect(localnetResumeDecision(preparing, NOW + 2)).toMatchObject({
+      action: "verify-take",
+      label: "Check pre-submission Take lease",
+    });
+    expect(
+      localnetResumeDecision(
+        { ...reviewing, restoredFromBackup: true, takerSecret: undefined },
+        NOW + 1,
+      ),
+    ).toMatchObject({ action: "none", disabled: true });
+  });
+
   it("never offers a duplicate fund while an attempt is unknown", () => {
     const reviewing = record("reviewing");
     const preparing = beginRfqPhaseAttempt(

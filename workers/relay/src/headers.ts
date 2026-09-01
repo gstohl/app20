@@ -1,6 +1,8 @@
 export interface SpaSecurityConfig {
   privyFrameOrigins: readonly string[];
   privyConnectOrigins: readonly string[];
+  /** Optional comma-separated `IPFS_ORIGINS` binding. */
+  ipfsOrigins?: string;
 }
 
 // Reviewed in code rather than runtime configuration: the opt-in public price
@@ -21,6 +23,8 @@ function reviewedOrigins(values: readonly string[]): string[] {
     }
     if (
       url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
       url.pathname !== "/" ||
       url.search ||
       url.hash ||
@@ -37,6 +41,14 @@ function reviewedOrigins(values: readonly string[]): string[] {
 export function spaSecurityHeaders(config: SpaSecurityConfig): Headers {
   const frames = reviewedOrigins(config.privyFrameOrigins);
   const connections = reviewedOrigins(config.privyConnectOrigins);
+  const ipfsOrigins = reviewedOrigins(
+    config.ipfsOrigins
+      ? config.ipfsOrigins
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : [],
+  );
   const headers = new Headers();
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
@@ -53,7 +65,11 @@ export function spaSecurityHeaders(config: SpaSecurityConfig): Headers {
       "object-src 'none'",
       "frame-ancestors 'none'",
       `frame-src 'self' ${frames.join(" ")}`.trim(),
-      `connect-src 'self' ${[...connections, ...PUBLIC_MARKET_DATA_ORIGINS].join(" ")}`.trim(),
+      `connect-src 'self' ${[
+        ...connections,
+        ...PUBLIC_MARKET_DATA_ORIGINS,
+        ...ipfsOrigins,
+      ].join(" ")}`.trim(),
       "img-src 'self' data: blob:",
       "style-src 'self' 'unsafe-inline'",
       "script-src 'self'",

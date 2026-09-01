@@ -6,6 +6,8 @@ import {
   type CompositeAttachment,
 } from "@/lib/composite";
 import type { DecodedMail } from "@/lib/envelope";
+import { parseBackupPointer } from "@/lib/backup-blob";
+import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
 import type { EncryptedMailRecord } from "@/lib/mail";
 import { MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE } from "@/lib/mail-authority-copy";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
@@ -15,6 +17,7 @@ import { feltEquals } from "@/lib/addresses";
 import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import {
   formatBaseUnits,
+  invoicePaymentMaturity,
   parseAcceptPayload,
   parseDeclinePayload,
   parseOfferPayload,
@@ -99,11 +102,15 @@ type ThreadProps = {
   onDecline: (offer: OfferPayload) => void;
   onPostReceipt: (offer: OfferPayload) => void;
   onPay: (request: PaymentRequestPayload) => void;
+  onPayPrivatelyWithStrk?: (request: PaymentRequestPayload) => void;
+  invoiceMaturityHeadBlock?: number;
   onEscrowFill: (fund: EscrowFundPayload) => void;
   onEscrowClaim?: (fund: EscrowFundPayload) => void;
   onEscrowTimeout?: (fund: EscrowFundPayload) => void;
   onRestoreContacts?: (payload: unknown, message: LocalMailMessage) => void;
+  onRestoreBackup?: (payload: unknown, message: LocalMailMessage) => void;
   contactRestorePending?: boolean;
+  backupRestorePending?: boolean;
   onReply?: (input: {
     address?: string;
     conversationId: string;
@@ -401,11 +408,15 @@ export default function Thread({
   onDecline,
   onPostReceipt,
   onPay,
+  onPayPrivatelyWithStrk,
+  invoiceMaturityHeadBlock,
   onEscrowFill,
   onEscrowClaim,
   onEscrowTimeout,
   onRestoreContacts,
+  onRestoreBackup,
   contactRestorePending = false,
+  backupRestorePending = false,
   onReply,
   onAssign,
   onProve,
@@ -532,6 +543,33 @@ export default function Thread({
       );
     }
 
+    if (
+      envelope.type === "backup_snapshot" ||
+      envelope.type === "backup_pointer"
+    ) {
+      let kind: "contacts" | "rfq-resume";
+      try {
+        kind =
+          envelope.type === "backup_snapshot"
+            ? decodeBackupSnapshot(envelope.payload).kind
+            : parseBackupPointer(envelope.payload).kind;
+      } catch {
+        return <UnsupportedMessage />;
+      }
+      return (
+        <ContactSnapshotCard
+          kind={kind}
+          pointer={envelope.type === "backup_pointer"}
+          busy={backupRestorePending}
+          onMerge={
+            onRestoreBackup
+              ? () => onRestoreBackup(envelope.payload, message)
+              : undefined
+          }
+        />
+      );
+    }
+
     if (envelope.type === "offer") {
       const offer = parseOfferPayload(envelope.payload);
       if (!offer) return <UnsupportedMessage />;
@@ -643,8 +681,8 @@ export default function Thread({
           status={deal?.chainStatus}
           termsVerified={Boolean(
             deal?.chainDeal &&
-              deal.chainDeal.status !== "empty" &&
-              contractDealMatchesFund(deal.chainDeal, fund),
+            deal.chainDeal.status !== "empty" &&
+            contractDealMatchesFund(deal.chainDeal, fund),
           )}
           ownDeal={ownDeal}
           busy={action?.pending}
@@ -701,6 +739,12 @@ export default function Thread({
     const payment = otcState.payments[request.requestId];
     const action = actionStates[`payment:${request.requestId}`];
     const ownRequest = feltEquals(selfAddress, request.requester);
+    const awaitingInvoiceTake =
+      payment?.paymentOperation?.state === "awaiting-note-maturity";
+    const maturity = awaitingInvoiceTake
+      ? (invoicePaymentMaturity(payment, invoiceMaturityHeadBlock ?? 0) ??
+        undefined)
+      : undefined;
     return (
       <InvoiceCard
         request={request}
@@ -712,7 +756,13 @@ export default function Thread({
         busy={action?.pending}
         actionMessage={action?.message}
         actionStartedAt={action?.startedAt}
+        maturity={maturity}
         onPay={ownRequest ? undefined : () => onPay(request)}
+        onPayPrivatelyWithStrk={
+          ownRequest || awaitingInvoiceTake || !onPayPrivatelyWithStrk
+            ? undefined
+            : () => onPayPrivatelyWithStrk(request)
+        }
       />
     );
   }

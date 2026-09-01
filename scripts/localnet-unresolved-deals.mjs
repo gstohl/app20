@@ -1,3 +1,8 @@
+import {
+  canonicalLocalnetTakeExpected,
+  validateLocalnetTakeObservation,
+} from "./localnet-deal-validator.mjs";
+
 const UNRESOLVED_ESCROW_STATUSES = new Set([1, 2]);
 
 /**
@@ -94,6 +99,68 @@ export async function listBrowserSafeUnresolvedLocalnetDeals({
           legBTerms: observed.legBTerms.toString(),
           legBAmount: observed.legBAmount.toString(),
         }),
+        escrowAddress,
+      }),
+    );
+  }
+  return Object.freeze(results);
+}
+
+export async function listBrowserSafeUnresolvedLocalnetV3Deals({
+  requests,
+  account,
+  chainId,
+  market,
+  escrowAddress,
+  observeTake,
+  validateObservation = validateLocalnetTakeObservation,
+}) {
+  const results = [];
+  for (const request of requests) {
+    if (
+      request.lifecycle !== "v3" ||
+      request.account !== account ||
+      request.chainId !== chainId ||
+      request.market !== market ||
+      !["take-pending", "take-unknown"].includes(request.state) ||
+      !request.takeAttemptId ||
+      !request.expected
+    )
+      continue;
+    const expected = canonicalLocalnetTakeExpected(request.expected);
+    const observed = await observeTake(request.rfqId);
+    if (observed) validateObservation(observed, expected);
+    results.push(
+      Object.freeze({
+        lifecycle: "v3",
+        source: "localnet-coordinator-and-chain",
+        authority: "server-derived-resume-only",
+        account,
+        chainId,
+        market,
+        rfqDigest: request.rfqDigest,
+        intentDigest: request.intentDigest,
+        rfqId: request.rfqId,
+        dealId: request.rfqId,
+        createdAt: request.createdAt,
+        expiresAt: request.expiresAt,
+        attemptId: request.takeAttemptId,
+        expected,
+        transactions: Object.freeze({
+          ...(request.takeTransactionHash
+            ? { take: request.takeTransactionHash }
+            : {}),
+        }),
+        take: observed
+          ? Object.freeze({
+              tokenA: observed.tokenA,
+              totalA: observed.totalA.toString(),
+              tokenB: observed.tokenB,
+              totalB: observed.totalB.toString(),
+              fillCount: observed.fillCount,
+              takenAt: observed.takenAt,
+            })
+          : null,
         escrowAddress,
       }),
     );

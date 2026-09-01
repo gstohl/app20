@@ -69,6 +69,7 @@ export interface RelayEnv {
 
   PRIVY_FRAME_ORIGINS?: string;
   PRIVY_CONNECT_ORIGINS?: string;
+  IPFS_ORIGINS?: string;
 }
 
 export interface GateAcquireRequest {

@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   LOCALNET_SECONDARY_SOLVER_KEY_ID,
+  LOCALNET_SOLVER_ID,
   LOCALNET_SOLVER_KEY_ID,
 } from "@app20/private-intents";
 import {
   LOCALNET_SOLVER_PUBLIC_JWK,
   LOCALNET_SOLVER_PUBLIC_JWKS,
+  resolveLocalnetQuoteKey,
   verifyLocalnetSolverQuote,
 } from "./localnet-quote-authority";
 
@@ -42,6 +44,19 @@ describe("localnet quote authority", () => {
     expect(
       LOCALNET_SOLVER_PUBLIC_JWKS[LOCALNET_SECONDARY_SOLVER_KEY_ID]?.d,
     ).toBeUndefined();
+  });
+
+  it("resolves only the fixture maker and key pairing used by v3 quotes and mids", () => {
+    expect(
+      resolveLocalnetQuoteKey(LOCALNET_SOLVER_ID, LOCALNET_SOLVER_KEY_ID, 1),
+    ).toBe(LOCALNET_SOLVER_PUBLIC_JWK);
+    expect(() =>
+      resolveLocalnetQuoteKey(
+        LOCALNET_SOLVER_ID,
+        LOCALNET_SECONDARY_SOLVER_KEY_ID,
+        1,
+      ),
+    ).toThrow(/not recognized/i);
   });
 
   it("imports each solver public key once across concurrent verifiers", async () => {

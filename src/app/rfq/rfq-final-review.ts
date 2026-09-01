@@ -1,3 +1,8 @@
+import { evaluatePriceSchedule } from "@app20/private-intents";
+import {
+  readEscrowLock,
+  type LocalnetEscrowLock,
+} from "./localnet-private-intents";
 import { canonicalRfqChainId } from "./rfq-lifecycle";
 import { LOCALNET_APP20_FEE_POLICY_ID } from "./rfq-operations";
 
@@ -138,3 +143,153 @@ export function validateFinalReview(input: {
     blockers: Object.freeze(blockers),
   });
 }
+
+export type RfqFinalReviewV3Fill = Readonly<{
+  makerId: string;
+  lockId: string;
+  amountA: bigint;
+  amountB: bigint;
+  lockExpiresAt: number;
+}>;
+
+export type RfqFinalReviewV3Terms = Readonly<{
+  mode: "v3";
+  rfqId: string;
+  sellAddress: string;
+  exactSellAmount: bigint;
+  buyAddress: string;
+  totalBuyAmount: bigint;
+  floorBuyAmount: bigint;
+  fills: readonly RfqFinalReviewV3Fill[];
+  feeBps: number;
+  app20FeeAmount: bigint;
+}>;
+
+/** Validates the immutable exact-fill bindings immediately before a v3 Take. */
+export function validateV3FinalReview(input: {
+  initial: RfqFinalReviewSnapshot;
+  current: RfqFinalReviewSnapshot;
+  terms: RfqFinalReviewV3Terms;
+  now: number;
+}): FinalReviewCheck {
+  const blockers: string[] = [];
+  if (
+    input.current.account.toLowerCase() !== input.initial.account.toLowerCase()
+  )
+    blockers.push("Connected account changed.");
+  if (!sameReviewChain(input.current.chainId, input.initial.chainId))
+    blockers.push("Wallet network changed.");
+  if (input.current.walletRail !== input.initial.walletRail)
+    blockers.push("Wallet rail changed.");
+  if (
+    typeof input.terms.exactSellAmount !== "bigint" ||
+    input.terms.exactSellAmount <= 0n
+  )
+    blockers.push("Exact sell amount is invalid.");
+  if (
+    !Array.isArray(input.terms.fills) ||
+    input.terms.fills.length < 1 ||
+    input.terms.fills.length > 4
+  ) {
+    blockers.push("Take must bind between one and four exact fills.");
+  } else {
+    const lockIds = new Set<string>();
+    let totalA = 0n;
+    let totalB = 0n;
+    for (const fill of input.terms.fills) {
+      try {
+        const lockId = BigInt(fill.lockId);
+        if (lockId <= 0n) throw new Error();
+        const canonical = `0x${lockId.toString(16)}`;
+        if (lockIds.has(canonical))
+          blockers.push("Take fill lock ids must be distinct.");
+        lockIds.add(canonical);
+      } catch {
+        blockers.push("A Take fill lock id is invalid.");
+      }
+      if (fill.amountA <= 0n || fill.amountB <= 0n) {
+        blockers.push("Every Take fill amount must be positive.");
+      } else {
+        totalA += fill.amountA;
+        totalB += fill.amountB;
+      }
+      if (!Number.isSafeInteger(fill.lockExpiresAt) || input.now >= fill.lockExpiresAt)
+        blockers.push(`Maker ${fill.makerId}'s lock expired.`);
+    }
+    if (totalA !== input.terms.exactSellAmount)
+      blockers.push("Exact fill sell amounts do not match the reviewed sell total.");
+    if (totalB !== input.terms.totalBuyAmount)
+      blockers.push("Exact fill receive amounts do not match the reviewed receive total.");
+  }
+  if (input.terms.totalBuyAmount < input.terms.floorBuyAmount)
+    blockers.push("Exact receive is below the local floor.");
+  if (input.terms.feeBps !== 0 || input.terms.app20FeeAmount !== 0n)
+    blockers.push("RFQ v3 fees must remain 0 bps.");
+  if (input.current.shieldedBalance === undefined)
+    blockers.push("Fresh shielded balance is unavailable.");
+  else if (input.current.shieldedBalance < input.terms.exactSellAmount)
+    blockers.push("Fresh shielded balance does not cover the exact sell amount.");
+  return Object.freeze({
+    ok: blockers.length === 0,
+    blockers: Object.freeze(blockers),
+  });
+}
+
+export async function validateLiveV3FinalReview(input: {
+  initial: RfqFinalReviewSnapshot;
+  current: RfqFinalReviewSnapshot;
+  terms: RfqFinalReviewV3Terms;
+  now: number;
+  readLock?: (lockId: string) => Promise<LocalnetEscrowLock>;
+}): Promise<FinalReviewCheck> {
+  const baseline = validateV3FinalReview(input);
+  const blockers = [...baseline.blockers];
+  const readLock = input.readLock ?? readEscrowLock;
+  const sameFelt = (left: string, right: string): boolean => {
+    try {
+      return BigInt(left) === BigInt(right);
+    } catch {
+      return false;
+    }
+  };
+  const liveBlockers = await Promise.all(
+    input.terms.fills.map(async (fill): Promise<readonly string[]> => {
+      const issues: string[] = [];
+      try {
+        const lock = await readLock(fill.lockId);
+        if (lock.status !== "open") {
+          return [`Maker ${fill.makerId}'s lock is no longer open.`];
+        }
+        if (
+          !sameFelt(lock.rfqId, input.terms.rfqId) ||
+          !sameFelt(lock.tokenA, input.terms.sellAddress) ||
+          !sameFelt(lock.tokenB, input.terms.buyAddress)
+        ) {
+          issues.push(`Maker ${fill.makerId}'s lock binding changed.`);
+        }
+        if (
+          lock.expiry !== fill.lockExpiresAt ||
+          input.now >= lock.expiry
+        ) {
+          issues.push(`Maker ${fill.makerId}'s live lock expired.`);
+        }
+        if (
+          lock.remainingB < fill.amountB ||
+          evaluatePriceSchedule(lock.schedule, fill.amountA) !== fill.amountB
+        ) {
+          issues.push(`Maker ${fill.makerId}'s live lock depth changed.`);
+        }
+      } catch {
+        issues.push(`Maker ${fill.makerId}'s live lock is unavailable.`);
+      }
+      return issues;
+    }),
+  );
+  blockers.push(...liveBlockers.flat());
+  return Object.freeze({
+    ok: blockers.length === 0,
+    blockers: Object.freeze(blockers),
+  });
+}
+
+export const validateFinalReviewV3 = validateV3FinalReview;

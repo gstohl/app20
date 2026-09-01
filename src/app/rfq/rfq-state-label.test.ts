@@ -28,4 +28,11 @@ describe("RFQ state labels", () => {
     expect(label.length).toBeGreaterThan(0);
     expect(label).not.toBe(state);
   });
+
+  it("names v3 submission as an atomic Take rather than funding", () => {
+    expect(rfqStateLabel("submission-unknown", "v3")).toBe(
+      "Take outcome unknown",
+    );
+    expect(rfqStateLabel("settled", "v3")).toMatch(/atomically/i);
+  });
 });

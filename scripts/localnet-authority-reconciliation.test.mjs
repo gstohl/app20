@@ -236,6 +236,120 @@ function fixture(path, overrides = {}) {
   };
 }
 
+test("v3 composition posts exact per-lock terminal reconciliation from DealTaken authority", async () => {
+  const tmp = temporary();
+  const v3Query = Object.freeze({
+    lifecycle: "v3",
+    runtimeEpoch,
+    chainId: "0x123",
+    account: "0xaaa",
+    rfqId: "0xbbb",
+    dealId: "0xbbb",
+    intentDigest: `0x${"5".repeat(64)}`,
+    rfqDigest: `0x${"6".repeat(64)}`,
+    commitmentDigest: `0x${"7".repeat(64)}`,
+    expected: Object.freeze({
+      tokenA: "0x11",
+      totalA: "100",
+      tokenB: "0x22",
+      totalB: "200",
+      fills: Object.freeze([
+        Object.freeze({ lockId: "0xa", amountA: "40", amountB: "80" }),
+        Object.freeze({ lockId: "0xb", amountA: "60", amountB: "120" }),
+      ]),
+    }),
+    transactions: Object.freeze({ take: "0x201" }),
+  });
+  const projectionV3 = projectionFor(v3Query);
+  const evidenceV3 = {
+    status: "authoritative",
+    revision: 9,
+    queryDigest: digestLocalnetAuthorityQuery(v3Query),
+    marketQuarantined: false,
+    canonicalLifecycle: [
+      {
+        stage: "take",
+        transactionHash: "0x201",
+        fillEvents: [
+          { stage: "lockTaken", lockId: "0xa", transactionHash: "0x201" },
+          { stage: "lockTaken", lockId: "0xb", transactionHash: "0x201" },
+        ],
+      },
+    ],
+  };
+  const requestV3 = {
+    lifecycle: "v3",
+    state: "taken",
+    rfqDigest: v3Query.rfqDigest,
+    intentDigest: v3Query.intentDigest,
+    rfqId: v3Query.rfqId,
+    account: v3Query.account,
+    chainId: v3Query.chainId,
+    expected: v3Query.expected,
+    makerPlans: [
+      {
+        makerId: "maker-a",
+        state: "quoted",
+        quoteDigest: `0x${"8".repeat(64)}`,
+        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest },
+      },
+      {
+        makerId: "maker-b",
+        state: "quoted",
+        quoteDigest: `0x${"9".repeat(64)}`,
+        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest },
+      },
+    ],
+  };
+  const calls = [];
+  try {
+    const pipeline = createLocalnetAuthorityReconciliationPipeline({
+      chainAuthority: {
+        exactQueryForProjection: () => v3Query,
+        reconciliationEvidence: () => evidenceV3,
+        hasQueryDigest: () => true,
+        verify: async () => projectionV3,
+        reverifyAll: async () => [projectionV3],
+        listOperatorSummaries: () => [
+          { status: "authoritative", marketQuarantined: false },
+        ],
+      },
+      coordinator: { getV3Request: () => requestV3 },
+      makerClientForId: (makerId) => ({ solverId: makerId }),
+      requestMaker: async (client, pathname, body) => {
+        assert.equal(pathname, "/v1/reconciliation/terminal");
+        calls.push({ client, body });
+        return {
+          ...body.target,
+          state: "taken",
+          takenA: body.target.amountA,
+          takenB: body.target.amountB,
+          terminalReconciliation: {
+            attemptId: body.attemptId,
+            authorityDigest: body.authorityDigest,
+            authorityRevision: body.authorityRevision,
+          },
+        };
+      },
+      journalPath: tmp.path,
+      runtimeEpoch,
+      now: () => 1_700_000_000,
+    });
+    const result = await pipeline.verifyAndReconcile({});
+    assert.equal(result.reconciliation.status, "released-terminal");
+    assert.deepEqual(
+      calls.map(({ client, body }) => [client.solverId, body.target.lockId]),
+      [
+        ["maker-a", "0xa"],
+        ["maker-b", "0xb"],
+      ],
+    );
+    assert.equal(new Set(calls.map(({ body }) => body.attemptId)).size, 1);
+  } finally {
+    tmp.cleanup();
+  }
+});
+
 test("real composition recovers terminal release once across response loss and restart", async () => {
   const tmp = temporary();
   try {

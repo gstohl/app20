@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import { MAIL_SCAN_MAX_MESSAGES } from "@/lib/mail-scan";
+import { computeCidV1Raw } from "@/lib/blob-store";
 import { addrSTRK } from "@/utils/constants";
 import type { LocalMailMessage } from "@/components/mail/Thread";
 import type { EncryptedMailRecord } from "@/lib/mail";
@@ -12,6 +13,7 @@ import {
   mailMessageDateTime,
   mergeDisplayAliases,
   mergeMailMessages,
+  newestBackupMessages,
   parseBlockTimestamp,
   partitionMailboxFolders,
   paymentLinkToLocal,
@@ -39,6 +41,26 @@ function textMessage(
     direction: extras.direction ?? "incoming",
     ...extras,
   };
+}
+
+function backupPointerMessage(
+  id: string,
+  kind: "contacts" | "rfq-resume",
+  seq: number,
+  localCreatedAt: number,
+): LocalMailMessage {
+  return textMessage(id, {
+    localCreatedAt,
+    envelope: decodeEnvelope(
+      encodeEnvelope("backup_pointer", {
+        kind,
+        seq,
+        cid: computeCidV1Raw(Uint8Array.of(1, 2, 3)),
+        bucketBytes: 4_096,
+        blobDigest: "00".repeat(32),
+      }),
+    ),
+  });
 }
 
 function invoiceMessage(
@@ -117,6 +139,22 @@ describe("mailbox list model", () => {
 
     expect(merged).toHaveLength(MAIL_SCAN_MAX_MESSAGES);
     expect(merged[0]?.id).toBe("overflow");
+  });
+
+  it("shows only the newest loaded backup sequence per kind", () => {
+    const newestContacts = backupPointerMessage("contacts-2", "contacts", 2, 2);
+    const visible = newestBackupMessages([
+      backupPointerMessage("contacts-1", "contacts", 1, 3),
+      newestContacts,
+      backupPointerMessage("rfq-1", "rfq-resume", 1, 1),
+      textMessage("letter", { localCreatedAt: 4 }),
+    ]);
+    expect(visible.map((message) => message.id)).toEqual([
+      "letter",
+      "contacts-2",
+      "rfq-1",
+    ]);
+    expect(mailboxMatchesFilter(newestContacts, "letters")).toBe(true);
   });
 
   it("partitions inbox and sent in one pass", () => {

@@ -5,6 +5,8 @@ import type { LocalMailMessage } from "@/components/mail/Thread";
 import { parseCompositePayload } from "@/lib/composite";
 import type { CompositeDraft } from "@/lib/drafts";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
+import { parseBackupPointer } from "@/lib/backup-blob";
+import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
 import { inspectMailVault } from "@/lib/mail-vault";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
 import type { DecryptedMail, MailKeypair } from "@/lib/mail";
@@ -21,8 +23,7 @@ import type { AliasRecord } from "@/lib/aliases";
 import * as constants from "@/utils/constants";
 
 export type ScanWorkerResponse =
-  | { ok: true; decrypted: DecryptedMail[] }
-  | { ok: false; message: string };
+  { ok: true; decrypted: DecryptedMail[] } | { ok: false; message: string };
 
 export type ActiveScanWorker = {
   worker: Worker;
@@ -147,6 +148,52 @@ export function sortMailMessages(
   return messages.slice().sort(compareMailMessages);
 }
 
+/** Keeps only the highest well-formed sequence loaded for each backup kind. */
+export function newestBackupMessages(
+  messages: readonly LocalMailMessage[],
+): LocalMailMessage[] {
+  type ParsedBackup = {
+    message: LocalMailMessage;
+    kind: "contacts" | "rfq-resume";
+    seq: number;
+  };
+  const parsed = new Map<string, ParsedBackup>();
+  for (const message of messages) {
+    try {
+      const header =
+        message.envelope.type === "backup_snapshot"
+          ? decodeBackupSnapshot(message.envelope.payload)
+          : message.envelope.type === "backup_pointer"
+            ? parseBackupPointer(message.envelope.payload)
+            : null;
+      if (header)
+        parsed.set(message.id, { message, kind: header.kind, seq: header.seq });
+    } catch {
+      // Malformed backup envelopes remain visible and fail closed on restore.
+    }
+  }
+  const newest = new Map<"contacts" | "rfq-resume", ParsedBackup>();
+  for (const candidate of parsed.values()) {
+    const current = newest.get(candidate.kind);
+    if (
+      !current ||
+      candidate.seq > current.seq ||
+      (candidate.seq === current.seq &&
+        compareMailMessages(candidate.message, current.message) < 0)
+    ) {
+      newest.set(candidate.kind, candidate);
+    }
+  }
+  const visible = new Set(
+    [...newest.values()].map(({ message }) => message.id),
+  );
+  return sortMailMessages(
+    messages.filter(
+      (message) => !parsed.has(message.id) || visible.has(message.id),
+    ),
+  );
+}
+
 export function mergeMailMessages(
   current: LocalMailMessage[],
   incoming: LocalMailMessage[],
@@ -255,6 +302,8 @@ function mailboxCategory(
   switch (message.envelope.type) {
     case "text":
     case "contact_snapshot":
+    case "backup_snapshot":
+    case "backup_pointer":
       return "letters";
     case "payment_request":
       return "invoices";

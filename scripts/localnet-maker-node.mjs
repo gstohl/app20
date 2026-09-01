@@ -6,13 +6,33 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   DurableMakerNode,
+  DurableMakerTranscriptJournal,
   DurableReservationStore,
+  MakerNodeError,
+  MakerTranscriptConflictError,
+  MakerWalletOperationError,
 } from "../packages/maker-node/src/index.ts";
 import {
+  LOCALNET_SECONDARY_SOLVER_ID,
+  decodePrivateRfqV2,
+  decodeSelectionTranscript,
+  encodeMakerMid,
+  encodeSolverQuoteV3,
   importQuotePrivateKey,
   signCanonicalQuote,
 } from "../packages/private-intents/src/index.ts";
-import { dispatchLocalnetMakerFill } from "./localnet-maker-http.mjs";
+import {
+  buildLocalnetMakerLockActions,
+  buildLocalnetMakerSettlementActions,
+  dispatchLocalnetMakerFill,
+  parseLocalnetEscrowLockResult,
+} from "./localnet-maker-http.mjs";
+import {
+  buildLocalnetMakerSchedule,
+  createLocalnetRfqEconomics,
+  formatRfqEconomicRefusal,
+  localnetPairTokenIds,
+} from "./localnet-rfq-economics.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const MAX_REQUEST_BYTES = 1_000_000;
@@ -22,6 +42,13 @@ if (!configPath)
 
 function fail(message) {
   throw new Error(`APP20 maker node: ${message}`);
+}
+
+class KnownTransactionRevertError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "KnownTransactionRevertError";
+  }
 }
 
 function readPrivateConfig(path) {
@@ -175,7 +202,9 @@ async function waitForSuccess(node, transactionHash, label) {
   if (!transactionHash) fail(`${label} returned no transaction hash.`);
   const receipt = await node.waitForTransaction(transactionHash);
   if (!receipt.isSuccess()) {
-    fail(`${label} reverted: ${receipt.revert_reason ?? "unknown"}`);
+    throw new KnownTransactionRevertError(
+      `APP20 maker node: ${label} reverted: ${receipt.revert_reason ?? "unknown"}`,
+    );
   }
   return receipt;
 }
@@ -221,7 +250,7 @@ function createPrivacyRuntime(account, privacy, node, runtime) {
   return { transfers, prover };
 }
 
-async function executeOutside(account, node, prepared) {
+async function executeOutside(account, node, prepared, onSubmissionAttempt) {
   await createBlocks(config.rpcUrl);
   const now = Math.floor(Date.now() / 1_000);
   const callAndProof = toCoreCallAndProof(prepared);
@@ -234,6 +263,7 @@ async function executeOutside(account, node, prepared) {
     callAndProof.call,
     runtime.starknet.OutsideExecutionVersion.V2,
   );
+  onSubmissionAttempt?.();
   const response = await account.executeFromOutside(outside, {
     proofFacts: callAndProof.proof.proofFacts,
     proof: callAndProof.proof.data,
@@ -301,14 +331,14 @@ async function privateBalance(asset) {
   return notes.reduce((total, note) => total + note.amount, 0n);
 }
 
-async function executeActions(actions) {
+async function executeActions(actions, { onSubmissionAttempt } = {}) {
   return serializeOperation(async () => {
     await approveDeposits(account, node, actions);
     const prepared = await privacyRuntime.prover.prove(actions);
     if (prepared.proof.data !== undefined && prepared.proof.data !== "") {
       fail("devnet unexpectedly returned non-mock proof bytes.");
     }
-    return executeOutside(account, node, prepared);
+    return executeOutside(account, node, prepared, onSubmissionAttempt);
   });
 }
 
@@ -349,6 +379,130 @@ async function readEscrowDeal(dealId) {
     ticketAddress: result[6],
     status: Number(BigInt(result[7])),
   };
+}
+
+function rpcFelt(value, label) {
+  try {
+    const felt = runtime.starknet.num.toBigInt(value);
+    if (felt < 0n) throw new Error("negative");
+    return runtime.starknet.num.toHex(felt);
+  } catch (error) {
+    throw new Error(`APP20 maker node: escrow returned an invalid ${label}.`, {
+      cause: error,
+    });
+  }
+}
+
+async function readEscrowLock(lockId) {
+  return parseLocalnetEscrowLockResult(
+    await node.callContract({
+      contractAddress: config.escrowAddress,
+      entrypoint: "get_lock",
+      calldata: [lockId],
+    }),
+  );
+}
+
+async function ensureLockTicket(lockId) {
+  return serializeOperation(async () => {
+    try {
+      const response = await account.execute({
+        contractAddress: config.escrowAddress,
+        entrypoint: "ensure_lock_ticket",
+        calldata: [lockId],
+      });
+      await waitForSuccess(
+        node,
+        response.transaction_hash,
+        "lock-ticket deployment",
+      );
+      const result = await node.callContract({
+        contractAddress: config.escrowAddress,
+        entrypoint: "get_lock_ticket",
+        calldata: [lockId],
+      });
+      if (!Array.isArray(result) || result.length !== 1) {
+        fail("escrow returned a malformed lock ticket.");
+      }
+      const ticket = rpcFelt(result[0], "lock ticket");
+      if (runtime.starknet.num.toBigInt(ticket) === 0n) {
+        fail("escrow returned a zero lock ticket.");
+      }
+      return ticket;
+    } catch (error) {
+      throw new MakerWalletOperationError(
+        error instanceof KnownTransactionRevertError ? "reverted" : "unknown",
+        "Lock-ticket deployment failed.",
+        { cause: error },
+      );
+    }
+  });
+}
+
+async function lockInventory(request) {
+  const ticket = await ensureLockTicket(request.lockId);
+  let submissionAttempted = false;
+  try {
+    const receipt = await executeActions(
+      buildLocalnetMakerLockActions(
+        { ...request, ticket },
+        {
+          escrowAddress: config.escrowAddress,
+          recoveryAddress: account.address,
+        },
+      ),
+      {
+        onSubmissionAttempt() {
+          submissionAttempted = true;
+        },
+      },
+    );
+    return Object.freeze({
+      ticket,
+      transactionHash: receipt.transaction_hash,
+      lock: await readEscrowLock(request.lockId),
+    });
+  } catch (error) {
+    throw new MakerWalletOperationError(
+      error instanceof KnownTransactionRevertError || !submissionAttempted
+        ? "reverted"
+        : "unknown",
+      "Escrow lock submission failed.",
+      { cause: error },
+    );
+  }
+}
+
+async function executeLockSettlement(request, operation) {
+  const proceeds = operation === "0x6";
+  let submissionAttempted = false;
+  try {
+    const receipt = await executeActions(
+      buildLocalnetMakerSettlementActions(
+        { ...request, operation },
+        {
+          escrowAddress: config.escrowAddress,
+          recoveryAddress: account.address,
+        },
+      ),
+      {
+        onSubmissionAttempt() {
+          submissionAttempted = true;
+        },
+      },
+    );
+    return { transactionHash: receipt.transaction_hash };
+  } catch (error) {
+    throw new MakerWalletOperationError(
+      error instanceof KnownTransactionRevertError || !submissionAttempted
+        ? "reverted"
+        : "unknown",
+      proceeds
+        ? "Lock proceeds settlement failed."
+        : "Lock collateral release failed.",
+      { cause: error },
+    );
+  }
 }
 
 async function fillReservation(request) {
@@ -411,6 +565,23 @@ try {
 }
 const quotePrivateKey = await importQuotePrivateKey(quotePrivateJwk);
 const store = DurableReservationStore.open(config.walPath);
+const transcripts = DurableMakerTranscriptJournal.open(
+  `${config.walPath}.transcripts.json`,
+);
+const economics = createLocalnetRfqEconomics({
+  accountingPath: `${config.walPath}.rfq-accounting.json`,
+});
+const makerVariant =
+  config.makerId === LOCALNET_SECONDARY_SOLVER_ID ? "B" : "A";
+const strkTokenValue = runtime.starknet.num.toBigInt(config.strkToken);
+const usdcTokenValue = runtime.starknet.num.toBigInt(config.usdcToken);
+function tokenSymbol(token) {
+  const value = runtime.starknet.num.toBigInt(token);
+  if (value === strkTokenValue) return "STRK";
+  if (value === usdcTokenValue) return "USDC";
+  return undefined;
+}
+
 const maker = new DurableMakerNode(store, {
   makerId: config.makerId,
   solverKey: config.solverKey,
@@ -448,9 +619,104 @@ const maker = new DurableMakerNode(store, {
     settlementAccount: account.address,
     privateBalance,
     fill: fillReservation,
+    lock: lockInventory,
+    getLock: readEscrowLock,
+    settleProceeds: (request) => executeLockSettlement(request, "0x6"),
+    releaseCollateral: (request) => executeLockSettlement(request, "0x7"),
+  },
+  v3: {
+    tokenSymbol,
+    buildSchedule({ rfq, availableBuyInventory }) {
+      const sellSymbol = tokenSymbol(rfq.sellToken);
+      const buySymbol = tokenSymbol(rfq.buyToken);
+      const direction =
+        sellSymbol === "STRK" && buySymbol === "USDC"
+          ? "STRK_USDC"
+          : sellSymbol === "USDC" && buySymbol === "STRK"
+            ? "USDC_STRK"
+            : undefined;
+      if (!direction) {
+        throw new Error(
+          "Maker supports only opposite sides of the reviewed STRK/USDC pair.",
+        );
+      }
+      return buildLocalnetMakerSchedule({
+        maker: makerVariant,
+        direction,
+        bucketMinBaseUnits: rfq.sellBucketMinBaseUnits,
+        bucketMaxBaseUnits: rfq.sellBucketMaxBaseUnits,
+        availableBuyBaseUnits: availableBuyInventory,
+      });
+    },
+    economicPolicy: {
+      evaluate(input) {
+        const sellSymbol = tokenSymbol(input.rfq.sellToken);
+        const buySymbol = tokenSymbol(input.rfq.buyToken);
+        if (!sellSymbol || !buySymbol) {
+          return Object.freeze({
+            allowed: false,
+            reason: "Maker supports only the reviewed STRK/USDC market.",
+          });
+        }
+        const direction = sellSymbol === "STRK" ? "STRK_USDC" : "USDC_STRK";
+        const tokenIds = localnetPairTokenIds(direction);
+        const decision = economics.evaluateSchedule({
+          action: "quote",
+          decisionAt: input.now,
+          makerId: config.makerId,
+          sellTokenId: tokenIds.sellTokenId,
+          buyTokenId: tokenIds.buyTokenId,
+          schedule: input.schedule,
+          quoteTtlSeconds: input.quoteTtlSeconds,
+          referenceObservedAt: input.now,
+          referenceMidE18:
+            makerVariant === "B"
+              ? 2_010_000_000_000_000_000n
+              : 2_000_000_000_000_000_000n,
+        });
+        return Object.freeze({
+          allowed: decision.allowed,
+          ...(decision.allowed
+            ? {
+                commitmentUsdcBaseUnits:
+                  decision.derivedUsdcEquivalentBaseUnits,
+              }
+            : { reason: formatRfqEconomicRefusal(decision) }),
+        });
+      },
+      commit(input) {
+        economics.commit(
+          config.makerId,
+          input.commitmentUsdcBaseUnits,
+          input.now,
+          input.lockId,
+        );
+      },
+    },
+    midE18:
+      makerVariant === "B"
+        ? 2_010_000_000_000_000_000n
+        : 2_000_000_000_000_000_000n,
+    transcriptJournal: transcripts,
+    clock: () => Math.floor(Date.now() / 1_000),
   },
 });
 await maker.recoverAfterRestart(Math.floor(Date.now() / 1_000));
+let settlementScanRunning = false;
+const settlementTimer = setInterval(() => {
+  if (settlementScanRunning) return;
+  settlementScanRunning = true;
+  void maker
+    .settleExpiredLocks(Math.floor(Date.now() / 1_000))
+    .catch((error) => {
+      console.error(
+        `APP20 maker node: settlement scan failed closed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    })
+    .finally(() => {
+      settlementScanRunning = false;
+    });
+}, 5_000);
 
 function jsonResponse(response, status, payload) {
   response.writeHead(status, {
@@ -521,6 +787,22 @@ function parseQuote(body) {
   };
 }
 
+function requireExactBody(body, fields, label) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error(`${label} must be an object.`);
+  }
+  const expected = new Set(fields);
+  for (const field of fields) {
+    if (!(field in body)) throw new Error(`${label}.${field} is required.`);
+  }
+  for (const field of Object.keys(body)) {
+    if (!expected.has(field)) {
+      throw new Error(`${label}.${field} is unsupported.`);
+    }
+  }
+  return body;
+}
+
 function parseReconciliationTarget(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Maker reconciliation target is missing.");
@@ -547,12 +829,95 @@ const server = createServer(async (request, response) => {
       return;
     }
     requireAuth(request);
+    const now = Math.floor(Date.now() / 1_000);
+    if (request.method === "GET" && url.pathname === "/v1/mids") {
+      try {
+        jsonResponse(response, 200, {
+          mid: encodeMakerMid(await maker.indicativeMid(now)),
+        });
+      } catch {
+        jsonResponse(response, 500, {
+          error: "Maker indicative mid signing failed closed.",
+        });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/v1/transcripts") {
+      try {
+        jsonResponse(response, 200, { transcripts: maker.listTranscripts() });
+      } catch {
+        jsonResponse(response, 500, {
+          error: "Maker transcript journal is unavailable.",
+        });
+      }
+      return;
+    }
+    if (request.method === "GET" && url.pathname === "/v1/locks") {
+      try {
+        jsonResponse(response, 200, { locks: maker.listLocks() });
+      } catch {
+        jsonResponse(response, 500, {
+          error: "Maker lock journal is unavailable.",
+        });
+      }
+      return;
+    }
     if (request.method !== "POST") {
       jsonResponse(response, 404, { error: "Unknown maker-node route." });
       return;
     }
     const body = await readBody(request);
-    const now = Math.floor(Date.now() / 1_000);
+    if (url.pathname === "/v1/quotes-v3") {
+      requireExactBody(body, ["rfq"], "Quote v3 request");
+      const decoded = decodePrivateRfqV2(body.rfq);
+      let result;
+      try {
+        result = await maker.quoteV3(decoded, now);
+      } catch (error) {
+        if (
+          error instanceof MakerNodeError &&
+          /does not match this maker's localnet settlement context/i.test(
+            error.message,
+          )
+        ) {
+          throw error;
+        }
+        result = {
+          refused: {
+            code: "lock-failed",
+            reason: "Maker quote pipeline failed closed.",
+          },
+        };
+      }
+      jsonResponse(
+        response,
+        200,
+        "quote" in result
+          ? {
+              quote: encodeSolverQuoteV3(result.quote),
+              lock: result.lock,
+            }
+          : result,
+      );
+      return;
+    }
+    if (url.pathname === "/v1/transcripts") {
+      requireExactBody(body, ["transcript"], "Transcript request");
+      const transcript = decodeSelectionTranscript(body.transcript);
+      try {
+        jsonResponse(
+          response,
+          200,
+          await maker.journalTranscript(transcript, now),
+        );
+      } catch (error) {
+        if (error instanceof MakerTranscriptConflictError) throw error;
+        jsonResponse(response, 500, {
+          error: "Maker transcript journal failed closed.",
+        });
+      }
+      return;
+    }
     if (url.pathname === "/v1/reservations") {
       const offer = await maker.reserve(
         {
@@ -652,9 +1017,11 @@ const server = createServer(async (request, response) => {
     }
     jsonResponse(response, 404, { error: "Unknown maker-node route." });
   } catch (error) {
-    jsonResponse(response, 400, {
-      error: error instanceof Error ? error.message : String(error),
-    });
+    jsonResponse(
+      response,
+      error instanceof MakerTranscriptConflictError ? 409 : 400,
+      { error: error instanceof Error ? error.message : String(error) },
+    );
   }
 });
 
@@ -670,6 +1037,7 @@ let stopping = false;
 async function shutdown(code = 0) {
   if (stopping) return;
   stopping = true;
+  clearInterval(settlementTimer);
   await new Promise((resolveClose) => server.close(resolveClose));
   await store.close();
   process.exit(code);

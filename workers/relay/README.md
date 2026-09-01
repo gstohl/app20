@@ -4,15 +4,15 @@ Cloudflare Worker control plane for APP20. It serves the reviewed SPA, verifies 
 
 ## Routes
 
-| Route | Purpose |
-| --- | --- |
+| Route                         | Purpose                                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `POST /api/privacy/bootstrap` | Verify a Privy token, enumerate that user's Starknet wallet/quorum metadata, issue a pseudonymous OHTTP cookie, and return Sepolia public configuration |
-| `POST /api/ohttp/prover` | Forward bounded `message/ohttp-req` bytes to the fixed prover gateway |
-| `POST /api/ohttp/discovery` | Forward bounded `message/ohttp-req` bytes to the fixed discovery gateway |
-| `POST /api/starknet/sepolia` | Restricted, quota-controlled Sepolia JSON-RPC |
-| `POST /api/starknet/mainnet` | Restricted, quota-controlled Mainnet JSON-RPC for the Ready rail |
-| `/api/rfq/*` | Immutable localnet-final denial: no-store `404` before configuration or storage access |
-| everything else | Serve the SPA through the `ASSETS` binding with strict security headers |
+| `POST /api/ohttp/prover`      | Forward bounded `message/ohttp-req` bytes to the fixed prover gateway                                                                                   |
+| `POST /api/ohttp/discovery`   | Forward bounded `message/ohttp-req` bytes to the fixed discovery gateway                                                                                |
+| `POST /api/starknet/sepolia`  | Restricted, quota-controlled Sepolia JSON-RPC                                                                                                           |
+| `POST /api/starknet/mainnet`  | Restricted, quota-controlled Mainnet JSON-RPC for the Ready rail                                                                                        |
+| `/api/rfq/*`                  | Immutable localnet-final denial: no-store `404` before configuration or storage access                                                                  |
+| everything else               | Serve the SPA through the `ASSETS` binding with strict security headers                                                                                 |
 
 The Privy bootstrap is hard-coded to return `network: "sepolia"`; it cannot issue Mainnet Privy configuration. The browser receives non-routable `.invalid` OHTTP target names and same-origin relay paths, never the real gateway origins.
 
@@ -37,6 +37,8 @@ STARKNET_MAINNET_AUTHORIZATION         # optional
 `OHTTP_SESSION_SECRET` must contain at least 32 UTF-8 bytes in production. Production upstreams must use HTTPS. Optional authorization headers are the only credentials sent upstream; all browser headers are discarded.
 
 Public chain constants, reviewed Privy frame/connect origins, and the build-only/live Sepolia flag are ordinary Wrangler vars. Privy App ID and Client ID are also public metadata in the Vite build, but the App Secret is Worker-only.
+
+`IPFS_ORIGINS` is an optional comma-separated ordinary var containing only reviewed HTTPS origins. When set, those origins are appended to the SPA `connect-src` directive for encrypted backup upload/fetch; invalid, wildcard, HTTP, or path-bearing values fail closed. When unset or empty, the CSP is byte-identical to the existing policy. Keep it aligned with the browser's public `VITE_IPFS_RPC_ORIGIN` and `VITE_IPFS_GATEWAY_ORIGINS`; no IPFS credentials belong in any of these values.
 
 ## Distributed gate
 

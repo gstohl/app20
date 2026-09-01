@@ -17,6 +17,7 @@ import {
   assertLocalnetEscrowArtifactIdentity,
   decodeLocalnetEscrowEvent,
 } from "./localnet-chain-decoder.mjs";
+import { canonicalLocalnetTakeExpected } from "./localnet-deal-validator.mjs";
 
 export { LOCALNET_CHAIN_AUTHORITY_SERVER_SENTINEL };
 export const LOCALNET_CHAIN_AUTHORITY_SCHEMA =
@@ -95,12 +96,33 @@ export function digestLocalnetAuthorityQuery(input) {
 export function canonicalLocalnetAuthorityQuery(input) {
   if (!input || typeof input !== "object" || Array.isArray(input))
     throw new Error("Localnet authority query is required.");
-  const outcome = input.outcome;
-  if (outcome !== "settled" && outcome !== "refunded")
-    throw new Error("Localnet authority outcome must be settled or refunded.");
   const runtimeEpoch = text(input.runtimeEpoch, "runtimeEpoch");
   if (!/^[0-9a-f]{32}$/.test(runtimeEpoch))
     throw new Error("runtimeEpoch is invalid.");
+  if (input.lifecycle === "v3") {
+    const query = {
+      lifecycle: "v3",
+      runtimeEpoch,
+      chainId: canonicalFelt(input.chainId, "chainId"),
+      account: canonicalFelt(input.account, "account"),
+      rfqId: canonicalFelt(input.rfqId, "rfqId"),
+      dealId: canonicalFelt(input.dealId, "dealId"),
+      intentDigest: hex32(input.intentDigest, "intentDigest"),
+      rfqDigest: hex32(input.rfqDigest, "rfqDigest"),
+      commitmentDigest: hex32(input.commitmentDigest, "commitmentDigest"),
+      outcome: "settled",
+      expected: canonicalLocalnetTakeExpected(input.expected),
+      transactions: Object.freeze({
+        take: canonicalFelt(input.transactions?.take, "take transaction"),
+      }),
+    };
+    if (query.rfqId !== query.dealId)
+      throw new Error("Localnet v3 authority requires RFQ and deal identity equality.");
+    return Object.freeze(query);
+  }
+  const outcome = input.outcome;
+  if (outcome !== "settled" && outcome !== "refunded")
+    throw new Error("Localnet authority outcome must be settled or refunded.");
   const query = {
     runtimeEpoch,
     chainId: canonicalFelt(input.chainId, "chainId"),
@@ -143,6 +165,7 @@ export function canonicalLocalnetAuthorityQuery(input) {
 }
 
 function expectedStages(query) {
+  if (query.lifecycle === "v3") return ["take"];
   return query.outcome === "settled"
     ? ["fund", "fill", "claim"]
     : ["fund", "timeout"];
@@ -197,7 +220,50 @@ function validatePersistedLifecycle(value, query) {
         "Authority journal lifecycle coordinates are out of order.",
       );
     prior = coordinate;
-    return coordinate;
+    if (stage !== "take") return coordinate;
+    if (
+      !Array.isArray(item.fillEvents) ||
+      item.fillEvents.length !== query.expected.fills.length
+    )
+      throw new Error("Authority journal v3 lifecycle fills are incomplete.");
+    const fillEvents = item.fillEvents.map((fill, fillIndex) => {
+      const expected = query.expected.fills[fillIndex];
+      const exact = Object.freeze({
+        stage: text(fill?.stage, "authority fill lifecycle stage"),
+        lockId: canonicalFelt(fill?.lockId, "authority fill lock id"),
+        transactionHash: canonicalFelt(
+          fill?.transactionHash,
+          "authority fill transaction",
+        ),
+        blockNumber: nonnegativeInteger(
+          fill?.blockNumber,
+          "authority fill block number",
+        ),
+        blockHash: canonicalFelt(fill?.blockHash, "authority fill block hash"),
+        transactionIndex: nonnegativeInteger(
+          fill?.transactionIndex,
+          "authority fill transaction index",
+        ),
+        eventIndex: nonnegativeInteger(
+          fill?.eventIndex,
+          "authority fill event index",
+        ),
+      });
+      if (
+        exact.stage !== "lockTaken" ||
+        exact.lockId !== expected.lockId ||
+        exact.transactionHash !== coordinate.transactionHash ||
+        exact.blockNumber !== coordinate.blockNumber ||
+        exact.blockHash !== coordinate.blockHash ||
+        exact.transactionIndex !== coordinate.transactionIndex ||
+        exact.eventIndex >= coordinate.eventIndex
+      )
+        throw new Error("Authority journal v3 fill changed its exact take binding.");
+      return exact;
+    });
+    if (new Set(fillEvents.map((fill) => fill.eventIndex)).size !== fillEvents.length)
+      throw new Error("Authority journal v3 lifecycle reused a fill coordinate.");
+    return Object.freeze({ ...coordinate, fillEvents: Object.freeze(fillEvents) });
   });
   return Object.freeze(lifecycle);
 }
@@ -205,6 +271,18 @@ function validatePersistedLifecycle(value, query) {
 function assertDecodedBinding(decoded, query) {
   if (decoded.dealId !== query.dealId)
     throw new Error("Decoded event is bound to another deal.");
+  if (query.lifecycle === "v3") {
+    if (
+      decoded.stage !== "take" ||
+      decoded.tokenA !== query.expected.tokenA ||
+      decoded.totalA !== query.expected.totalA ||
+      decoded.tokenB !== query.expected.tokenB ||
+      decoded.totalB !== query.expected.totalB ||
+      decoded.fillCount !== query.expected.fills.length
+    )
+      throw new Error("Decoded DealTaken does not match exact v3 take terms.");
+    return;
+  }
   if (decoded.stage === "fund") {
     if (
       decoded.sellToken !== query.sellToken ||
@@ -337,6 +415,44 @@ function normalizeObservation(
         new Error("Lifecycle event has not reached local fixture finality."),
         { authorityStatus: "stale" },
       );
+    let fillEvents;
+    if (item.stage === "take") {
+      if (
+        !Array.isArray(item.fillEvents) ||
+        item.fillEvents.length !== query.expected.fills.length
+      )
+        throw new Error(`Reader ${readerId} returned incomplete LockTaken events.`);
+      fillEvents = item.fillEvents.map((fillEvent, fillIndex) => {
+        const fillEventIndex = nonnegativeInteger(
+          fillEvent?.eventIndex,
+          "LockTaken event index",
+        );
+        const fillCoordinateKey = `${blockNumber}:${transactionIndex}:${fillEventIndex}`;
+        if (coordinates.has(fillCoordinateKey) || fillEventIndex >= eventIndex)
+          throw new Error("LockTaken event coordinate is duplicated or out of order.");
+        coordinates.add(fillCoordinateKey);
+        const fillDecoded = decodeLocalnetEscrowEvent(fillEvent?.event, artifact);
+        const expectedFill = query.expected.fills[fillIndex];
+        if (
+          fillDecoded.stage !== "lockTaken" ||
+          fillDecoded.dealId !== query.dealId ||
+          fillDecoded.lockId !== expectedFill.lockId ||
+          fillDecoded.amountA !== expectedFill.amountA ||
+          fillDecoded.amountB !== expectedFill.amountB
+        )
+          throw new Error("Decoded LockTaken does not match its exact expected fill.");
+        return Object.freeze({
+          stage: "lockTaken",
+          lockId: fillDecoded.lockId,
+          transactionHash,
+          blockNumber,
+          blockHash,
+          transactionIndex,
+          eventIndex: fillEventIndex,
+          decoded: fillDecoded,
+        });
+      });
+    }
     return Object.freeze({
       stage: item.stage,
       transactionHash,
@@ -345,6 +461,7 @@ function normalizeObservation(
       transactionIndex,
       eventIndex,
       decoded,
+      ...(fillEvents ? { fillEvents: Object.freeze(fillEvents) } : {}),
     });
   });
   return Object.freeze({
@@ -637,6 +754,19 @@ export class LocalnetChainAuthority {
           blockHash: item.blockHash,
           transactionIndex: item.transactionIndex,
           eventIndex: item.eventIndex,
+          ...(item.fillEvents
+            ? {
+                fillEvents: item.fillEvents.map((fill) => ({
+                  stage: fill.stage,
+                  lockId: fill.lockId,
+                  transactionHash: fill.transactionHash,
+                  blockNumber: fill.blockNumber,
+                  blockHash: fill.blockHash,
+                  transactionIndex: fill.transactionIndex,
+                  eventIndex: fill.eventIndex,
+                })),
+              }
+            : {}),
         }));
       } catch (error) {
         status = error?.authorityStatus === "stale" ? "stale" : "disagreement";

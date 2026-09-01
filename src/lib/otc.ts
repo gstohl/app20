@@ -1,7 +1,14 @@
 import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
+import { noteMaturityStatus } from "./note-maturity";
 import type { PaymentLinkAuthenticity } from "./payment-link";
 import { sanitizeUntrustedText } from "./text";
+import { resolveCanonicalToken } from "./token-registry";
 import { addrSTRK } from "./tokens";
+import {
+  LOCALNET_CHAIN_ID,
+  localnetUsdcToken,
+  localnetWalletEnabled,
+} from "../utils/constants";
 
 export const OTC_STORAGE_PREFIX = "app20/otc/v1";
 export const ONE_SIDED_WARNING = "one_sided_v1" as const;
@@ -54,26 +61,38 @@ export type PaymentRequestPayload = {
 };
 
 export type DealStatus =
-  | "offered"
-  | "accepted"
-  | "closed"
-  | "declined"
-  | "expired";
+  "offered" | "accepted" | "closed" | "declined" | "expired";
 
 export type ValueOperationState =
+  | "awaiting-note-maturity"
   | "reserved"
   | "submitted"
   | "confirmed"
   | "reverted"
   | "unknown";
 
-export type ValueOperationRecord = {
-  state: ValueOperationState;
+export type InvoiceTakeSettlement = Readonly<{
+  takeTransactionHash: string;
+  takeBlock: number;
+  buyToken: string;
+  amount: string;
+}>;
+
+type PaymentAttemptOperation = {
+  state: Exclude<ValueOperationState, "awaiting-note-maturity">;
   /** Payer-owned random nonce; unpredictable before this payer reserves. */
   attemptId?: string;
   transactionHash?: string;
   updatedAt: number;
-};
+} & Partial<InvoiceTakeSettlement>;
+
+export type ValueOperationRecord =
+  | ({
+      state: "awaiting-note-maturity";
+      attemptId?: never;
+      updatedAt: number;
+    } & InvoiceTakeSettlement)
+  | PaymentAttemptOperation;
 
 export type DealRecord = {
   dealId: string;
@@ -437,10 +456,38 @@ export function assertSettlesStrk(offer: OfferPayload): void {
   }
 }
 
-function assertPaysStrk(request: PaymentRequestPayload): void {
-  if (!isCanonicalStrkToken(request.token)) {
-    throw new Error("Mail can pay only STRK with canonical invoice metadata.");
+export function resolvePaymentRequestTokenForChain(
+  request: PaymentRequestPayload,
+  chainId: string,
+): TokenRef {
+  if (isCanonicalStrkToken(request.token))
+    return normalizeTokenRef(request.token);
+  if (
+    (request.chainId !== undefined && !feltEquals(request.chainId, chainId)) ||
+    !localnetWalletEnabled ||
+    !feltEquals(chainId, LOCALNET_CHAIN_ID)
+  ) {
+    throw new Error(
+      "Mail can pay only STRK with canonical invoice metadata on public networks.",
+    );
   }
+  const resolved = resolveCanonicalToken("localnet", request.token.address);
+  if (
+    !resolved.ok ||
+    resolved.token.key !== "usdc" ||
+    !feltEquals(resolved.token.address, localnetUsdcToken) ||
+    request.token.symbol !== resolved.token.symbol ||
+    request.token.decimals !== resolved.token.decimals
+  ) {
+    throw new Error(
+      "Mail can pay only the registry-resolved localnet USDC token or canonical STRK.",
+    );
+  }
+  return {
+    address: resolved.token.address,
+    symbol: resolved.token.symbol,
+    decimals: resolved.token.decimals,
+  };
 }
 
 export function acceptPayloadForOffer(
@@ -1099,12 +1146,137 @@ export function recordPaymentLinkRequest(
   );
 }
 
-export function claimPayment(
+export type RecordInvoiceTakeSettledInput = InvoiceTakeSettlement &
+  Readonly<{ requestId: string }>;
+
+export type InvoicePaymentMaturity = Readonly<{
+  mature: boolean;
+  matureAtBlock: number;
+  blocksRemaining: number;
+}>;
+
+function operationTakeSettlement(
+  operation: ValueOperationRecord | undefined,
+): InvoiceTakeSettlement | undefined {
+  if (
+    !operation ||
+    !isFelt(operation.takeTransactionHash) ||
+    typeof operation.takeBlock !== "number" ||
+    !Number.isSafeInteger(operation.takeBlock) ||
+    operation.takeBlock < 0 ||
+    !isFelt(operation.buyToken) ||
+    !isPositiveBaseUnitAmount(operation.amount)
+  ) {
+    return undefined;
+  }
+  return {
+    takeTransactionHash: operation.takeTransactionHash,
+    takeBlock: operation.takeBlock,
+    buyToken: operation.buyToken,
+    amount: operation.amount,
+  };
+}
+
+export function invoicePaymentMaturity(
+  payment: PaymentRecord,
+  headBlock: number,
+): InvoicePaymentMaturity | null {
+  const take = operationTakeSettlement(payment.paymentOperation);
+  if (!take) return null;
+  const status = noteMaturityStatus(
+    [
+      {
+        kind: "openNote",
+        blockNumber: take.takeBlock,
+        transactionHash: take.takeTransactionHash,
+        token: take.buyToken,
+        amountBaseUnits: BigInt(take.amount),
+      },
+    ],
+    headBlock,
+  );
+  const pending = status.pending[0];
+  return Object.freeze({
+    mature: pending === undefined,
+    matureAtBlock: take.takeBlock + status.maturityBlocks,
+    blocksRemaining: pending?.blocksRemaining ?? 0,
+  });
+}
+
+export function recordInvoiceTakeSettled(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  input: RecordInvoiceTakeSettledInput,
+  at = nowSeconds(),
+): PaymentRecord {
+  const state = loadOtcState(storage, chainId, selfAddress);
+  const current = state.payments[input.requestId];
+  if (!current) {
+    throw new Error("The invoice request is not stored locally.");
+  }
+  const token = resolvePaymentRequestTokenForChain(current.request, chainId);
+  if (isCanonicalStrkToken(token)) {
+    throw new Error("A STRK invoice does not require an RFQ take.");
+  }
+  if (
+    current.status !== "requested" ||
+    current.paymentPending ||
+    !isFelt(input.takeTransactionHash) ||
+    !Number.isSafeInteger(input.takeBlock) ||
+    input.takeBlock < 0 ||
+    !isPositiveBaseUnitAmount(input.amount) ||
+    !feltEquals(input.buyToken, token.address) ||
+    input.amount !== current.request.amount
+  ) {
+    throw new Error(
+      "The settled invoice take does not match the reviewed request.",
+    );
+  }
+  const existing = operationTakeSettlement(current.paymentOperation);
+  if (current.paymentOperation?.state === "awaiting-note-maturity") {
+    if (
+      existing &&
+      feltEquals(existing.takeTransactionHash, input.takeTransactionHash) &&
+      existing.takeBlock === input.takeBlock &&
+      feltEquals(existing.buyToken, input.buyToken) &&
+      existing.amount === input.amount
+    ) {
+      return current;
+    }
+    throw new Error(
+      "A different settled take is already bound to this invoice.",
+    );
+  }
+  if (current.paymentOperation) {
+    throw new Error("This invoice already has a payment operation.");
+  }
+  const next: PaymentRecord = {
+    ...current,
+    paymentOperation: {
+      state: "awaiting-note-maturity",
+      takeTransactionHash: input.takeTransactionHash,
+      takeBlock: input.takeBlock,
+      buyToken: token.address,
+      amount: input.amount,
+      updatedAt: at,
+    },
+    paymentPending: false,
+    paymentVerified: false,
+    updatedAt: at,
+  };
+  state.payments[input.requestId] = next;
+  saveOtcState(storage, chainId, selfAddress, state);
+  return next;
+}
+
+function claimPaymentInternal(
   storage: StorageLike,
   chainId: string,
   selfAddress: string,
   expectedRequest: PaymentRequestPayload,
-  at = nowSeconds(),
+  at: number,
+  maturityHeadBlock?: number,
 ): PaymentRecord {
   const parsedExpected = parsePaymentRequestPayload(expectedRequest);
   if (!parsedExpected)
@@ -1121,7 +1293,35 @@ export function claimPayment(
       "This request was already paid; no second transfer was sent.",
     );
   }
-  assertPaysStrk(current.request);
+  const token = resolvePaymentRequestTokenForChain(current.request, chainId);
+  const awaitingMaturity =
+    current.paymentOperation?.state === "awaiting-note-maturity";
+  if (!isCanonicalStrkToken(token) && !awaitingMaturity) {
+    throw new Error(
+      "This localnet USDC invoice must complete its private STRK RFQ before payment.",
+    );
+  }
+  if (awaitingMaturity) {
+    const take = operationTakeSettlement(current.paymentOperation);
+    if (
+      !take ||
+      !feltEquals(take.buyToken, token.address) ||
+      take.amount !== current.request.amount
+    ) {
+      throw new Error("The settled invoice take record is invalid.");
+    }
+    if (maturityHeadBlock === undefined) {
+      throw new Error(
+        "The received invoice note maturity must be checked first.",
+      );
+    }
+    const maturity = invoicePaymentMaturity(current, maturityHeadBlock);
+    if (!maturity?.mature) {
+      throw new Error(
+        `The received invoice note matures at block ${maturity?.matureAtBlock ?? "unknown"}.`,
+      );
+    }
+  }
   if (paymentRequestIsExpired(current.request, at)) {
     const expired: PaymentRecord = {
       ...current,
@@ -1138,6 +1338,7 @@ export function claimPayment(
     paymentOperation: {
       state: "reserved",
       attemptId: createPaymentAttemptId(),
+      ...operationTakeSettlement(current.paymentOperation),
       updatedAt: at,
     },
     paymentTxHash: undefined,
@@ -1148,6 +1349,40 @@ export function claimPayment(
   state.payments[parsedExpected.requestId] = claimed;
   saveOtcState(storage, chainId, selfAddress, state);
   return claimed;
+}
+
+export function claimPayment(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  expectedRequest: PaymentRequestPayload,
+  at = nowSeconds(),
+): PaymentRecord {
+  return claimPaymentInternal(
+    storage,
+    chainId,
+    selfAddress,
+    expectedRequest,
+    at,
+  );
+}
+
+export function claimMatureInvoicePayment(
+  storage: StorageLike,
+  chainId: string,
+  selfAddress: string,
+  expectedRequest: PaymentRequestPayload,
+  headBlock: number,
+  at = nowSeconds(),
+): PaymentRecord {
+  return claimPaymentInternal(
+    storage,
+    chainId,
+    selfAddress,
+    expectedRequest,
+    at,
+    headBlock,
+  );
 }
 
 export function recordUnverifiedPaymentClaim(
@@ -1166,7 +1401,7 @@ export function recordUnverifiedPaymentClaim(
   if (paymentRequestIsExpired(current.request, at)) {
     throw new Error("This payment request is no longer payable.");
   }
-  assertPaysStrk(current.request);
+  resolvePaymentRequestTokenForChain(current.request, chainId);
   const expected: AcceptPayload["transfer"] = {
     token: current.request.token,
     amount: current.request.amount,
@@ -1174,7 +1409,7 @@ export function recordUnverifiedPaymentClaim(
   };
   if (!transfersEqual(accept.transfer, expected)) {
     throw new Error(
-      "Payment claim does not match the requested STRK transfer.",
+      "Payment claim does not match the requested private transfer.",
     );
   }
   const next: PaymentRecord = {
@@ -1210,6 +1445,7 @@ export function markPaymentSubmitted(
     paymentOperation: {
       state: "submitted",
       attemptId: current.paymentOperation.attemptId,
+      ...operationTakeSettlement(current.paymentOperation),
       transactionHash,
       updatedAt: at,
     },
@@ -1256,7 +1492,7 @@ export function confirmPayment(
     })
   ) {
     throw new Error(
-      "Payment receipt does not match the requested STRK transfer.",
+      "Payment receipt does not match the requested private transfer.",
     );
   }
   const next: PaymentRecord = {
@@ -1265,6 +1501,7 @@ export function confirmPayment(
     paymentOperation: {
       state: "confirmed",
       attemptId: current.paymentOperation.attemptId,
+      ...operationTakeSettlement(current.paymentOperation),
       transactionHash,
       updatedAt: at,
     },
@@ -1299,6 +1536,21 @@ export function markPaymentOutcome(
   ) {
     throw new Error("No matching submitted payment can be reconciled.");
   }
+  const take = operationTakeSettlement(current.paymentOperation);
+  const paymentOperation: ValueOperationRecord =
+    outcome === "reverted" && take
+      ? {
+          state: "awaiting-note-maturity",
+          ...take,
+          updatedAt: at,
+        }
+      : {
+          state: outcome,
+          attemptId: current.paymentOperation.attemptId,
+          ...take,
+          transactionHash,
+          updatedAt: at,
+        };
   const next: PaymentRecord = {
     ...current,
     status:
@@ -1307,12 +1559,7 @@ export function markPaymentOutcome(
           ? "expired"
           : "requested"
         : "paid",
-    paymentOperation: {
-      state: outcome,
-      attemptId: current.paymentOperation.attemptId,
-      transactionHash,
-      updatedAt: at,
-    },
+    paymentOperation,
     paymentTxHash: transactionHash,
     paymentPending: outcome === "unknown",
     paymentVerified: false,
@@ -1341,12 +1588,22 @@ export function releasePayment(
   ) {
     return current;
   }
+  const take = operationTakeSettlement(current.paymentOperation);
   const next: PaymentRecord = {
     requestId: current.requestId,
     status: paymentRequestIsExpired(current.request, at)
       ? "expired"
       : "requested",
     request: current.request,
+    ...(take
+      ? {
+          paymentOperation: {
+            state: "awaiting-note-maturity" as const,
+            ...take,
+            updatedAt: at,
+          },
+        }
+      : {}),
     paymentPending: false,
     paymentVerified: false,
     ...(current.origin ? { origin: current.origin } : {}),
