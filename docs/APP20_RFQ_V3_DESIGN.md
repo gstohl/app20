@@ -34,6 +34,7 @@ Escrow constructor becomes `constructor(pool, ticket_class_hash, lock_ticket_cla
 ```cairo
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
 pub struct LockParams {
+    pub token: ContractAddress,         // token B (what the maker locks); the escrow measures its balance delta
     pub counter_token: ContractAddress, // token A (what the taker sells, what the maker earns)
     pub rfq_id: felt252,                // taker's RFQ felt (== deal_id used in Take)
     pub taker_commitment: felt252,      // poseidon_hash_span([taker_secret])
@@ -44,8 +45,8 @@ pub struct LockParams {
     pub p2_a: u128, pub p2_b: u128,
     pub p3_a: u128, pub p3_b: u128,
 }
-// token B (what the maker locks) is the token the escrow received, measured by balance delta,
-// exactly like Fund/Fill. received must equal p{len-1}_b (max payout).
+// Like Fund, `token` is the received token: its balance delta must equal p{len-1}_b (max payout).
+// Both tokens must be non-zero and distinct (ZERO_TOKEN / SAME_TOKEN).
 
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
 pub struct TakeFill { pub lock_id: felt252, pub amount_a: u128 }
@@ -131,7 +132,7 @@ Existing events are unchanged. Error constants added: `LOCK_EXISTS`, `LOCK_NOT_O
 
 ```
 Lock (maker):    withdraw(tokenB, max_b, escrow); transfer(lockTicket, "OPEN", makerRecovery);
-                 invoke(escrow, [0x4, tokenA, rfqId, takerCommitment, expiry, len, p0a,p0b,p1a,p1b,p2a,p2b,p3a,p3b, lockId, ${poolAddress}, ${openNoteIds[0]}])
+                 invoke(escrow, [0x4, tokenB, tokenA, rfqId, takerCommitment, expiry, len, p0a,p0b,p1a,p1b,p2a,p2b,p3a,p3b, lockId, ${poolAddress}, ${openNoteIds[0]}])
 Take (taker):    withdraw(tokenA, Σamount, escrow); transfer(tokenB, "OPEN", takerRecovery);
                  invoke(escrow, [0x5, tokenA, tokenB, takerSecret, fillsLen, (lockId, amountA)*, rfqId, ${poolAddress}, ${openNoteIds[0]}])
 SettleProceeds:  withdraw(lockTicket, 0x1, escrow); transfer(tokenA, "OPEN", makerRecovery);
@@ -227,7 +228,7 @@ export type SelectionTranscriptV1 = Readonly<{
 }>;
 ```
 
-`createSelectionTranscript`, `verifySelectionTranscriptForMaker(transcript, { makerId, ownQuoteDigest, ownUnitPriceE18 })` → `{ consistent: boolean; reason? }` (own digest present; if lost, `clearingUnitPriceE18 ≥ ownUnitPriceE18`).
+`createSelectionTranscript({ rfqDigest, bucket: { min: bigint; max: bigint }, createdAt, selection: SelectFillsV3Result, quotes, refusals: { makerId; quoteDigest }[] })`. Refusal digests are supplied by the caller (coordinator digest of the refusal wire object); the all-zero 32-byte digest is accepted only for outcome `refused`. Ranks: winners in fill order `1..k`; then losers that cover the exact size by `evaluate(S)` descending; then losers that do not cover it by `scheduleUnitPriceE18` at their `a_max` descending; ties by `solverId`; refused last. The exact size never appears in the transcript. `verifySelectionTranscriptForMaker(transcript, { makerId, ownQuoteDigest, ownUnitPriceE18 })` → `{ consistent: boolean; reason? }` (own digest present; if lost, `clearingUnitPriceE18 ≥ ownUnitPriceE18`).
 
 ### 3.7 Indicative mids — `mids.ts`
 
@@ -237,7 +238,7 @@ export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: strin
   marketId: "STRK_USDC"; midE18: bigint; observedAt: number; validUntil: number; signature: string }>;
 ```
 
-`canonicalMakerMid`, `encode/decode`, `verifyMakerMid(mid, now, { importPublicKey, verify, resolveKey })`, `aggregateMids(mids) -> { medianE18, dispersionBps, count }`.
+`canonicalMakerMid`, `encode/decode`, `verifyMakerMid(mid, now, { importPublicKey, verify, resolveKey })`, `aggregateMids(mids) -> { medianE18: bigint; dispersionBps: number; count: number }` — median (even count → floor of the average of the two middle values), `dispersionBps = Number(((max − min) · 10_000n) / medianE18)` (0 when count ≤ 1), empty input → `{ medianE18: 0n, dispersionBps: 0, count: 0 }`. `formatSizeBucketLabel(symbol, bucket)` in `size-buckets.ts` renders e.g. `0.5–1 STRK`.
 
 ## 4. Maker node and localnet services
 
