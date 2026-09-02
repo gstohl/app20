@@ -22,19 +22,20 @@ function v3RequestForQuery(coordinator, query) {
     .find((candidate) => candidate.rfqDigest === query.rfqDigest);
 }
 
-function v3MakerTargetFromAuthorityFill(query, fill) {
+function v3MakerTargetFromAuthorityFill(query, fill, authority) {
   return Object.freeze({
     lifecycle: "v3",
     rfqDigest: query.rfqDigest,
-    intentDigest: query.intentDigest,
-    rfqId: query.rfqId,
-    dealId: query.dealId,
+    rfqFelt: fill.rfqFelt,
     quoteDigest: fill.quoteDigest,
     lockId: fill.lockId,
     tokenA: query.expected.tokenA,
-    amountA: fill.amountA,
     tokenB: query.expected.tokenB,
-    amountB: fill.amountB,
+    takenA: fill.amountA,
+    takenB: fill.amountB,
+    transactionHash: query.transactions.take,
+    authorityRevision: authority.authorityRevision,
+    idempotencyKey: authority.attemptId,
   });
 }
 
@@ -42,19 +43,22 @@ function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Maker v3 reconciliation acknowledgement is not exact.");
   for (const field of [
+    "lifecycle",
     "rfqDigest",
-    "intentDigest",
-    "rfqId",
+    "rfqFelt",
     "lockId",
     "quoteDigest",
     "tokenA",
     "tokenB",
+    "transactionHash",
+    "authorityRevision",
+    "idempotencyKey",
   ])
     if (value[field] !== target[field])
       throw new Error(`Maker v3 acknowledgement changed ${field}.`);
   if (
-    String(value.takenA) !== target.amountA ||
-    String(value.takenB) !== target.amountB
+    String(value.takenA) !== target.takenA ||
+    String(value.takenB) !== target.takenB
   )
     throw new Error("Maker v3 acknowledgement changed exact taken amounts.");
   const metadata = quarantine
@@ -65,9 +69,10 @@ function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
       "Maker v3 acknowledgement lacks durable authority metadata.",
     );
   for (const [field, expected] of [
-    ["attemptId", expectedEffect.attemptId],
+    ["idempotencyKey", expectedEffect.attemptId],
     ["authorityDigest", expectedEffect.authorityDigest],
     ["authorityRevision", expectedEffect.authorityRevision],
+    ["transactionHash", target.transactionHash],
   ])
     if (metadata[field] !== expected)
       throw new Error(`Maker v3 acknowledgement changed authority ${field}.`);
@@ -306,7 +311,10 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
             throw new Error(
               "Exact v3 maker is unavailable for terminal reconciliation.",
             );
-          const target = v3MakerTargetFromAuthorityFill(query, fill);
+          const target = v3MakerTargetFromAuthorityFill(query, fill, {
+            attemptId,
+            authorityRevision,
+          });
           const acknowledgement = await requestMaker(
             client,
             "/v1/reconciliation/terminal",
@@ -343,7 +351,10 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
             throw new Error(
               "Exact v3 maker is unavailable for authority quarantine.",
             );
-          const target = v3MakerTargetFromAuthorityFill(query, fill);
+          const target = v3MakerTargetFromAuthorityFill(query, fill, {
+            attemptId,
+            authorityRevision,
+          });
           const acknowledgement = await requestMaker(
             client,
             "/v1/reconciliation/quarantine",

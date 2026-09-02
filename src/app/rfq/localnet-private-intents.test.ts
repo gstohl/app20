@@ -559,6 +559,7 @@ describe("localnet private-intent adapter", () => {
 
   it("decodes escrow reads and journals every exact Take boundary", async () => {
     const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
+    let createdTransactionHash: unknown = "0x61";
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -580,6 +581,7 @@ describe("localnet private-intent adapter", () => {
                 remainingB: "200",
                 earnedA: "0",
                 ticket: "0x51",
+                createdTransactionHash,
                 proceedsSettled: false,
                 collateralReleased: false,
               },
@@ -615,7 +617,15 @@ describe("localnet private-intent adapter", () => {
         { a: 100n, b: 200n },
       ],
       remainingB: 200n,
+      createdTransactionHash: "0x61",
     });
+    createdTransactionHash = null;
+    await expect(readEscrowLock("0x41")).resolves.toMatchObject({
+      createdTransactionHash: null,
+    });
+    createdTransactionHash = "0x061";
+    await expect(readEscrowLock("0x41")).rejects.toThrow(/non-canonical/);
+    createdTransactionHash = "0x61";
     await expect(readEscrowTake("0x77")).resolves.toMatchObject({
       totalA: 100n,
       totalB: 200n,

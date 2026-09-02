@@ -14,12 +14,15 @@ export type TradeDraftFields = {
   expiryHours: string;
 };
 
+export type InvoiceDraftToken = "STRK" | "USDC";
+
 export type DraftAttachment =
   | { type: "payment"; paymentId: string; amount: string }
   | ({ type: "offer"; dealId: string } & TradeDraftFields)
   | {
       type: "payment_request";
       requestId: string;
+      token: InvoiceDraftToken;
       amount: string;
       memo: string;
       expiryHours: string;
@@ -104,19 +107,23 @@ function parseAttachment(value: unknown): DraftAttachment | null {
         ? { type: "offer", dealId: value.dealId, ...trade }
         : null;
     }
-    case "payment_request":
+    case "payment_request": {
+      const token = value.token === undefined ? "STRK" : value.token;
       return isId(value.requestId) &&
+        (token === "STRK" || token === "USDC") &&
         isShortString(value.amount, 128) &&
         isShortString(value.memo, 512) &&
         isShortString(value.expiryHours, 32)
         ? {
             type: "payment_request",
             requestId: value.requestId,
+            token,
             amount: value.amount,
             memo: value.memo,
             expiryHours: value.expiryHours,
           }
         : null;
+    }
     case "escrow_fund": {
       const trade = parseTrade(value);
       return isNonZeroFeltId(value.dealId) && trade
@@ -160,8 +167,11 @@ function parseDraft(value: unknown): CompositeDraft | null {
     body: value.body,
     attachments,
     conversationId:
-      typeof value.conversationId === "string" ? value.conversationId : undefined,
-    inReplyTo: typeof value.inReplyTo === "string" ? value.inReplyTo : undefined,
+      typeof value.conversationId === "string"
+        ? value.conversationId
+        : undefined,
+    inReplyTo:
+      typeof value.inReplyTo === "string" ? value.inReplyTo : undefined,
     createdAt: value.createdAt as number,
     updatedAt: value.updatedAt as number,
   };
@@ -202,6 +212,7 @@ export function createDraftAttachment(
     return {
       type,
       requestId: createRequestId(),
+      token: "STRK",
       amount: "",
       memo: "",
       expiryHours: "24",

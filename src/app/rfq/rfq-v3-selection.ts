@@ -16,11 +16,13 @@ import {
 import { resolveLocalnetQuoteKey } from "@/lib/localnet-quote-authority";
 import {
   readEscrowLock,
-  type LocalnetEscrowLock,
+  type LocalnetEscrowLockWithCreationEvidence,
 } from "./localnet-private-intents";
 
 export type VerifyQuotesV3Dependencies = Readonly<{
-  readLock?: (lockId: string) => Promise<LocalnetEscrowLock>;
+  readLock?: (
+    lockId: string,
+  ) => Promise<LocalnetEscrowLockWithCreationEvidence>;
   importPublicKey?: (jwk: JsonWebKey) => Promise<CryptoKey>;
   verify?: (
     canonical: string,
@@ -36,7 +38,8 @@ export type VerifyQuotesV3Dependencies = Readonly<{
 
 export type VerifiedQuoteV3 = Readonly<{
   quote: SolverQuoteV3;
-  lock: LocalnetEscrowLock & Readonly<{ status: "open" }>;
+  lock: LocalnetEscrowLockWithCreationEvidence &
+    Readonly<{ status: "open" }>;
 }>;
 
 /** Reads and cryptographically verifies every quote against its exact lock. */
@@ -84,12 +87,15 @@ export async function verifyQuotesV3(input: {
           expiry: lock.expiry,
           schedule: lock.schedule,
           remainingB: lock.remainingB,
+          ticket: lock.ticket,
+          createdTransactionHash: lock.createdTransactionHash,
           status: "open",
         },
       });
       return Object.freeze({
         quote,
-        lock: lock as LocalnetEscrowLock & Readonly<{ status: "open" }>,
+        lock: lock as LocalnetEscrowLockWithCreationEvidence &
+          Readonly<{ status: "open" }>,
       });
     }),
   );

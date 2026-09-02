@@ -115,6 +115,7 @@ test("prior runtime epochs reject every wallet, RFQ, and ticket sink before pars
     "/escrow/ensure-mail-ticket",
     "/escrow/lock",
     "/escrow/take",
+    "/devnet/create-block",
     "/private-intents/transcript",
     "/private-intents/take-prepare",
     "/private-intents/take-converge",

@@ -5,8 +5,11 @@ import {
   LOCALNET_ESCROW_EVENT_SELECTORS,
 } from "./localnet-chain-decoder.mjs";
 import {
+  LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE,
+  LOCALNET_LOCK_CREATED_SCAN_MAX_PAGES,
   createLocalnetJsonRpc,
   createLocalnetRpcReader,
+  findSucceededLockCreatedTransaction,
 } from "./localnet-chain-reader.mjs";
 
 const artifact = {
@@ -300,4 +303,134 @@ test("lifecycle transactions sharing a block reuse one canonical block read", as
     result.lifecycle.map((item) => item.transactionIndex),
     [0, 1],
   );
+});
+
+test("bounded LockCreated lookup filters by escrow and lock id and proves a succeeded receipt", async () => {
+  const calls = [];
+  const transactionHash = "0x321";
+  const rpc = async (method, params) => {
+    calls.push({ method, params });
+    if (method === "starknet_getEvents") {
+      if (!params.filter.continuation_token)
+        return { events: [], continuation_token: "page-2" };
+      return {
+        events: [
+          {
+            from_address: artifact.escrowAddress,
+            keys: [
+              LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated,
+              query.dealId,
+              "0xdef",
+            ],
+            data: [],
+            transaction_hash: transactionHash,
+          },
+        ],
+        continuation_token: null,
+      };
+    }
+    if (method === "starknet_getTransactionReceipt")
+      return {
+        transaction_hash: transactionHash,
+        execution_status: "SUCCEEDED",
+      };
+    throw new Error("unexpected RPC");
+  };
+  assert.equal(
+    await findSucceededLockCreatedTransaction({
+      rpc,
+      escrowAddress: artifact.escrowAddress,
+      lockId: query.dealId,
+    }),
+    transactionHash,
+  );
+  assert.deepEqual(calls[0], {
+    method: "starknet_getEvents",
+    params: {
+      filter: {
+        from_block: { block_number: 0 },
+        to_block: "latest",
+        address: artifact.escrowAddress,
+        keys: [
+          [LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated],
+          [query.dealId],
+        ],
+        chunk_size: LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE,
+      },
+    },
+  });
+  assert.deepEqual(calls.at(-1), {
+    method: "starknet_getTransactionReceipt",
+    params: { transaction_hash: transactionHash },
+  });
+});
+
+test("bounded LockCreated lookup returns null only after a complete empty scan", async () => {
+  let calls = 0;
+  assert.equal(
+    await findSucceededLockCreatedTransaction({
+      rpc: async (method) => {
+        calls += 1;
+        assert.equal(method, "starknet_getEvents");
+        return { events: [] };
+      },
+      escrowAddress: artifact.escrowAddress,
+      lockId: query.dealId,
+    }),
+    null,
+  );
+  assert.equal(calls, 1);
+});
+
+test("bounded LockCreated lookup fails closed on RPC filter, page, pagination, and receipt oddities", async () => {
+  const event = {
+    from_address: artifact.escrowAddress,
+    keys: [
+      LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated,
+      query.dealId,
+      "0xdef",
+    ],
+    data: [],
+    transaction_hash: "0x321",
+  };
+  const run = (rpc) =>
+    findSucceededLockCreatedTransaction({
+      rpc,
+      escrowAddress: artifact.escrowAddress,
+      lockId: query.dealId,
+    });
+  await assert.rejects(
+    run(async () => ({ events: [{ ...event, from_address: "0x999" }] })),
+    /exact filter/i,
+  );
+  await assert.rejects(
+    run(async (method) =>
+      method === "starknet_getEvents"
+        ? { events: [event] }
+        : { transaction_hash: "0x321", execution_status: "REVERTED" },
+    ),
+    /did not succeed/i,
+  );
+  await assert.rejects(
+    run(async () => ({ events: [], continuation_token: "same" })),
+    /repeated an event continuation token/i,
+  );
+  await assert.rejects(
+    run(async () => ({
+      events: Array.from(
+        { length: LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE + 1 },
+        () => event,
+      ),
+    })),
+    /malformed page/i,
+  );
+  let page = 0;
+  await assert.rejects(
+    run(async () => ({
+      events: [],
+      continuation_token: `page-${++page}`,
+    })),
+    /bounded page cap/i,
+  );
+  assert.equal(page, LOCALNET_LOCK_CREATED_SCAN_MAX_PAGES);
 });

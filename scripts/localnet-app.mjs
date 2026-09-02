@@ -34,13 +34,13 @@ import {
   verifyMakerMid,
   digestPrivateSwapIntent,
 } from "../packages/private-intents/src/index.ts";
-import { localnetEconomicReview } from "../src/app/rfq/rfq-operations.ts";
 import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
 import {
   RFQ_MAX_QUOTE_TTL_SECONDS,
   createLocalnetRfqEconomics,
   deriveLocalnetReferenceBuyAmount,
   formatRfqEconomicRefusal,
+  localnetEconomicReview,
   localnetPairTokenIds,
   reservedBuyAmountFromGross,
 } from "./localnet-rfq-economics.mjs";
@@ -50,6 +50,7 @@ import { LOCALNET_ESCROW_EVENT_ABI_DIGEST } from "./localnet-chain-decoder.mjs";
 import {
   createLocalnetJsonRpc,
   createLocalnetRpcReader,
+  findSucceededLockCreatedTransaction,
 } from "./localnet-chain-reader.mjs";
 import {
   bindExpiryHttpTargetThroughCoordinator,
@@ -1955,6 +1956,25 @@ async function startApi({
 
       const body = await readRequestBody(request);
       assertLocalnetRuntimeEpoch(url.pathname, body, RUNTIME_EPOCH);
+      if (url.pathname === "/devnet/create-block") {
+        const result = await serializeOperation(
+          "create one test-only devnet block",
+          "localnet-control",
+          async () => {
+            await createDevnetBlocks(devnet.url, 1);
+            const rpc = createLocalnetJsonRpc(devnet.url);
+            const blockNumber = await rpc("starknet_blockNumber", []);
+            if (!Number.isSafeInteger(blockNumber) || blockNumber < 0) {
+              fail(
+                "devnet returned an invalid block number after block creation.",
+              );
+            }
+            return { blockNumber };
+          },
+        );
+        jsonResponse(response, 200, { result });
+        return;
+      }
       if (url.pathname === "/rfq/unresolved-deals") {
         const account = feltInput(body.account, "account", starknet);
         const chainId = feltInput(body.chainId, "chainId", starknet);
@@ -2337,7 +2357,15 @@ async function startApi({
           escrowAddress,
           starknet,
         );
-        jsonResponse(response, 200, { result: { lock } });
+        const createdTransactionHash =
+          await findSucceededLockCreatedTransaction({
+            rpc: createLocalnetJsonRpc(devnet.url),
+            escrowAddress: starknet.num.toHex(escrowAddress),
+            lockId,
+          });
+        jsonResponse(response, 200, {
+          result: { lock: { ...lock, createdTransactionHash } },
+        });
         return;
       }
       if (url.pathname === "/escrow/take") {
@@ -2451,7 +2479,7 @@ async function startApi({
                 const result = await makerRequest(
                   client,
                   "/v1/quotes-v3",
-                  body.rfq,
+                  { rfq: body.rfq },
                   120_000,
                 );
                 if (result.quote) {
@@ -2921,8 +2949,6 @@ async function startApi({
       }
       if (url.pathname === "/private-intents/transcript") {
         const rfqDigest = canonicalHex32(body.rfqDigest, "rfqDigest");
-        const account = feltInput(body.account, "account", starknet);
-        const chainId = feltInput(body.chainId, "chainId", starknet);
         const transcript = decodeSelectionTranscript(body.transcript);
         const { digest: transcriptDigest, ...transcriptBody } = transcript;
         const computedTranscriptDigest = `0x${createHash("sha256")
@@ -2935,14 +2961,14 @@ async function startApi({
         const requestRecord = coordinator.getV3Request(rfqDigest);
         if (
           !requestRecord ||
-          requestRecord.account !== account ||
-          requestRecord.chainId !== chainId ||
           transcript.rfqDigest !== rfqDigest ||
           transcript.entries.length !== requestRecord.makerPlans.length ||
-          JSON.stringify(body.makerIds) !==
-            JSON.stringify(
-              requestRecord.makerPlans.map(({ makerId }) => makerId),
-            )
+          !Array.isArray(body.makerIds) ||
+          body.makerIds.length !== requestRecord.makerPlans.length ||
+          new Set(body.makerIds).size !== body.makerIds.length ||
+          requestRecord.makerPlans.some(
+            ({ makerId }) => !body.makerIds.includes(makerId),
+          )
         )
           fail(
             "selection transcript does not match the durable v3 RFQ principal.",
@@ -2973,11 +2999,9 @@ async function startApi({
                 reason: "The invited local maker is unavailable.",
               };
             try {
-              const result = await makerRequest(
-                client,
-                "/v1/transcripts",
-                body.transcript,
-              );
+              const result = await makerRequest(client, "/v1/transcripts", {
+                transcript: body.transcript,
+              });
               if (
                 (result.accepted !== undefined && result.accepted !== true) ||
                 typeof result.consistent !== "boolean" ||

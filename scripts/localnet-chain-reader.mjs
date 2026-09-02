@@ -3,6 +3,10 @@ import {
   assertLocalnetEscrowArtifactIdentity,
 } from "./localnet-chain-decoder.mjs";
 
+export const LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE = 128;
+export const LOCALNET_LOCK_CREATED_SCAN_MAX_PAGES = 8;
+const MAX_CONTINUATION_TOKEN_LENGTH = 2_048;
+
 function canonicalFelt(value, label) {
   if (typeof value !== "string" || !/^0x[0-9a-f]+$/i.test(value))
     throw new Error(`${label} is not a hexadecimal felt.`);
@@ -71,6 +75,130 @@ export function createLocalnetJsonRpc(url, options = {}) {
       );
     return payload.result;
   };
+}
+
+function continuationToken(value) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (
+    typeof value !== "string" ||
+    value.length > MAX_CONTINUATION_TOKEN_LENGTH
+  )
+    throw new Error(
+      "Localnet LockCreated scan received an invalid continuation token.",
+    );
+  return value;
+}
+
+function lockCreatedTransactionFromEvent(
+  value,
+  escrowAddress,
+  lockId,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Localnet LockCreated scan received a malformed event.");
+  const source = canonicalFelt(value.from_address, "LockCreated event source");
+  if (!Array.isArray(value.keys) || value.keys.length < 2)
+    throw new Error("Localnet LockCreated event keys are malformed.");
+  const selector = canonicalEventKey(
+    value.keys[0],
+    "LockCreated event selector",
+  );
+  const observedLockId = canonicalEventKey(
+    value.keys[1],
+    "LockCreated event lock id",
+  );
+  if (
+    source !== escrowAddress ||
+    selector !== LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated ||
+    observedLockId !== lockId
+  )
+    throw new Error(
+      "Localnet LockCreated scan returned an event outside its exact filter.",
+    );
+  return canonicalFelt(
+    value.transaction_hash,
+    "LockCreated event transaction hash",
+  );
+}
+
+/** Locates one exact LockCreated event and proves its transaction succeeded. */
+export async function findSucceededLockCreatedTransaction(options) {
+  if (typeof options?.rpc !== "function")
+    throw new Error("Localnet LockCreated scan requires an RPC adapter.");
+  const escrowAddress = canonicalFelt(
+    options.escrowAddress,
+    "LockCreated escrow address",
+  );
+  const lockId = canonicalFelt(options.lockId, "LockCreated lock id");
+  let token;
+  let completed = false;
+  let transactionHash;
+  const seenTokens = new Set();
+  for (let page = 0; page < LOCALNET_LOCK_CREATED_SCAN_MAX_PAGES; page += 1) {
+    const result = await options.rpc("starknet_getEvents", {
+      filter: {
+        from_block: { block_number: 0 },
+        to_block: "latest",
+        address: escrowAddress,
+        keys: [
+          [LOCALNET_ESCROW_EVENT_SELECTORS.lockCreated],
+          [lockId],
+        ],
+        chunk_size: LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE,
+        ...(token ? { continuation_token: token } : {}),
+      },
+    });
+    if (
+      !result ||
+      typeof result !== "object" ||
+      Array.isArray(result) ||
+      !Array.isArray(result.events) ||
+      result.events.length > LOCALNET_LOCK_CREATED_SCAN_CHUNK_SIZE
+    )
+      throw new Error("Localnet LockCreated scan received a malformed page.");
+    for (const event of result.events) {
+      const observed = lockCreatedTransactionFromEvent(
+        event,
+        escrowAddress,
+        lockId,
+      );
+      if (transactionHash !== undefined)
+        throw new Error(
+          "Localnet LockCreated scan found duplicate lock creation events.",
+        );
+      transactionHash = observed;
+    }
+    const next = continuationToken(result.continuation_token);
+    if (!next) {
+      completed = true;
+      break;
+    }
+    if (seenTokens.has(next))
+      throw new Error(
+        "Localnet LockCreated RPC repeated an event continuation token.",
+      );
+    seenTokens.add(next);
+    token = next;
+  }
+  if (!completed)
+    throw new Error(
+      "Localnet LockCreated scan exceeded its bounded page cap.",
+    );
+  if (transactionHash === undefined) return null;
+  const receipt = await options.rpc("starknet_getTransactionReceipt", {
+    transaction_hash: transactionHash,
+  });
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt))
+    throw new Error("Localnet LockCreated receipt is malformed.");
+  const receiptHash = canonicalFelt(
+    receipt.transaction_hash,
+    "LockCreated receipt transaction hash",
+  );
+  if (receiptHash !== transactionHash)
+    throw new Error("Localnet LockCreated receipt hash was substituted.");
+  if (receipt.execution_status !== "SUCCEEDED")
+    throw new Error("Localnet LockCreated transaction did not succeed.");
+  return receiptHash;
 }
 
 /** Two instances may model separate reads, but both remain one-devnet fixture evidence. */

@@ -77,6 +77,58 @@ function hexAmount(value, label, allowZero = false) {
   return `0x${value.toString(16)}`;
 }
 
+export function parseLocalnetMakerReconciliationTarget(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Maker reconciliation target is missing.");
+  }
+  if (value.lifecycle === "v3") {
+    if (
+      !Number.isSafeInteger(value.authorityRevision) ||
+      value.authorityRevision <= 0
+    ) {
+      throw new Error(
+        "Maker v3 reconciliation authorityRevision must be a positive safe integer.",
+      );
+    }
+    return Object.freeze({
+      lifecycle: "v3",
+      rfqDigest: canonicalHex32(value.rfqDigest, "target.rfqDigest"),
+      rfqFelt: canonicalFelt(value.rfqFelt, "target.rfqFelt"),
+      lockId: canonicalFelt(value.lockId, "target.lockId"),
+      quoteDigest: canonicalHex32(value.quoteDigest, "target.quoteDigest"),
+      tokenA: canonicalFelt(value.tokenA, "target.tokenA"),
+      tokenB: canonicalFelt(value.tokenB, "target.tokenB"),
+      takenA: positiveBigInt(value.takenA, "target.takenA"),
+      takenB: positiveBigInt(value.takenB, "target.takenB"),
+      transactionHash: canonicalFelt(
+        value.transactionHash,
+        "target.transactionHash",
+      ),
+      authorityRevision: value.authorityRevision,
+      idempotencyKey: requiredText(
+        value.idempotencyKey,
+        "target.idempotencyKey",
+      ),
+    });
+  }
+  if (value.lifecycle !== undefined) {
+    throw new Error("Maker reconciliation target lifecycle is unsupported.");
+  }
+  return Object.freeze({
+    reservationId: value.reservationId,
+    intentDigest: value.intentDigest,
+    fence: BigInt(value.fence),
+    quoteDigest: value.quoteDigest,
+    dealId: value.dealId,
+    sellToken: value.sellToken,
+    sellAmount: BigInt(value.sellAmount),
+    buyToken: value.buyToken,
+    buyAmount: BigInt(value.buyAmount),
+    deadline: value.deadline,
+    ticketAddress: value.ticketAddress,
+  });
+}
+
 export function parseLocalnetEscrowLockResult(result) {
   if (!Array.isArray(result) || result.length !== 20) {
     throw new Error("Escrow get_lock result must contain exactly 20 felts.");

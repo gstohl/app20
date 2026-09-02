@@ -31,6 +31,8 @@ describe("device-private drafts", () => {
     expect(payment.amount).toBe("0.1");
     payment.amount = "0.5";
     const invoice = createDraftAttachment("payment_request");
+    expect(invoice.token).toBe("STRK");
+    invoice.token = "USDC";
     invoice.memo = "Invoice 12";
     draft.recipient = "alice";
     draft.body = "All terms in one document";
@@ -50,13 +52,41 @@ describe("device-private drafts", () => {
       attachments: [
         { type: "payment", amount: "0.5" },
         { type: "offer" },
-        { type: "payment_request", memo: "Invoice 12" },
+        { type: "payment_request", token: "USDC", memo: "Invoice 12" },
         { type: "escrow_fund" },
       ],
     });
     expect(loadDrafts(storage, "SN_MAIN", "0xa11ce")).toEqual([]);
 
     expect(deleteDraft(storage, "SN_SEPOLIA", "0xa11ce", draft.id)).toEqual([]);
+    expect(loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")).toEqual([]);
+  });
+
+  it("migrates tokenless invoice drafts to STRK and rejects unknown tokens", () => {
+    const storage = new MemoryStorage();
+    const draft = createBlankDraft(100);
+    const invoice = createDraftAttachment("payment_request");
+    const { token: _legacyToken, ...legacyInvoice } = invoice;
+    storage.setItem(
+      "app20/drafts/v1/SN_SEPOLIA/0xa11ce",
+      JSON.stringify([{ ...draft, attachments: [legacyInvoice] }]),
+    );
+    expect(
+      loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")[0]?.attachments[0],
+    ).toMatchObject({
+      type: "payment_request",
+      token: "STRK",
+    });
+
+    storage.setItem(
+      "app20/drafts/v1/SN_SEPOLIA/0xa11ce",
+      JSON.stringify([
+        {
+          ...draft,
+          attachments: [{ ...invoice, token: "ETH" }],
+        },
+      ]),
+    );
     expect(loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")).toEqual([]);
   });
 

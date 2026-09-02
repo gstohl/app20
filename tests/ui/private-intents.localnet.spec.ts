@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import {
   LOCALNET_WALLET_API,
   connectLocalnetWallet,
@@ -9,87 +7,81 @@ import {
   selectLocalNetwork,
   test,
   type APIRequestContext,
+  type LocalnetConfig,
+  type LocalnetIdentityId,
   type Locator,
+  type Page,
 } from "./support/localnet";
 
-async function quote(
-  desk: Locator,
-  outputSymbol: "STRK" | "USDC",
-  options: { openFinalReview?: boolean } = {},
+test.describe.configure({ mode: "serial" });
+
+async function switchIdentity(
+  page: Page,
+  config: LocalnetConfig,
+  id: LocalnetIdentityId,
 ) {
-  const preflight = desk.getByLabel("Privacy preflight");
-  const requestButton = desk.getByRole("button", {
-    name: "Request signed quotes",
-  });
-  await expect(preflight).toContainText(
-    "Exact-amount frequency is unavailable",
-  );
-  await expect(preflight).toContainText(
-    "First-version settlement publicly reveals: amount, deadline, helper activity, lifecycle timing, pair.",
-  );
-  await expect(requestButton).toBeDisabled();
-  await preflight
-    .getByRole("checkbox", {
-      name: "I understand the warnings and known public settlement leakage.",
-    })
-    .check();
-  await expect(
-    desk.getByRole("button", { name: "Prepare exact invitation review" }),
-  ).toBeEnabled();
-  await desk
-    .getByRole("button", { name: "Prepare exact invitation review" })
-    .click();
-  const invitationReview = desk.getByLabel("Exact invitation review");
-  await expect(invitationReview).toContainText("Full fill only");
-  await expect(invitationReview).toContainText("app20-localnet-solver");
-  await expect(invitationReview).toContainText("app20-localnet-solver-b");
-  await expect(invitationReview).toContainText("local-fixture-checkpoint-v1");
-  await invitationReview.getByRole("checkbox").check();
-  await expect(requestButton).toBeEnabled();
-  await requestButton.click();
-  const solverQuote = desk.getByLabel("Selected private maker quote");
-  await expect(solverQuote).toBeVisible({ timeout: 60_000 });
-  const comparison = desk.getByRole("region", {
-    name: /Compare all makers/,
-  });
-  await expect(comparison).toBeFocused();
-  await expect(solverQuote).toContainText("YOU RECEIVE");
-  await expect(solverQuote).toContainText(outputSymbol);
-  await expect(solverQuote).toContainText("2 VERIFIED QUOTES");
-  await expect(solverQuote).not.toContainText("SOLVER INVENTORY");
-  await expect(solverQuote).toContainText("20 BPS");
-  await expect(solverQuote).toContainText("QUOTE 10 MIN · REFUND 20 MIN");
-  await expect(desk.getByLabel("Private intent market")).toBeDisabled();
-  await expect(desk.getByLabel("Private intent sell amount")).toBeDisabled();
-  await expect(
-    desk.getByRole("button", { name: "Reverse swap direction" }),
-  ).toBeDisabled();
-  await expect(
-    desk.getByText(
-      "Deterministic ranking: highest verified receive; later quote expiry; maker ID; reservation ID.",
-    ),
-  ).toBeVisible();
-  const cohort = desk.getByLabel("Invited maker cohort");
-  await expect(cohort.getByRole("listitem")).toHaveCount(2);
-  await expect(cohort).toContainText("raw inventory not exposed");
-  await expect(cohort).toContainText("Eligible · selected");
-  if (options.openFinalReview !== false) {
-    await desk.getByRole("button", { name: "Review selected quote" }).click();
-    const finalReview = desk.getByRole("region", {
-      name: "Final value review",
-    });
-    await expect(finalReview).toBeVisible();
-    await expect(finalReview).toBeFocused();
-    await expect(
-      desk.getByText("Legacy localnet escrow · not production canonical"),
-    ).toBeVisible();
-    await desk.getByText("Protocol details", { exact: true }).click();
-    await expect(desk.getByText(/zero-fixture-v1/)).toBeVisible();
-    await expect(
-      desk.getByText(/gas unknown until the wallet confirms/),
-    ).toBeVisible();
-    await expect(desk.getByText(/Full fill only/).first()).toBeVisible();
+  const target = localnetIdentity(config, id);
+  const selector = page.locator(`[data-localnet-identity="${id}"]`);
+  if ((await selector.getAttribute("aria-pressed")) !== "true") {
+    await selector.click();
   }
+  await expect(selector).toHaveAttribute("aria-pressed", "true");
+  if (
+    (await page.getByRole("button", { name: "Connect wallet" }).count()) > 0
+  ) {
+    await connectLocalnetWallet(page);
+  }
+  await expect(
+    page
+      .getByRole("region", { name: "Wallet session" })
+      .locator("[title]")
+      .first(),
+  ).toHaveAttribute("title", new RegExp(target.address.slice(2), "i"));
+}
+
+async function ensureMailboxKey(page: Page) {
+  let setup = page.getByRole("button", {
+    name: "Load device key & register",
+  });
+  if ((await setup.count()) === 0) {
+    await page.getByRole("button", { name: "Compose", exact: true }).click();
+    setup = page.getByRole("button", {
+      name: "Load device key & register",
+    });
+  }
+  await expect(setup).toBeVisible();
+  await setup.click();
+  await expect(setup).toHaveCount(0, { timeout: 60_000 });
+  const backupHeading = page.getByText(
+    "Back up now — this phrase is shown once",
+  );
+  if ((await backupHeading.count()) > 0) {
+    const phrase = (
+      await backupHeading.locator("..").locator("code").innerText()
+    ).trim();
+    expect(phrase).toMatch(/^(?:[0-9a-f]{8} ){7}[0-9a-f]{8}$/);
+    await page
+      .getByRole("button", { name: "I saved the backup — open mailbox" })
+      .click();
+  }
+  const deleteDraft = page.getByRole("button", {
+    name: "Delete draft…",
+    exact: true,
+  });
+  if ((await deleteDraft.count()) > 0) {
+    page.once("dialog", (dialog) => dialog.accept());
+    await deleteDraft.click();
+  } else {
+    const close = page.getByRole("button", { name: "Close", exact: true });
+    if ((await close.count()) > 0) await close.click();
+  }
+}
+
+async function scanRecent(page: Page) {
+  const button = page.getByRole("button", { name: "Check for new mail" });
+  await expect(button).toBeEnabled();
+  await button.click();
+  await expect(button).toBeEnabled({ timeout: 60_000 });
 }
 
 async function privateBalance(
@@ -105,62 +97,134 @@ async function privateBalance(
   return BigInt((await response.json()).result[0].balance);
 }
 
-async function crashAndRecoverSelectedMaker(
+async function createBlocks(
   request: APIRequestContext,
-  makerId: string,
+  runtimeEpoch: string,
+  count: number,
 ) {
-  let state: {
-    makers?: Array<{ makerId?: string; pid?: number }>;
-  };
-  try {
-    state = JSON.parse(
-      readFileSync(
-        join(process.cwd(), ".app20-localnet", "state.json"),
-        "utf8",
-      ),
+  let previous = -1;
+  for (let index = 0; index < count; index += 1) {
+    const response = await request.post(
+      `${LOCALNET_WALLET_API}/devnet/create-block`,
+      {
+        headers: { Origin: new URL(LOCALNET_WALLET_API).origin },
+        data: { runtimeEpoch },
+      },
     );
-  } catch (error) {
-    throw new Error("Could not read the localnet maker process state.", {
-      cause: error,
-    });
+    if (!response.ok()) throw new Error(await response.text());
+    const blockNumber = (await response.json()).result.blockNumber as number;
+    expect(blockNumber).toBeGreaterThan(previous);
+    previous = blockNumber;
   }
-  const originalPid = state.makers?.find(
-    (maker) => maker.makerId === makerId,
-  )?.pid;
-  expect(originalPid).toBeGreaterThan(0);
-  if (!originalPid) throw new Error(`${makerId} has no recorded process ID.`);
-  process.kill(originalPid, "SIGKILL");
+  return previous;
+}
 
-  const deadline = Date.now() + 60_000;
-  while (Date.now() < deadline) {
-    const response = await request.get(`${LOCALNET_WALLET_API}/health`);
-    if (response.ok()) {
-      let recoveredPid: number | undefined;
-      try {
-        const recoveredState = JSON.parse(
-          readFileSync(
-            join(process.cwd(), ".app20-localnet", "state.json"),
-            "utf8",
-          ),
-        ) as { makers?: Array<{ makerId?: string; pid?: number }> };
-        recoveredPid = recoveredState.makers?.find(
-          (maker) => maker.makerId === makerId,
-        )?.pid;
-      } catch {
-        // The supervisor may be replacing the private runtime-state record.
-      }
-      if (recoveredPid && recoveredPid !== originalPid) {
-        try {
-          process.kill(recoveredPid, 0);
-          return;
-        } catch {
-          // Keep polling until the replacement process is live.
-        }
-      }
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
-  }
-  throw new Error(`${makerId} did not recover from its WAL within 60 seconds.`);
+async function prepareCohortReview(desk: Locator) {
+  const preflight = desk.getByLabel("Privacy preflight");
+  await expect(preflight).toContainText("Exact size and floor stay local");
+  await expect(preflight).toContainText(
+    "invited maker(s) receive: expiry, pair, side, size bucket",
+  );
+  await expect(preflight).toContainText(
+    "OPEN payout-note amount, pair, per-lock Take amounts",
+  );
+  await preflight.getByRole("checkbox").check();
+  const prepare = desk.getByRole("button", {
+    name: "Prepare size-blind cohort review",
+  });
+  await expect(prepare).toBeEnabled();
+  await prepare.click();
+  const review = desk.getByLabel("Maker cohort review");
+  await expect(review).toContainText("What makers receive");
+  await expect(review).toContainText("Local-only exact sell");
+  await expect(review).toContainText("Local-only floor");
+  await expect(review).toContainText("local-fixture-checkpoint-v1");
+  await expect(
+    desk.getByLabel("Invited maker cohort").getByRole("listitem"),
+  ).toHaveCount(2);
+  await expect(review).toContainText("raw inventory not exposed");
+  await review.getByRole("checkbox").check();
+}
+
+async function requestCollateralizedQuotes(page: Page, desk: Locator) {
+  const posted = page.waitForRequest(
+    (candidate) =>
+      candidate.method() === "POST" &&
+      candidate.url().endsWith("/private-intents/quotes"),
+    { timeout: 180_000 },
+  );
+  await desk
+    .getByRole("button", { name: "Request collateralized quotes" })
+    .click();
+  const outgoing = await posted;
+  const comparison = desk.getByRole("region", {
+    name: /Compare all makers/,
+  });
+  await expect(comparison).toBeVisible({ timeout: 180_000 });
+  await expect(comparison).toBeFocused();
+  await expect(comparison.getByText(/received · consistent/)).toHaveCount(2, {
+    timeout: 60_000,
+  });
+  await expect(comparison).not.toContainText(
+    /raw inventory|available balance/i,
+  );
+  return outgoing.postDataJSON() as Record<string, unknown>;
+}
+
+function expectSealedRequest(
+  wire: Record<string, unknown>,
+  hiddenValues: string[],
+) {
+  const rfq = wire.rfq as Record<string, unknown>;
+  expect(rfq).toMatchObject({
+    version: 2,
+    domain: "app20/private-rfq/v2",
+    chainId: "starknet:APP20_LOCALNET",
+  });
+  expect(rfq).toHaveProperty("sellBucketMinBaseUnits");
+  expect(rfq).toHaveProperty("sellBucketMaxBaseUnits");
+  const serialized = JSON.stringify(wire);
+  expect(serialized).not.toMatch(
+    /exactSellAmount|localFloor|minBuyAmount|requestedFloor/,
+  );
+  for (const hidden of hiddenValues) expect(serialized).not.toContain(hidden);
+}
+
+async function takeAtomically(
+  desk: Locator,
+  expectedShape: RegExp,
+  invokeUrls: string[],
+) {
+  await desk
+    .getByRole("button", { name: "Review selected quote fills" })
+    .click();
+  const finalReview = desk.getByRole("region", {
+    name: "Final atomic Take review",
+  });
+  await expect(finalReview).toBeVisible();
+  await expect(finalReview).toBeFocused();
+  await expect(finalReview).toContainText(expectedShape);
+  await expect(finalReview).toContainText("0 bps · 0 base units");
+  await expect(finalReview).toContainText(
+    "there is no later claim or taker refund step",
+  );
+  const before = invokeUrls.length;
+  await finalReview
+    .getByRole("button", { name: "Take atomically on LOCALNET" })
+    .click();
+  await expect(
+    desk.getByText("Atomic receive confirmed from the exact escrow Take.", {
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 5 * 60_000 });
+  expect(invokeUrls).toHaveLength(before + 1);
+  await expect(desk.getByText(/Authority stage: lifecycle v3/)).toBeVisible();
+  await expect(
+    desk.getByRole("button", { name: "Claim", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    desk.getByRole("button", { name: "Refund", exact: true }),
+  ).toHaveCount(0);
 }
 
 test("RFQ operations dashboard and endpoint expose only browser-safe localnet status", async ({
@@ -196,253 +260,277 @@ test("RFQ operations dashboard and endpoint expose only browser-safe localnet st
   ).toHaveCount(2);
 });
 
-test("APP20 clears both USDC↔STRK directions and refunds on localnet", async ({
+test("v3 keeps floors sealed, expires locks, and atomically settles single and split Takes", async ({
   page,
   request,
   localnetConfig: config,
 }) => {
-  test.setTimeout(15 * 60_000);
+  test.setTimeout(20 * 60_000);
   expect(BigInt(config.usdcTokenAddress)).toBeGreaterThan(0n);
+
+  const invokeUrls: string[] = [];
+  page.on("request", (outgoing) => {
+    if (outgoing.method() !== "POST") return;
+    if (/\/(?:invoke|privacy)$/.test(outgoing.url()))
+      invokeUrls.push(outgoing.url());
+  });
+
+  const strkBefore = await privateBalance(
+    request,
+    config.tokenAddress,
+    config.runtimeEpoch,
+  );
+  const usdcBefore = await privateBalance(
+    request,
+    config.usdcTokenAddress,
+    config.runtimeEpoch,
+  );
 
   await page.goto("/vault#desk");
   await expect(page).toHaveURL(/\/rfq#desk$/);
   const localToggle = localNetworkToggle(page);
-  await expect(localToggle).toBeVisible();
   await expect(localToggle).toHaveAttribute("aria-pressed", "false");
   await selectLocalNetwork(page);
   await connectLocalnetWallet(page);
   await expect(page.getByText("LOCALNET (DEV) / DEV WALLET")).toBeVisible();
 
-  const counterparty = localnetIdentity(config, "bob");
-  await page.getByRole("link", { name: "Counterparties" }).click();
-  await page.getByLabel("New address book label").fill("Bob trading desk");
-  await page.getByLabel("New address book address").fill(counterparty.address);
-  await page.getByRole("button", { name: "Add", exact: true }).click();
-  const encryptedMailLink = page.getByRole("link", {
-    name: "Encrypted Mail",
-  });
-  await expect(encryptedMailLink).toHaveAttribute("href", "/mail/inbox");
-  await page.getByRole("link", { name: "New RFQ" }).click();
-  await expect(page).toHaveURL(/\/rfq(?:#desk)?/);
-  await expect(page.getByText("CORRESPONDENCE CONTACT")).toBeVisible();
-
-  const desk = page.getByRole("region", {
-    name: "Block RFQ",
-    exact: true,
-  });
+  const desk = page.getByRole("region", { name: "Block RFQ", exact: true });
   const market = desk.getByLabel("Private intent market");
   const sellAmount = desk.getByLabel("Private intent sell amount");
   const minimumReceive = desk.getByLabel("Private intent minimum receive");
-  await expect(desk).toBeVisible();
   await expect(market).toHaveValue("STRK_USDC");
   await expect(sellAmount).toHaveValue("0.1");
   await expect(minimumReceive).toHaveValue("0.198");
 
-  await quote(desk, "USDC", { openFinalReview: false });
-  const freshQuoteResponse = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().endsWith("/private-intents/quotes") &&
-      response.ok(),
-    { timeout: 60_000 },
-  );
-  await desk.getByRole("button", { name: "Request new quotes" }).click();
-  await freshQuoteResponse;
-  await expect(desk.getByLabel("Selected private maker quote")).toBeVisible();
-  await expect(
-    desk.getByRole("region", { name: /Compare all makers/ }),
-  ).toBeFocused();
-  await desk.getByRole("button", { name: "Review selected quote" }).click();
-  await expect(
-    desk.getByRole("region", { name: "Final value review" }),
-  ).toBeFocused();
-  await desk.getByRole("button", { name: "Decline selected quote" }).click();
-  await expect(market).toBeEnabled({ timeout: 60_000 });
-  await quote(desk, "USDC");
-  await crashAndRecoverSelectedMaker(request, "app20-localnet-solver-b");
-  await expect(desk.getByLabel("Selected private maker quote")).toContainText(
-    "0.1996 USDC",
-  );
+  // First let a real 90-second lock window close. The exact Take remains
+  // disabled and a fresh request can be prepared without a public fallback.
+  await prepareCohortReview(desk);
+  const expiringWire = await requestCollateralizedQuotes(page, desk);
+  expectSealedRequest(expiringWire, []);
+  await expect(desk.getByText("SINGLE FILL SELECTED")).toBeVisible();
   await desk
-    .getByRole("button", { name: "Accept and fund on LOCALNET" })
+    .getByRole("button", { name: "Review selected quote fills" })
     .click();
-  await expect(
-    desk.getByText(/Funding confirmed from an exact local deal observation/),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await desk.getByRole("button", { name: "Request maker fill" }).click();
-  await expect(desk.getByText(/Exact maker fill observed/)).toBeVisible({
-    timeout: 5 * 60_000,
+  const expiringReview = desk.getByRole("region", {
+    name: "Final atomic Take review",
   });
-  await desk.getByRole("button", { name: "Claim", exact: true }).click();
-  await expect(
-    desk.getByText(
-      "Local demo escrow observation confirms the selected-maker claim.",
-      { exact: true },
-    ),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await expect(
-    desk.getByText("1 local transaction references recorded"),
-  ).toBeVisible();
+  const expiringTake = expiringReview.getByRole("button", {
+    name: "Take atomically on LOCALNET",
+  });
+  await expect(expiringTake).toBeEnabled();
+  await page.waitForTimeout(91_000);
+  await expect(expiringReview).toContainText("expired", { timeout: 10_000 });
+  await expect(expiringReview).toContainText(/lock expired/i);
+  await expect(expiringTake).toBeDisabled();
+  await expiringReview
+    .getByRole("button", { name: "Decline locked quotes" })
+    .click();
+  await expect(market).toBeEnabled();
+  await expect(desk).toContainText(
+    "RFQ cancelled. No Take was submitted; makers recover unused collateral after lock expiry.",
+  );
+  // Refresh the browser-safe operations capability after the full lock TTL;
+  // the cohort confirmation itself must never be carried across that window.
+  await page.reload();
+  await connectLocalnetWallet(page);
+  await expect(desk.getByText("OPERATIONS · RUNNING")).toBeVisible();
 
-  // The same real browser tab verifies authoritative → stale → disagreement →
-  // authoritative presentation before returning to a fresh request surface.
-  let authorityMode: "pass" | "stale" | "disagreement" | "authoritative" =
-    "pass";
-  await page.route("**/rfq/authority/verify", async (route) => {
-    const upstream = await route.fetch();
-    const payload = (await upstream.json()) as {
-      result?: Record<string, unknown>;
-    };
-    if (authorityMode !== "pass" && payload.result) {
-      payload.result = { ...payload.result, status: authorityMode };
-    }
-    const headers = upstream.headers();
-    delete headers["content-length"];
-    await route.fulfill({
-      status: upstream.status(),
-      headers,
-      body: JSON.stringify(payload),
-    });
+  // A larger clip is still covered by one maker. Only the fixed ladder bucket
+  // crosses the browser boundary; the exact 8 STRK and floor stay sealed.
+  await sellAmount.fill("8");
+  await minimumReceive.fill("15.84");
+  await prepareCohortReview(desk);
+  const singleWire = await requestCollateralizedQuotes(page, desk);
+  expectSealedRequest(singleWire, ["8000000000000000000", "15840000"]);
+  expect(singleWire.rfq).toMatchObject({
+    sellBucketMinBaseUnits: "5000000000000000000",
+    sellBucketMaxBaseUnits: "10000000000000000000",
   });
-  await page.getByRole("link", { name: "Activity", exact: true }).click();
-  await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expect(page.getByText("Finalized on the configured chain")).toBeVisible(
+  const singleComparison = desk.getByRole("region", {
+    name: /Compare all makers/,
+  });
+  await expect(singleComparison).toContainText("SINGLE FILL SELECTED");
+  await expect(singleComparison).toContainText(
+    "sell 8 STRK · receive 16.048845 USDC",
+  );
+  await expect(singleComparison).toContainText("app20-localnet-solver-b");
+  await takeAtomically(desk, /Single collateralized fill/, invokeUrls);
+
+  expect(
+    await privateBalance(request, config.usdcTokenAddress, config.runtimeEpoch),
+  ).toBe(usdcBefore + 16_048_845n);
+  expect(
+    await privateBalance(request, config.tokenAddress, config.runtimeEpoch),
+  ).toBe(strkBefore - 8n * 10n ** 18n);
+
+  // The reverse direction exceeds either maker's 5 STRK inventory, so the
+  // coordinator must construct one atomic Take over both locks.
+  await desk.getByRole("button", { name: "Start another RFQ" }).click();
+  await market.selectOption("USDC_STRK");
+  await sellAmount.fill("15");
+  await minimumReceive.fill("7.425");
+
+  const missingEpoch = await request.post(
+    `${LOCALNET_WALLET_API}/devnet/create-block`,
+    {
+      headers: { Origin: new URL(LOCALNET_WALLET_API).origin },
+      data: {},
+    },
+  );
+  expect(missingEpoch.status()).toBe(409);
+  await prepareCohortReview(desk);
+  const splitOutgoing = await requestCollateralizedQuotes(page, desk);
+  const splitComparison = desk.getByRole("region", {
+    name: /Compare all makers/,
+  });
+  await expect(splitComparison).toBeVisible({ timeout: 180_000 });
+  await expect(splitComparison.getByText(/received · consistent/)).toHaveCount(
+    2,
     { timeout: 60_000 },
   );
-  await expect(
-    page.getByRole("heading", {
-      name: "Terminal lifecycle finalized locally",
-    }),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/No exportable receipt is available/),
-  ).toBeVisible();
-  await expect(
-    page.getByText(/Sepolia\/Mainnet production authority remains unavailable/),
-  ).toBeVisible();
-  await expect(page.getByText("No authoritative receipt")).toHaveCount(0);
-  await expect(
-    page.getByText(/value actions are blocked until this is reconciled/),
-  ).toHaveCount(0);
+  const splitWire = splitOutgoing.postDataJSON() as Record<string, unknown>;
+  expectSealedRequest(splitWire, ["15000000", "7425000000000000000"]);
+  expect(splitWire.rfq).toMatchObject({
+    sellBucketMinBaseUnits: "10000000",
+    sellBucketMaxBaseUnits: "25000000",
+  });
+  await expect(splitComparison).toContainText("SPLIT FILL SELECTED · 2 LOCKS");
+  await expect(splitComparison).toContainText(
+    "No single winning lock covers the full exact size",
+  );
+  await expect(splitComparison).toContainText("app20-localnet-solver");
+  await expect(splitComparison).toContainText("app20-localnet-solver-b");
+  await takeAtomically(desk, /2-maker atomic split/, invokeUrls);
 
-  authorityMode = "stale";
-  await expect(page.getByText("Verification pending").first()).toBeVisible({
+  expect(
+    await privateBalance(request, config.usdcTokenAddress, config.runtimeEpoch),
+  ).toBe(usdcBefore + 1_048_845n);
+  expect(
+    await privateBalance(request, config.tokenAddress, config.runtimeEpoch),
+  ).toBeGreaterThan(strkBefore - 8n * 10n ** 18n);
+
+  // Leave the split payout note mature for the Mail-backed invoice journey.
+  await createBlocks(request, config.runtimeEpoch, 10);
+
+  await page.goto("/mail/inbox");
+  await selectLocalNetwork(page);
+  await switchIdentity(page, config, "alice");
+  await ensureMailboxKey(page);
+
+  const ipfsWrites: string[] = [];
+  page.on("request", (outgoing) => {
+    if (
+      outgoing.method() === "POST" &&
+      outgoing.url().includes("/__app20_localnet_ipfs/api/v0/add")
+    ) {
+      ipfsWrites.push(outgoing.url());
+    }
+  });
+  await page.getByRole("button", { name: "Back up RFQ history" }).click();
+  await expect(
+    page.getByText(
+      /RFQ records? backed up through a CID-verified encrypted blob pointer/,
+    ),
+  ).toBeVisible({ timeout: 180_000 });
+  expect(ipfsWrites.length).toBeGreaterThan(0);
+  await expect(
+    page.getByText(/Backup plaintext never left this browser/),
+  ).toBeVisible();
+
+  const invoiceBody = `Lane U localnet USDC invoice ${Date.now()}`;
+  await switchIdentity(page, config, "bob");
+  await ensureMailboxKey(page);
+  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await page.getByLabel(/^To/).fill(localnetIdentity(config, "alice").address);
+  await page
+    .getByPlaceholder(
+      "Write a private message, or leave blank when sending attachments only",
+    )
+    .fill(invoiceBody);
+  await page.getByRole("button", { name: "+ Invoice", exact: true }).click();
+  const invoiceToken = page.getByLabel("Invoice token");
+  await expect(invoiceToken.locator("option")).toHaveText(["STRK", "USDC"]);
+  await invoiceToken.selectOption("USDC");
+  await page.getByLabel("USDC requested").fill("0.1");
+  await page.getByLabel("Invoice memo (optional)").fill("Lane U acceptance");
+  await expect(page.getByText(/0\.1 USDC \(100000 base units\)/)).toBeVisible();
+  await page.getByRole("button", { name: "Send encrypted message" }).click();
+  await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(
+    0,
+    { timeout: 180_000 },
+  );
+
+  await switchIdentity(page, config, "alice");
+  await ensureMailboxKey(page);
+  await scanRecent(page);
+  const invoiceRow = page.getByRole("button").filter({ hasText: invoiceBody });
+  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
+  await invoiceRow.click();
+  await expect(
+    page.getByText(/signed request asks for 0\.1 USDC/),
+  ).toBeVisible();
+  await expect(page.getByText("Mail key signature verified")).toBeVisible();
+  await page.getByRole("button", { name: "Pay privately with STRK" }).click();
+  await expect(page).toHaveURL(/\/rfq(?:#desk)?$/, { timeout: 60_000 });
+
+  const invoiceDesk = page.getByRole("region", {
+    name: "Pay invoice privately",
+  });
+  await expect(
+    invoiceDesk.getByText("INVOICE MODE · STRK → USDC"),
+  ).toBeVisible();
+  await expect(
+    invoiceDesk.getByLabel("Private intent minimum receive"),
+  ).toHaveCount(0);
+  await expect(invoiceDesk.getByText(/0\.1 USDC/).first()).toBeVisible();
+  await expect(
+    invoiceDesk.getByRole("button", {
+      name: "Prepare size-blind cohort review",
+    }),
+  ).toBeEnabled({ timeout: 60_000 });
+  await prepareCohortReview(invoiceDesk);
+  await requestCollateralizedQuotes(page, invoiceDesk);
+  await expect(invoiceDesk.getByText("SINGLE FILL SELECTED")).toBeVisible();
+  await invoiceDesk
+    .getByRole("button", { name: "Review selected quote fills" })
+    .click();
+  const invoiceReview = invoiceDesk.getByRole("region", {
+    name: "Final atomic Take review",
+  });
+  const invoiceInvokesBefore = invokeUrls.length;
+  await invoiceReview
+    .getByRole("button", { name: "Take atomically on LOCALNET" })
+    .click();
+  await expect(page).toHaveURL(/\/mail\/inbox$/, { timeout: 5 * 60_000 });
+  expect(invokeUrls).toHaveLength(invoiceInvokesBefore + 1);
+
+  await scanRecent(page);
+  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
+  await invoiceRow.click();
+  await expect(
+    page.getByText(/USDC note from the private exchange matures/),
+  ).toBeVisible();
+  await createBlocks(request, config.runtimeEpoch, 9);
+  await expect(page.getByText(/\(1 block left\)/)).toBeVisible({
     timeout: 15_000,
   });
+  await createBlocks(request, config.runtimeEpoch, 1);
+  const complete = page.getByRole("button", { name: "Complete payment" });
+  await expect(complete).toBeEnabled({ timeout: 15_000 });
+  await complete.click();
   await expect(
-    page.getByRole("heading", { name: "Needs reconciliation" }),
-  ).toBeVisible();
+    page.getByText("Private USDC payment and encrypted memo confirmed."),
+  ).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByText("Payment verified locally")).toBeVisible();
+  await expect(complete).toHaveCount(0);
 
-  authorityMode = "disagreement";
-  await expect(
-    page.getByText("Reader disagreement · unverified").first(),
-  ).toBeVisible({ timeout: 15_000 });
-
-  authorityMode = "authoritative";
-  await expect(page.getByText("Finalized on the configured chain")).toBeVisible(
-    { timeout: 15_000 },
-  );
-  await expect(
-    page.getByRole("heading", { name: "Needs reconciliation" }),
-  ).toHaveCount(0);
-  authorityMode = "pass";
-  await page.getByRole("link", { name: "New", exact: true }).click();
-  await page.getByRole("button", { name: "Block RFQ", exact: true }).click();
-  await expect(market).toBeEnabled();
-
-  const usdcAfterFirstFill = await privateBalance(
-    request,
-    config.usdcTokenAddress,
-    config.runtimeEpoch,
-  );
-  expect(usdcAfterFirstFill).toBe(199_600n);
-
-  await market.selectOption("USDC_STRK");
-  await expect(sellAmount).toHaveValue("0.1");
-  await expect(minimumReceive).toHaveValue("0.0495");
-  await quote(desk, "STRK");
-  await expect(desk.getByLabel("Selected private maker quote")).toContainText(
-    "0.0499 STRK",
-  );
-  await desk
-    .getByRole("button", { name: "Accept and fund on LOCALNET" })
-    .click();
-  await expect(
-    desk.getByText(/Funding confirmed from an exact local deal observation/),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await desk.getByRole("button", { name: "Request maker fill" }).click();
-  await expect(desk.getByText(/Exact maker fill observed/)).toBeVisible({
-    timeout: 5 * 60_000,
-  });
-  await desk.getByRole("button", { name: "Claim", exact: true }).click();
-  await expect(
-    desk.getByText(
-      "Local demo escrow observation confirms the selected-maker claim.",
-      { exact: true },
-    ),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-
-  const usdcAfterReverseFill = await privateBalance(
-    request,
-    config.usdcTokenAddress,
-    config.runtimeEpoch,
-  );
-  expect(usdcAfterReverseFill).toBe(99_600n);
-
-  await desk.getByRole("button", { name: "Start another RFQ" }).click();
-  await sellAmount.fill("0.05");
-  await minimumReceive.fill("0.02475");
-  await quote(desk, "STRK");
-  await desk.getByLabel("No fill → expiry refund").check();
-  await desk
-    .getByRole("button", { name: "Accept and fund on LOCALNET" })
-    .click();
-  await expect(
-    desk.getByText(/Funding confirmed from an exact local deal observation/),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await desk
-    .getByRole("button", { name: "Await and observe settlement expiry" })
-    .click();
-  await expect(
-    desk.getByText(/Settlement expiry observed by the local harness/),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await desk.getByRole("button", { name: "Refund", exact: true }).click();
-  await expect(
-    desk.getByText(
-      "Local demo escrow observation confirms the timeout refund.",
-      { exact: true },
-    ),
-  ).toBeVisible({ timeout: 5 * 60_000 });
-  await expect(
-    desk.getByText("1 local transaction references recorded"),
-  ).toBeVisible();
-  await expect(
-    privateBalance(request, config.usdcTokenAddress, config.runtimeEpoch),
-  ).resolves.toBe(usdcAfterReverseFill);
-
-  await desk.getByRole("button", { name: "Start another RFQ" }).click();
-  await market.selectOption("USDC_STRK");
-  await sellAmount.fill("11");
-  await minimumReceive.fill("5.445");
-  await desk
-    .getByLabel("Privacy preflight")
-    .getByRole("checkbox", {
-      name: "I understand the warnings and known public settlement leakage.",
-    })
-    .check();
-  await desk
-    .getByRole("button", { name: "Prepare exact invitation review" })
-    .click();
-  await desk
-    .getByLabel("Exact invitation review")
-    .getByRole("checkbox")
-    .check();
-  await desk.getByRole("button", { name: "Request signed quotes" }).click();
-  await expect(
-    desk
-      .getByRole("alert")
-      .filter({ hasText: /private maker inventory can cover/i }),
-  ).toBeVisible({ timeout: 60_000 });
+  await switchIdentity(page, config, "bob");
+  await ensureMailboxKey(page);
+  await scanRecent(page);
+  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
+  await invoiceRow.click();
+  await expect(page.getByText("PAYMENT MEMO", { exact: true })).toBeVisible();
+  await expect(page.getByText(/claims they sent 0\.1 USDC/)).toBeVisible();
 });
 
 test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, and reload without resubmission", async ({
@@ -465,15 +553,11 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       ) => Promise<any>;
       const lifecycle = await dynamicImport("/src/app/rfq/rfq-lifecycle.ts");
       const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
-      const fillRecovery = await dynamicImport(
-        "/src/app/rfq/localnet-maker-fill-recovery.ts",
-      );
       const epochModule = await dynamicImport(
         "/src/dev/localnet-runtime-epoch.ts",
       );
       const now = Math.floor(Date.now() / 1_000);
       const requestDigest = `0x${"51".repeat(32)}`;
-      const quoteDigest = `0x${"52".repeat(32)}`;
       const terms = {
         pairId: "STRK_USDC",
         sellSymbol: "STRK",
@@ -487,24 +571,8 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
         buyAmount: "199600",
         rfqExpiresAt: now + 600,
       };
-      const selectedQuote = {
-        version: "Quote V2",
-        solverId: "app20-localnet-solver-b",
-        solverKey: "app20-localnet-solver-b/quote/p256/v1",
-        nonce: `0x${"53".repeat(32)}`,
-        reservationId: `0x${"54".repeat(32)}`,
-        reservationFence: "7",
-        quoteDigest,
-        spreadBps: 20,
-        pricingProvenance: "fixture:browser-authority-sequence",
-        quotedAt: now,
-        quoteExpiresAt: now + 600,
-        reservationExpiresAt: now + 900,
-        buyAmount: "199600",
-        intentDigest: requestDigest,
-        signature: "0x1",
-      };
       let record = lifecycle.createRfqLifecycleRecord({
+        mode: "v3",
         chainId,
         account,
         rfqId,
@@ -512,93 +580,59 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
         now,
         requestDigest,
         terms,
-        selectedQuote,
         settlement: {
-          version: "Localnet V2",
+          version: "Localnet V3",
           escrowAddress,
           dealId: rfqId,
-          ticketAddress: "0x123",
           deadline: now + 1_200,
         },
+        bucket: {
+          min: "50000000000000000",
+          max: "100000000000000000",
+        },
+        takerCommitment:
+          "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+        takerSecret: "0x66",
+        fills: [
+          {
+            makerId: "app20-localnet-solver-b",
+            lockId: "0x41",
+            amountA: terms.sellAmount,
+            amountB: terms.buyAmount,
+            lockExpiresAt: now + 1_200,
+          },
+        ],
       });
       record = lifecycle.beginRfqPhaseAttempt(
         record,
-        "funding",
-        "browser-funding",
+        "take",
+        "browser-take",
         now + 1,
-        lifecycle.fundingTicketAttemptTargetFromLifecycle(record),
+        lifecycle.takeAttemptTargetFromLifecycle(record),
       );
       record = lifecycle.updateRfqPhaseAttempt(
         record,
-        "funding",
-        "confirmed",
+        "take",
+        "submitted-unknown",
         now + 2,
-        { transactionHash: "0x701" },
-      );
-      record = lifecycle.reviseRfqLifecycle(record, {
-        state: "funded",
-        updatedAt: now + 3,
-      });
-      const localTerms = {
-        account,
-        chainId,
-        rfqId,
-        dealId: rfqId,
-        intentDigest: requestDigest,
-        solverId: selectedQuote.solverId,
-        reservationId: selectedQuote.reservationId,
-        reservationFence: selectedQuote.reservationFence,
-        quoteDigest,
-        sellToken,
-        sellAmount: BigInt(terms.sellAmount),
-        buyToken,
-        buyAmount: BigInt(selectedQuote.buyAmount),
-        deadline: now + 1_200,
-        ticketAddress: "0x123",
-      };
-      record = lifecycle.beginRfqPhaseAttempt(
-        record,
-        "fill",
-        "browser-fill",
-        now + 4,
-        fillRecovery.makerFillAttemptTarget(localTerms),
-      );
-      record = lifecycle.updateRfqPhaseAttempt(
-        record,
-        "fill",
-        "confirmed",
-        now + 5,
-        { transactionHash: "0x702" },
-      );
-      record = lifecycle.reviseRfqLifecycle(record, {
-        state: "claimable",
-        updatedAt: now + 6,
-      });
-      record = lifecycle.beginRfqPhaseAttempt(
-        record,
-        "claim",
-        "browser-claim",
-        now + 7,
-      );
-      record = lifecycle.updateRfqPhaseAttempt(
-        record,
-        "claim",
-        "confirmed",
-        now + 8,
         { transactionHash: "0x703" },
       );
-      record = lifecycle.reviseRfqLifecycle(record, {
-        state: "settled",
-        updatedAt: now + 9,
-        latestObservation: {
-          source: "localnet-deal",
-          dealId: rfqId,
-          escrowAddress,
-          status: 3,
-          stage: "settled",
-          observedAt: now + 9,
+      record = lifecycle.transitionRfqLifecycle(
+        record,
+        "submission-unknown",
+        now + 2,
+      );
+      record = lifecycle.confirmRfqV3Take(
+        record,
+        {
+          tokenA: sellToken,
+          totalA: BigInt(terms.sellAmount),
+          tokenB: buyToken,
+          totalB: BigInt(terms.buyAmount),
+          fillCount: 1,
         },
-      });
+        now + 3,
+      );
       await storageModule.createIndexedDbRfqStorage().save(record);
       return {
         runtimeEpoch: epochModule.localnetRuntimeEpoch(),
@@ -630,6 +664,11 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
     "/private-intents/funding-unknown",
     "/private-intents/funding-abandon",
     "/private-intents/converge",
+    "/private-intents/take-prepare",
+    "/private-intents/take-unknown",
+    "/private-intents/take-abandon",
+    "/private-intents/take-observe",
+    "/private-intents/take-converge",
     "/private-intents/sign-quote",
     "/private-intents/solve",
     "/private-intents/expire",
@@ -664,6 +703,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
           account: body.account,
           rfqId: body.rfqId,
           dealId: body.dealId,
+          lifecycle: "v3",
           status: authorityMode,
           revision: authorityRevision,
           observedAt,
@@ -810,7 +850,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
   ).toBeVisible();
   await expect(
     secondPage.getByRole("button", {
-      name: /Accept and fund|Request maker fill|Claim|Refund/,
+      name: /Take atomically|Accept and fund|Request maker fill|Claim|Refund/,
     }),
   ).toHaveCount(0);
 

@@ -20,6 +20,7 @@ import {
   createDraftAttachment,
   type CompositeDraft,
   type DraftAttachment,
+  type InvoiceDraftToken,
   type TradeDraftFields,
 } from "@/lib/drafts";
 import {
@@ -74,6 +75,7 @@ import {
 import {
   addrSTRK,
   LOCALNET_PROVIDER_INDEX,
+  localnetUsdcToken,
   localnetWalletEnabled,
   myFrontendProviders,
   strk20PoolForProviderIndex,
@@ -124,6 +126,36 @@ export const COMPOSE_PREVIEW_SENDER_AUTH: MailSenderAuth = {
   authPublicKey: "0".repeat(64),
   signature: "0".repeat(128),
 };
+
+export type ComposerInvoiceToken = Readonly<{
+  symbol: InvoiceDraftToken;
+  address: string;
+  decimals: 18 | 6;
+}>;
+
+/** Public networks stay STRK-only; the configured dev wallet adds local USDC. */
+export function composerInvoiceTokenOptions(
+  providerIndex: number,
+  configuredLocalUsdc = localnetUsdcToken,
+): readonly ComposerInvoiceToken[] {
+  const options: ComposerInvoiceToken[] = [
+    { symbol: "STRK", address: addrSTRK, decimals: 18 },
+  ];
+  if (providerIndex === LOCALNET_PROVIDER_INDEX) {
+    try {
+      if (BigInt(configuredLocalUsdc) > 0n) {
+        options.push({
+          symbol: "USDC",
+          address: validateAndParseAddress(configuredLocalUsdc),
+          decimals: 6,
+        });
+      }
+    } catch {
+      // Missing or malformed local configuration stays STRK-only.
+    }
+  }
+  return Object.freeze(options.map((option) => Object.freeze(option)));
+}
 
 type ComposePreflight = {
   recipientCount: number;
@@ -364,6 +396,7 @@ export default function Compose({
     (attachment) => attachment.type === "escrow_fund",
   );
   const hasAnyAttachment = draft.attachments.length > 0;
+  const invoiceTokenOptions = composerInvoiceTokenOptions(providerIndex);
 
   function updateDraft(
     update:
@@ -556,10 +589,18 @@ export default function Compose({
         };
         attachments.push({ type: "payment", payload: payment });
       } else if (attachment.type === "payment_request") {
+        const token = invoiceTokenOptions.find(
+          (option) => option.symbol === attachment.token,
+        );
+        if (!token) {
+          throw new Error(
+            "USDC invoices are available only on the configured localnet demo.",
+          );
+        }
         const payload: PaymentRequestPayload = {
           requestId: attachment.requestId,
-          token: { symbol: "STRK", address: addrSTRK, decimals: 18 },
-          amount: parseDecimalToBaseUnits(attachment.amount, 18),
+          token,
+          amount: parseDecimalToBaseUnits(attachment.amount, token.decimals),
           requester: validateAndParseAddress(senderAddress),
           expiresAt: expiryFromHours(attachment.expiryHours),
           ...(attachment.memo.trim() ? { memo: attachment.memo.trim() } : {}),
@@ -1273,7 +1314,26 @@ export default function Compose({
                 >
                   <div className={styles.dealFields}>
                     <label className={styles.field}>
-                      <span>STRK requested</span>
+                      <span>Invoice token</span>
+                      <select
+                        aria-label="Invoice token"
+                        value={attachment.token}
+                        onChange={(event) =>
+                          updateAttachment("payment_request", (current) => ({
+                            ...(current as typeof attachment),
+                            token: event.target.value as InvoiceDraftToken,
+                          }))
+                        }
+                      >
+                        {invoiceTokenOptions.map((option) => (
+                          <option key={option.symbol} value={option.symbol}>
+                            {option.symbol}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={styles.field}>
+                      <span>{attachment.token} requested</span>
                       <input
                         value={attachment.amount}
                         onChange={(event) =>

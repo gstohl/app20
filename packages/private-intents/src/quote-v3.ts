@@ -54,6 +54,8 @@ export type SolverQuoteV3LockOnChain = Readonly<{
   expiry: number;
   schedule: PriceSchedule;
   remainingB: bigint;
+  ticket: string;
+  createdTransactionHash: string | null;
   status: "open";
 }>;
 
@@ -71,6 +73,8 @@ export type SolverQuoteV3Verification = Readonly<{
     at: number,
   ) => JsonWebKey | Promise<JsonWebKey>;
   lockOnChain: SolverQuoteV3LockOnChain;
+  /** Unit-test escape hatch; browser and production callers must omit it. */
+  allowUnprovenLockTransaction?: true;
 }>;
 
 const DIGEST_PATTERN = /^0x[0-9a-fA-F]{64}$/;
@@ -401,6 +405,13 @@ export async function verifySolverQuoteV3(
   }
 
   const lock = input.lockOnChain;
+  const lockTransactionMatches =
+    lock.createdTransactionHash === null
+      ? input.allowUnprovenLockTransaction === true
+      : requireFelt(
+          lock.createdTransactionHash,
+          "lock.createdTransactionHash",
+        ) === requireFelt(quote.lockTransactionHash, "lockTransactionHash");
   if (
     lock.status !== "open" ||
     requireFelt(lock.rfqId, "lock.rfqId") !==
@@ -411,6 +422,9 @@ export async function verifySolverQuoteV3(
       requireFelt(input.rfq.sellToken, "sellToken") ||
     requireFelt(lock.tokenB, "lock.tokenB") !==
       requireFelt(input.rfq.buyToken, "buyToken") ||
+    requireFelt(lock.ticket, "lock.ticket") !==
+      requireFelt(quote.lockTicket, "lockTicket") ||
+    !lockTransactionMatches ||
     lock.expiry !== quote.lockExpiresAt ||
     !schedulesEqual(lock.schedule, quote.schedule) ||
     typeof lock.remainingB !== "bigint" ||

@@ -125,13 +125,60 @@ export type MakerReconciliationTarget = Readonly<{
   ticketAddress: string;
 }>;
 
+export type MakerV3TerminalReconciliationTarget = Readonly<{
+  lifecycle: "v3";
+  rfqDigest: string;
+  rfqFelt: string;
+  lockId: string;
+  quoteDigest: string;
+  tokenA: string;
+  tokenB: string;
+  takenA: bigint;
+  takenB: bigint;
+  transactionHash: string;
+  authorityRevision: number;
+  idempotencyKey: string;
+}>;
+
 export type MakerTerminalReconciliationRequest = Readonly<{
-  target: MakerReconciliationTarget;
+  target: MakerReconciliationTarget | MakerV3TerminalReconciliationTarget;
   attemptId: string;
   authorityDigest: string;
   authorityRevision: number;
   outcome: "settled" | "refunded";
   settlementTransactionHash?: string;
+}>;
+
+export type MakerV3TerminalReconciliation = Readonly<{
+  idempotencyKey: string;
+  authorityDigest: string;
+  authorityRevision: number;
+  transactionHash: string;
+  reconciledAt: number;
+}>;
+
+export type MakerV3ReconciliationSnapshot = Readonly<{
+  lifecycle: "v3";
+  makerId: string;
+  rfqDigest: string;
+  rfqFelt: string;
+  lockId: string;
+  quoteDigest: string;
+  tokenA: string;
+  tokenB: string;
+  takenA: string;
+  takenB: string;
+  transactionHash: string;
+  authorityRevision: number;
+  idempotencyKey: string;
+  state: LockRecordV1State;
+  terminalReconciliation: Readonly<{
+    idempotencyKey: string;
+    authorityDigest: string;
+    authorityRevision: number;
+    transactionHash: string;
+    reconciledAt: number;
+  }>;
 }>;
 
 export type MakerAuthorityQuarantineRequest = Readonly<{
@@ -464,6 +511,7 @@ type StoredLockRecord = LockRecordV1 &
     pricingProvenance: string;
     signature?: string;
     settlingAction?: "proceeds" | "release";
+    terminalReconciliation?: MakerV3TerminalReconciliation;
   }>;
 
 type StoredLockWire = LockRecordV1Wire &
@@ -474,6 +522,7 @@ type StoredLockWire = LockRecordV1Wire &
     pricingProvenance: string;
     signature?: string;
     settlingAction?: "proceeds" | "release";
+    terminalReconciliation?: MakerV3TerminalReconciliation;
   }>;
 
 type WalPayload = Readonly<{
@@ -735,6 +784,31 @@ function canonicalStoredLock(record: StoredLockRecord): StoredLockRecord {
   ) {
     throw new MakerNodeError("Lock settlement action is invalid.");
   }
+  const terminalReconciliation =
+    record.terminalReconciliation === undefined
+      ? undefined
+      : Object.freeze({
+          idempotencyKey: requireText(
+            record.terminalReconciliation.idempotencyKey,
+            "lock reconciliation idempotency key",
+          ),
+          authorityDigest: requireHex32(
+            record.terminalReconciliation.authorityDigest,
+            "lock reconciliation authority digest",
+          ),
+          authorityRevision: requireTimestamp(
+            record.terminalReconciliation.authorityRevision,
+            "lock reconciliation authority revision",
+          ),
+          transactionHash: requireFeltText(
+            record.terminalReconciliation.transactionHash,
+            "lock reconciliation transaction hash",
+          ),
+          reconciledAt: requireTimestamp(
+            record.terminalReconciliation.reconciledAt,
+            "lock reconciliation time",
+          ),
+        });
   return Object.freeze({
     lockId: requireFeltText(record.lockId, "lockId"),
     rfqDigest: requireHex32(record.rfqDigest, "lock rfqDigest"),
@@ -785,6 +859,7 @@ function canonicalStoredLock(record: StoredLockRecord): StoredLockRecord {
     ...(record.settlingAction === undefined
       ? {}
       : { settlingAction: record.settlingAction }),
+    ...(terminalReconciliation === undefined ? {} : { terminalReconciliation }),
   });
 }
 
@@ -1445,6 +1520,37 @@ function canonicalReconciliationTarget(
   });
 }
 
+function canonicalV3ReconciliationTarget(
+  input: MakerV3TerminalReconciliationTarget,
+): MakerV3TerminalReconciliationTarget {
+  return Object.freeze({
+    lifecycle: "v3",
+    rfqDigest: requireHex32(input.rfqDigest, "v3 reconciliation rfqDigest"),
+    rfqFelt: requireFeltText(input.rfqFelt, "v3 reconciliation rfqFelt"),
+    lockId: requireFeltText(input.lockId, "v3 reconciliation lockId"),
+    quoteDigest: requireHex32(
+      input.quoteDigest,
+      "v3 reconciliation quoteDigest",
+    ),
+    tokenA: requireFeltText(input.tokenA, "v3 reconciliation tokenA"),
+    tokenB: requireFeltText(input.tokenB, "v3 reconciliation tokenB"),
+    takenA: requireAmount(input.takenA, "v3 reconciliation takenA"),
+    takenB: requireAmount(input.takenB, "v3 reconciliation takenB"),
+    transactionHash: requireFeltText(
+      input.transactionHash,
+      "v3 reconciliation transaction hash",
+    ),
+    authorityRevision: requireTimestamp(
+      input.authorityRevision,
+      "v3 reconciliation authority revision",
+    ),
+    idempotencyKey: requireText(
+      input.idempotencyKey,
+      "v3 reconciliation idempotency key",
+    ),
+  });
+}
+
 function selectionFenceForReconciliation(
   record: StoredMakerReservation,
 ): bigint {
@@ -1555,6 +1661,36 @@ function reconciliationSnapshot(
             reconciledAt: record.terminalReconciliation.reconciledAt,
           }),
         }),
+  });
+}
+
+function v3ReconciliationSnapshot(
+  record: StoredLockRecord,
+  makerId: string,
+): MakerV3ReconciliationSnapshot {
+  const canonical = canonicalStoredLock(record);
+  const terminal = canonical.terminalReconciliation;
+  if (!canonical.quoteDigest || !terminal) {
+    throw new MakerNodeError(
+      "Maker lock lacks durable terminal reconciliation fields.",
+    );
+  }
+  return Object.freeze({
+    lifecycle: "v3",
+    makerId,
+    rfqDigest: canonical.rfqDigest,
+    rfqFelt: canonical.rfqFelt,
+    lockId: canonical.lockId,
+    quoteDigest: canonical.quoteDigest,
+    tokenA: canonical.tokenA,
+    tokenB: canonical.tokenB,
+    takenA: canonical.takenA.toString(),
+    takenB: canonical.takenB.toString(),
+    transactionHash: terminal.transactionHash,
+    authorityRevision: terminal.authorityRevision,
+    idempotencyKey: terminal.idempotencyKey,
+    state: canonical.state,
+    terminalReconciliation: Object.freeze({ ...terminal }),
   });
 }
 
@@ -3113,10 +3249,188 @@ export class DurableMakerNode {
     });
   }
 
+  async #quarantineV3ReconciliationLock(lockId: string): Promise<void> {
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (current) draft.set(lockId, { ...current, state: "quarantined" });
+    });
+  }
+
+  async #reconcileV3AuthoritativeTerminal(
+    input: MakerTerminalReconciliationRequest,
+    now: number,
+  ): Promise<MakerV3ReconciliationSnapshot> {
+    if (!("lifecycle" in input.target) || input.target.lifecycle !== "v3") {
+      throw new MakerNodeError("Maker v3 reconciliation target is required.");
+    }
+    const target = canonicalV3ReconciliationTarget(input.target);
+    const attemptId = requireText(
+      input.attemptId,
+      "terminal reconciliation attemptId",
+    );
+    const authorityDigest = requireHex32(
+      input.authorityDigest,
+      "terminal reconciliation authorityDigest",
+    );
+    const authorityRevision = requireTimestamp(
+      input.authorityRevision,
+      "terminal reconciliation authorityRevision",
+    );
+    const transactionHash = requireFeltText(
+      input.settlementTransactionHash ?? "",
+      "settlementTransactionHash",
+    );
+    requireTimestamp(now, "now");
+    if (input.outcome !== "settled") {
+      throw new MakerNodeError(
+        "Maker v3 terminal reconciliation only accepts settled Take authority.",
+      );
+    }
+    if (
+      target.idempotencyKey !== attemptId ||
+      target.authorityRevision !== authorityRevision ||
+      target.transactionHash !== transactionHash
+    ) {
+      throw new MakerNodeError(
+        "Maker v3 reconciliation metadata does not match its target.",
+      );
+    }
+
+    const initial = this.#store
+      .listLocks()
+      .find((record) => record.lockId === target.lockId);
+    if (!initial) {
+      throw new MakerNodeError(
+        `Maker refused unknown v3 lock id ${target.lockId}.`,
+      );
+    }
+    const prior = initial.terminalReconciliation;
+    if (prior && target.authorityRevision < prior.authorityRevision) {
+      throw new MakerNodeError(
+        "Maker refused a stale v3 terminal reconciliation revision.",
+      );
+    }
+    const targetMatches = (record: StoredLockRecord) =>
+      record.rfqDigest === target.rfqDigest &&
+      record.rfqFelt === target.rfqFelt &&
+      record.lockId === target.lockId &&
+      record.quoteDigest === target.quoteDigest &&
+      record.tokenA === target.tokenA &&
+      record.tokenB === target.tokenB &&
+      record.takenA === target.takenA &&
+      record.takenB === target.takenB;
+    if (prior?.authorityRevision === target.authorityRevision) {
+      if (
+        prior.idempotencyKey === target.idempotencyKey &&
+        prior.authorityDigest === authorityDigest &&
+        prior.transactionHash === target.transactionHash &&
+        targetMatches(initial)
+      ) {
+        return v3ReconciliationSnapshot(initial, this.#config.makerId);
+      }
+      await this.#quarantineV3ReconciliationLock(target.lockId);
+      throw new MakerNodeError(
+        "Maker quarantined an equivocated v3 terminal reconciliation.",
+      );
+    }
+    if (initial.state === "quarantined") {
+      throw new MakerNodeError(
+        "Maker refused terminal reconciliation for a quarantined v3 lock.",
+      );
+    }
+    if (
+      initial.rfqDigest !== target.rfqDigest ||
+      initial.rfqFelt !== target.rfqFelt ||
+      initial.quoteDigest !== target.quoteDigest ||
+      initial.tokenA !== target.tokenA ||
+      initial.tokenB !== target.tokenB
+    ) {
+      await this.#quarantineV3ReconciliationLock(target.lockId);
+      throw new MakerNodeError(
+        "Maker quarantined a v3 reconciliation with mismatched RFQ, quote, or tokens.",
+      );
+    }
+
+    let chain: MakerOnChainLock;
+    try {
+      chain = requireOpenChainLock(
+        await this.#v3Wallet().getLock(target.lockId),
+        initial,
+      );
+    } catch (error) {
+      await this.#quarantineV3ReconciliationLock(target.lockId);
+      throw new MakerNodeError(
+        "Maker quarantined a v3 lock whose Take could not be confirmed on chain.",
+        { cause: error },
+      );
+    }
+    const observedTakenA = chain.earnedA;
+    const observedTakenB = initial.maxB - chain.remainingB;
+    if (
+      observedTakenA !== target.takenA ||
+      observedTakenB !== target.takenB ||
+      (initial.takenA !== 0n && initial.takenA !== target.takenA) ||
+      (initial.takenB !== 0n && initial.takenB !== target.takenB)
+    ) {
+      await this.#quarantineV3ReconciliationLock(target.lockId);
+      throw new MakerNodeError(
+        "Maker quarantined a v3 reconciliation with mismatched taken amounts.",
+      );
+    }
+
+    const reconciled = await this.#store.lockTransaction((draft) => {
+      const current = draft.get(target.lockId);
+      if (!current) return undefined;
+      const currentPrior = current.terminalReconciliation;
+      if (
+        current.state === "quarantined" ||
+        current.rfqDigest !== target.rfqDigest ||
+        current.rfqFelt !== target.rfqFelt ||
+        current.quoteDigest !== target.quoteDigest ||
+        current.tokenA !== target.tokenA ||
+        current.tokenB !== target.tokenB ||
+        (current.takenA !== 0n && current.takenA !== target.takenA) ||
+        (current.takenB !== 0n && current.takenB !== target.takenB) ||
+        (currentPrior !== undefined &&
+          currentPrior.authorityRevision >= target.authorityRevision)
+      ) {
+        draft.set(target.lockId, { ...current, state: "quarantined" });
+        return undefined;
+      }
+      const next = canonicalStoredLock({
+        ...current,
+        state:
+          current.state === "settled" || current.state === "settling"
+            ? current.state
+            : "taken",
+        takenA: target.takenA,
+        takenB: target.takenB,
+        terminalReconciliation: Object.freeze({
+          idempotencyKey: target.idempotencyKey,
+          authorityDigest,
+          authorityRevision: target.authorityRevision,
+          transactionHash: target.transactionHash,
+          reconciledAt: now,
+        }),
+      });
+      draft.set(target.lockId, next);
+      return next;
+    });
+    if (!reconciled) {
+      throw new MakerNodeError(
+        "Maker quarantined a v3 lock that changed during reconciliation.",
+      );
+    }
+    return v3ReconciliationSnapshot(reconciled, this.#config.makerId);
+  }
+
   async reconcileAuthoritativeTerminal(
     input: MakerTerminalReconciliationRequest,
     now: number,
-  ): Promise<MakerReconciliationSnapshot> {
+  ): Promise<MakerReconciliationSnapshot | MakerV3ReconciliationSnapshot> {
+    if ("lifecycle" in input.target) {
+      return this.#reconcileV3AuthoritativeTerminal(input, now);
+    }
     const target = canonicalReconciliationTarget(input.target);
     const attemptId = requireText(
       input.attemptId,

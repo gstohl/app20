@@ -85,7 +85,7 @@ Local-v3 findings to resolve before its presentation is treated as complete; the
 
 | ID | Status | Gap |
 | --- | --- | --- |
-| **P1-22** | Open | The browser quote verifier binds the signed schedule, tokens, RFQ, commitment, expiry, and remaining collateral to `get_lock`, but not the signed `lockTicket` to `get_lock.ticket` nor the asserted `lockTransactionHash` to a `LockCreated` receipt; and the localnet browser journeys (Playwright) still exercise the v1 flow. |
+| **P1-22** | Open | The localnet browser journeys (Playwright) still exercise the v1 flow rather than the complete v3 desk journey. |
 | **P0-01** | Open | Production RFQ is not mounted. `src/app/rfq/production-private-intents.ts` and `workers/relay/src/index.ts` fix transport and value authority to `false`. This remains the last change, after every row above. |
 
 ## Build order

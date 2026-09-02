@@ -30,6 +30,7 @@ import {
   deriveMakerSpreadBps,
   deriveUsdcEquivalentBaseUnits,
   formatRfqEconomicRefusal,
+  localnetEconomicReview,
   localnetPairTokenIds,
   reservedBuyAmountFromGross,
 } from "./localnet-rfq-economics.mjs";
@@ -73,6 +74,56 @@ test("delta is specified → enforced on localnet, not P0 closure", () => {
   assert.equal(
     RFQ_ECONOMIC_POLICY_ID,
     "app20/rfq-economics/reviewed-first-release-v1",
+  );
+});
+
+test("the localnet app fixture review preserves browser floor and cap gates", () => {
+  assert.deepEqual(
+    localnetEconomicReview({
+      pairId: "STRK_USDC",
+      sellAmount: 100_000_000_000_000_000n,
+      requestedFloor: 198_000n,
+      surface: "block",
+    }),
+    {
+      policyId: "app20/localnet-rfq-economics/fixture-v1",
+      referencePolicyId: "app20/localnet-strk-usdc-reference/fixed-2-v1",
+      referenceGrossBuyAmount: 200_000n,
+      minimumPolicyFloor: 198_000n,
+      reviewedFloor: 198_000n,
+      maximumTotalDeviationBps: 100,
+      maximumMakerSpreadBps: 50,
+      perTradeCapBaseUnits: 50n * 10n ** 18n,
+      fullFillOnly: true,
+    },
+  );
+  assert.equal(
+    localnetEconomicReview({
+      pairId: "USDC_STRK",
+      sellAmount: 100_000n,
+      surface: "swap",
+    }).reviewedFloor,
+    49_500_000_000_000_000n,
+  );
+  assert.throws(
+    () =>
+      localnetEconomicReview({
+        pairId: "USDC_STRK",
+        sellAmount: 100_000n,
+        requestedFloor: 49_499_999_999_999_999n,
+        surface: "block",
+      }),
+    /0–100 bps deviation band/i,
+  );
+  assert.throws(
+    () =>
+      localnetEconomicReview({
+        pairId: "USDC_STRK",
+        sellAmount: 100_000_001n,
+        requestedFloor: 49_500_000_495_000_000_000n,
+        surface: "block",
+      }),
+    /per-trade cap/i,
   );
 });
 

@@ -29,6 +29,7 @@ export function assertLocalnetRuntimeEpoch(pathname, body, expectedEpoch) {
     pathname.startsWith("/escrow/ensure-") ||
     pathname === "/escrow/lock" ||
     pathname === "/escrow/take" ||
+    pathname === "/devnet/create-block" ||
     pathname === "/rfq/authority/verify" ||
     pathname === "/rfq/unresolved-deals";
   if (epochBound && body?.runtimeEpoch !== expectedEpoch) {

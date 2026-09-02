@@ -211,6 +211,7 @@ function exactV3Coordinator(value, query, authority) {
     return Object.freeze({
       makerId: text(owners[0].makerId, "v3 lock owner makerId"),
       quoteDigest: hex32(owners[0].quoteDigest, "v3 lock owner quote digest"),
+      rfqFelt: text(owners[0].quote.rfqFelt, "v3 lock owner RFQ felt"),
       lockId: fill.lockId,
       amountA: fill.amountA,
       amountB: fill.amountB,

@@ -291,13 +291,13 @@ test("v3 composition posts exact per-lock terminal reconciliation from DealTaken
         makerId: "maker-a",
         state: "quoted",
         quoteDigest: `0x${"8".repeat(64)}`,
-        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest },
+        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest, rfqFelt: v3Query.rfqId },
       },
       {
         makerId: "maker-b",
         state: "quoted",
         quoteDigest: `0x${"9".repeat(64)}`,
-        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest },
+        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest, rfqFelt: v3Query.rfqId },
       },
     ],
   };
@@ -322,12 +322,13 @@ test("v3 composition posts exact per-lock terminal reconciliation from DealTaken
         return {
           ...body.target,
           state: "taken",
-          takenA: body.target.amountA,
-          takenB: body.target.amountB,
+          takenA: body.target.takenA,
+          takenB: body.target.takenB,
           terminalReconciliation: {
-            attemptId: body.attemptId,
+            idempotencyKey: body.attemptId,
             authorityDigest: body.authorityDigest,
             authorityRevision: body.authorityRevision,
+            transactionHash: body.target.transactionHash,
           },
         };
       },

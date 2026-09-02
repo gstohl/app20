@@ -174,6 +174,12 @@ export type LocalnetEscrowLock = Readonly<{
   collateralReleased: boolean;
 }>;
 
+export type LocalnetEscrowLockWithCreationEvidence =
+  LocalnetEscrowLock &
+    Readonly<{
+      createdTransactionHash: string | null;
+    }>;
+
 export type LocalnetEscrowTake = Readonly<{
   tokenA: string;
   totalA: bigint;
@@ -734,7 +740,7 @@ export async function requestQuotesV3(input: {
 export async function readEscrowLock(
   lockId: string,
   signal?: AbortSignal,
-): Promise<LocalnetEscrowLock> {
+): Promise<LocalnetEscrowLockWithCreationEvidence> {
   const result = await postLocalnet(
     "/escrow/lock",
     { lockId: canonicalizeStarknetFelt(lockId) },
@@ -755,6 +761,7 @@ export async function readEscrowLock(
       "remainingB",
       "earnedA",
       "ticket",
+      "createdTransactionHash",
       "proceedsSettled",
       "collateralReleased",
     ],
@@ -785,6 +792,13 @@ export async function readEscrowLock(
     remainingB: asCanonicalDecimal(lock.remainingB, "lock remainingB"),
     earnedA: asCanonicalDecimal(lock.earnedA, "lock earnedA"),
     ticket: asCanonicalFelt(lock.ticket, "lock ticket", status === "empty"),
+    createdTransactionHash:
+      lock.createdTransactionHash === null
+        ? null
+        : asCanonicalFelt(
+            lock.createdTransactionHash,
+            "lock createdTransactionHash",
+          ),
     proceedsSettled: lock.proceedsSettled,
     collateralReleased: lock.collateralReleased,
   });
@@ -801,6 +815,7 @@ export async function readEscrowLock(
       normalized.remainingB !== 0n ||
       normalized.earnedA !== 0n ||
       normalized.ticket !== "0x0" ||
+      normalized.createdTransactionHash !== null ||
       normalized.proceedsSettled ||
       normalized.collateralReleased)
   ) {

@@ -209,13 +209,13 @@ test("v3 take reconciliation binds each LockTaken to one quoted maker and posts 
         makerId: "maker-a",
         state: "quoted",
         quoteDigest: `0x${"8".repeat(64)}`,
-        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest },
+        quote: { lockId: "0xa", rfqDigest: v3Query.rfqDigest, rfqFelt: v3Query.rfqId },
       },
       {
         makerId: "maker-b",
         state: "quoted",
         quoteDigest: `0x${"9".repeat(64)}`,
-        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest },
+        quote: { lockId: "0xb", rfqDigest: v3Query.rfqDigest, rfqFelt: v3Query.rfqId },
       },
     ],
   };

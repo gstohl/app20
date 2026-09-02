@@ -85,6 +85,7 @@ function lockFor(candidate: SolverQuoteV3) {
     remainingB: candidate.schedule.at(-1)!.b,
     earnedA: 0n,
     ticket: candidate.lockTicket,
+    createdTransactionHash: candidate.lockTransactionHash,
     proceedsSettled: false,
     collateralReleased: false,
   });
@@ -171,6 +172,24 @@ describe("browser RFQ v3 verification and selection", () => {
     expect(markup).toContain("150 USDC · 150 base units");
     expect(markup).toContain("maker-c · Refused");
     expect(markup).toContain("inventory unavailable");
+  });
+
+  it.each([
+    ["ticket", { ticket: "0x999" }],
+    ["creation transaction", { createdTransactionHash: "0x998" }],
+  ])("fails closed on a signed lock %s mismatch", async (_field, mutation) => {
+    const candidate = await quote("maker-a", "0x41", 200n);
+    await expect(
+      verifyQuotesV3({
+        rfq,
+        quotes: [candidate],
+        now: NOW,
+        dependencies: {
+          ...dependencies,
+          readLock: async () => ({ ...lockFor(candidate), ...mutation }),
+        },
+      }),
+    ).rejects.toThrow(/open on-chain lock/i);
   });
 
   it("fails closed when two quotes reuse one lock", async () => {

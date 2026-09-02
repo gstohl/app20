@@ -59,6 +59,11 @@ const MAKER_B_MID_USDC_BASE_UNITS = 2_010_000n;
 const MAKER_A_SPREAD_BPS = 30;
 const MAKER_B_SPREAD_BPS = 20;
 const MAKER_B_TIER_IMPROVEMENT_BPS = 10;
+const LOCALNET_MAX_TOTAL_DEVIATION_BPS = 100;
+const LOCALNET_MAX_MAKER_SPREAD_BPS = 50;
+const LOCALNET_ECONOMIC_POLICY_ID = "app20/localnet-rfq-economics/fixture-v1";
+const LOCALNET_REFERENCE_POLICY_ID =
+  "app20/localnet-strk-usdc-reference/fixed-2-v1";
 const RECOVERY_ACTIONS = new Set(["claim", "timeout", "refund"]);
 
 function journalText(value, label) {
@@ -104,6 +109,56 @@ export const UNAPPROVED_LOCALNET_FIXTURE_ACCOUNTING = Object.freeze({
   makerCommittedUsdcBaseUnits: 5_000n * RFQ_USDC_BASE_UNITS,
   marketCommittedUsdcBaseUnits: 15_000n * RFQ_USDC_BASE_UNITS,
 });
+
+/**
+ * Browser/server-shared fixture floor and per-trade guard. Keeping this pure
+ * scripts-side copy avoids importing Vite-only application modules in Node.
+ */
+export function localnetEconomicReview(input) {
+  if (input.sellAmount <= 0n) throw new Error("Sell amount must be positive.");
+  const referenceGrossBuyAmount =
+    input.pairId === "STRK_USDC"
+      ? (input.sellAmount * 2n * USDC_SCALE) / STRK_SCALE
+      : (input.sellAmount * STRK_SCALE) / (2n * USDC_SCALE);
+  if (referenceGrossBuyAmount <= 0n) {
+    throw new Error(
+      "Sell amount is below the localnet reference denomination.",
+    );
+  }
+  const floorNumerator =
+    referenceGrossBuyAmount * BigInt(10_000 - LOCALNET_MAX_TOTAL_DEVIATION_BPS);
+  const minimumPolicyFloor = (floorNumerator + 9_999n) / 10_000n;
+  const reviewedFloor =
+    input.surface === "swap"
+      ? minimumPolicyFloor
+      : (input.requestedFloor ?? 0n);
+  if (
+    reviewedFloor < minimumPolicyFloor ||
+    reviewedFloor > referenceGrossBuyAmount
+  ) {
+    throw new Error(
+      `Minimum receive must remain within the reviewed 0–${LOCALNET_MAX_TOTAL_DEVIATION_BPS} bps deviation band.`,
+    );
+  }
+  const perTradeCapBaseUnits =
+    input.pairId === "STRK_USDC" ? 50n * STRK_SCALE : 100n * USDC_SCALE;
+  if (input.sellAmount > perTradeCapBaseUnits) {
+    throw new Error(
+      "Sell amount exceeds the named localnet fixture per-trade cap.",
+    );
+  }
+  return Object.freeze({
+    policyId: LOCALNET_ECONOMIC_POLICY_ID,
+    referencePolicyId: LOCALNET_REFERENCE_POLICY_ID,
+    referenceGrossBuyAmount,
+    minimumPolicyFloor,
+    reviewedFloor,
+    maximumTotalDeviationBps: LOCALNET_MAX_TOTAL_DEVIATION_BPS,
+    maximumMakerSpreadBps: LOCALNET_MAX_MAKER_SPREAD_BPS,
+    perTradeCapBaseUnits,
+    fullFillOnly: true,
+  });
+}
 
 export function localnetPairTokenIds(direction) {
   if (direction === "STRK_USDC") {

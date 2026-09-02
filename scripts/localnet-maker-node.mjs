@@ -26,6 +26,7 @@ import {
   buildLocalnetMakerSettlementActions,
   dispatchLocalnetMakerFill,
   parseLocalnetEscrowLockResult,
+  parseLocalnetMakerReconciliationTarget,
 } from "./localnet-maker-http.mjs";
 import {
   buildLocalnetMakerSchedule,
@@ -804,21 +805,7 @@ function requireExactBody(body, fields, label) {
 }
 
 function parseReconciliationTarget(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Maker reconciliation target is missing.");
-  return {
-    reservationId: value.reservationId,
-    intentDigest: value.intentDigest,
-    fence: BigInt(value.fence),
-    quoteDigest: value.quoteDigest,
-    dealId: value.dealId,
-    sellToken: value.sellToken,
-    sellAmount: BigInt(value.sellAmount),
-    buyToken: value.buyToken,
-    buyAmount: BigInt(value.buyAmount),
-    deadline: value.deadline,
-    ticketAddress: value.ticketAddress,
-  };
+  return parseLocalnetMakerReconciliationTarget(value);
 }
 
 const server = createServer(async (request, response) => {

@@ -102,6 +102,8 @@ function lock(
     expiry: request.lockExpiresAt,
     schedule: SCHEDULE,
     remainingB: 2_010n,
+    ticket: "0x500",
+    createdTransactionHash: "0x600",
     status: "open",
     ...overrides,
   };
@@ -131,6 +133,7 @@ function verification(
     rfq?: PrivateRfqV2;
     lockOnChain?: SolverQuoteV3LockOnChain;
     verify?: typeof verifyCanonicalQuote;
+    allowUnprovenLockTransaction?: true;
   } = {},
 ) {
   return {
@@ -139,6 +142,9 @@ function verification(
     resolveKey: async () => jwk,
     importPublicKey: importQuotePublicKey,
     verify: overrides.verify ?? verifyCanonicalQuote,
+    ...(overrides.allowUnprovenLockTransaction
+      ? { allowUnprovenLockTransaction: true as const }
+      : {}),
   };
 }
 
@@ -263,6 +269,8 @@ describe("solver quote v3", () => {
     ["commitment", { takerCommitment: "0x125" }],
     ["token A", { tokenA: "0x201" }],
     ["token B", { tokenB: "0x301" }],
+    ["ticket", { ticket: "0x501" }],
+    ["creation transaction", { createdTransactionHash: "0x601" }],
     ["expiry", { expiry: NOW + 89 }],
     ["schedule", { schedule: [{ a: 100n, b: 201n }, SCHEDULE[1]] }],
     ["remaining collateral", { remainingB: 2_009n }],
@@ -275,6 +283,29 @@ describe("solver quote v3", () => {
         verification(jwk, { lockOnChain: lock(mutation) }),
       ),
     ).rejects.toThrow(/open on-chain lock/);
+  });
+
+  it("requires proven lock transaction evidence unless explicitly allowed for unit tests", async () => {
+    const { jwk } = await signedFixture();
+    const unprovenLock = lock({ createdTransactionHash: null });
+    await expect(
+      verifySolverQuoteV3(
+        await quote(),
+        NOW,
+        verification(jwk, { lockOnChain: unprovenLock }),
+      ),
+    ).rejects.toThrow(/open on-chain lock/);
+    await expect(
+      verifySolverQuoteV3(
+        await quote(),
+        NOW,
+        verification(jwk, {
+          lockOnChain: unprovenLock,
+          allowUnprovenLockTransaction: true,
+          verify: async () => true,
+        }),
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it("rejects future, expired, and out-of-RFQ quote windows", async () => {

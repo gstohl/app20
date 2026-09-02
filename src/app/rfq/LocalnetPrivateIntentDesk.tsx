@@ -45,13 +45,7 @@ import {
   myFrontendProviders,
   strk20PoolLocalnet,
 } from "@/utils/constants";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { validateAndParseAddress } from "starknet";
 import {
@@ -101,10 +95,7 @@ import {
   v3RequestMaturityGate,
   type CreatedV3Request,
 } from "./rfq-v3-request";
-import {
-  createV3Selection,
-  type V3SelectionResult,
-} from "./rfq-v3-selection";
+import { createV3Selection, type V3SelectionResult } from "./rfq-v3-selection";
 import {
   estimateInvoiceSellSize,
   sizeInvoiceFromSelectedFills,
@@ -247,8 +238,10 @@ function sameCohort(left: LocalnetV3Cohort, right: LocalnetV3Cohort): boolean {
   return (
     left.epoch === right.epoch &&
     left.checkpoint === right.checkpoint &&
-    left.validUntil === right.validUntil &&
-    left.binding === right.binding &&
+    // The status capability refreshes its deadline on every browser-safe read.
+    // Membership changes invalidate review; a later expiry for the same named
+    // checkpoint does not. The server still validates the reviewed binding and
+    // rejects it once its own original validUntil has passed.
     left.makers.length === right.makers.length &&
     left.makers.every(
       (maker, index) =>
@@ -258,10 +251,7 @@ function sameCohort(left: LocalnetV3Cohort, right: LocalnetV3Cohort): boolean {
   );
 }
 
-function maturityLine(
-  state: MaturityState,
-  token: string,
-): ReactNode {
+function maturityLine(state: MaturityState, token: string): ReactNode {
   if (state.kind !== "ready") {
     return state.kind === "error"
       ? state.message
@@ -270,8 +260,7 @@ function maturityLine(
   const pending = state.status.pending
     .filter(({ deposit }) => feltEquals(deposit.token, token))
     .sort(
-      (left, right) =>
-        right.deposit.blockNumber - left.deposit.blockNumber,
+      (left, right) => right.deposit.blockNumber - left.deposit.blockNumber,
     )[0];
   if (pending) {
     return `Notes from your latest shield mature at block ${pending.matureAtBlock} (${pending.blocksRemaining} block${pending.blocksRemaining === 1 ? "" : "s"} left).`;
@@ -279,9 +268,7 @@ function maturityLine(
   return describeNoteMaturity({
     ...state.status,
     mature: Object.freeze(
-      state.status.mature.filter((deposit) =>
-        feltEquals(deposit.token, token),
-      ),
+      state.status.mature.filter((deposit) => feltEquals(deposit.token, token)),
     ),
     pending: Object.freeze([]),
     allMatureAtBlock: null,
@@ -361,10 +348,7 @@ export default function LocalnetPrivateIntentDesk({
   });
 
   const localnetReady = Boolean(
-    connected &&
-      address &&
-      chain &&
-      providerIndex === LOCALNET_PROVIDER_INDEX,
+    connected && address && chain && providerIndex === LOCALNET_PROVIDER_INDEX,
   );
   const working = flow.kind === "working" || flow.kind === "waiting";
   const surface: DeskSurface = invoice
@@ -403,10 +387,7 @@ export default function LocalnetPrivateIntentDesk({
         surface,
         ...(surface === "block"
           ? {
-              requestedFloor: parseLocalnetTokenAmount(
-                minBuyAmount,
-                pair.buy,
-              ),
+              requestedFloor: parseLocalnetTokenAmount(minBuyAmount, pair.buy),
             }
           : {}),
       });
@@ -532,10 +513,10 @@ export default function LocalnetPrivateIntentDesk({
     const scope = `${chain}:${address.toLowerCase()}`;
     if (consumedScopeRef.current === scope) return;
     consumedScopeRef.current = scope;
-    const invoiceHandoff = consumeInvoiceDeskHandoff(
-      window.sessionStorage,
-      { account: address, chainId: chain },
-    );
+    const invoiceHandoff = consumeInvoiceDeskHandoff(window.sessionStorage, {
+      account: address,
+      chainId: chain,
+    });
     if (
       invoiceHandoff &&
       feltEquals(invoiceHandoff.buyToken, localnetUsdcToken)
@@ -598,13 +579,7 @@ export default function LocalnetPrivateIntentDesk({
       setInvoiceEstimateReady(false);
       setFlow({ kind: "error", message: errorMessage(error) });
     }
-  }, [
-    invoice,
-    invoiceEstimateReady,
-    operations.midAggregate,
-    pairs,
-    quoted,
-  ]);
+  }, [invoice, invoiceEstimateReady, operations.midAggregate, pairs, quoted]);
 
   useEffect(() => {
     if (!localnetReady || !address) {
@@ -629,7 +604,10 @@ export default function LocalnetPrivateIntentDesk({
         });
         const head = await provider.getBlockNumber();
         if (active) {
-          setMaturity({ kind: "ready", status: noteMaturityStatus(deposits, head) });
+          setMaturity({
+            kind: "ready",
+            status: noteMaturityStatus(deposits, head),
+          });
         }
       } catch (error: unknown) {
         if (active) {
@@ -767,7 +745,9 @@ export default function LocalnetPrivateIntentDesk({
     exactSellAmount: bigint;
     localFloor: bigint;
     now: number;
-  }): Promise<Readonly<{ result: V3SelectionResult; exactSellAmount: bigint }>> {
+  }): Promise<
+    Readonly<{ result: V3SelectionResult; exactSellAmount: bigint }>
+  > {
     let exactSellAmount = input.exactSellAmount;
     let invoiceFloorApplied = !invoice;
     let result = await createV3Selection({
@@ -788,10 +768,7 @@ export default function LocalnetPrivateIntentDesk({
         selection: result.selection,
         bucket: input.created.bucket,
       });
-      if (
-        sized.exactSellAmount === exactSellAmount &&
-        invoiceFloorApplied
-      ) {
+      if (sized.exactSellAmount === exactSellAmount && invoiceFloorApplied) {
         break;
       }
       exactSellAmount = sized.exactSellAmount;
@@ -854,9 +831,7 @@ export default function LocalnetPrivateIntentDesk({
     });
   }
 
-  async function runQuoteRequest(
-    maturityOverride?: NoteMaturityStatus,
-  ) {
+  async function runQuoteRequest(maturityOverride?: NoteMaturityStatus) {
     if (!address || !chain) {
       setFlow({
         kind: "error",
@@ -1013,7 +988,9 @@ export default function LocalnetPrivateIntentDesk({
           requestingRecord,
           "refused",
           Math.floor(Date.now() / 1_000),
-          { reason: `Local selection refused: ${selected.result.selection.reason}.` },
+          {
+            reason: `Local selection refused: ${selected.result.selection.reason}.`,
+          },
         );
         refused = await persistLifecycle(refused, request);
         let acknowledgements: readonly LocalnetTranscriptAcknowledgement[] = [];
@@ -1144,10 +1121,7 @@ export default function LocalnetPrivateIntentDesk({
           kind: "waiting",
           message: `Latest matching deposit matures at block ${gate.matureAtBlock} (${gate.blocksRemaining} blocks left). No maker request has been sent.`,
         });
-        maturityTimerRef.current = window.setTimeout(
-          () => void poll(),
-          2_000,
-        );
+        maturityTimerRef.current = window.setTimeout(() => void poll(), 2_000);
       } catch (error: unknown) {
         setWaitForMaturity(false);
         setFlow({ kind: "error", message: errorMessage(error) });
@@ -1358,7 +1332,8 @@ export default function LocalnetPrivateIntentDesk({
   }, [lifecycleRecord, quoted]);
 
   const finalBlockers = useMemo(() => {
-    if (!finalTerms) return Object.freeze(["Exact final terms are unavailable."]);
+    if (!finalTerms)
+      return Object.freeze(["Exact final terms are unavailable."]);
     if (!reviewSnapshot) {
       return Object.freeze([
         reviewSnapshotError ?? "Fresh private balance is unavailable.",
@@ -1402,13 +1377,20 @@ export default function LocalnetPrivateIntentDesk({
       <aside className={styles.operationsGate} role="status">
         <strong>OPERATIONS · {operations.mode.toUpperCase()}</strong>
         <span>
-          {operations.reason} {requestGate.allowed ? "New v3 requests may proceed." : requestGate.reason}
+          {operations.reason}{" "}
+          {requestGate.allowed
+            ? "New v3 requests may proceed."
+            : requestGate.reason}
         </span>
         <Link to="/rfq/operations">Open browser-safe operations</Link>
       </aside>
 
       {swapOnly || invoice ? null : (
-        <div className={styles.deskModeSwitch} role="group" aria-label="RFQ surface">
+        <div
+          className={styles.deskModeSwitch}
+          role="group"
+          aria-label="RFQ surface"
+        >
           <button
             type="button"
             aria-pressed={surface === "swap"}
@@ -1445,13 +1427,18 @@ export default function LocalnetPrivateIntentDesk({
       ) : null}
 
       {invoice ? (
-        <aside className={styles.invoiceTerms} aria-labelledby="invoice-terms-title">
+        <aside
+          className={styles.invoiceTerms}
+          aria-labelledby="invoice-terms-title"
+        >
           <strong>INVOICE MODE · STRK → USDC</strong>
           <h4 id="invoice-terms-title">Invoice terms</h4>
           <dl>
             <div>
               <dt>Payee</dt>
-              <dd><code>{invoice.payee}</code></dd>
+              <dd>
+                <code>{invoice.payee}</code>
+              </dd>
             </div>
             <div>
               <dt>Target</dt>
@@ -1588,7 +1575,10 @@ export default function LocalnetPrivateIntentDesk({
           </label>
         </div>
 
-        <aside className={styles.bucketNotice} aria-label="Size-blind request bucket">
+        <aside
+          className={styles.bucketNotice}
+          aria-label="Size-blind request bucket"
+        >
           <strong>SIZE-BLIND MAKER REQUEST</strong>
           <p>
             {presentedBucketLabel
@@ -1599,7 +1589,10 @@ export default function LocalnetPrivateIntentDesk({
           </p>
         </aside>
 
-        <aside className={styles.maturityEstimate} aria-label="Note maturity estimate">
+        <aside
+          className={styles.maturityEstimate}
+          aria-label="Note maturity estimate"
+        >
           <strong>CHAIN-DERIVED ESTIMATE</strong>
           <p>{maturityLine(maturity, pair.sell.address)}</p>
           <small>
@@ -1610,7 +1603,10 @@ export default function LocalnetPrivateIntentDesk({
 
         {quoted ? null : (
           <>
-            <aside className={styles.privacyPreflight} aria-label="Privacy preflight">
+            <aside
+              className={styles.privacyPreflight}
+              aria-label="Privacy preflight"
+            >
               <strong>PRIVACY PREFLIGHT</strong>
               <p>
                 Exact size and floor stay local. Invited makers learn pair,
@@ -1624,7 +1620,8 @@ export default function LocalnetPrivateIntentDesk({
                       <strong>{finding.level.toUpperCase()}</strong>{" "}
                       {finding.message}
                       <small>
-                        Source: {finding.provenance}; freshness: {finding.freshness}
+                        Source: {finding.provenance}; freshness:{" "}
+                        {finding.freshness}
                       </small>
                     </li>
                   ))}
@@ -1663,7 +1660,10 @@ export default function LocalnetPrivateIntentDesk({
             </button>
 
             {invitationReview && operations.status ? (
-              <aside className={styles.privacyPreflight} aria-label="Maker cohort review">
+              <aside
+                className={styles.privacyPreflight}
+                aria-label="Maker cohort review"
+              >
                 <strong>COHORT REVIEW · BEFORE MAKER DISCLOSURE</strong>
                 <dl>
                   <div>
@@ -1673,8 +1673,11 @@ export default function LocalnetPrivateIntentDesk({
                   <div>
                     <dt>What makers receive</dt>
                     <dd>
-                      {formatSizeBucketLabel(pair.sell.symbol, invitationReview.bucket)} ·
-                      pair, side, and 90-second expiry only
+                      {formatSizeBucketLabel(
+                        pair.sell.symbol,
+                        invitationReview.bucket,
+                      )}{" "}
+                      · pair, side, and 90-second expiry only
                     </dd>
                   </div>
                   <div>
@@ -1726,7 +1729,9 @@ export default function LocalnetPrivateIntentDesk({
               </aside>
             ) : null}
 
-            {requestBlockedReason ? <p role="alert">{requestBlockedReason}</p> : null}
+            {requestBlockedReason ? (
+              <p role="alert">{requestBlockedReason}</p>
+            ) : null}
             <button
               className={styles.privateIntentQuoteButton}
               type="button"
@@ -1741,7 +1746,9 @@ export default function LocalnetPrivateIntentDesk({
                 (Boolean(invoice) && !invoiceEstimateReady)
               }
             >
-              {flow.kind === "working" ? "Requesting…" : "Request collateralized quotes"}
+              {flow.kind === "working"
+                ? "Requesting…"
+                : "Request collateralized quotes"}
             </button>
             {waitForMaturity ? (
               <button
@@ -1783,7 +1790,9 @@ export default function LocalnetPrivateIntentDesk({
             buySymbol={quoted.pair.buy.symbol}
           />
           <section aria-labelledby="transcript-ack-title">
-            <h4 id="transcript-ack-title">Fair-loss transcript acknowledgements</h4>
+            <h4 id="transcript-ack-title">
+              Fair-loss transcript acknowledgements
+            </h4>
             {quoted.transcriptAcknowledgements.length ? (
               <ul className={styles.transcriptAcknowledgements}>
                 {quoted.transcriptAcknowledgements.map((acknowledgement) => (
@@ -1835,9 +1844,7 @@ export default function LocalnetPrivateIntentDesk({
         </button>
       ) : null}
 
-      {quoted &&
-      lifecycleRecord?.state === "reviewing" &&
-      !showFinalReview ? (
+      {quoted && lifecycleRecord?.state === "reviewing" && !showFinalReview ? (
         <div className={styles.reviewEntryActions}>
           <button
             type="button"
@@ -1878,7 +1885,10 @@ export default function LocalnetPrivateIntentDesk({
       ) : null}
 
       {lifecycleRecord?.state === "submission-unknown" ? (
-        <section className={styles.takeOutcome} aria-labelledby="take-unknown-title">
+        <section
+          className={styles.takeOutcome}
+          aria-labelledby="take-unknown-title"
+        >
           <h3 id="take-unknown-title">Take submission outcome unknown</h3>
           <p>
             Do not retry. Verify the exact escrow Take record for lifecycle v3.
@@ -1886,9 +1896,15 @@ export default function LocalnetPrivateIntentDesk({
           {lifecycleRecord.takeTransactionHash ? (
             <code>{lifecycleRecord.takeTransactionHash}</code>
           ) : (
-            <strong>No transaction hash returned · wallet boundary entered</strong>
+            <strong>
+              No transaction hash returned · wallet boundary entered
+            </strong>
           )}
-          <button type="button" disabled={working} onClick={() => void verifyTake()}>
+          <button
+            type="button"
+            disabled={working}
+            onClick={() => void verifyTake()}
+          >
             Verify exact Take
           </button>
         </section>
@@ -1899,9 +1915,13 @@ export default function LocalnetPrivateIntentDesk({
         lifecycleRecord.state === "settled" ||
         lifecycleRecord.attempts.take?.state === "reverted" ||
         lifecycleRecord.state === "quarantined") ? (
-        <section className={styles.takeEvidence} aria-label="RFQ v3 settlement evidence">
+        <section
+          className={styles.takeEvidence}
+          aria-label="RFQ v3 settlement evidence"
+        >
           <p>
-            <strong>Authority stage:</strong> lifecycle v3 · Take transaction only
+            <strong>Authority stage:</strong> lifecycle v3 · Take transaction
+            only
           </p>
           <RfqAuthorityStrip record={lifecycleRecord} />
           <SettlementEvidencePanel
