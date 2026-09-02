@@ -128,6 +128,7 @@ test("projects exact v3 take leases without lock secrets and validates any obser
       tokenB: "0x2",
       totalB: 200n,
       fillCount: 1,
+      fillsDigest: "0x123",
       takenAt: 150,
     }),
     validateObservation: (_observed, expected) => {
@@ -138,7 +139,8 @@ test("projects exact v3 take leases without lock secrets and validates any obser
   assert.equal(validated, 1);
   assert.equal(result[0].lifecycle, "v3");
   assert.equal(result[0].transactions.take, "0xabc");
-  assert.equal(result[0].take.totalB, "200");
+  assert.equal(result[0].observation.totalB, "200");
+  assert.equal(result[0].observation.fillsDigest, "0x123");
   assert.doesNotMatch(JSON.stringify(result), /takerSecret|must never/);
 });
 

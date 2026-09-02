@@ -2,8 +2,9 @@
 useDefault = true
 
 [[allowlists]]
-description = "Vendored upstream deterministic signer and devnet fixtures; never runtime credentials"
+description = "Ignored local runtime artifacts plus vendored deterministic signer and devnet fixtures; never source credentials"
 paths = [
+  '''^\.app20-localnet/''',
   '''^vendor/starknet-privacy/demo/\.env\.example$''',
   '''^workers/relay/test/security\.test\.ts$''',
   '''^scripts/fixtures/localnet-maker-a\.private\.json$''',

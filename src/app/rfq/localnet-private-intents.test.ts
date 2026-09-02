@@ -1,5 +1,6 @@
 import {
   PRIVATE_RFQ_V2_DOMAIN,
+  fillsDigest,
   type PrivateRfqV2,
   type SelectionTranscriptV1,
 } from "@app20/private-intents";
@@ -489,49 +490,53 @@ describe("localnet private-intent adapter", () => {
     const signature = `0x${"0".repeat(63)}1${"0".repeat(63)}1`;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            result: {
-              quotes: [
-                {
-                  domain: "app20/private-intent-quote/v3",
-                  version: 3,
-                  solverId: "maker-a",
-                  quoteKeyId: "maker-a/key",
-                  nonce: `0x${"22".repeat(32)}`,
-                  pool: "starknet:APP20_LOCALNET",
-                  helper: "0x5",
-                  escrowAddress: "0x5",
-                  rfqDigest: `0x${"33".repeat(32)}`,
-                  rfqFelt: "0x77",
-                  sellToken: "0x1",
-                  buyToken: "0x2",
-                  schedule: [{ a: "50", b: "100" }, { a: "100", b: "200" }],
-                  lockId: "0x41",
-                  lockTicket: "0x51",
-                  lockTransactionHash: "0x61",
-                  lockExpiresAt: 1_800_000_090,
-                  spreadBps: 20,
-                  pricingProvenance: "fixture",
-                  quotedAt: 1_800_000_001,
-                  quoteExpiresAt: 1_800_000_030,
-                  signature,
-                },
-              ],
-              refusals: [
-                {
-                  makerId: "maker-b",
-                  code: "inventory",
-                  reason: "No inventory in this bucket.",
-                  quoteDigest: `0x${"44".repeat(32)}`,
-                },
-              ],
-              cohort,
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                quotes: [
+                  {
+                    domain: "app20/private-intent-quote/v3",
+                    version: 3,
+                    solverId: "maker-a",
+                    quoteKeyId: "maker-a/key",
+                    nonce: `0x${"22".repeat(32)}`,
+                    pool: "starknet:APP20_LOCALNET",
+                    helper: "0x5",
+                    escrowAddress: "0x5",
+                    rfqDigest: `0x${"33".repeat(32)}`,
+                    rfqFelt: "0x77",
+                    sellToken: "0x1",
+                    buyToken: "0x2",
+                    schedule: [
+                      { a: "50", b: "100" },
+                      { a: "100", b: "200" },
+                    ],
+                    lockId: "0x41",
+                    lockTicket: "0x51",
+                    lockTransactionHash: "0x61",
+                    lockExpiresAt: 1_800_000_090,
+                    spreadBps: 20,
+                    pricingProvenance: "fixture",
+                    quotedAt: 1_800_000_001,
+                    quoteExpiresAt: 1_800_000_030,
+                    signature,
+                  },
+                ],
+                refusals: [
+                  {
+                    makerId: "maker-b",
+                    code: "inventory",
+                    reason: "No inventory in this bucket.",
+                    quoteDigest: `0x${"44".repeat(32)}`,
+                  },
+                ],
+                cohort,
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
       ),
     );
     await expect(
@@ -578,7 +583,10 @@ describe("localnet private-intent adapter", () => {
                 rfqId: "0x77",
                 takerCommitment: "0x55",
                 expiry: 1_800_000_090,
-                schedule: [{ a: "50", b: "100" }, { a: "100", b: "200" }],
+                schedule: [
+                  { a: "50", b: "100" },
+                  { a: "100", b: "200" },
+                ],
                 remainingB: "200",
                 earnedA: "0",
                 ticket: "0x51",
@@ -706,44 +714,57 @@ describe("localnet private-intent adapter", () => {
   it("restores strict browser-safe unresolved v3 Take rows", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            result: {
-              schema: "app20/localnet-unresolved-deals/v1",
-              environment: "localnet",
-              rawInventoryExposed: false,
-              deals: [
-                {
-                  source: "localnet-coordinator-and-chain",
-                  authority: "server-derived-resume-only",
-                  lifecycle: "v3",
-                  account: "0xabc",
-                  chainId: "0x1",
-                  market: "0x1/0x2",
-                  rfqId: "0x77",
-                  dealId: "0x77",
-                  intentDigest: `0x${"11".repeat(32)}`,
-                  createdAt: 1_800_000_000,
-                  expiresAt: 1_800_000_090,
-                  expected: {
-                    tokenA: "0x1",
-                    totalA: "100",
-                    tokenB: "0x2",
-                    totalB: "200",
-                    fills: [
-                      { lockId: "0x41", amountA: "100", amountB: "200" },
-                    ],
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                schema: "app20/localnet-unresolved-deals/v1",
+                environment: "localnet",
+                rawInventoryExposed: false,
+                deals: [
+                  {
+                    source: "localnet-coordinator-and-chain",
+                    authority: "server-derived-resume-only",
+                    lifecycle: "v3",
+                    account: "0xabc",
+                    chainId: "0x1",
+                    market: "0x1/0x2",
+                    rfqId: "0x77",
+                    dealId: "0x77",
+                    rfqDigest: `0x${"44".repeat(32)}`,
+                    intentDigest: `0x${"11".repeat(32)}`,
+                    createdAt: 1_800_000_000,
+                    expiresAt: 1_800_000_090,
+                    attemptId: "take-recovery-1",
+                    expected: {
+                      tokenA: "0x1",
+                      totalA: "100",
+                      tokenB: "0x2",
+                      totalB: "200",
+                      fills: [
+                        { lockId: "0x41", amountA: "100", amountB: "200" },
+                      ],
+                    },
+                    transactions: { take: "0xabc" },
+                    observation: {
+                      tokenA: "0x1",
+                      totalA: "100",
+                      tokenB: "0x2",
+                      totalB: "200",
+                      fillCount: 1,
+                      fillsDigest: fillsDigest([
+                        { lockId: "0x41", amountA: 100n },
+                      ]),
+                      takenAt: 1_800_000_010,
+                    },
+                    escrowAddress: "0x5",
                   },
-                  transactions: { take: "0xabc" },
-                  observation: { status: "taken" },
-                  escrowAddress: "0x5",
-                },
-              ],
-            },
-          }),
-          { status: 200, headers: { "content-type": "application/json" } },
-        ),
+                ],
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
       ),
     );
     await expect(
@@ -756,6 +777,8 @@ describe("localnet private-intent adapter", () => {
     ).resolves.toEqual([
       expect.objectContaining({
         lifecycle: "v3",
+        rfqDigest: `0x${"44".repeat(32)}`,
+        attemptId: "take-recovery-1",
         expected: {
           tokenA: "0x1",
           totalA: "100",
@@ -766,6 +789,92 @@ describe("localnet private-intent adapter", () => {
         transactions: { take: "0xabc" },
       }),
     ]);
+    vi.unstubAllGlobals();
+  });
+
+  it("rejects unresolved v3 rows outside the exact query and attempt bounds", async () => {
+    const baseDeal = {
+      source: "localnet-coordinator-and-chain",
+      authority: "server-derived-resume-only",
+      lifecycle: "v3",
+      account: "0xabc",
+      chainId: "0x1",
+      market: "0x1/0x2",
+      rfqId: "0x77",
+      dealId: "0x77",
+      rfqDigest: `0x${"44".repeat(32)}`,
+      intentDigest: `0x${"11".repeat(32)}`,
+      createdAt: 1_800_000_000,
+      expiresAt: 1_800_000_090,
+      attemptId: "take-recovery-1",
+      expected: {
+        tokenA: "0x1",
+        totalA: "100",
+        tokenB: "0x2",
+        totalB: "200",
+        fills: [{ lockId: "0x41", amountA: "100", amountB: "200" }],
+      },
+      transactions: {},
+      observation: null,
+      escrowAddress: "0x5",
+    };
+    let servedDeal = structuredClone(baseDeal);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              result: {
+                schema: "app20/localnet-unresolved-deals/v1",
+                environment: "localnet",
+                rawInventoryExposed: false,
+                deals: [servedDeal],
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          ),
+      ),
+    );
+    const query = {
+      account: "0xabc",
+      chainId: "0x1",
+      sellToken: "0x1",
+      buyToken: "0x2",
+    };
+    const mutations: readonly ((deal: typeof baseDeal) => void)[] = [
+      (deal) => {
+        deal.account = "0xdef";
+      },
+      (deal) => {
+        deal.chainId = "0x2";
+      },
+      (deal) => {
+        deal.market = "0x1/0x3";
+      },
+      (deal) => {
+        deal.dealId = "0x78";
+      },
+      (deal) => {
+        deal.expected.tokenA = "0x3";
+      },
+      (deal) => {
+        deal.createdAt = deal.expiresAt;
+      },
+      (deal) => {
+        deal.attemptId = "x".repeat(129);
+      },
+      (deal) => {
+        deal.attemptId = "take\0sibling";
+      },
+    ];
+    for (const mutate of mutations) {
+      servedDeal = structuredClone(baseDeal);
+      mutate(servedDeal);
+      await expect(readLocalnetUnresolvedDealsV3(query)).rejects.toThrow(
+        /query binding|lifetime|attemptId/i,
+      );
+    }
     vi.unstubAllGlobals();
   });
 });

@@ -1,3 +1,5 @@
+import { fillsDigest } from "../packages/private-intents/src/take-signature.ts";
+
 const VALUE_STATUSES = new Set([1, 2, 3, 4]);
 const FILLED_STATUSES = new Set([2, 3]);
 const MAX_U128 = (1n << 128n) - 1n;
@@ -8,6 +10,19 @@ function canonicalNonzeroFelt(value, label) {
   const parsed = BigInt(value);
   if (
     parsed <= 0n ||
+    parsed >= 1n << 252n ||
+    value !== `0x${parsed.toString(16)}`
+  )
+    throw new Error(`${label} must be a canonical lowercase felt.`);
+  return value;
+}
+
+function canonicalDigest(value, label) {
+  if (typeof value !== "string" || !/^0x[0-9a-f]+$/.test(value))
+    throw new Error(`${label} must be a canonical lowercase felt.`);
+  const parsed = BigInt(value);
+  if (
+    parsed < 0n ||
     parsed >= 1n << 252n ||
     value !== `0x${parsed.toString(16)}`
   )
@@ -137,6 +152,12 @@ export function validateLocalnetTakeObservation(
   const expected = canonicalLocalnetTakeExpected(expectedValue);
   if (!take || typeof take !== "object" || Array.isArray(take))
     throw new Error("Observed local escrow take is absent or malformed.");
+  const expectedFillsDigest = fillsDigest(
+    expected.fills.map((fill) => ({
+      lockId: fill.lockId,
+      amountA: BigInt(fill.amountA),
+    })),
+  );
   if (
     asBigInt(take.tokenA, "take token A", toBigInt) !==
       asBigInt(expected.tokenA, "expected take token A", toBigInt) ||
@@ -146,6 +167,8 @@ export function validateLocalnetTakeObservation(
       asBigInt(expected.tokenB, "expected take token B", toBigInt) ||
     asBigInt(take.totalB, "take total B", toBigInt) !==
       BigInt(expected.totalB) ||
+    canonicalDigest(take.fillsDigest, "take fills digest") !==
+      expectedFillsDigest ||
     take.fillCount !== expected.fills.length ||
     !Number.isSafeInteger(take.takenAt) ||
     take.takenAt <= 0

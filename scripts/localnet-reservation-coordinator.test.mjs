@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, test } from "node:test";
 import {
+  LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES,
+  LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS,
   createLocalnetReservationCoordinator,
   digestLocalnetV3Refusal,
 } from "./localnet-reservation-coordinator.mjs";
@@ -535,6 +537,93 @@ test("failed late tombstone release is retried before success is reported", asyn
   assert.equal(calls, 2);
   assert.equal(coordinator.list()[0].state, "released");
 });
+
+test(
+  "release callbacks run outside the coordinator tail and may reenter safely",
+  { timeout: 5_000 },
+  async () => {
+    const direct = createLocalnetReservationCoordinator(journalPath());
+    await direct.beginRequest({ ...REQUEST, market: "0x1/0x2" });
+    await direct.register(
+      {
+        intentDigest: INTENT,
+        reservationId: WINNER,
+        makerId: "maker-a",
+        expiresAt: NOW + 600,
+      },
+      async () => true,
+    );
+    await direct.completeRequestFanout(INTENT);
+    const releaseLeaseId = "release-reentrant";
+    await direct.acquireReleaseLease({
+      ...REQUEST,
+      releaseLeaseId,
+      now: NOW,
+    });
+    let reentered = false;
+    const released = await direct.releaseIntent(
+      { ...REQUEST, releaseLeaseId },
+      async () => {
+        if (!reentered) {
+          reentered = true;
+          const nested = await direct.releaseIntent(
+            { ...REQUEST, releaseLeaseId },
+            async () => {
+              throw new Error(
+                "an active exact release must not dispatch twice",
+              );
+            },
+            NOW,
+          );
+          assert.equal(nested.released, false);
+          assert.equal(nested.unresolved.length, 1);
+        }
+        return true;
+      },
+      NOW,
+    );
+    assert.equal(released.released, true);
+    assert.equal(reentered, true);
+
+    const recovery = createLocalnetReservationCoordinator(journalPath());
+    await recovery.beginRequest({ ...REQUEST, market: "0x1/0x2" });
+    const recoveryLeaseId = "release-register-reentrant";
+    await recovery.acquireReleaseLease({
+      ...REQUEST,
+      releaseLeaseId: recoveryLeaseId,
+      now: NOW,
+    });
+    assert.equal(
+      (
+        await recovery.releaseIntent(
+          { ...REQUEST, releaseLeaseId: recoveryLeaseId },
+          async () => true,
+          NOW,
+        )
+      ).released,
+      false,
+    );
+    const pending = await recovery.register(
+      {
+        intentDigest: INTENT,
+        reservationId: LOSER,
+        makerId: "maker-b",
+        expiresAt: NOW + 600,
+      },
+      async () => {
+        await recovery.completeRequestFanout(INTENT);
+        return false;
+      },
+    );
+    assert.equal(pending.state, "release-pending");
+    const unresolved = await recovery.recover(async () => {
+      await recovery.completeRequestFanout(INTENT);
+      return true;
+    }, NOW);
+    assert.deepEqual(unresolved, []);
+    assert.equal(recovery.getRequest(INTENT).state, "released");
+  },
+);
 
 test("restart preserves ambiguous planned fanout until authoritative expiry", async () => {
   const path = journalPath();
@@ -1955,3 +2044,394 @@ for (const outcome of ["filled", "expired"]) {
     );
   });
 }
+
+function hex32Byte(value) {
+  return `0x${value.toString(16).padStart(2, "0").repeat(32)}`;
+}
+
+async function beginBareV3(
+  coordinator,
+  index,
+  { account = "0xabc", createdAt = NOW, expiresAt = createdAt + 90 } = {},
+) {
+  return coordinator.beginV3Request({
+    rfqDigest: hex32Byte(index),
+    intentDigest: hex32Byte(255 - index),
+    rfqId: `0x${(0x1000 + index).toString(16)}`,
+    account,
+    chainId: "0x1",
+    createdAt,
+    expiresAt,
+    market: "0x1/0x2",
+    makerIds: ["maker-a"],
+  });
+}
+
+async function v3TakeFixture(coordinator, sequence = 1, timestamp = NOW) {
+  const rfqDigest = hex32Byte(0x80 + sequence);
+  const rfqId = `0x${(0x900 + sequence).toString(16)}`;
+  const lockId = `0x${(0xa00 + sequence).toString(16)}`;
+  const quote = {
+    domain: "app20/private-intent-quote/v3",
+    version: 3,
+    solverId: "maker-a",
+    quoteKeyId: "maker-a/key",
+    nonce: hex32Byte(0x20 + sequence),
+    pool: "starknet:APP20_LOCALNET",
+    helper: "0xe5c",
+    escrowAddress: "0xe5c",
+    rfqDigest,
+    rfqFelt: rfqId,
+    sellToken: "0x1",
+    buyToken: "0x2",
+    schedule: [{ a: "100", b: "200" }],
+    lockId,
+    lockTicket: `0x${(0xb00 + sequence).toString(16)}`,
+    lockTransactionHash: `0x${(0xc00 + sequence).toString(16)}`,
+    lockExpiresAt: timestamp + 90,
+    spreadBps: 30,
+    pricingProvenance: "fixture:v3",
+    quotedAt: timestamp,
+    quoteExpiresAt: timestamp + 60,
+    signature: `0x${"0".repeat(63)}1${"0".repeat(63)}1`,
+  };
+  await coordinator.beginV3Request({
+    rfqDigest,
+    intentDigest: hex32Byte(0x40 + sequence),
+    rfqId,
+    account: "0xabc",
+    chainId: "0x1",
+    createdAt: timestamp,
+    expiresAt: timestamp + 90,
+    market: "0x1/0x2",
+    makerIds: ["maker-a"],
+  });
+  await coordinator.recordV3Quote(rfqDigest, "maker-a", {
+    quote,
+    quoteDigest: await digestSolverQuoteV3(decodeSolverQuoteV3(quote)),
+  });
+  await coordinator.completeV3Fanout(rfqDigest);
+  await coordinator.journalV3Transcript(rfqDigest, hex32Byte(0x60 + sequence));
+  return {
+    rfqDigest,
+    target: {
+      rfqId,
+      dealId: rfqId,
+      account: "0xabc",
+      chainId: "0x1",
+      expected: {
+        tokenA: "0x1",
+        totalA: "100",
+        tokenB: "0x2",
+        totalB: "200",
+        fills: [{ lockId, amountA: "100", amountB: "200" }],
+      },
+    },
+  };
+}
+
+test("v3 bounds attempt ids and closed-attempt history across restart", async () => {
+  const path = journalPath();
+  const coordinator = createLocalnetReservationCoordinator(path, {
+    now: () => NOW,
+  });
+  const { rfqDigest, target } = await v3TakeFixture(coordinator);
+  await assert.rejects(
+    coordinator.prepareTake(
+      target,
+      "x".repeat(LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES + 1),
+    ),
+    /attempt-id byte limit|bounded/i,
+  );
+  await assert.rejects(
+    coordinator.prepareTake(target, "é".repeat(65)),
+    /attempt-id byte limit|bounded/i,
+  );
+  for (
+    let index = 0;
+    index < LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS;
+    index += 1
+  ) {
+    const attemptId = `closed-${index}`;
+    await coordinator.prepareTake(target, attemptId);
+    await coordinator.markTakeAbsent(target, attemptId);
+  }
+  assert.equal(
+    coordinator.getV3Request(rfqDigest).closedTakeAttempts.length,
+    LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS,
+  );
+  await assert.rejects(
+    coordinator.prepareTake(target, "closed-overflow"),
+    /attempt quota/i,
+  );
+  const restarted = createLocalnetReservationCoordinator(path, {
+    now: () => NOW,
+  });
+  assert.equal(
+    restarted.getV3Request(rfqDigest).closedTakeAttempts.length,
+    LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS,
+  );
+});
+
+test("v3 expiry closes submission but preserves exact late reconciliation", async () => {
+  let clock = NOW;
+  const path = journalPath();
+  const coordinator = createLocalnetReservationCoordinator(path, {
+    now: () => clock,
+  });
+  const { rfqDigest, target } = await v3TakeFixture(coordinator);
+  await coordinator.prepareTake(target, "take-expiring");
+  clock = NOW + 91;
+  await assert.rejects(
+    coordinator.prepareTake(target, "take-expiring"),
+    /expiry permanently closes/i,
+  );
+  const expired = coordinator.getV3Request(rfqDigest);
+  assert.equal(expired.state, "expired");
+  assert.equal(expired.expiredAt, NOW + 91);
+  assert.equal(expired.expiredFromState, "take-pending");
+  assert.equal(expired.takeAttemptId, "take-expiring");
+  assert.deepEqual(expired.expected, target.expected);
+  const restarted = createLocalnetReservationCoordinator(path, {
+    now: () => clock,
+  });
+  const closed = await restarted.markTakeAbsent(target, "take-expiring");
+  assert.equal(closed.state, "expired");
+  assert.equal(closed.takeAttemptId, undefined);
+  assert.equal(closed.closedTakeAttempts.at(-1).attemptId, "take-expiring");
+
+  clock = NOW;
+  const latePath = journalPath();
+  const late = createLocalnetReservationCoordinator(latePath, {
+    now: () => clock,
+  });
+  const lateFixture = await v3TakeFixture(late, 2);
+  await late.prepareTake(lateFixture.target, "take-late-chain");
+  await late.markTakeUnknown(
+    { ...lateFixture.target, transactionHash: "0xd02" },
+    "take-late-chain",
+  );
+  clock = NOW + 91;
+  await late.completeV3Fanout(lateFixture.rfqDigest);
+  assert.equal(
+    late.getV3Request(lateFixture.rfqDigest).expiredFromState,
+    "take-unknown",
+  );
+  const lateRestarted = createLocalnetReservationCoordinator(latePath, {
+    now: () => clock,
+  });
+  await assert.rejects(
+    lateRestarted.abandonTake(lateFixture.target, "take-late-chain"),
+    /pre-submission/i,
+  );
+  const taken = await lateRestarted.observeTaken(
+    { ...lateFixture.target, transactionHash: "0xd02" },
+    "take-late-chain",
+  );
+  assert.equal(taken.state, "taken");
+  assert.equal(taken.expiredAt, undefined);
+  assert.equal(taken.expiredFromState, undefined);
+});
+
+test("legacy and v3 requests cannot share one RFQ identity in either order or after restart", async () => {
+  const sharedRfqId = "0x1777";
+  const v3FirstPath = journalPath();
+  const v3First = createLocalnetReservationCoordinator(v3FirstPath, {
+    now: () => NOW,
+  });
+  await v3First.beginV3Request({
+    rfqDigest: INTENT,
+    intentDigest: hex32Byte(0x71),
+    rfqId: sharedRfqId,
+    account: "0xabc",
+    chainId: "0x1",
+    createdAt: NOW,
+    expiresAt: NOW + 90,
+    market: "0x1/0x2",
+    makerIds: ["maker-a"],
+  });
+  await assert.rejects(
+    v3First.beginRequest({
+      ...REQUEST,
+      intentDigest: hex32Byte(0x72),
+      rfqId: sharedRfqId,
+      market: "0x1/0x2",
+    }),
+    /v3 request lifecycle/i,
+  );
+  await assert.rejects(
+    v3First.acquireReleaseLease({
+      intentDigest: hex32Byte(0x73),
+      rfqId: sharedRfqId,
+      account: "0xabc",
+      chainId: "0x1",
+      releaseLeaseId: "cross-lifecycle-release",
+      now: NOW,
+    }),
+    /v3 request lifecycle/i,
+  );
+
+  const legacyFirstPath = journalPath();
+  const legacyFirst = createLocalnetReservationCoordinator(legacyFirstPath, {
+    now: () => NOW,
+  });
+  await legacyFirst.beginRequest({
+    ...REQUEST,
+    intentDigest: INTENT,
+    rfqId: sharedRfqId,
+    market: "0x1/0x2",
+  });
+  await assert.rejects(
+    legacyFirst.beginV3Request({
+      rfqDigest: INTENT,
+      intentDigest: hex32Byte(0x74),
+      rfqId: sharedRfqId,
+      account: "0xabc",
+      chainId: "0x1",
+      createdAt: NOW,
+      expiresAt: NOW + 90,
+      market: "0x1/0x2",
+      makerIds: ["maker-a"],
+    }),
+    /legacy request lifecycle/i,
+  );
+
+  const legacyJournal = JSON.parse(readFileSync(legacyFirstPath, "utf8"));
+  const v3Journal = JSON.parse(readFileSync(v3FirstPath, "utf8"));
+  legacyJournal.v3Requests = v3Journal.v3Requests;
+  writeFileSync(
+    legacyFirstPath,
+    `${JSON.stringify(legacyJournal, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  assert.throws(
+    () =>
+      createLocalnetReservationCoordinator(legacyFirstPath, { now: () => NOW }),
+    /cross-lifecycle RFQ identity collision/i,
+  );
+});
+
+test("v3 admission enforces account, global, burst, and retained quotas", async () => {
+  let clock = NOW;
+  const accountPath = journalPath();
+  const accountLimited = createLocalnetReservationCoordinator(accountPath, {
+    now: () => clock,
+    maxV3ActivePerAccount: 2,
+    maxV3ActiveGlobal: 10,
+    maxV3AdmissionsPerWindow: 10,
+  });
+  await beginBareV3(accountLimited, 1);
+  await beginBareV3(accountLimited, 2);
+  await assert.rejects(beginBareV3(accountLimited, 3), /account.*concurrency/i);
+  assert.equal(
+    (await beginBareV3(accountLimited, 4, { account: "0xdef" })).state,
+    "open",
+  );
+
+  const globalLimited = createLocalnetReservationCoordinator(journalPath(), {
+    now: () => clock,
+    maxV3ActivePerAccount: 2,
+    maxV3ActiveGlobal: 2,
+    maxV3AdmissionsPerWindow: 10,
+  });
+  await beginBareV3(globalLimited, 11, { account: "0xa" });
+  await beginBareV3(globalLimited, 12, { account: "0xb" });
+  await assert.rejects(
+    beginBareV3(globalLimited, 13, { account: "0xc" }),
+    /global.*concurrency/i,
+  );
+
+  const burstLimited = createLocalnetReservationCoordinator(journalPath(), {
+    now: () => clock,
+    maxV3ActivePerAccount: 10,
+    maxV3ActiveGlobal: 10,
+    maxV3AdmissionsPerWindow: 2,
+    v3AdmissionWindowSeconds: 60,
+  });
+  await beginBareV3(burstLimited, 21, { expiresAt: NOW + 2 });
+  await beginBareV3(burstLimited, 22, { expiresAt: NOW + 2 });
+  clock = NOW + 3;
+  await assert.rejects(
+    beginBareV3(burstLimited, 23, {
+      createdAt: clock,
+      expiresAt: clock + 90,
+    }),
+    /admission rate/i,
+  );
+  clock = NOW + 61;
+  assert.equal(
+    (
+      await beginBareV3(burstLimited, 23, {
+        createdAt: clock,
+        expiresAt: clock + 90,
+      })
+    ).state,
+    "open",
+  );
+
+  const retained = createLocalnetReservationCoordinator(journalPath(), {
+    now: () => clock,
+    maxV3Requests: 2,
+    maxV3ActiveGlobal: 2,
+    maxV3AdmissionsPerWindow: 10,
+  });
+  await beginBareV3(retained, 31, {
+    createdAt: clock,
+    expiresAt: clock + 2,
+  });
+  await beginBareV3(retained, 32, {
+    createdAt: clock,
+    expiresAt: clock + 2,
+  });
+  clock += 3;
+  await assert.rejects(
+    beginBareV3(retained, 33, {
+      createdAt: clock,
+      expiresAt: clock + 90,
+    }),
+    /retained.*quota/i,
+  );
+  assert.equal(
+    retained.listV3Requests().filter(({ state }) => state === "expired").length,
+    2,
+  );
+});
+
+test("journal byte limits reject capacity normally and oversized startup files fail closed", async () => {
+  const path = journalPath();
+  const seed = createLocalnetReservationCoordinator(path, { now: () => NOW });
+  await beginBareV3(seed, 41);
+  const constrained = createLocalnetReservationCoordinator(path, {
+    now: () => NOW,
+    maxJournalBytes: statSync(path).size,
+  });
+  await assert.rejects(
+    beginBareV3(constrained, 42),
+    /journal exceeds its byte limit/i,
+  );
+  assert.equal(constrained.listV3Requests().length, 1);
+  assert.equal((await beginBareV3(constrained, 41)).state, "open");
+  await assert.rejects(
+    beginBareV3(constrained, 43),
+    /journal exceeds its byte limit/i,
+  );
+
+  const oversized = journalPath();
+  mkdirSync(dirname(oversized), { recursive: true });
+  writeFileSync(oversized, "x".repeat(257));
+  assert.throws(
+    () =>
+      createLocalnetReservationCoordinator(oversized, {
+        maxJournalBytes: 256,
+      }),
+    /journal is too large/i,
+  );
+
+  const malformed = journalPath();
+  mkdirSync(dirname(malformed), { recursive: true });
+  writeFileSync(malformed, "{not-json", { mode: 0o600 });
+  assert.throws(
+    () => createLocalnetReservationCoordinator(malformed),
+    /journal is invalid/i,
+  );
+});

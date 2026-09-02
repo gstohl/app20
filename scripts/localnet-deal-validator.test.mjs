@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fillsDigest } from "../packages/private-intents/src/take-signature.ts";
 import {
   assertLocalnetDealImmutableTerms,
   assertLocalnetDealPhase,
@@ -65,6 +66,12 @@ test("v3 take validation binds totals, tokens, fill count, and each fill sum", (
     ],
   };
   assert.deepEqual(canonicalLocalnetTakeExpected(expected), expected);
+  const expectedFillsDigest = fillsDigest(
+    expected.fills.map((fill) => ({
+      lockId: fill.lockId,
+      amountA: BigInt(fill.amountA),
+    })),
+  );
   assert.equal(
     validateLocalnetTakeObservation(
       {
@@ -73,6 +80,7 @@ test("v3 take validation binds totals, tokens, fill count, and each fill sum", (
         tokenB: "0x2",
         totalB: 201n,
         fillCount: 2,
+        fillsDigest: expectedFillsDigest,
         takenAt: 1_900_000_001,
       },
       expected,
@@ -99,6 +107,23 @@ test("v3 take validation binds totals, tokens, fill count, and each fill sum", (
           tokenB: "0x2",
           totalB: 201n,
           fillCount: 1,
+          fillsDigest: expectedFillsDigest,
+          takenAt: 1_900_000_001,
+        },
+        expected,
+      ),
+    /expected totals and fills/i,
+  );
+  assert.throws(
+    () =>
+      validateLocalnetTakeObservation(
+        {
+          tokenA: "0x1",
+          totalA: 100n,
+          tokenB: "0x2",
+          totalB: 201n,
+          fillCount: 2,
+          fillsDigest: "0x123",
           takenAt: 1_900_000_001,
         },
         expected,

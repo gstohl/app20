@@ -7,6 +7,7 @@ import {
   openSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -49,6 +50,25 @@ const TERMINAL_REQUEST_STATES = new Set([
   "released",
 ]);
 
+export const LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES = 128;
+export const LOCALNET_COORDINATOR_MAX_V3_MAKERS = 16;
+export const LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS = 8;
+export const LOCALNET_COORDINATOR_MAX_V3_ACTIVE_PER_ACCOUNT = 4;
+export const LOCALNET_COORDINATOR_MAX_V3_ACTIVE_GLOBAL = 64;
+export const LOCALNET_COORDINATOR_MAX_V3_ADMISSIONS_PER_WINDOW = 8;
+export const LOCALNET_COORDINATOR_V3_ADMISSION_WINDOW_SECONDS = 60;
+export const LOCALNET_COORDINATOR_MAX_V3_REQUESTS = 256;
+export const LOCALNET_COORDINATOR_MAX_JOURNAL_BYTES = 4 * 1024 * 1024;
+const LOCALNET_COORDINATOR_MAX_TEXT_BYTES = 1024;
+const V3_ACTIVE_STATES = new Set(["open", "take-pending", "take-unknown"]);
+const V3_EXPIRY_SOURCE_STATES = new Set([
+  "open",
+  "take-pending",
+  "take-unknown",
+]);
+
+class CoordinatorJournalCapacityError extends Error {}
+
 function requireHex32(value, label) {
   if (typeof value !== "string" || !HEX_32.test(value))
     throw new Error(
@@ -64,9 +84,34 @@ function requireFelt(value, label) {
 }
 
 function requireText(value, label) {
-  if (typeof value !== "string" || !value.trim() || value.includes("\0"))
-    throw new Error(`${label} is required and must not contain a NUL byte.`);
+  const maxBytes = /(?:attemptId|AttemptId|LeaseId)$/.test(label)
+    ? LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES
+    : LOCALNET_COORDINATOR_MAX_TEXT_BYTES;
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.includes("\0") ||
+    Buffer.byteLength(value.trim()) > maxBytes
+  )
+    throw new Error(
+      `${label} is required, bounded, and must not contain a NUL byte.`,
+    );
   return value.trim();
+}
+
+function requireAttemptId(value, label = "attemptId") {
+  const attemptId = requireText(value, label);
+  if (Buffer.byteLength(attemptId) > LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES)
+    throw new Error(
+      `${label} exceeds the local coordinator attempt-id byte limit.`,
+    );
+  return attemptId;
+}
+
+function positiveLimit(value, label) {
+  if (!Number.isSafeInteger(value) || value <= 0)
+    throw new Error(`${label} must be a positive safe integer.`);
+  return value;
 }
 
 function requireFence(value) {
@@ -113,19 +158,19 @@ function validateSettlementTerms(value) {
 function sameTicketSettlementTerms(left, right) {
   return Boolean(
     left &&
-      right &&
-      left.sellToken === right.sellToken &&
-      left.sellAmount === right.sellAmount &&
-      left.buyToken === right.buyToken &&
-      left.buyAmount === right.buyAmount &&
-      left.deadline === right.deadline,
+    right &&
+    left.sellToken === right.sellToken &&
+    left.sellAmount === right.sellAmount &&
+    left.buyToken === right.buyToken &&
+    left.buyAmount === right.buyAmount &&
+    left.deadline === right.deadline,
   );
 }
 
 function sameSettlementTerms(left, right) {
   return Boolean(
     sameTicketSettlementTerms(left, right) &&
-      left.ticketAddress === right.ticketAddress,
+    left.ticketAddress === right.ticketAddress,
   );
 }
 
@@ -133,7 +178,7 @@ function validateTicketAuthorization(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Coordinator funding-ticket authorization is invalid.");
   return Object.freeze({
-    ticketAttemptId: requireText(value.ticketAttemptId, "ticketAttemptId"),
+    ticketAttemptId: requireAttemptId(value.ticketAttemptId, "ticketAttemptId"),
     dealId: requireFelt(value.dealId, "dealId"),
     ticketAddress: requireFelt(value.ticketAddress, "ticketAddress"),
     settlementTerms: validateSettlementTerms(value.settlementTerms),
@@ -143,11 +188,11 @@ function validateTicketAuthorization(value) {
 function sameTicketAuthorization(left, right) {
   return Boolean(
     left &&
-      right &&
-      left.ticketAttemptId === right.ticketAttemptId &&
-      left.dealId === right.dealId &&
-      left.ticketAddress === right.ticketAddress &&
-      sameSettlementTerms(left.settlementTerms, right.settlementTerms),
+    right &&
+    left.ticketAttemptId === right.ticketAttemptId &&
+    left.dealId === right.dealId &&
+    left.ticketAddress === right.ticketAddress &&
+    sameSettlementTerms(left.settlementTerms, right.settlementTerms),
   );
 }
 
@@ -264,7 +309,7 @@ function validateRequest(value) {
     ...(value.ticketAttemptId === undefined
       ? {}
       : {
-          ticketAttemptId: requireText(
+          ticketAttemptId: requireAttemptId(
             value.ticketAttemptId,
             "ticketAttemptId",
           ),
@@ -289,7 +334,7 @@ function validateRequest(value) {
     ...(value.fundingAttemptId === undefined
       ? {}
       : {
-          fundingAttemptId: requireText(
+          fundingAttemptId: requireAttemptId(
             value.fundingAttemptId,
             "fundingAttemptId",
           ),
@@ -297,12 +342,15 @@ function validateRequest(value) {
     ...(value.releaseLeaseId === undefined
       ? {}
       : {
-          releaseLeaseId: requireText(value.releaseLeaseId, "releaseLeaseId"),
+          releaseLeaseId: requireAttemptId(
+            value.releaseLeaseId,
+            "releaseLeaseId",
+          ),
         }),
     ...(value.abandonedFundingAttemptId === undefined
       ? {}
       : {
-          abandonedFundingAttemptId: requireText(
+          abandonedFundingAttemptId: requireAttemptId(
             value.abandonedFundingAttemptId,
             "abandonedFundingAttemptId",
           ),
@@ -404,6 +452,7 @@ const V3_REQUEST_STATES = new Set([
   "take-pending",
   "take-unknown",
   "taken",
+  "expired",
 ]);
 const V3_REFUSAL_CODES = new Set([
   "bucket",
@@ -455,7 +504,7 @@ function validateClosedTake(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Coordinator closed take attempt is invalid.");
   return Object.freeze({
-    attemptId: requireText(value.attemptId, "closed take attemptId"),
+    attemptId: requireAttemptId(value.attemptId, "closed take attemptId"),
     expected: canonicalLocalnetTakeExpected(value.expected),
   });
 }
@@ -463,8 +512,14 @@ function validateClosedTake(value) {
 function validateV3Request(value) {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Coordinator v3 request must be an object.");
-  if (!Array.isArray(value.makerPlans))
-    throw new Error("Coordinator v3 maker plans must be an array.");
+  if (
+    !Array.isArray(value.makerPlans) ||
+    value.makerPlans.length < 1 ||
+    value.makerPlans.length > LOCALNET_COORDINATOR_MAX_V3_MAKERS
+  )
+    throw new Error(
+      "Coordinator v3 maker plans must contain a bounded non-empty cohort.",
+    );
   const makerPlans = value.makerPlans.map(validateV3MakerPlan);
   makerPlans.sort((left, right) => left.makerId.localeCompare(right.makerId));
   if (
@@ -475,10 +530,13 @@ function validateV3Request(value) {
     validateClosedTake,
   );
   if (
+    closedTakeAttempts.length > LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS ||
     new Set(closedTakeAttempts.map((attempt) => attempt.attemptId)).size !==
-    closedTakeAttempts.length
+      closedTakeAttempts.length
   )
-    throw new Error("Coordinator v3 closed take attempts contain a duplicate.");
+    throw new Error(
+      "Coordinator v3 closed take attempts exceed their cap or contain a duplicate.",
+    );
   const request = {
     lifecycle: "v3",
     rfqDigest: requireHex32(value.rfqDigest, "rfqDigest"),
@@ -487,6 +545,10 @@ function validateV3Request(value) {
     account: requireFelt(value.account, "account"),
     chainId: requireText(value.chainId, "chainId").toLowerCase(),
     createdAt: requireTimestamp(value.createdAt, "createdAt"),
+    admittedAt: requireTimestamp(
+      value.admittedAt ?? value.createdAt,
+      "admittedAt",
+    ),
     expiresAt: requireTimestamp(value.expiresAt, "expiresAt"),
     market: requireText(value.market, "market").toLowerCase(),
     fanoutComplete: value.fanoutComplete === true,
@@ -498,7 +560,9 @@ function validateV3Request(value) {
       : { expected: canonicalLocalnetTakeExpected(value.expected) }),
     ...(value.takeAttemptId === undefined
       ? {}
-      : { takeAttemptId: requireText(value.takeAttemptId, "takeAttemptId") }),
+      : {
+          takeAttemptId: requireAttemptId(value.takeAttemptId, "takeAttemptId"),
+        }),
     ...(value.takeTransactionHash === undefined
       ? {}
       : {
@@ -515,11 +579,22 @@ function validateV3Request(value) {
             "transcriptDigest",
           ),
         }),
+    ...(value.expiredAt === undefined
+      ? {}
+      : { expiredAt: requireTimestamp(value.expiredAt, "expiredAt") }),
+    ...(value.expiredFromState === undefined
+      ? {}
+      : { expiredFromState: value.expiredFromState }),
   };
   if (value.lifecycle !== "v3" || !V3_REQUEST_STATES.has(request.state))
     throw new Error("Coordinator v3 request lifecycle or state is invalid.");
-  if (request.expiresAt <= request.createdAt)
-    throw new Error("Coordinator v3 request expiry must follow creation.");
+  if (
+    request.expiresAt <= request.createdAt ||
+    request.admittedAt >= request.expiresAt
+  )
+    throw new Error(
+      "Coordinator v3 request expiry must follow creation and admission.",
+    );
   if (
     request.fanoutComplete &&
     makerPlans.some((plan) => plan.state === "planned")
@@ -541,6 +616,28 @@ function validateV3Request(value) {
     throw new Error(
       "Coordinator open v3 request contains an active take lease.",
     );
+  if (request.state === "expired") {
+    if (
+      !request.expiredAt ||
+      request.expiredAt < request.expiresAt ||
+      !V3_EXPIRY_SOURCE_STATES.has(request.expiredFromState) ||
+      (request.expiredFromState === "open" &&
+        (request.takeAttemptId ||
+          request.expected ||
+          request.takeTransactionHash)) ||
+      (request.expiredFromState !== "open" &&
+        (!request.takeAttemptId || !request.expected)) ||
+      (request.expiredFromState === "take-pending" &&
+        request.takeTransactionHash)
+    )
+      throw new Error(
+        "Coordinator expired v3 request has invalid expiry provenance or take evidence.",
+      );
+  } else if (request.expiredAt || request.expiredFromState) {
+    throw new Error(
+      "Coordinator non-expired v3 request carries expiry provenance.",
+    );
+  }
   return Object.freeze(request);
 }
 
@@ -630,16 +727,16 @@ function sameRequest(left, right) {
 function sameDeal(left, right) {
   return Boolean(
     left &&
-      right &&
-      left.intentDigest === right.intentDigest &&
-      left.rfqId === right.rfqId &&
-      left.account === right.account &&
-      left.chainId === right.chainId &&
-      left.dealId === right.dealId &&
-      left.reservationId === right.reservationId &&
-      left.makerId === right.makerId &&
-      left.fence === right.fence &&
-      left.quoteDigest === right.quoteDigest,
+    right &&
+    left.intentDigest === right.intentDigest &&
+    left.rfqId === right.rfqId &&
+    left.account === right.account &&
+    left.chainId === right.chainId &&
+    left.dealId === right.dealId &&
+    left.reservationId === right.reservationId &&
+    left.makerId === right.makerId &&
+    left.fence === right.fence &&
+    left.quoteDigest === right.quoteDigest,
   );
 }
 
@@ -658,16 +755,16 @@ function assertRequestBinding(request, binding, action) {
 function pendingSelectionMatches(selection, target) {
   return Boolean(
     selection &&
-      selection.reservationId === target.reservationId &&
-      selection.makerId === target.makerId,
+    selection.reservationId === target.reservationId &&
+    selection.makerId === target.makerId,
   );
 }
 
 function selectionMatches(selection, target) {
   return Boolean(
     pendingSelectionMatches(selection, target) &&
-      selection.fence === target.fence &&
-      selection.quoteDigest === target.quoteDigest,
+    selection.fence === target.fence &&
+    selection.quoteDigest === target.quoteDigest,
   );
 }
 
@@ -680,21 +777,75 @@ export class LocalnetReservationCoordinator {
   #v3Requests = new Map();
   #v3Rfqs = new Map();
   #tail = Promise.resolve();
-  #activeLoserReleases = new Map();
+  #activeReleases = new Map();
   #durableAuthority;
   #durableSerialized;
   #failed = false;
   #faultInjector;
+  #clock;
+  #limits;
+  #maxJournalBytes;
 
   constructor(path, options = {}) {
     this.#path = path;
     this.#faultInjector = options.faultInjector;
+    this.#clock = options.now ?? (() => Math.floor(Date.now() / 1_000));
+    if (typeof this.#clock !== "function")
+      throw new Error("Coordinator clock must be a function.");
+    this.#limits = Object.freeze({
+      maxClosedTakeAttempts: positiveLimit(
+        options.maxClosedTakeAttempts ??
+          LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS,
+        "Coordinator closed-take cap",
+      ),
+      maxV3ActivePerAccount: positiveLimit(
+        options.maxV3ActivePerAccount ??
+          LOCALNET_COORDINATOR_MAX_V3_ACTIVE_PER_ACCOUNT,
+        "Coordinator per-account v3 active cap",
+      ),
+      maxV3ActiveGlobal: positiveLimit(
+        options.maxV3ActiveGlobal ?? LOCALNET_COORDINATOR_MAX_V3_ACTIVE_GLOBAL,
+        "Coordinator global v3 active cap",
+      ),
+      maxV3AdmissionsPerWindow: positiveLimit(
+        options.maxV3AdmissionsPerWindow ??
+          LOCALNET_COORDINATOR_MAX_V3_ADMISSIONS_PER_WINDOW,
+        "Coordinator v3 admission rate",
+      ),
+      v3AdmissionWindowSeconds: positiveLimit(
+        options.v3AdmissionWindowSeconds ??
+          LOCALNET_COORDINATOR_V3_ADMISSION_WINDOW_SECONDS,
+        "Coordinator v3 admission window",
+      ),
+      maxV3Requests: positiveLimit(
+        options.maxV3Requests ?? LOCALNET_COORDINATOR_MAX_V3_REQUESTS,
+        "Coordinator retained v3 request cap",
+      ),
+    });
+    if (
+      this.#limits.maxClosedTakeAttempts >
+      LOCALNET_COORDINATOR_MAX_CLOSED_TAKE_ATTEMPTS
+    )
+      throw new Error(
+        "Coordinator closed-take cap cannot exceed the journal schema maximum.",
+      );
+    this.#maxJournalBytes = positiveLimit(
+      options.maxJournalBytes ?? LOCALNET_COORDINATOR_MAX_JOURNAL_BYTES,
+      "Coordinator journal byte limit",
+    );
     if (!existsSync(path)) {
       this.#durableAuthority = this.#captureAuthority();
       return;
     }
+    if (statSync(path).size > this.#maxJournalBytes)
+      throw new Error("Localnet reservation coordinator journal is too large.");
     this.#durableSerialized = readFileSync(path, "utf8");
-    const journal = JSON.parse(this.#durableSerialized);
+    let journal;
+    try {
+      journal = JSON.parse(this.#durableSerialized);
+    } catch {
+      throw new Error("Localnet reservation coordinator journal is invalid.");
+    }
     const current = journal?.domain === DOMAIN && journal?.version === 4;
     const previous =
       journal?.domain === PREVIOUS_DOMAIN && journal?.version === 3;
@@ -785,6 +936,12 @@ export class LocalnetReservationCoordinator {
     }
     for (const value of journal.v3Requests ?? []) {
       const request = validateV3Request(value);
+      if (
+        request.closedTakeAttempts.length > this.#limits.maxClosedTakeAttempts
+      )
+        throw new Error(
+          "Coordinator journal exceeds the configured closed-take cap.",
+        );
       if (this.#v3Requests.has(request.rfqDigest))
         throw new Error("Coordinator journal contains a duplicate v3 request.");
       const prior = this.#v3Rfqs.get(request.rfqId);
@@ -792,12 +949,75 @@ export class LocalnetReservationCoordinator {
         throw new Error(
           "Coordinator journal contains a duplicate v3 RFQ felt.",
         );
+      if (this.#rfqs.has(request.rfqId))
+        throw new Error(
+          "Coordinator journal contains a cross-lifecycle RFQ identity collision.",
+        );
       this.#v3Requests.set(request.rfqDigest, request);
       this.#v3Rfqs.set(request.rfqId, request.rfqDigest);
     }
+    if (this.#v3Requests.size > this.#limits.maxV3Requests)
+      throw new Error(
+        "Coordinator journal exceeds the retained v3 request cap.",
+      );
+    this.#expireV3Requests(this.#now());
     this.#durableAuthority = this.#captureAuthority();
     if (this.#serializedAuthority() !== this.#durableSerialized)
       this.#persist();
+  }
+
+  #now() {
+    return requireTimestamp(this.#clock(), "coordinator clock");
+  }
+
+  #expireV3Requests(stamp) {
+    let changed = false;
+    for (const [digest, request] of this.#v3Requests) {
+      if (V3_ACTIVE_STATES.has(request.state) && stamp >= request.expiresAt) {
+        this.#v3Requests.set(
+          digest,
+          validateV3Request({
+            ...request,
+            state: "expired",
+            expiredAt: stamp,
+            expiredFromState: request.state,
+          }),
+        );
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  #assertV3Admission(request, stamp) {
+    if (request.expiresAt <= stamp)
+      throw new Error("Coordinator refuses an already-expired v3 request.");
+    if (this.#v3Requests.size >= this.#limits.maxV3Requests)
+      throw new Error("Coordinator retained v3 request quota is full.");
+    const active = [...this.#v3Requests.values()].filter((candidate) =>
+      V3_ACTIVE_STATES.has(candidate.state),
+    );
+    if (active.length >= this.#limits.maxV3ActiveGlobal)
+      throw new Error("Coordinator global v3 concurrency quota is full.");
+    if (
+      active.filter((candidate) => candidate.account === request.account)
+        .length >= this.#limits.maxV3ActivePerAccount
+    )
+      throw new Error("Coordinator account v3 concurrency quota is full.");
+    const windowStart = stamp - this.#limits.v3AdmissionWindowSeconds;
+    const recentForAccount = [...this.#v3Requests.values()].filter(
+      (candidate) =>
+        candidate.account === request.account &&
+        candidate.admittedAt > windowStart,
+    ).length;
+    if (recentForAccount >= this.#limits.maxV3AdmissionsPerWindow)
+      throw new Error("Coordinator account v3 admission rate was exceeded.");
+  }
+
+  #closedTakeAttempts(request, attemptId, expected) {
+    if (request.closedTakeAttempts.length >= this.#limits.maxClosedTakeAttempts)
+      throw new Error("Coordinator v3 closed-take attempt quota is full.");
+    return [...request.closedTakeAttempts, { attemptId, expected }];
   }
 
   #captureAuthority() {
@@ -833,7 +1053,12 @@ export class LocalnetReservationCoordinator {
     const v3Requests = [...this.#v3Requests.values()].sort((a, b) =>
       a.rfqDigest.localeCompare(b.rfqDigest),
     );
-    return `${JSON.stringify({ version: 4, domain: DOMAIN, requests, records, deals, v3Requests }, null, 2)}\n`;
+    const serialized = `${JSON.stringify({ version: 4, domain: DOMAIN, requests, records, deals, v3Requests }, null, 2)}\n`;
+    if (Buffer.byteLength(serialized) > this.#maxJournalBytes)
+      throw new CoordinatorJournalCapacityError(
+        "Coordinator journal exceeds its byte limit.",
+      );
+    return serialized;
   }
 
   #serialize(operation) {
@@ -842,6 +1067,7 @@ export class LocalnetReservationCoordinator {
         throw new Error(
           "Coordinator is fail-stopped after an uncertain durable journal failure; reopen it from disk before retrying.",
         );
+      if (this.#expireV3Requests(this.#now())) this.#persist();
       return operation();
     });
     this.#tail = run.catch(() => undefined);
@@ -919,8 +1145,12 @@ export class LocalnetReservationCoordinator {
       this.#durableSerialized = candidate;
       this.#durableAuthority = candidateAuthority;
     } catch (error) {
-      this.#failed = true;
       this.#restoreAuthority(durableAuthority);
+      if (error instanceof CoordinatorJournalCapacityError && !renamed) {
+        if (temporary && existsSync(temporary)) unlinkSync(temporary);
+        throw error;
+      }
+      this.#failed = true;
       try {
         if (!renamed && temporary && existsSync(temporary))
           unlinkSync(temporary);
@@ -962,6 +1192,10 @@ export class LocalnetReservationCoordinator {
       const rfqOwner = this.#rfqs.get(request.rfqId);
       if (rfqOwner && rfqOwner !== request.intentDigest)
         throw new Error("RFQ identity is already reserved by another request.");
+      if (this.#v3Rfqs.has(request.rfqId))
+        throw new Error(
+          "RFQ identity is already reserved by a v3 request lifecycle.",
+        );
       if (
         request.market &&
         [...this.#requests.values()].some(
@@ -1035,8 +1269,8 @@ export class LocalnetReservationCoordinator {
     });
   }
 
-  register(input, release) {
-    return this.#serialize(async () => {
+  async register(input, release) {
+    const prepared = await this.#serialize(() => {
       const record = validateRecord({ ...input, state: "reserved" });
       let request = this.#requests.get(record.intentDigest);
       if (!request)
@@ -1069,46 +1303,50 @@ export class LocalnetReservationCoordinator {
           throw new Error(
             "Reservation attempt was reused with a different expiry.",
           );
-        return prior;
+        return Object.freeze({ record: clone(prior), release: false });
       }
       if (request.state !== "open") {
         const pending = validateRecord({ ...record, state: "release-pending" });
         this.#records.set(key, pending);
         this.#persist();
-        try {
-          if (
-            await release(
-              pending,
-              "late reservation released behind request tombstone",
-            )
-          ) {
-            const released = validateRecord({ ...pending, state: "released" });
-            this.#records.set(key, released);
-            this.#persist();
-            return released;
-          }
-        } catch (error) {
-          if (this.#failed) throw error;
-          /* durable pending retry */
-        }
-        if (
-          request.state !== "release-check" &&
-          request.state !== "release-pending" &&
-          !TERMINAL_REQUEST_STATES.has(request.state)
-        )
-          throw new Error(
-            "Late reservation conflicts with an active funding state.",
-          );
+        return Object.freeze({ record: clone(pending), release: true });
+      }
+      this.#records.set(key, record);
+      this.#persist();
+      return Object.freeze({ record: clone(record), release: false });
+    });
+    if (!prepared.release) return prepared.record;
+
+    await this.#releaseRecord(
+      prepared.record,
+      release,
+      this.#now(),
+      "late reservation released behind request tombstone",
+    );
+    return this.#serialize(() => {
+      const key = keyOf(prepared.record);
+      const current = this.#records.get(key);
+      const request = this.#requests.get(prepared.record.intentDigest);
+      if (!current || !request)
+        throw new Error("Late reservation lost its durable request binding.");
+      if (["released", "expired", "consumed"].includes(current.state))
+        return current;
+      if (
+        request.state !== "release-check" &&
+        request.state !== "release-pending" &&
+        !TERMINAL_REQUEST_STATES.has(request.state)
+      )
+        throw new Error(
+          "Late reservation conflicts with an active funding state.",
+        );
+      if (request.state !== "release-pending") {
         this.#requests.set(
           request.intentDigest,
           validateRequest({ ...request, state: "release-pending" }),
         );
         this.#persist();
-        return pending;
       }
-      this.#records.set(key, record);
-      this.#persist();
-      return record;
+      return clone(this.#records.get(key));
     });
   }
 
@@ -1652,6 +1890,10 @@ export class LocalnetReservationCoordinator {
           throw new Error(
             "RFQ identity is already reserved by another request.",
           );
+        if (this.#v3Rfqs.has(binding.rfqId))
+          throw new Error(
+            "RFQ identity is already reserved by a v3 request lifecycle.",
+          );
         request = validateRequest({
           ...binding,
           createdAt: stamp,
@@ -1734,42 +1976,24 @@ export class LocalnetReservationCoordinator {
 
   async #releaseRecords(records, release, now, reason) {
     const unresolved = [];
-    for (const current of records) {
-      const key = keyOf(current);
-      if (["released", "expired", "consumed"].includes(current.state)) continue;
-      if (current.expiresAt <= now) {
-        this.#records.set(
-          key,
-          validateRecord({ ...current, state: "expired" }),
-        );
-        this.#persist();
-        continue;
-      }
-      const pending = validateRecord({ ...current, state: "release-pending" });
-      this.#records.set(key, pending);
-      this.#persist();
-      try {
-        if (await release(pending, reason)) {
-          this.#records.set(
-            key,
-            validateRecord({ ...pending, state: "released" }),
-          );
-          this.#persist();
-          continue;
-        }
-      } catch (error) {
-        if (this.#failed) throw error;
-        /* maker may have committed; retry the durable pending attempt */
-      }
-      unresolved.push(clone(this.#records.get(key)));
+    for (const record of records) {
+      const result = await this.#releaseRecord(record, release, now, reason);
+      if (result) unresolved.push(result);
     }
     return Object.freeze(unresolved);
   }
 
-  async #releaseLoser(record, release, now) {
+  async #releaseRecord(record, release, now, reason) {
     const key = keyOf(record);
-    const active = this.#activeLoserReleases.get(key);
-    if (active) return active;
+    const active = this.#activeReleases.get(key);
+    if (active)
+      return this.#serialize(() => {
+        const current = this.#records.get(key);
+        return !current ||
+          ["released", "expired", "consumed"].includes(current.state)
+          ? null
+          : clone(current);
+      });
     const attempt = (async () => {
       const pending = await this.#serialize(() => {
         const current = this.#records.get(key);
@@ -1794,10 +2018,7 @@ export class LocalnetReservationCoordinator {
       if (!pending) return null;
       let released = false;
       try {
-        released = await release(
-          pending,
-          "losing quote released after durable selection confirmation",
-        );
+        released = await release(pending, reason);
       } catch (error) {
         if (this.#failed) throw error;
         // The maker may have committed. The durable pending record is retried.
@@ -1816,12 +2037,12 @@ export class LocalnetReservationCoordinator {
         return null;
       });
     })();
-    this.#activeLoserReleases.set(key, attempt);
+    this.#activeReleases.set(key, attempt);
     try {
       return await attempt;
     } finally {
-      if (this.#activeLoserReleases.get(key) === attempt)
-        this.#activeLoserReleases.delete(key);
+      if (this.#activeReleases.get(key) === attempt)
+        this.#activeReleases.delete(key);
     }
   }
 
@@ -1849,20 +2070,26 @@ export class LocalnetReservationCoordinator {
     });
     const unresolved = [];
     for (const loser of losers) {
-      const result = await this.#releaseLoser(loser, release, stamp);
+      const result = await this.#releaseRecord(
+        loser,
+        release,
+        stamp,
+        "losing quote released after durable selection confirmation",
+      );
       if (result) unresolved.push(result);
     }
     return Object.freeze(unresolved);
   }
 
-  releaseIntent(input, release, now, reason = "client released RFQ") {
-    return this.#serialize(async () => {
+  async releaseIntent(input, release, now, reason = "client released RFQ") {
+    const stamp = requireTimestamp(now, "now");
+    const prepared = await this.#serialize(() => {
       const binding = requestBinding(input);
-      const leaseId = requireText(input.releaseLeaseId, "releaseLeaseId");
+      const leaseId = requireAttemptId(input.releaseLeaseId, "releaseLeaseId");
       let request = this.#requests.get(binding.intentDigest);
       assertRequestBinding(request, binding, "Release");
       if (request.state === "released")
-        return { released: true, unresolved: Object.freeze([]) };
+        return Object.freeze({ binding, leaseId, records: [], done: true });
       if (
         !["release-check", "release-pending"].includes(request.state) ||
         request.releaseLeaseId !== leaseId
@@ -1870,7 +2097,6 @@ export class LocalnetReservationCoordinator {
         throw new Error(
           "Only the exact release lease may release maker reservations.",
         );
-      const stamp = requireTimestamp(now, "now");
       if (stamp >= request.expiresAt && !request.fanoutComplete)
         request = validateRequest({
           ...request,
@@ -1882,31 +2108,57 @@ export class LocalnetReservationCoordinator {
       request = validateRequest({ ...request, state: "release-pending" });
       this.#requests.set(binding.intentDigest, request);
       this.#persist();
-      const unresolved = await this.#releaseRecords(
-        [...this.#records.values()].filter(
-          (record) => record.intentDigest === binding.intentDigest,
-        ),
-        release,
-        stamp,
-        reason,
+      return Object.freeze({
+        binding,
+        leaseId,
+        records: [...this.#records.values()]
+          .filter((record) => record.intentDigest === binding.intentDigest)
+          .map(clone),
+        done: false,
+      });
+    });
+    if (prepared.done) return { released: true, unresolved: Object.freeze([]) };
+
+    await this.#releaseRecords(prepared.records, release, stamp, reason);
+    return this.#serialize(() => {
+      let request = this.#requests.get(prepared.binding.intentDigest);
+      assertRequestBinding(request, prepared.binding, "Release completion");
+      if (request.state === "released")
+        return { released: true, unresolved: Object.freeze([]) };
+      if (
+        request.state !== "release-pending" ||
+        request.releaseLeaseId !== prepared.leaseId
+      )
+        throw new Error(
+          "Exact release lease changed while maker callbacks were in flight.",
+        );
+      const unresolved = Object.freeze(
+        [...this.#records.values()]
+          .filter(
+            (record) =>
+              record.intentDigest === prepared.binding.intentDigest &&
+              !["released", "expired", "consumed"].includes(record.state),
+          )
+          .map(clone),
       );
-      const released = request.fanoutComplete && !unresolved.length;
+      const released = request.fanoutComplete && unresolved.length === 0;
       if (released) {
         request = validateRequest({ ...request, state: "released" });
-        this.#requests.set(binding.intentDigest, request);
+        this.#requests.set(prepared.binding.intentDigest, request);
         this.#persist();
       }
       return { released, unresolved };
     });
   }
 
-  releaseSelected(
+  async releaseSelected(
     input,
     release,
     now,
     reason = "released exact selected reservation",
   ) {
-    return this.#serialize(async () => {
+    const stamp = requireTimestamp(now, "now");
+    const prepared = await this.#serialize(() => {
       const { request, target } = this.#exactRequest(input, "Selected release");
       const deal = this.#deals.get(target.dealId);
       if (
@@ -1917,7 +2169,7 @@ export class LocalnetReservationCoordinator {
           "Selected release target does not match the durable funded deal association.",
         );
       if (request.state === "expired")
-        return { released: true, unresolved: Object.freeze([]) };
+        return Object.freeze({ target, records: [], done: true });
       const records = [...this.#records.values()].filter(
         (record) =>
           record.intentDigest === target.intentDigest &&
@@ -1931,11 +2183,37 @@ export class LocalnetReservationCoordinator {
       );
       if (records.length !== 1)
         throw new Error("Exact selected reservation is unavailable.");
-      const unresolved = await this.#releaseRecords(
-        records,
-        release,
-        requireTimestamp(now, "now"),
-        reason,
+      return Object.freeze({
+        target,
+        records: records.map(clone),
+        done: false,
+      });
+    });
+    if (prepared.done) return { released: true, unresolved: Object.freeze([]) };
+
+    await this.#releaseRecords(prepared.records, release, stamp, reason);
+    return this.#serialize(() => {
+      const { target } = this.#exactRequest(
+        input,
+        "Selected release completion",
+      );
+      const deal = this.#deals.get(target.dealId);
+      if (!sameDeal(deal, validateDeal(prepared.target)))
+        throw new Error(
+          "Selected release binding changed while its callback was in flight.",
+        );
+      const unresolved = Object.freeze(
+        [...this.#records.values()]
+          .filter(
+            (record) =>
+              record.intentDigest === target.intentDigest &&
+              record.reservationId === target.reservationId &&
+              record.makerId === target.makerId &&
+              record.fence === target.fence &&
+              record.quoteDigest === target.quoteDigest &&
+              !["released", "expired", "consumed"].includes(record.state),
+          )
+          .map(clone),
       );
       return { released: unresolved.length === 0, unresolved };
     });
@@ -1979,6 +2257,7 @@ export class LocalnetReservationCoordinator {
         throw new Error(
           "Coordinator v3 request requires an invited maker cohort.",
         );
+      const admittedAt = this.#now();
       const request = validateV3Request({
         lifecycle: "v3",
         rfqDigest: input.rfqDigest,
@@ -1987,6 +2266,7 @@ export class LocalnetReservationCoordinator {
         account: input.account,
         chainId: input.chainId,
         createdAt: input.createdAt,
+        admittedAt,
         expiresAt: input.expiresAt,
         market: input.market,
         fanoutComplete: false,
@@ -2005,10 +2285,14 @@ export class LocalnetReservationCoordinator {
           );
         return prior;
       }
-      const owner =
-        this.#v3Rfqs.get(request.rfqId) ?? this.#rfqs.get(request.rfqId);
-      if (owner && owner !== request.rfqDigest)
+      this.#assertV3Admission(request, admittedAt);
+      const v3Owner = this.#v3Rfqs.get(request.rfqId);
+      if (v3Owner && v3Owner !== request.rfqDigest)
         throw new Error("V3 RFQ felt is already reserved by another request.");
+      if (this.#rfqs.has(request.rfqId))
+        throw new Error(
+          "V3 RFQ felt is already reserved by a legacy request lifecycle.",
+        );
       this.#v3Requests.set(request.rfqDigest, request);
       this.#v3Rfqs.set(request.rfqId, request.rfqDigest);
       this.#persist();
@@ -2219,7 +2503,7 @@ export class LocalnetReservationCoordinator {
         input,
         "V3 take preparation",
       );
-      const attempt = requireText(attemptId, "attemptId");
+      const attempt = requireAttemptId(attemptId);
       const closed = request.closedTakeAttempts.find(
         (entry) => entry.attemptId === attempt,
       );
@@ -2233,6 +2517,13 @@ export class LocalnetReservationCoordinator {
         );
       if (request.state === "taken")
         throw new Error("V3 take is already authoritatively recorded.");
+      if (request.state === "expired")
+        throw new Error("V3 RFQ expiry permanently closes take submission.");
+      if (
+        request.state === "open" &&
+        request.closedTakeAttempts.length >= this.#limits.maxClosedTakeAttempts
+      )
+        throw new Error("Coordinator v3 closed-take attempt quota is full.");
       if (request.state === "take-pending") {
         if (
           request.takeAttemptId !== attempt ||
@@ -2258,9 +2549,9 @@ export class LocalnetReservationCoordinator {
   markTakeUnknown(input, attemptId) {
     return this.#serialize(() => {
       const { request, expected } = this.#exactV3Take(input, "V3 take unknown");
-      const attempt = requireText(attemptId, "attemptId");
+      const attempt = requireAttemptId(attemptId);
       if (
-        !["take-pending", "take-unknown"].includes(request.state) ||
+        !["take-pending", "take-unknown", "expired"].includes(request.state) ||
         request.takeAttemptId !== attempt ||
         !sameTakeExpected(request.expected, expected)
       )
@@ -2269,13 +2560,18 @@ export class LocalnetReservationCoordinator {
         );
       const takeTransactionHash = this.#takeHash(request, input);
       if (
-        request.state === "take-unknown" &&
+        (request.state === "take-unknown" ||
+          (request.state === "expired" &&
+            request.expiredFromState === "take-unknown")) &&
         request.takeTransactionHash === takeTransactionHash
       )
         return request;
       const next = validateV3Request({
         ...request,
-        state: "take-unknown",
+        state: request.state === "expired" ? "expired" : "take-unknown",
+        ...(request.state === "expired"
+          ? { expiredFromState: "take-unknown" }
+          : {}),
         ...(takeTransactionHash ? { takeTransactionHash } : {}),
       });
       this.#v3Requests.set(request.rfqDigest, next);
@@ -2290,7 +2586,7 @@ export class LocalnetReservationCoordinator {
         input,
         "V3 take abandonment",
       );
-      const attempt = requireText(attemptId, "attemptId");
+      const attempt = requireAttemptId(attemptId);
       const closed = request.closedTakeAttempts.find(
         (entry) => entry.attemptId === attempt,
       );
@@ -2301,18 +2597,25 @@ export class LocalnetReservationCoordinator {
           );
         return request;
       }
-      if (request.state === "take-unknown" || request.state === "taken")
+      if (
+        request.state === "take-unknown" ||
+        request.state === "taken" ||
+        (request.state === "expired" &&
+          request.expiredFromState === "take-unknown")
+      )
         throw new Error(
           "Only an absent pre-submission v3 take may be abandoned.",
         );
       if (
-        request.state === "take-pending" &&
+        (request.state === "take-pending" || request.state === "expired") &&
         (request.takeAttemptId !== attempt ||
           !sameTakeExpected(request.expected, expected))
       )
         throw new Error(
           "Another exact v3 take attempt owns the durable lease.",
         );
+      if (request.state === "expired" && !request.takeAttemptId)
+        throw new Error("An expired v3 RFQ cannot create an abandonment.");
       const {
         expected: _expected,
         takeAttemptId: _takeAttemptId,
@@ -2321,11 +2624,13 @@ export class LocalnetReservationCoordinator {
       } = request;
       const next = validateV3Request({
         ...rest,
-        state: "open",
-        closedTakeAttempts: [
-          ...request.closedTakeAttempts,
-          { attemptId: attempt, expected },
-        ],
+        state: request.state === "expired" ? "expired" : "open",
+        ...(request.state === "expired" ? { expiredFromState: "open" } : {}),
+        closedTakeAttempts: this.#closedTakeAttempts(
+          request,
+          attempt,
+          expected,
+        ),
       });
       this.#v3Requests.set(request.rfqDigest, next);
       this.#persist();
@@ -2339,9 +2644,11 @@ export class LocalnetReservationCoordinator {
         input,
         "V3 take observation",
       );
-      const attempt = requireText(attemptId, "attemptId");
+      const attempt = requireAttemptId(attemptId);
       if (
-        !["take-pending", "take-unknown", "taken"].includes(request.state) ||
+        !["take-pending", "take-unknown", "taken", "expired"].includes(
+          request.state,
+        ) ||
         request.takeAttemptId !== attempt ||
         !sameTakeExpected(request.expected, expected)
       )
@@ -2354,8 +2661,13 @@ export class LocalnetReservationCoordinator {
         request.takeTransactionHash === takeTransactionHash
       )
         return request;
+      const {
+        expiredAt: _expiredAt,
+        expiredFromState: _expiredFromState,
+        ...activeRequest
+      } = request;
       const next = validateV3Request({
-        ...request,
+        ...activeRequest,
         state: "taken",
         ...(takeTransactionHash ? { takeTransactionHash } : {}),
       });
@@ -2368,7 +2680,7 @@ export class LocalnetReservationCoordinator {
   markTakeAbsent(input, attemptId) {
     return this.#serialize(() => {
       const { request, expected } = this.#exactV3Take(input, "V3 take absence");
-      const attempt = requireText(attemptId, "attemptId");
+      const attempt = requireAttemptId(attemptId);
       const closed = request.closedTakeAttempts.find(
         (entry) => entry.attemptId === attempt,
       );
@@ -2378,7 +2690,7 @@ export class LocalnetReservationCoordinator {
         return request;
       }
       if (
-        !["take-pending", "take-unknown"].includes(request.state) ||
+        !["take-pending", "take-unknown", "expired"].includes(request.state) ||
         request.takeAttemptId !== attempt ||
         !sameTakeExpected(request.expected, expected)
       )
@@ -2393,11 +2705,13 @@ export class LocalnetReservationCoordinator {
       } = request;
       const next = validateV3Request({
         ...rest,
-        state: "open",
-        closedTakeAttempts: [
-          ...request.closedTakeAttempts,
-          { attemptId: attempt, expected },
-        ],
+        state: request.state === "expired" ? "expired" : "open",
+        ...(request.state === "expired" ? { expiredFromState: "open" } : {}),
+        closedTakeAttempts: this.#closedTakeAttempts(
+          request,
+          attempt,
+          expected,
+        ),
       });
       this.#v3Requests.set(request.rfqDigest, next);
       this.#persist();
@@ -2405,18 +2719,20 @@ export class LocalnetReservationCoordinator {
     });
   }
 
-  recover(release, now) {
-    return this.#serialize(async () => {
-      const stamp = requireTimestamp(now, "now");
-      const releasable = [...this.#records.values()].filter(
-        (record) => record.state === "release-pending",
-      );
-      const unresolved = await this.#releaseRecords(
-        releasable,
-        release,
-        stamp,
-        "recovered pending coordinator release",
-      );
+  async recover(release, now) {
+    const stamp = requireTimestamp(now, "now");
+    const releasable = await this.#serialize(() =>
+      [...this.#records.values()]
+        .filter((record) => record.state === "release-pending")
+        .map(clone),
+    );
+    await this.#releaseRecords(
+      releasable,
+      release,
+      stamp,
+      "recovered pending coordinator release",
+    );
+    return this.#serialize(() => {
       for (const request of this.#requests.values()) {
         const expiredFanout =
           !request.fanoutComplete && stamp >= request.expiresAt;
@@ -2445,8 +2761,13 @@ export class LocalnetReservationCoordinator {
             : completed,
         );
       }
+      this.#expireV3Requests(stamp);
       this.#persist();
-      return unresolved;
+      return Object.freeze(
+        [...this.#records.values()]
+          .filter((record) => record.state === "release-pending")
+          .map(clone),
+      );
     });
   }
 

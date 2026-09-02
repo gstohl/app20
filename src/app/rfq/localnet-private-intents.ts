@@ -7,6 +7,7 @@ import type { WALLET_API } from "@starknet-io/types-js";
 import {
   decodeSolverQuoteV3,
   encodePrivateRfqV2,
+  fillsDigest,
   encodeSelectionTranscript,
   type PrivateRfqV2,
   type PriceSchedule,
@@ -41,6 +42,7 @@ import {
 const LOCALNET_STATUS_TIMEOUT_MS = 5_000;
 const LOCALNET_COMMAND_TIMEOUT_MS = 120_000;
 const U128_MAX = (1n << 128n) - 1n;
+const LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES = 128;
 
 const API_BASE =
   import.meta.env.VITE_E2E_WALLET === true
@@ -101,6 +103,7 @@ export type LocalnetServerRecoveryDealV3 = Readonly<{
   market: string;
   rfqId: string;
   dealId: string;
+  rfqDigest: string;
   intentDigest: string;
   createdAt: number;
   expiresAt: number;
@@ -115,8 +118,9 @@ export type LocalnetServerRecoveryDealV3 = Readonly<{
       amountB: string;
     }>[];
   }>;
-  transactions: Readonly<{ take: string }>;
-  observation: Readonly<Record<string, unknown>>;
+  attemptId: string;
+  transactions: Readonly<{ take?: string }>;
+  observation: LocalnetEscrowTake | null;
   escrowAddress: string;
 }>;
 
@@ -174,11 +178,10 @@ export type LocalnetEscrowLock = Readonly<{
   collateralReleased: boolean;
 }>;
 
-export type LocalnetEscrowLockWithCreationEvidence =
-  LocalnetEscrowLock &
-    Readonly<{
-      createdTransactionHash: string | null;
-    }>;
+export type LocalnetEscrowLockWithCreationEvidence = LocalnetEscrowLock &
+  Readonly<{
+    createdTransactionHash: string | null;
+  }>;
 
 export type LocalnetEscrowTake = Readonly<{
   tokenA: string;
@@ -284,6 +287,18 @@ function asString(value: unknown, label: string): string {
     throw new Error(`The local maker omitted ${label}.`);
   }
   return value;
+}
+
+function asBoundedAttemptId(value: unknown, label: string): string {
+  const attemptId = asString(value, label);
+  if (
+    attemptId !== attemptId.trim() ||
+    attemptId.includes("\0") ||
+    new TextEncoder().encode(attemptId).byteLength >
+      LOCALNET_COORDINATOR_MAX_ATTEMPT_ID_BYTES
+  )
+    throw new Error(`The local maker returned an invalid ${label}.`);
+  return attemptId;
 }
 
 function asCanonicalAddress(value: unknown, label: string): string {
@@ -684,10 +699,7 @@ export async function requestQuotesV3(input: {
       ...(refusal.code === undefined
         ? {}
         : {
-            code: asString(
-              refusal.code,
-              `quote refusal ${index} code`,
-            ),
+            code: asString(refusal.code, `quote refusal ${index} code`),
           }),
       reason: asString(refusal.reason, `quote refusal ${index} reason`),
       quoteDigest,
@@ -869,11 +881,7 @@ export async function readEscrowTake(
     tokenB,
     totalB,
     fillCount,
-    fillsDigest: asCanonicalFelt(
-      take.fillsDigest,
-      "Take fillsDigest",
-      true,
-    ),
+    fillsDigest: asCanonicalFelt(take.fillsDigest, "Take fillsDigest", true),
     takenAt: asSafeInteger(take.takenAt, "Take takenAt"),
   });
 }
@@ -1096,6 +1104,23 @@ export async function readLocalnetUnresolvedDealsIncludingV3(input: {
 }): Promise<
   readonly (LocalnetServerRecoveryDeal | LocalnetServerRecoveryDealV3)[]
 > {
+  let queryAccount: string;
+  let queryChainId: string;
+  let querySellToken: string;
+  let queryBuyToken: string;
+  try {
+    queryAccount = canonicalizeStarknetFelt(input.account);
+    queryChainId = canonicalizeStarknetFelt(input.chainId);
+    querySellToken = canonicalizeStarknetFelt(input.sellToken);
+    queryBuyToken = canonicalizeStarknetFelt(input.buyToken);
+  } catch {
+    throw new Error("The local recovery query contains a malformed felt.");
+  }
+  if (querySellToken === queryBuyToken)
+    throw new Error("The local recovery query requires two different tokens.");
+  const queryMarket = [querySellToken, queryBuyToken]
+    .sort((left, right) => left.localeCompare(right))
+    .join("/");
   const result = await postLocalnet("/rfq/unresolved-deals", input);
   if (
     result.schema !== "app20/localnet-unresolved-deals/v1" ||
@@ -1118,9 +1143,60 @@ export async function readLocalnetUnresolvedDealsIncludingV3(input: {
         );
       const createdAt = asSafeInteger(deal.createdAt, "createdAt");
       const expiresAt = asSafeInteger(deal.expiresAt, "expiresAt");
+      if (createdAt >= expiresAt)
+        throw new Error(
+          "The local recovery service returned an invalid request lifetime.",
+        );
       if (deal.lifecycle === "v3") {
+        exactResponseKeys(
+          deal,
+          [
+            "source",
+            "authority",
+            "lifecycle",
+            "account",
+            "chainId",
+            "market",
+            "rfqDigest",
+            "intentDigest",
+            "rfqId",
+            "dealId",
+            "createdAt",
+            "expiresAt",
+            "attemptId",
+            "expected",
+            "transactions",
+            "observation",
+            "escrowAddress",
+          ],
+          "unresolved v3 deal",
+        );
         const expected = asRecord(deal.expected);
         const transactions = asRecord(deal.transactions);
+        const responseAccount = asCanonicalFelt(deal.account, "account");
+        const responseChainId = asCanonicalFelt(deal.chainId, "chainId");
+        const responseMarket = asString(deal.market, "market");
+        const responseRfqId = asCanonicalFelt(deal.rfqId, "rfqId");
+        const responseDealId = asCanonicalFelt(deal.dealId, "dealId");
+        const responseTokenA = asCanonicalFelt(
+          expected.tokenA,
+          "unresolved tokenA",
+        );
+        const responseTokenB = asCanonicalFelt(
+          expected.tokenB,
+          "unresolved tokenB",
+        );
+        if (
+          responseAccount !== queryAccount ||
+          responseChainId !== queryChainId ||
+          responseMarket !== queryMarket ||
+          responseRfqId !== responseDealId ||
+          responseTokenA !== querySellToken ||
+          responseTokenB !== queryBuyToken
+        )
+          throw new Error(
+            "The local recovery service returned a v3 deal outside its exact query binding.",
+          );
         exactResponseKeys(
           expected,
           ["tokenA", "totalA", "tokenB", "totalB", "fills"],
@@ -1179,33 +1255,112 @@ export async function readLocalnetUnresolvedDealsIncludingV3(input: {
           fills.reduce((sum, fill) => sum + BigInt(fill.amountB), 0n) !== totalB
         )
           throw new Error("The local recovery v3 totals contradict its fills.");
-        exactResponseKeys(transactions, ["take"], "unresolved v3 transactions");
+        exactResponseKeys(
+          transactions,
+          transactions.take === undefined ? [] : ["take"],
+          "unresolved v3 transactions",
+        );
+        const expectedDigest = fillsDigest(
+          fills.map((fill) => ({
+            lockId: fill.lockId,
+            amountA: BigInt(fill.amountA),
+          })),
+        );
+        const observation = (() => {
+          if (deal.observation === null) return null;
+          const observed = asRecord(deal.observation);
+          exactResponseKeys(
+            observed,
+            [
+              "tokenA",
+              "totalA",
+              "tokenB",
+              "totalB",
+              "fillCount",
+              "fillsDigest",
+              "takenAt",
+            ],
+            "unresolved v3 observation",
+          );
+          const normalized: LocalnetEscrowTake = Object.freeze({
+            tokenA: asCanonicalFelt(
+              observed.tokenA,
+              "unresolved observation tokenA",
+            ),
+            totalA: asCanonicalDecimal(
+              observed.totalA,
+              "unresolved observation totalA",
+              true,
+            ),
+            tokenB: asCanonicalFelt(
+              observed.tokenB,
+              "unresolved observation tokenB",
+            ),
+            totalB: asCanonicalDecimal(
+              observed.totalB,
+              "unresolved observation totalB",
+              true,
+            ),
+            fillCount: asSafeInteger(
+              observed.fillCount,
+              "unresolved observation fillCount",
+            ),
+            fillsDigest: asCanonicalFelt(
+              observed.fillsDigest,
+              "unresolved observation fillsDigest",
+              true,
+            ),
+            takenAt: asSafeInteger(
+              observed.takenAt,
+              "unresolved observation takenAt",
+            ),
+          });
+          if (
+            normalized.tokenA !== responseTokenA ||
+            normalized.totalA !== totalA ||
+            normalized.tokenB !== responseTokenB ||
+            normalized.totalB !== totalB ||
+            normalized.fillCount !== fills.length ||
+            normalized.fillsDigest !== expectedDigest ||
+            normalized.takenAt <= 0
+          )
+            throw new Error(
+              "The local recovery v3 observation contradicts its exact fills.",
+            );
+          return normalized;
+        })();
         return Object.freeze({
           source: deal.source,
           authority: deal.authority,
           lifecycle: "v3" as const,
-          account: asCanonicalFelt(deal.account, "account"),
-          chainId: asCanonicalFelt(deal.chainId, "chainId"),
-          market: asString(deal.market, "market"),
-          rfqId: asCanonicalFelt(deal.rfqId, "rfqId"),
-          dealId: asCanonicalFelt(deal.dealId, "dealId"),
+          account: responseAccount,
+          chainId: responseChainId,
+          market: responseMarket,
+          rfqId: responseRfqId,
+          dealId: responseDealId,
+          rfqDigest: asSha256Digest(deal.rfqDigest, "rfqDigest"),
           intentDigest: asSha256Digest(deal.intentDigest, "intentDigest"),
           createdAt,
           expiresAt,
           expected: Object.freeze({
-            tokenA: asCanonicalFelt(expected.tokenA, "unresolved tokenA"),
+            tokenA: responseTokenA,
             totalA: totalA.toString(),
-            tokenB: asCanonicalFelt(expected.tokenB, "unresolved tokenB"),
+            tokenB: responseTokenB,
             totalB: totalB.toString(),
             fills: Object.freeze(fills),
           }),
+          attemptId: asBoundedAttemptId(deal.attemptId, "attemptId"),
           transactions: Object.freeze({
-            take: asCanonicalFelt(
-              transactions.take,
-              "unresolved Take transaction",
-            ),
+            ...(transactions.take === undefined
+              ? {}
+              : {
+                  take: asCanonicalFelt(
+                    transactions.take,
+                    "unresolved Take transaction",
+                  ),
+                }),
           }),
-          observation: Object.freeze(asRecord(deal.observation)),
+          observation,
           escrowAddress: asCanonicalFelt(deal.escrowAddress, "escrowAddress"),
         });
       }

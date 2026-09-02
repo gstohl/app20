@@ -122,7 +122,7 @@ export async function listBrowserSafeUnresolvedLocalnetV3Deals({
       request.account !== account ||
       request.chainId !== chainId ||
       request.market !== market ||
-      !["take-pending", "take-unknown"].includes(request.state) ||
+      !["take-pending", "take-unknown", "expired"].includes(request.state) ||
       !request.takeAttemptId ||
       !request.expected
     )
@@ -151,13 +151,14 @@ export async function listBrowserSafeUnresolvedLocalnetV3Deals({
             ? { take: request.takeTransactionHash }
             : {}),
         }),
-        take: observed
+        observation: observed
           ? Object.freeze({
               tokenA: observed.tokenA,
               totalA: observed.totalA.toString(),
               tokenB: observed.tokenB,
               totalB: observed.totalB.toString(),
               fillCount: observed.fillCount,
+              fillsDigest: observed.fillsDigest,
               takenAt: observed.takenAt,
             })
           : null,
