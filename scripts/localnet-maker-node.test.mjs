@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
+import { parseMakerLockResolutionRequest } from "../packages/maker-node/src/index.ts";
 import {
   buildLocalnetMakerLockActions,
   buildLocalnetMakerSettlementActions,
@@ -136,6 +137,44 @@ test("maker GET helper preserves top-level v3 response contracts and Bearer auth
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("maker lock resolve route accepts only the reviewed exact resolution body", () => {
+  assert.deepEqual(
+    parseMakerLockResolutionRequest("/v1/locks/0xAB/resolve", {
+      expectedState: "quarantined",
+      reason: "reviewed against two independent chain readers",
+    }),
+    {
+      lockId: "0xab",
+      expectedState: "quarantined",
+      reason: "reviewed against two independent chain readers",
+    },
+  );
+  assert.equal(
+    parseMakerLockResolutionRequest("/v1/locks/0xab", {
+      expectedState: "quarantined",
+      reason: "reviewed",
+    }),
+    null,
+  );
+  assert.throws(
+    () =>
+      parseMakerLockResolutionRequest("/v1/locks/0xab/resolve", {
+        expectedState: "open",
+        reason: "reviewed",
+      }),
+    /expectedState must be quarantined/i,
+  );
+  assert.throws(
+    () =>
+      parseMakerLockResolutionRequest("/v1/locks/0xab/resolve", {
+        expectedState: "quarantined",
+        reason: "reviewed",
+        state: "open",
+      }),
+    /requires only/i,
+  );
 });
 
 test("get_lock parser maps all 20 Cairo fields and rejects malformed state", () => {

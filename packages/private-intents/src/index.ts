@@ -768,6 +768,7 @@ export * from "#quote-v2";
 export * from "#reservation-codec";
 export * from "#replay";
 export * from "./size-buckets.ts";
+export * from "./take-signature.ts";
 export * from "./rfq-v2.ts";
 export * from "./schedule.ts";
 export * from "./quote-v3.ts";

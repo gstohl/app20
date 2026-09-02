@@ -14,8 +14,11 @@ import {
   DurableMakerNode,
   DurableMakerTranscriptJournal,
   DurableReservationStore,
+  LOCK_RECONCILIATION_BACKOFF_CAP_SECONDS,
+  LOCK_RECONCILIATION_MAX_FAILURES,
   MakerTranscriptConflictError,
   MakerWalletOperationError,
+  QUARANTINED_LOCK_CAPACITY_GRACE_SECONDS,
   type MakerEconomicPolicyV3Input,
   type MakerNodeConfig,
   type MakerOnChainLock,
@@ -102,6 +105,7 @@ type FixtureOptions = Readonly<{
   balance?: bigint;
   getLockFailureAt?: number;
   clock?: () => number;
+  randomFelt?: () => string;
   economicEvaluate?: (input: MakerEconomicPolicyV3Input) => Readonly<{
     allowed: boolean;
     reason?: string;
@@ -115,6 +119,10 @@ function fixture(
   options: FixtureOptions = {},
 ) {
   const locks = new Map<string, MakerOnChainLock>();
+  const receipts = new Map<
+    string,
+    "PENDING" | "SUCCEEDED" | "REVERTED"
+  >();
   let lockCalls = 0;
   let proceedsCalls = 0;
   let releaseCalls = 0;
@@ -170,6 +178,12 @@ function fixture(
         })
       );
     },
+    async getTransactionReceipt(transactionHash) {
+      return {
+        transactionHash,
+        status: receipts.get(transactionHash) ?? "PENDING",
+      };
+    },
     async settleProceeds(request) {
       proceedsCalls += 1;
       proceedsStateAtCall = store.listLocks()[0]?.state;
@@ -178,6 +192,7 @@ function fixture(
         request.lockId,
         Object.freeze({ ...current, proceedsSettled: true }),
       );
+      receipts.set("0xa1", "SUCCEEDED");
       return { transactionHash: "0xa1" };
     },
     async releaseCollateral(request) {
@@ -188,6 +203,7 @@ function fixture(
         request.lockId,
         Object.freeze({ ...current, collateralReleased: true }),
       );
+      receipts.set("0xa2", "SUCCEEDED");
       return { transactionHash: "0xa2" };
     },
   };
@@ -227,7 +243,7 @@ function fixture(
       midE18: 2n * 10n ** 18n,
       transcriptJournal: DurableMakerTranscriptJournal.open(transcriptPath),
       ...(options.clock === undefined ? {} : { clock: options.clock }),
-      randomFelt: () => LOCK_ID,
+      randomFelt: options.randomFelt ?? (() => LOCK_ID),
       randomNonce: () => NONCE,
     },
   };
@@ -235,6 +251,7 @@ function fixture(
   return {
     node,
     locks,
+    receipts,
     wallet,
     economicInputs,
     lockCalls: () => lockCalls,
@@ -355,7 +372,7 @@ describe("RFQ v3 lock quote pipeline", () => {
     expect(context.node.listLocks()[0]).not.toHaveProperty("quoteDigest");
   });
 
-  it("deletes a known-reverted lock attempt and quarantines an unknown outcome", async () => {
+  it("deletes a known-reverted lock attempt and retains an unknown outcome for reconciliation", async () => {
     const revertedPath = paths();
     const reverted = fixture(
       openStore(revertedPath.wal),
@@ -392,10 +409,15 @@ describe("RFQ v3 lock quote pipeline", () => {
     expect(result).toEqual({
       refused: {
         code: "lock-failed",
-        reason: "On-chain lock outcome is unknown; collateral was quarantined.",
+        reason: "On-chain lock outcome is pending RPC reconciliation.",
       },
     });
-    expect(unknown.node.listLocks()[0]!.state).toBe("quarantined");
+    expect(unknown.node.listLocks()[0]).toMatchObject({
+      state: "reconcile-pending",
+      priorState: "locking",
+      reconciliationFailures: 1,
+      reason: "rpc-unavailable",
+    });
   });
 
   it("recovers non-terminal locks from get_lock after a real WAL restart", async () => {
@@ -428,6 +450,46 @@ describe("RFQ v3 lock quote pipeline", () => {
       takenB: "50000",
     });
   });
+
+  it("retains and retries the prior effective state when restart get_lock fails once", async () => {
+    const path = paths();
+    const firstStore = openStore(path.wal);
+    const first = fixture(firstStore, path.transcripts);
+    await quoted(first);
+    const chain = first.locks.get(LOCK_ID)!;
+    first.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...chain, earnedA: BUCKET_MIN, remainingB: 50_000n }),
+    );
+    await firstStore.close();
+    stores.splice(stores.indexOf(firstStore), 1);
+
+    let reads = 0;
+    const recovered = fixture(openStore(path.wal), path.transcripts, {
+      wallet: {
+        getLock: async () => {
+          reads += 1;
+          if (reads === 1) throw new Error("RPC unavailable");
+          return first.locks.get(LOCK_ID)!;
+        },
+      },
+    });
+    await recovered.node.recoverAfterRestart(NOW + 2);
+    expect(recovered.node.listLocks()[0]).toMatchObject({
+      state: "reconcile-pending",
+      priorState: "open",
+      reconciliationFailures: 1,
+      nextReconciliationAt: NOW + 3,
+    });
+
+    await recovered.node.settleExpiredLocks(NOW + 3);
+    expect(recovered.node.listLocks()[0]).toMatchObject({
+      state: "taken",
+      takenA: BUCKET_MIN.toString(),
+      takenB: "50000",
+    });
+    expect(reads).toBe(2);
+  });
 });
 
 describe("RFQ v3 settlement, mids, and transcripts", () => {
@@ -448,8 +510,8 @@ describe("RFQ v3 settlement, mids, and transcripts", () => {
     await context.node.settleExpiredLocks(NOW + 90);
     expect(context.proceedsCalls()).toBe(1);
     expect(context.releaseCalls()).toBe(1);
-    expect(context.proceedsStateAtCall()).toBe("settling");
-    expect(context.releaseStateAtCall()).toBe("settling");
+    expect(context.proceedsStateAtCall()).toBe("settlement-unknown");
+    expect(context.releaseStateAtCall()).toBe("settlement-unknown");
     expect(context.node.listLocks()[0]).toMatchObject({
       state: "settled",
       proceedsTxHash: "0xa1",
@@ -482,8 +544,14 @@ describe("RFQ v3 settlement, mids, and transcripts", () => {
     expect(context.proceedsCalls()).toBe(1);
     expect(context.releaseCalls()).toBe(0);
     expect(context.node.listLocks()[0]).toMatchObject({
-      state: "settling",
+      state: "settlement-unknown",
+      priorState: "expired",
       proceedsTxHash: "0xa1",
+      settlementAttempt: {
+        action: "proceeds",
+        attempt: 1,
+        transactionHash: "0xa1",
+      },
     });
     await context.node.settleExpiredLocks(NOW + 91);
     expect(context.proceedsCalls()).toBe(1);
@@ -491,12 +559,75 @@ describe("RFQ v3 settlement, mids, and transcripts", () => {
     expect(context.node.listLocks()[0]!.state).toBe("settled");
   });
 
-  it("quarantines an unknown settlement outcome and never retries it", async () => {
+  it("durably reconciles a timed-out submitted proceeds settlement from its successful receipt", async () => {
     const path = paths();
+    const store = openStore(path.wal);
+    let submissions = 0;
+    const context = fixture(store, path.transcripts, {
+      wallet: {
+        settleProceeds: async () => {
+          submissions += 1;
+          throw new MakerWalletOperationError("unknown", "timeout", {
+            transactionHash: "0xa1",
+          });
+        },
+      },
+    });
+    await quoted(context);
+    const chain = context.locks.get(LOCK_ID)!;
+    context.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...chain, earnedA: BUCKET_MIN, remainingB: 0n }),
+    );
+
+    await context.node.settleExpiredLocks(NOW + 90);
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "settlement-unknown",
+      proceedsTxHash: "0xa1",
+      reconciliationFailures: 1,
+      settlementAttempt: {
+        action: "proceeds",
+        transactionHash: "0xa1",
+      },
+    });
+    context.receipts.set("0xa1", "SUCCEEDED");
+    context.locks.set(
+      LOCK_ID,
+      Object.freeze({
+        ...context.locks.get(LOCK_ID)!,
+        proceedsSettled: true,
+      }),
+    );
+    await store.close();
+    stores.splice(stores.indexOf(store), 1);
+    const recovered = fixture(openStore(path.wal), path.transcripts, {
+      wallet: {
+        getLock: async () => context.locks.get(LOCK_ID)!,
+        getTransactionReceipt: async (transactionHash) => ({
+          transactionHash,
+          status: context.receipts.get(transactionHash) ?? "PENDING",
+        }),
+        settleProceeds: async () => {
+          submissions += 1;
+          throw new Error("must not resubmit an unknown settlement");
+        },
+      },
+    });
+    await recovered.node.settleExpiredLocks(NOW + 91);
+    expect(recovered.node.listLocks()[0]!.state).toBe("settled");
+    expect(submissions).toBe(1);
+  });
+
+  it("makes a reverted unknown settlement retryable without resubmitting it", async () => {
+    const path = paths();
+    let submissions = 0;
     const context = fixture(openStore(path.wal), path.transcripts, {
       wallet: {
         settleProceeds: async () => {
-          throw new MakerWalletOperationError("unknown", "timeout");
+          submissions += 1;
+          throw new MakerWalletOperationError("unknown", "timeout", {
+            transactionHash: "0xa1",
+          });
         },
       },
     });
@@ -507,9 +638,291 @@ describe("RFQ v3 settlement, mids, and transcripts", () => {
       Object.freeze({ ...chain, earnedA: BUCKET_MIN, remainingB: 0n }),
     );
     await context.node.settleExpiredLocks(NOW + 90);
-    expect(context.node.listLocks()[0]!.state).toBe("quarantined");
+    context.receipts.set("0xa1", "REVERTED");
+
     await context.node.settleExpiredLocks(NOW + 91);
-    expect(context.node.listLocks()[0]!.state).toBe("quarantined");
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "expired",
+      proceedsTxHash: "0xa1",
+    });
+    expect(context.node.listLocks()[0]).not.toHaveProperty("settlementAttempt");
+    expect(submissions).toBe(1);
+  });
+
+  it("keeps a known revert retryable when its post-revert lock refresh fails", async () => {
+    const path = paths();
+    const context = fixture(openStore(path.wal), path.transcripts, {
+      getLockFailureAt: 2,
+      wallet: {
+        settleProceeds: async () => {
+          throw new MakerWalletOperationError("reverted", "known revert");
+        },
+      },
+    });
+    await quoted(context);
+    const chain = context.locks.get(LOCK_ID)!;
+    context.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...chain, earnedA: BUCKET_MIN, remainingB: 0n }),
+    );
+
+    await context.node.settleExpiredLocks(NOW + 90);
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "reconcile-pending",
+      priorState: "expired",
+      reconciliationFailures: 1,
+      reason: "rpc-unavailable",
+    });
+    expect(context.node.listLocks()[0]).not.toHaveProperty("settlementAttempt");
+  });
+
+  it("defers authoritative Take reconciliation when get_lock is unavailable", async () => {
+    const path = paths();
+    const context = fixture(openStore(path.wal), path.transcripts, {
+      wallet: {
+        getLock: async () => {
+          throw new Error("RPC unavailable");
+        },
+      },
+    });
+    const result = await quoted(context);
+    const record = context.node.listLocks()[0]!;
+    const target = {
+      lifecycle: "v3" as const,
+      rfqDigest: result.quote.rfqDigest,
+      rfqFelt: result.quote.rfqFelt,
+      lockId: result.quote.lockId,
+      quoteDigest: record.quoteDigest!,
+      tokenA: result.quote.sellToken,
+      tokenB: result.quote.buyToken,
+      takenA: BUCKET_MIN,
+      takenB: 50_000n,
+      transactionHash: "0xabc",
+      authorityRevision: 1,
+      idempotencyKey: "take:fixture",
+    };
+    await expect(
+      context.node.reconcileAuthoritativeTerminal(
+        {
+          target,
+          attemptId: target.idempotencyKey,
+          authorityDigest: RFQ_ID,
+          authorityRevision: target.authorityRevision,
+          outcome: "settled",
+          settlementTransactionHash: target.transactionHash,
+        },
+        NOW + 2,
+      ),
+    ).rejects.toThrow(/deferred.*chain reads are unavailable/i);
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "reconcile-pending",
+      priorState: "open",
+      reason: "rpc-unavailable",
+    });
+  });
+
+  it("quarantines authenticated contradictions and journals reviewed resolution", async () => {
+    const path = paths();
+    const context = fixture(openStore(path.wal), path.transcripts);
+    await quoted(context);
+    const original = context.locks.get(LOCK_ID)!;
+    context.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...original, rfqId: "0xdead" }),
+    );
+
+    await context.node.recoverAfterRestart(NOW + 2);
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "quarantined",
+      priorState: "open",
+      reason: "authenticated-contradiction",
+      quarantinedAt: NOW + 2,
+    });
+    const resolved = await context.node.resolveLock(
+      {
+        lockId: LOCK_ID,
+        expectedState: "quarantined",
+        reason: "two-person review confirmed the original WAL binding",
+      },
+      NOW + 3,
+    );
+    expect(resolved).toMatchObject({
+      state: "reconcile-pending",
+      priorState: "open",
+      reconciliationFailures: 0,
+      nextReconciliationAt: NOW + 3,
+      reason: "operator-reviewed-resolution",
+      operatorResolution: {
+        expectedState: "quarantined",
+        reason: "two-person review confirmed the original WAL binding",
+        resolvedAt: NOW + 3,
+      },
+    });
+    expect(JSON.parse(readFileSync(path.wal, "utf8").trim().split("\n").at(-1)!)
+      .payload.locks[0].operatorResolution.reason).toMatch(/two-person review/i);
+
+    context.locks.set(LOCK_ID, original);
+    await context.node.settleExpiredLocks(NOW + 3);
+    expect(context.node.listLocks()[0]!.state).toBe("open");
+  });
+
+  it("quarantines a succeeded receipt that contradicts unchanged lock flags", async () => {
+    const path = paths();
+    const context = fixture(openStore(path.wal), path.transcripts, {
+      wallet: {
+        settleProceeds: async () => {
+          throw new MakerWalletOperationError("unknown", "timeout", {
+            transactionHash: "0xa1",
+          });
+        },
+      },
+    });
+    await quoted(context);
+    const chain = context.locks.get(LOCK_ID)!;
+    context.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...chain, earnedA: BUCKET_MIN, remainingB: 0n }),
+    );
+    await context.node.settleExpiredLocks(NOW + 90);
+    context.receipts.set("0xa1", "SUCCEEDED");
+
+    await context.node.settleExpiredLocks(NOW + 91);
+    expect(context.node.listLocks()[0]).toMatchObject({
+      state: "quarantined",
+      reason: "authenticated-contradiction",
+    });
+  });
+
+  it("uses capped exponential reconciliation backoff and quarantines after twenty failures", async () => {
+    const path = paths();
+    const context = fixture(openStore(path.wal), path.transcripts, {
+      wallet: {
+        getLock: async () => {
+          throw new Error("RPC unavailable");
+        },
+      },
+    });
+    await quoted(context);
+    await context.node.recoverAfterRestart(NOW + 2);
+    let attemptedAt = NOW + 2;
+    while (context.node.listLocks()[0]!.state !== "quarantined") {
+      const record = context.node.listLocks()[0]!;
+      expect(record.reconciliationFailures).toBeLessThan(
+        LOCK_RECONCILIATION_MAX_FAILURES,
+      );
+      const next = record.nextReconciliationAt!;
+      expect(next - attemptedAt).toBe(
+        Math.min(
+          LOCK_RECONCILIATION_BACKOFF_CAP_SECONDS,
+          2 ** (record.reconciliationFailures! - 1),
+        ),
+      );
+      attemptedAt = next;
+      await context.node.settleExpiredLocks(next);
+    }
+    const quarantined = context.node.listLocks()[0]!;
+    expect(quarantined).toMatchObject({
+      state: "quarantined",
+      reconciliationFailures: LOCK_RECONCILIATION_MAX_FAILURES,
+      reason: "reconciliation-exhausted",
+    });
+    expect(attemptedAt - (NOW + 2)).toBeGreaterThan(
+      LOCK_RECONCILIATION_BACKOFF_CAP_SECONDS,
+    );
+  });
+
+  it("reserves uncertain maxB and releases quarantined capacity after the 24-hour grace", async () => {
+    const pendingPath = paths();
+    const pending = fixture(
+      openStore(pendingPath.wal),
+      pendingPath.transcripts,
+      {
+        balance: 100_000n,
+        wallet: {
+          getLock: async () => {
+            throw new Error("RPC unavailable");
+          },
+        },
+      },
+    );
+    await quoted(pending);
+    await pending.node.recoverAfterRestart(NOW + 2);
+    await expect(
+      pending.node.quoteV3(
+        rfq({ rfqId: `0x${"33".repeat(32)}`, rfqFelt: "0x56" }),
+        NOW + 3,
+      ),
+    ).resolves.toMatchObject({ refused: { code: "insufficient-inventory" } });
+
+    const unknownPath = paths();
+    const unknown = fixture(openStore(unknownPath.wal), unknownPath.transcripts, {
+      balance: 100_000n,
+      wallet: {
+        settleProceeds: async () => {
+          throw new MakerWalletOperationError("unknown", "timeout", {
+            transactionHash: "0xa1",
+          });
+        },
+      },
+    });
+    await quoted(unknown);
+    unknown.locks.set(
+      LOCK_ID,
+      Object.freeze({
+        ...unknown.locks.get(LOCK_ID)!,
+        earnedA: BUCKET_MIN,
+        remainingB: 0n,
+      }),
+    );
+    await unknown.node.settleExpiredLocks(NOW + 90);
+    await expect(
+      unknown.node.quoteV3(
+        rfq({
+          rfqId: `0x${"44".repeat(32)}`,
+          rfqFelt: "0x57",
+          createdAt: NOW + 90,
+          responseDeadline: NOW + 120,
+          expiresAt: NOW + 180,
+          lockExpiresAt: NOW + 180,
+        }),
+        NOW + 91,
+      ),
+    ).resolves.toMatchObject({ refused: { code: "insufficient-inventory" } });
+
+    const quarantinePath = paths();
+    let nextLockId = 0x76;
+    const quarantined = fixture(
+      openStore(quarantinePath.wal),
+      quarantinePath.transcripts,
+      {
+        balance: 100_000n,
+        randomFelt: () => `0x${(++nextLockId).toString(16)}`,
+      },
+    );
+    await quoted(quarantined);
+    const original = quarantined.locks.get(LOCK_ID)!;
+    quarantined.locks.set(
+      LOCK_ID,
+      Object.freeze({ ...original, rfqId: "0xdead" }),
+    );
+    await quarantined.node.recoverAfterRestart(NOW + 2);
+    const capacityReleaseAt =
+      NOW + 90 + QUARANTINED_LOCK_CAPACITY_GRACE_SECONDS;
+    const laterRfq = (at: number, idByte: string) =>
+      rfq({
+        rfqId: `0x${idByte.repeat(64)}`,
+        rfqFelt: `0x${idByte}`,
+        createdAt: at,
+        responseDeadline: at + 30,
+        expiresAt: at + 90,
+        lockExpiresAt: at + 90,
+      });
+    await expect(
+      quarantined.node.quoteV3(laterRfq(capacityReleaseAt - 1, "4"), capacityReleaseAt - 1),
+    ).resolves.toMatchObject({ refused: { code: "insufficient-inventory" } });
+    await expect(
+      quarantined.node.quoteV3(laterRfq(capacityReleaseAt, "5"), capacityReleaseAt),
+    ).resolves.toHaveProperty("quote");
   });
 
   it("signs a fresh 30-second indicative mid", async () => {

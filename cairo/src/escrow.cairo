@@ -19,6 +19,7 @@ pub struct LockParams {
     pub token: ContractAddress,
     pub counter_token: ContractAddress,
     pub rfq_id: felt252,
+    /// Retained wire name for the taker's ephemeral Stark-curve public key x-coordinate.
     pub taker_commitment: felt252,
     pub expiry: u64,
     pub points_len: u8,
@@ -42,7 +43,8 @@ pub struct TakeFill {
 pub struct TakeParams {
     pub token: ContractAddress,
     pub counter_token: ContractAddress,
-    pub taker_secret: felt252,
+    pub signature_r: felt252,
+    pub signature_s: felt252,
     pub fills: Array<TakeFill>,
 }
 
@@ -92,6 +94,7 @@ pub struct Lock {
     pub token_a: ContractAddress,
     pub token_b: ContractAddress,
     pub rfq_id: felt252,
+    /// The taker authorization key, stored unchanged from `LockParams.taker_commitment`.
     pub taker_commitment: felt252,
     pub expiry: u64,
     pub points_len: u8,
@@ -118,8 +121,11 @@ pub struct TakeRecord {
     pub token_b: ContractAddress,
     pub total_b: u128,
     pub fill_count: u8,
+    pub fills_digest: felt252,
     pub taken_at: u64,
 }
+
+pub const TAKE_DOMAIN: felt252 = 'app20-take-v3';
 
 mod errors {
     pub const BAD_POOL: felt252 = 'BAD_POOL';
@@ -156,6 +162,7 @@ mod errors {
     pub const ALREADY_SETTLED: felt252 = 'ALREADY_SETTLED';
     pub const NOTHING_TO_SETTLE: felt252 = 'NOTHING_TO_SETTLE';
     pub const BAD_LOCK_AMOUNT: felt252 = 'BAD_LOCK_AMOUNT';
+    pub const BAD_SIGNATURE: felt252 = 'BAD_SIGNATURE';
 }
 
 fn assert_schedule(
@@ -260,6 +267,7 @@ pub trait IApp20Escrow<TState> {
 
 #[starknet::contract]
 pub mod App20Escrow {
+    use core::ecdsa::check_ecdsa_signature;
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use starknet::storage::{
@@ -275,7 +283,7 @@ pub mod App20Escrow {
     use crate::{IErc20Dispatcher, IErc20DispatcherTrait};
     use super::{
         Deal, DealStatus, EscrowOperation, FillParams, FundParams, IApp20Escrow, Lock, LockParams,
-        LockStatus, OpenNoteDeposit, TakeParams, TakeRecord, errors, evaluate_schedule,
+        LockStatus, OpenNoteDeposit, TAKE_DOMAIN, TakeParams, TakeRecord, errors, evaluate_schedule,
         schedule_max_b,
     };
 
@@ -387,6 +395,7 @@ pub mod App20Escrow {
         pub token_b: ContractAddress,
         pub total_b: u128,
         pub fill_count: u8,
+        pub fills_digest: felt252,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -589,7 +598,7 @@ pub mod App20Escrow {
         let leg_a_accounted = self.accounted.entry(deal.leg_a_token).read();
         assert(leg_a_balance >= leg_a_accounted, errors::BALANCE_DEFICIT);
         assert(leg_a_accounted >= deal.leg_a_amount.into(), errors::CONSERVATION_FAILURE);
-        let leg_a_after = leg_a_balance - deal.leg_a_amount.into();
+        let leg_a_after = leg_a_accounted - deal.leg_a_amount.into();
 
         let leg_b_balance = leg_b.balance_of(contract_address);
         let leg_b_accounted = self.accounted.entry(deal.leg_b_token).read();
@@ -597,12 +606,10 @@ pub mod App20Escrow {
         let received_u256 = leg_b_balance - leg_b_accounted;
         let expected: u256 = deal.leg_b_terms.into();
         assert(received_u256 >= expected, errors::SHORT_FILL);
-        assert(received_u256 == expected, errors::EXCESS_FILL);
-        let received: u128 = received_u256.try_into().expect(errors::AMOUNT_OVERFLOW);
 
         self.accounted.entry(deal.leg_a_token).write(leg_a_after);
-        self.accounted.entry(deal.leg_b_token).write(leg_b_balance);
-        deal.leg_b_amount = received;
+        self.accounted.entry(deal.leg_b_token).write(leg_b_accounted + expected);
+        deal.leg_b_amount = deal.leg_b_terms;
         deal.status = DealStatus::Filled;
         self.deals.entry(deal_id).write(deal);
 
@@ -614,7 +621,7 @@ pub mod App20Escrow {
                     leg_a_token: deal.leg_a_token,
                     leg_a_amount: deal.leg_a_amount,
                     leg_b_token: deal.leg_b_token,
-                    leg_b_amount: received,
+                    leg_b_amount: deal.leg_b_terms,
                 },
             );
         array![OpenNoteDeposit { note_id, token: deal.leg_a_token, amount: deal.leg_a_amount }]
@@ -643,7 +650,7 @@ pub mod App20Escrow {
         let accounted = self.accounted.entry(deal.leg_b_token).read();
         assert(balance >= accounted, errors::BALANCE_DEFICIT);
         assert(accounted >= deal.leg_b_amount.into(), errors::CONSERVATION_FAILURE);
-        let after = balance - deal.leg_b_amount.into();
+        let after = accounted - deal.leg_b_amount.into();
         self.accounted.entry(deal.leg_b_token).write(after);
         deal.status = DealStatus::Settled;
         self.deals.entry(deal_id).write(deal);
@@ -667,7 +674,7 @@ pub mod App20Escrow {
         let accounted = self.accounted.entry(deal.leg_a_token).read();
         assert(balance >= accounted, errors::BALANCE_DEFICIT);
         assert(accounted >= deal.leg_a_amount.into(), errors::CONSERVATION_FAILURE);
-        let after = balance - deal.leg_a_amount.into();
+        let after = accounted - deal.leg_a_amount.into();
         self.accounted.entry(deal.leg_a_token).write(after);
         deal.status = DealStatus::TimedOut;
         self.deals.entry(deal_id).write(deal);
@@ -713,10 +720,9 @@ pub mod App20Escrow {
         let previous = self.accounted.entry(params.token).read();
         assert(balance >= previous, errors::BALANCE_DEFICIT);
         let received_u256 = balance - previous;
-        assert(received_u256 == max_b.into(), errors::BAD_LOCK_AMOUNT);
-        let received: u128 = received_u256.try_into().expect(errors::AMOUNT_OVERFLOW);
+        assert(received_u256 >= max_b.into(), errors::BAD_LOCK_AMOUNT);
 
-        self.accounted.entry(params.token).write(balance);
+        self.accounted.entry(params.token).write(previous + max_b.into());
         self
             .locks
             .entry(lock_id)
@@ -736,7 +742,7 @@ pub mod App20Escrow {
                     p2_b: params.p2_b,
                     p3_a: params.p3_a,
                     p3_b: params.p3_b,
-                    remaining_b: received,
+                    remaining_b: max_b,
                     earned_a: 0,
                     ticket: ticket_address,
                     proceeds_settled: false,
@@ -818,23 +824,27 @@ pub mod App20Escrow {
         assert(params.token != params.counter_token, errors::SAME_TOKEN);
 
         let mut expected_a: u256 = 0;
+        let mut fills_preimage = array![];
         for fill_ref in params.fills.span() {
             let fill = *fill_ref;
             expected_a += fill.amount_a.into();
+            fills_preimage.append(fill.lock_id);
+            fills_preimage.append(fill.amount_a.into());
         }
+        let fills_digest = poseidon_hash_span(fills_preimage.span());
         let token_a = IErc20Dispatcher { contract_address: params.token };
         let balance_a = token_a.balance_of(get_contract_address());
         let accounted_a = self.accounted.entry(params.token).read();
         assert(balance_a >= accounted_a, errors::BALANCE_DEFICIT);
         let received_a = balance_a - accounted_a;
         assert(received_a >= expected_a, errors::SHORT_FILL);
-        assert(received_a == expected_a, errors::EXCESS_FILL);
 
-        let commitment = poseidon_hash_span(array![params.taker_secret].span());
+        let mut taker_authorization_key = 0;
         let mut total_b_u256: u256 = 0;
+        let mut fill_index = 0;
         for fill_ref in params.fills.span() {
             let fill = *fill_ref;
-            let mut existing_lock = self.locks.entry(fill.lock_id).read();
+            let existing_lock = self.locks.entry(fill.lock_id).read();
             assert(existing_lock.status == LockStatus::Open, errors::LOCK_NOT_OPEN);
             assert(get_block_timestamp() < existing_lock.expiry, errors::LOCK_EXPIRED);
             assert(existing_lock.rfq_id == deal_id, errors::WRONG_RFQ);
@@ -843,14 +853,42 @@ pub mod App20Escrow {
                     && existing_lock.token_b == params.counter_token,
                 errors::WRONG_TOKEN,
             );
-            assert(commitment == existing_lock.taker_commitment, errors::BAD_COMMITMENT);
+            if fill_index == 0 {
+                taker_authorization_key = existing_lock.taker_commitment;
+            } else {
+                assert(
+                    existing_lock.taker_commitment == taker_authorization_key,
+                    errors::BAD_SIGNATURE,
+                );
+            }
             let amount_b = evaluate_lock_schedule(existing_lock, fill.amount_a);
             assert(existing_lock.remaining_b >= amount_b, errors::INSUFFICIENT_LOCK);
+            total_b_u256 += amount_b.into();
+            fill_index += 1;
+        }
+
+        let message = poseidon_hash_span(
+            array![
+                TAKE_DOMAIN, get_contract_address().into(), deal_id, params.token.into(),
+                params.counter_token.into(), fills_digest,
+            ]
+                .span(),
+        );
+        assert(
+            check_ecdsa_signature(
+                message, taker_authorization_key, params.signature_r, params.signature_s,
+            ),
+            errors::BAD_SIGNATURE,
+        );
+
+        for fill_ref in params.fills.span() {
+            let fill = *fill_ref;
+            let mut existing_lock = self.locks.entry(fill.lock_id).read();
+            let amount_b = evaluate_lock_schedule(existing_lock, fill.amount_a);
             existing_lock.remaining_b -= amount_b;
             let earned: u256 = existing_lock.earned_a.into() + fill.amount_a.into();
             existing_lock.earned_a = earned.try_into().expect(errors::AMOUNT_OVERFLOW);
             self.locks.entry(fill.lock_id).write(existing_lock);
-            total_b_u256 += amount_b.into();
             self
                 .emit(
                     LockTaken {
@@ -871,7 +909,7 @@ pub mod App20Escrow {
         assert(balance_b >= accounted_b, errors::BALANCE_DEFICIT);
         assert(accounted_b >= total_b_u256, errors::CONSERVATION_FAILURE);
 
-        self.accounted.entry(params.token).write(accounted_a + received_a);
+        self.accounted.entry(params.token).write(accounted_a + expected_a);
         self.accounted.entry(params.counter_token).write(accounted_b - total_b_u256);
         let fill_count_u8: u8 = fill_count.try_into().expect(errors::AMOUNT_OVERFLOW);
         let record = TakeRecord {
@@ -880,6 +918,7 @@ pub mod App20Escrow {
             token_b: params.counter_token,
             total_b,
             fill_count: fill_count_u8,
+            fills_digest,
             taken_at: get_block_timestamp(),
         };
         self.takes.entry(deal_id).write(record);
@@ -894,6 +933,7 @@ pub mod App20Escrow {
                     token_b: params.counter_token,
                     total_b,
                     fill_count: fill_count_u8,
+                    fills_digest,
                 },
             );
         array![OpenNoteDeposit { note_id, token: params.counter_token, amount: total_b }].span()

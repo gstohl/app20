@@ -1,7 +1,13 @@
 import { hkdf } from "@noble/hashes/hkdf.js";
+import { hmac } from "@noble/hashes/hmac.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { normalizeStarknetAddress } from "./address-book.js";
-import type { BackupKind } from "./backup-snapshot.js";
+import {
+  BACKUP_SNAPSHOT_DOMAIN,
+  normalizeBackupSnapshotContext,
+  type BackupKind,
+  type BackupSnapshotContext,
+} from "./backup-snapshot.js";
 
 export const BACKUP_BLOB_VERSION = 1 as const;
 export const BACKUP_BLOB_DOMAIN = "app20/backup-blob/v1" as const;
@@ -14,7 +20,23 @@ export type BackupPointerV1 = Readonly<{
   cid: string;
   bucketBytes: number;
   blobDigest: string;
+  mac: string;
 }>;
+
+export type CreateBackupPointerInput = Readonly<
+  Omit<BackupPointerV1, "mac"> &
+    BackupSnapshotContext & {
+      mailboxSeed: Uint8Array;
+    }
+>;
+
+export type VerifyBackupPointerInput = Readonly<
+  BackupSnapshotContext & {
+    mailboxSeed: Uint8Array;
+    kind?: BackupKind;
+    seq?: number;
+  }
+>;
 
 export type SealBackupBlobInput = Readonly<{
   mailboxSeed: Uint8Array;
@@ -42,7 +64,7 @@ const AES_KEY_BYTES = 32;
 const AES_TAG_BITS = TAG_BYTES * 8;
 const MAX_SEQUENCE = 0xffff_ffff;
 const CID_PATTERN = /^b[a-z2-7]{58}$/;
-const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/i;
 const textEncoder = new TextEncoder();
 const KIND_BYTES: Readonly<Record<BackupKind, number>> = Object.freeze({
   contacts: 1,
@@ -142,6 +164,21 @@ function bytesToHex(bytes: Uint8Array): string {
   );
 }
 
+function hexToBytes(value: string): Uint8Array {
+  return Uint8Array.from(
+    value.match(/.{2}/g)?.map((byte) => Number.parseInt(byte, 16)) ?? [],
+  );
+}
+
+function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left[index] ^ right[index];
+  }
+  return difference === 0;
+}
+
 export function backupBlobDigest(bytes: Uint8Array): string {
   if (!(bytes instanceof Uint8Array)) {
     throw new Error("The backup blob must be bytes.");
@@ -149,40 +186,137 @@ export function backupBlobDigest(bytes: Uint8Array): string {
   return bytesToHex(sha256(bytes));
 }
 
-export function createBackupPointer(input: BackupPointerV1): BackupPointerV1 {
-  return parseBackupPointer(input);
+type BackupPointerBody = Omit<BackupPointerV1, "mac">;
+
+function parseBackupPointerBody(
+  value: Record<string, unknown>,
+): BackupPointerBody {
+  if (
+    typeof value.cid !== "string" ||
+    !CID_PATTERN.test(value.cid) ||
+    typeof value.bucketBytes !== "number" ||
+    !Number.isSafeInteger(value.bucketBytes) ||
+    value.bucketBytes < BACKUP_BLOB_BUCKET_BYTES ||
+    value.bucketBytes > BACKUP_BLOB_MAX_BYTES ||
+    value.bucketBytes % BACKUP_BLOB_BUCKET_BYTES !== 0 ||
+    typeof value.blobDigest !== "string" ||
+    !DIGEST_PATTERN.test(value.blobDigest)
+  ) {
+    throw new Error("The backup pointer payload is invalid.");
+  }
+  return Object.freeze({
+    kind: requireKind(value.kind),
+    seq: requireSequence(value.seq),
+    cid: value.cid,
+    bucketBytes: value.bucketBytes,
+    blobDigest: value.blobDigest.toLowerCase(),
+  });
+}
+
+function pointerMacInfo(
+  pointer: BackupPointerBody,
+  context: BackupSnapshotContext,
+): string {
+  return [
+    BACKUP_SNAPSHOT_DOMAIN,
+    "backup_pointer",
+    pointer.kind,
+    pointer.seq,
+    pointer.cid,
+    pointer.bucketBytes,
+    pointer.blobDigest,
+    context.owner,
+    context.chainId,
+    context.helperAddress,
+    context.mailboxFingerprint,
+  ].join(":");
+}
+
+function authenticatePointer(
+  pointer: BackupPointerBody,
+  mailboxSeed: Uint8Array,
+  context: BackupSnapshotContext,
+): string {
+  if (mailboxSeed.length !== 32) {
+    throw new Error("Unlock the mailbox with its 32-byte recovery seed first.");
+  }
+  const info = textEncoder.encode(pointerMacInfo(pointer, context));
+  const key = hkdf(
+    sha256,
+    mailboxSeed,
+    textEncoder.encode(`${BACKUP_SNAPSHOT_DOMAIN}/salt`),
+    info,
+    32,
+  );
+  try {
+    return bytesToHex(hmac(sha256, key, sha256(info)));
+  } finally {
+    key.fill(0);
+  }
+}
+
+export function createBackupPointer(
+  input: CreateBackupPointerInput,
+): BackupPointerV1 {
+  const context = normalizeBackupSnapshotContext(input);
+  const pointer = parseBackupPointerBody({
+    kind: input.kind,
+    seq: input.seq,
+    cid: input.cid,
+    bucketBytes: input.bucketBytes,
+    blobDigest: input.blobDigest,
+  });
+  return Object.freeze({
+    ...pointer,
+    mac: authenticatePointer(pointer, input.mailboxSeed, context),
+  });
 }
 
 export function parseBackupPointer(value: unknown): BackupPointerV1 {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("The backup pointer payload is invalid.");
   }
-  const expected = ["blobDigest", "bucketBytes", "cid", "kind", "seq"].sort();
+  const expected = [
+    "blobDigest",
+    "bucketBytes",
+    "cid",
+    "kind",
+    "mac",
+    "seq",
+  ].sort();
   const keys = Object.keys(value).sort();
   if (keys.join(",") !== expected.join(",")) {
     throw new Error("The backup pointer schema is unsupported.");
   }
   const record = value as Record<string, unknown>;
-  if (
-    typeof record.cid !== "string" ||
-    !CID_PATTERN.test(record.cid) ||
-    typeof record.bucketBytes !== "number" ||
-    !Number.isSafeInteger(record.bucketBytes) ||
-    record.bucketBytes < BACKUP_BLOB_BUCKET_BYTES ||
-    record.bucketBytes > BACKUP_BLOB_MAX_BYTES ||
-    record.bucketBytes % BACKUP_BLOB_BUCKET_BYTES !== 0 ||
-    typeof record.blobDigest !== "string" ||
-    !DIGEST_PATTERN.test(record.blobDigest)
-  ) {
+  if (typeof record.mac !== "string" || !DIGEST_PATTERN.test(record.mac)) {
     throw new Error("The backup pointer payload is invalid.");
   }
   return Object.freeze({
-    kind: requireKind(record.kind),
-    seq: requireSequence(record.seq),
-    cid: record.cid,
-    bucketBytes: record.bucketBytes,
-    blobDigest: record.blobDigest,
+    ...parseBackupPointerBody(record),
+    mac: record.mac.toLowerCase(),
   });
+}
+
+export function verifyBackupPointer(
+  value: unknown,
+  input: VerifyBackupPointerInput,
+): BackupPointerV1 {
+  const context = normalizeBackupSnapshotContext(input);
+  const pointer = parseBackupPointer(value);
+  if (
+    (input.kind !== undefined && pointer.kind !== input.kind) ||
+    (input.seq !== undefined && pointer.seq !== input.seq)
+  ) {
+    throw new Error(
+      "This backup pointer belongs to a different kind or sequence.",
+    );
+  }
+  const expectedMac = authenticatePointer(pointer, input.mailboxSeed, context);
+  if (!equalBytes(hexToBytes(pointer.mac), hexToBytes(expectedMac))) {
+    throw new Error("The backup pointer authentication failed.");
+  }
+  return pointer;
 }
 
 export async function sealBackupBlob(

@@ -11,6 +11,7 @@ import {
   MakerNodeError,
   MakerTranscriptConflictError,
   MakerWalletOperationError,
+  parseMakerLockResolutionRequest,
 } from "../packages/maker-node/src/index.ts";
 import {
   LOCALNET_SECONDARY_SOLVER_ID,
@@ -251,7 +252,13 @@ function createPrivacyRuntime(account, privacy, node, runtime) {
   return { transfers, prover };
 }
 
-async function executeOutside(account, node, prepared, onSubmissionAttempt) {
+async function executeOutside(
+  account,
+  node,
+  prepared,
+  onSubmissionAttempt,
+  onSubmitted,
+) {
   await createBlocks(config.rpcUrl);
   const now = Math.floor(Date.now() / 1_000);
   const callAndProof = toCoreCallAndProof(prepared);
@@ -269,6 +276,7 @@ async function executeOutside(account, node, prepared, onSubmissionAttempt) {
     proofFacts: callAndProof.proof.proofFacts,
     proof: callAndProof.proof.data,
   });
+  onSubmitted?.(response.transaction_hash);
   return waitForSuccess(node, response.transaction_hash, "private execution");
 }
 
@@ -332,14 +340,23 @@ async function privateBalance(asset) {
   return notes.reduce((total, note) => total + note.amount, 0n);
 }
 
-async function executeActions(actions, { onSubmissionAttempt } = {}) {
+async function executeActions(
+  actions,
+  { onSubmissionAttempt, onSubmitted } = {},
+) {
   return serializeOperation(async () => {
     await approveDeposits(account, node, actions);
     const prepared = await privacyRuntime.prover.prove(actions);
     if (prepared.proof.data !== undefined && prepared.proof.data !== "") {
       fail("devnet unexpectedly returned non-mock proof bytes.");
     }
-    return executeOutside(account, node, prepared, onSubmissionAttempt);
+    return executeOutside(
+      account,
+      node,
+      prepared,
+      onSubmissionAttempt,
+      onSubmitted,
+    );
   });
 }
 
@@ -404,6 +421,30 @@ async function readEscrowLock(lockId) {
   );
 }
 
+async function readTransactionReceipt(transactionHash) {
+  const receipt = await node.getTransactionReceipt(transactionHash);
+  const observedHash = rpcFelt(
+    receipt.transaction_hash ?? receipt.transactionHash,
+    "settlement receipt transaction hash",
+  );
+  if (
+    runtime.starknet.num.toBigInt(observedHash) !==
+    runtime.starknet.num.toBigInt(transactionHash)
+  ) {
+    fail("settlement receipt returned a substituted transaction hash.");
+  }
+  const executionStatus = String(
+    receipt.execution_status ?? receipt.executionStatus ?? "",
+  ).toUpperCase();
+  const status =
+    executionStatus === "SUCCEEDED"
+      ? "SUCCEEDED"
+      : executionStatus === "REVERTED" || executionStatus === "REJECTED"
+        ? "REVERTED"
+        : "PENDING";
+  return Object.freeze({ transactionHash: observedHash, status });
+}
+
 async function ensureLockTicket(lockId) {
   return serializeOperation(async () => {
     try {
@@ -443,6 +484,7 @@ async function ensureLockTicket(lockId) {
 async function lockInventory(request) {
   const ticket = await ensureLockTicket(request.lockId);
   let submissionAttempted = false;
+  let transactionHash;
   try {
     const receipt = await executeActions(
       buildLocalnetMakerLockActions(
@@ -455,6 +497,9 @@ async function lockInventory(request) {
       {
         onSubmissionAttempt() {
           submissionAttempted = true;
+        },
+        onSubmitted(hash) {
+          transactionHash = hash;
         },
       },
     );
@@ -469,7 +514,10 @@ async function lockInventory(request) {
         ? "reverted"
         : "unknown",
       "Escrow lock submission failed.",
-      { cause: error },
+      {
+        cause: error,
+        ...(transactionHash === undefined ? {} : { transactionHash }),
+      },
     );
   }
 }
@@ -477,6 +525,7 @@ async function lockInventory(request) {
 async function executeLockSettlement(request, operation) {
   const proceeds = operation === "0x6";
   let submissionAttempted = false;
+  let transactionHash;
   try {
     const receipt = await executeActions(
       buildLocalnetMakerSettlementActions(
@@ -490,6 +539,9 @@ async function executeLockSettlement(request, operation) {
         onSubmissionAttempt() {
           submissionAttempted = true;
         },
+        onSubmitted(hash) {
+          transactionHash = hash;
+        },
       },
     );
     return { transactionHash: receipt.transaction_hash };
@@ -501,7 +553,10 @@ async function executeLockSettlement(request, operation) {
       proceeds
         ? "Lock proceeds settlement failed."
         : "Lock collateral release failed.",
-      { cause: error },
+      {
+        cause: error,
+        ...(transactionHash === undefined ? {} : { transactionHash }),
+      },
     );
   }
 }
@@ -622,6 +677,7 @@ const maker = new DurableMakerNode(store, {
     fill: fillReservation,
     lock: lockInventory,
     getLock: readEscrowLock,
+    getTransactionReceipt: readTransactionReceipt,
     settleProceeds: (request) => executeLockSettlement(request, "0x6"),
     releaseCollateral: (request) => executeLockSettlement(request, "0x7"),
   },
@@ -854,6 +910,16 @@ const server = createServer(async (request, response) => {
       return;
     }
     const body = await readBody(request);
+    const lockResolution = parseMakerLockResolutionRequest(
+      url.pathname,
+      body,
+    );
+    if (lockResolution) {
+      jsonResponse(response, 200, {
+        lock: await maker.resolveLock(lockResolution, now),
+      });
+      return;
+    }
     if (url.pathname === "/v1/quotes-v3") {
       requireExactBody(body, ["rfq"], "Quote v3 request");
       const decoded = decodePrivateRfqV2(body.rfq);

@@ -7,7 +7,7 @@ use app20_mail::escrow::{
 use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, cheat_block_timestamp, cheat_caller_address,
-    declare,
+    declare, load, map_entry_address,
 };
 use starknet::{ClassHash, ContractAddress};
 
@@ -179,6 +179,12 @@ fn pull_payout(pool: ContractAddress, escrow_address: ContractAddress, deposit: 
     let token = IMockErc20Dispatcher { contract_address: deposit.token };
     cheat_caller_address(deposit.token, pool, CheatSpan::TargetCalls(1));
     assert(token.transfer_from(escrow_address, pool, deposit.amount.into()), 'pull failed');
+}
+
+fn accounted_balance(escrow_address: ContractAddress, token_address: ContractAddress) -> u256 {
+    let entry = map_entry_address(selector!("accounted"), array![token_address.into()].span());
+    let stored = load(escrow_address, entry, 2);
+    u256 { low: (*stored.at(0)).try_into().unwrap(), high: (*stored.at(1)).try_into().unwrap() }
 }
 
 #[test]
@@ -542,8 +548,8 @@ fn timeout_after_fill_reverts() {
 }
 
 #[test]
-#[should_panic(expected: ('EXCESS_FILL',))]
-fn excess_fill_reverts_instead_of_changing_exact_terms() {
+fn preexisting_counter_token_dust_does_not_block_fill_or_change_exact_terms() {
+    let dust: u128 = 1;
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     let ticket = fund(
@@ -557,7 +563,30 @@ fn excess_fill_reverts_instead_of_changing_exact_terms() {
         LEG_A_AMOUNT,
     );
     pull_ticket(pool, escrow_address, ticket);
-    fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT + 1);
+    transfer_token(token_b_address, token_b, pool, escrow_address, dust);
+
+    let taker = fill(pool, escrow_address, escrow, token_b_address, token_b, DEAL_1, LEG_B_AMOUNT);
+    assert(taker.amount == LEG_A_AMOUNT, 'taker payout changed');
+    assert(
+        accounted_balance(escrow_address, token_b_address) == LEG_B_AMOUNT.into(),
+        'dust was accounted',
+    );
+    assert(
+        accounted_balance(escrow_address, token_b_address) <= token_b.balance_of(escrow_address),
+        'fill payout not covered',
+    );
+    pull_payout(pool, escrow_address, taker);
+
+    return_ticket(pool, escrow_address, ticket.token);
+    let maker = *invoke(pool, escrow_address, escrow, 30, EscrowOperation::Claim, DEAL_1, 0xD058)
+        .at(0);
+    assert(maker.amount == LEG_B_AMOUNT, 'maker terms changed');
+    assert(
+        token_b.allowance(escrow_address, pool) == LEG_B_AMOUNT.into(), 'maker payout not covered',
+    );
+    pull_payout(pool, escrow_address, maker);
+    assert(token_b.balance_of(escrow_address) == dust.into(), 'dust was paid or absorbed');
+    assert(accounted_balance(escrow_address, token_b_address) == 0, 'claimed dust accounted');
 }
 
 #[test]

@@ -2,8 +2,7 @@ import {
   PRIVATE_RFQ_V2_DOMAIN,
   assertPrivateRfqV2,
   bucketForAmount,
-  createTakerSecret,
-  takerCommitmentFor,
+  createTakerAuthorizationKey,
   type PrivateRfqV2,
   type SizeBucket,
   type SizeBucketSymbol,
@@ -37,7 +36,7 @@ export type CreateV3RequestInput = Readonly<{
 
 export type CreatedV3Request = Readonly<{
   rfq: PrivateRfqV2;
-  takerSecret: string;
+  takerSigningKey: string;
   takerCommitment: string;
   bucket: SizeBucket;
   localFloor: bigint;
@@ -79,8 +78,8 @@ export function createV3Request(input: CreateV3RequestInput): CreatedV3Request {
   }
   const tokens = normalizeTokens(input.tokens);
   const bucket = bucketForAmount(tokens.sellSymbol, input.exactSellAmount);
-  const takerSecret = createTakerSecret();
-  const takerCommitment = takerCommitmentFor(takerSecret);
+  const { signingKey: takerSigningKey, publicKey: takerCommitment } =
+    createTakerAuthorizationKey();
   const responseDeadline = input.createdAt + 30;
   const expiresAt = input.createdAt + 90;
   const rfq: PrivateRfqV2 = Object.freeze({
@@ -105,7 +104,7 @@ export function createV3Request(input: CreateV3RequestInput): CreatedV3Request {
   assertPrivateRfqV2(rfq);
   return Object.freeze({
     rfq,
-    takerSecret,
+    takerSigningKey,
     takerCommitment,
     bucket,
     localFloor: input.floor,

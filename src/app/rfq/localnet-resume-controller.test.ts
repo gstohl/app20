@@ -3,6 +3,7 @@ import {
   beginRfqPhaseAttempt,
   createRfqLifecycleRecord,
   fundingTicketAttemptTargetFromLifecycle,
+  updateRfqPhaseAttempt,
 } from "./rfq-lifecycle";
 import {
   authorizeLocalnetResumeCommand,
@@ -93,8 +94,8 @@ function v3Record() {
     },
     bucket: { min: "50", max: "100" },
     takerCommitment:
-      "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-    takerSecret: "0x66",
+      "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+    takerSigningKey: "0x66",
     fills: [
       {
         makerId: "maker-a",
@@ -139,12 +140,54 @@ describe("localnet resume controller", () => {
       action: "verify-take",
       label: "Check pre-submission Take lease",
     });
+    const unproven = updateRfqPhaseAttempt(
+      preparing,
+      "take",
+      "reverted",
+      NOW + 2,
+    );
+    expect(localnetResumeDecision(unproven, NOW + 3)).toMatchObject({
+      action: "none",
+      label: "Take retry unavailable",
+      disabled: true,
+    });
+    const proven = updateRfqPhaseAttempt(
+      preparing,
+      "take",
+      "reverted",
+      NOW + 2,
+      { walletBoundary: "not-entered" },
+    );
+    expect(localnetResumeDecision(proven, NOW + 3)).toMatchObject({
+      action: "take",
+      label: "Retry Take",
+      disabled: false,
+    });
     expect(
       localnetResumeDecision(
-        { ...reviewing, restoredFromBackup: true, takerSecret: undefined },
+        {
+          ...reviewing,
+          restoredFromBackup: true,
+          takerSigningKey: undefined,
+        },
         NOW + 1,
       ),
     ).toMatchObject({ action: "none", disabled: true });
+    expect(
+      localnetResumeDecision(
+        {
+          ...reviewing,
+          state: "expired",
+          reason: "take-reverted",
+          takerSigningKey: undefined,
+        },
+        NOW + 1,
+      ),
+    ).toMatchObject({
+      action: "none",
+      label: "Reverted Take · RFQ closed",
+      disabled: true,
+    });
   });
 
   it("never offers a duplicate fund while an attempt is unknown", () => {

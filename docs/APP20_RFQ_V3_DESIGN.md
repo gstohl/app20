@@ -37,7 +37,7 @@ pub struct LockParams {
     pub token: ContractAddress,         // token B (what the maker locks); the escrow measures its balance delta
     pub counter_token: ContractAddress, // token A (what the taker sells, what the maker earns)
     pub rfq_id: felt252,                // taker's RFQ felt (== deal_id used in Take)
-    pub taker_commitment: felt252,      // poseidon_hash_span([taker_secret])
+    pub taker_commitment: felt252,      // taker's ephemeral Stark public-key x-coordinate
     pub expiry: u64,                    // unix seconds; takes allowed while now < expiry
     pub points_len: u8,                 // 1..=4
     pub p0_a: u128, pub p0_b: u128,
@@ -55,7 +55,8 @@ pub struct TakeFill { pub lock_id: felt252, pub amount_a: u128 }
 pub struct TakeParams {
     pub token: ContractAddress,          // token A received from the taker
     pub counter_token: ContractAddress,  // token B paid out
-    pub taker_secret: felt252,
+    pub signature_r: felt252,
+    pub signature_s: felt252,
     pub fills: Array<TakeFill>,          // 1..=4, distinct lock ids
 }
 
@@ -91,6 +92,7 @@ pub struct TakeRecord {
     pub token_a: ContractAddress, pub total_a: u128,
     pub token_b: ContractAddress, pub total_b: u128,
     pub fill_count: u8, pub taken_at: u64,
+    pub fills_digest: felt252,
 }
 ```
 
@@ -107,7 +109,7 @@ New interface functions: `ensure_lock_ticket(lock_id) -> ContractAddress`, `get_
 
 **Lock** (caller = pool): `lock_id ≠ 0`, `locks[lock_id].status == Empty`, tokens non-zero and distinct, `expiry > now`, schedule valid, received B delta `== p_{n-1}_b`; `ensure_lock_ticket` must already have deployed the ticket (or deploy inline via `ensure_lock_ticket_internal`); mint 2 ticket units, approve pool for 2; store `Lock{ remaining_b: received, earned_a: 0, status: Open }`; emit `LockCreated`; return `[OpenNoteDeposit{note_id, token: ticket, amount: 2}]`.
 
-**Take** (caller = pool): `deal_id ≠ 0`, `takes[deal_id].fill_count == 0` (`TAKE_EXISTS`), `1..=4` fills, distinct lock ids, received A delta `== Σ amount_a` (`SHORT_FILL`/`EXCESS_FILL`), `poseidon_hash_span([taker_secret]) == lock.taker_commitment` for every lock, every lock `Open`, `now < expiry`, `lock.rfq_id == deal_id`, `lock.token_a == token`, `lock.token_b == counter_token`, `amount_a` in schedule domain, `b_i = evaluate_schedule(...)`, `lock.remaining_b ≥ b_i`; update `remaining_b −= b_i`, `earned_a += amount_a`; accounted[A] += received, accounted[B] −= Σ b_i; approve pool for Σ b_i; write `TakeRecord`; emit `LockTaken` per fill and `DealTaken`; return `[OpenNoteDeposit{note_id, token: counter_token, amount: Σ b_i}]`. Any failure reverts the whole take.
+**Take** (caller = pool): `deal_id ≠ 0`, `takes[deal_id].fill_count == 0` (`TAKE_EXISTS`), `1..=4` fills, distinct lock ids, received A delta `== Σ amount_a` (`SHORT_FILL`/`EXCESS_FILL`), and every lock carries the same non-zero `taker_commitment`. Define `fills_digest = poseidon_hash_span([lock_id_1, amount_a_1, ..., lock_id_n, amount_a_n])` in fill order and `message = poseidon_hash_span([TAKE_DOMAIN, get_contract_address(), deal_id, token, counter_token, fills_digest])`, where `TAKE_DOMAIN` is the Cairo short string `'app20-take-v3'`. Verify `core::ecdsa::check_ecdsa_signature(message, taker_commitment, signature_r, signature_s)` exactly once and revert `BAD_SIGNATURE` on failure. Then require every lock `Open`, `now < expiry`, `lock.rfq_id == deal_id`, `lock.token_a == token`, `lock.token_b == counter_token`, `amount_a` in schedule domain, `b_i = evaluate_schedule(...)`, and `lock.remaining_b ≥ b_i`; update `remaining_b −= b_i`, `earned_a += amount_a`; accounted[A] += received, accounted[B] −= Σ b_i; approve pool for Σ b_i; write `TakeRecord` including `fills_digest`; emit `LockTaken` per fill and `DealTaken` including `fills_digest`; return `[OpenNoteDeposit{note_id, token: counter_token, amount: Σ b_i}]`. Any failure reverts the whole take.
 
 **SettleProceeds** (caller = pool, spends 1 ticket unit exactly like `consume_ticket` but delta 1 of the lock ticket): requires `Open`, `now ≥ expiry`, `!proceeds_settled`, `earned_a > 0`; sets `proceeds_settled`, accounted[A] −= earned_a, approve, emit `LockProceedsSettled`, return `[{note_id, token_a, earned_a}]`.
 
@@ -121,12 +123,12 @@ If a side has nothing to pay the call reverts (`NOTHING_TO_SETTLE`) and the unit
 LockCreated { #[key] lock_id, #[key] rfq_id, token_a, token_b, expiry, max_b: u128,
               points_len: u8, p0_a, p0_b, p1_a, p1_b, p2_a, p2_b, p3_a, p3_b, ticket }
 LockTaken   { #[key] lock_id, #[key] deal_id, amount_a: u128, amount_b: u128, remaining_b: u128 }
-DealTaken   { #[key] deal_id, token_a, total_a: u128, token_b, total_b: u128, fill_count: u8 }
+DealTaken   { #[key] deal_id, token_a, total_a: u128, token_b, total_b: u128, fill_count: u8, fills_digest: felt252 }
 LockProceedsSettled   { #[key] lock_id, token: ContractAddress, amount: u128 }
 LockCollateralReleased{ #[key] lock_id, token: ContractAddress, amount: u128 }
 ```
 
-Existing events are unchanged. Error constants added: `LOCK_EXISTS`, `LOCK_NOT_OPEN`, `LOCK_EXPIRED`, `LOCK_NOT_EXPIRED`, `BAD_SCHEDULE`, `OUT_OF_SCHEDULE`, `BAD_COMMITMENT`, `WRONG_RFQ`, `TOO_MANY_FILLS`, `NO_FILLS`, `DUPLICATE_LOCK`, `INSUFFICIENT_LOCK`, `TAKE_EXISTS`, `ALREADY_SETTLED`, `NOTHING_TO_SETTLE`, `BAD_LOCK_AMOUNT`.
+Legacy events are unchanged. Error constants added: `LOCK_EXISTS`, `LOCK_NOT_OPEN`, `LOCK_EXPIRED`, `LOCK_NOT_EXPIRED`, `BAD_SCHEDULE`, `OUT_OF_SCHEDULE`, `BAD_SIGNATURE`, `WRONG_RFQ`, `TOO_MANY_FILLS`, `NO_FILLS`, `DUPLICATE_LOCK`, `INSUFFICIENT_LOCK`, `TAKE_EXISTS`, `ALREADY_SETTLED`, `NOTHING_TO_SETTLE`, `BAD_LOCK_AMOUNT`.
 
 ### 2.6 Wallet action arrays (browser and maker)
 
@@ -134,7 +136,7 @@ Existing events are unchanged. Error constants added: `LOCK_EXISTS`, `LOCK_NOT_O
 Lock (maker):    withdraw(tokenB, max_b, escrow); transfer(lockTicket, "OPEN", makerRecovery);
                  invoke(escrow, [0x4, tokenB, tokenA, rfqId, takerCommitment, expiry, len, p0a,p0b,p1a,p1b,p2a,p2b,p3a,p3b, lockId, ${poolAddress}, ${openNoteIds[0]}])
 Take (taker):    withdraw(tokenA, Σamount, escrow); transfer(tokenB, "OPEN", takerRecovery);
-                 invoke(escrow, [0x5, tokenA, tokenB, takerSecret, fillsLen, (lockId, amountA)*, rfqId, ${poolAddress}, ${openNoteIds[0]}])
+                 invoke(escrow, [0x5, tokenA, tokenB, signatureR, signatureS, fillsLen, (lockId, amountA)*, rfqId, ${poolAddress}, ${openNoteIds[0]}])
 SettleProceeds:  withdraw(lockTicket, 0x1, escrow); transfer(tokenA, "OPEN", makerRecovery);
                  invoke(escrow, [0x6, lockId, ${poolAddress}, ${openNoteIds[0]}])
 ReleaseCollateral: withdraw(lockTicket, 0x1, escrow); transfer(tokenB, "OPEN", makerRecovery);
@@ -164,7 +166,7 @@ export type PrivateRfqV2 = Readonly<{
   version: 2; domain: typeof PRIVATE_RFQ_V2_DOMAIN;
   rfqId: string;               // 32-byte digest (unchanged semantics: intentDigest on localnet)
   rfqFelt: string;             // the escrow rfq_id/deal_id felt (browser createLocalnetIntentId)
-  takerCommitment: string;     // felt, poseidon([takerSecret])
+  takerCommitment: string;     // felt, ephemeral taker Stark public-key x-coordinate
   chainId: StarknetPool; registryRevision: string; directoryEpoch: number;
   settlementHelper: string;    // escrow address
   sellToken: string; buyToken: string;
@@ -174,7 +176,9 @@ export type PrivateRfqV2 = Readonly<{
 }>;
 ```
 
-No floor field. `canonicalPrivateRfqV2`, `digestPrivateRfqV2`, `assertPrivateRfqV2` mirror v1 conventions (sorted keys, decimal strings). `createTakerSecret()` (random felt < prime, ≥ 2^128), `takerCommitmentFor(secret)` via `@scure/starknet` `poseidonHashMany([secret])` (must equal Cairo `poseidon_hash_span([secret])`).
+No floor field. `canonicalPrivateRfqV2`, `digestPrivateRfqV2`, `assertPrivateRfqV2` mirror v1 conventions (sorted keys, decimal strings); the canonical RFQ v2 shape is unchanged apart from the semantics of `takerCommitment`. `createTakerAuthorizationKey()` uses `@scure/starknet` `utils.randomPrivateKey()` and `getStarkKey(signingKey)` to return `{ signingKey, publicKey }`; the wire `takerCommitment` is `publicKey`. `fillsDigest(fills)` is `poseidonHashMany([lockId1, amountA1, ...])` in fill order. `takeMessageHash({ escrowAddress, rfqFelt, tokenA, tokenB, fills })` is `poseidonHashMany([shortString('app20-take-v3'), escrowAddress, rfqFelt, tokenA, tokenB, fillsDigest])`. `signTake(signingKey, message)` returns felt `{ r, s }`, and `verifyTakeSignature(publicKey, message, r, s)` verifies with `@scure/starknet`.
+
+The browser lifecycle stores the private scalar only as `takerSigningKey` while the RFQ is active. Terminal records and history backups remove it. A Take that reached the chain and reverted terminates the RFQ as `expired` with reason `take-reverted`; its key/signature must never be reused. Only an attempt proven not submitted before wallet entry may return to review.
 
 ### 3.3 Schedule — `schedule.ts`
 

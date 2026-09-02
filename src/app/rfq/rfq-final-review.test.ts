@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  takeAuthorizationForV3Review,
   validateFinalReview,
   validateLiveV3FinalReview,
   validateV3FinalReview,
@@ -144,7 +145,7 @@ describe("RFQ final review", () => {
 });
 
 describe("RFQ v3 final review", () => {
-  const v3Terms = {
+  const v3Core = {
     mode: "v3" as const,
     rfqId: "0x77",
     sellAddress: "0x1",
@@ -163,6 +164,14 @@ describe("RFQ v3 final review", () => {
     ],
     feeBps: 0,
     app20FeeAmount: 0n,
+  };
+  const v3Terms = {
+    ...v3Core,
+    takeAuthorization: takeAuthorizationForV3Review(
+      v3Core,
+      "0x5",
+      "0x55",
+    ),
   };
 
   it("accepts exact fills, fresh locks, floor, balance, and zero fees", () => {
@@ -199,6 +208,52 @@ describe("RFQ v3 final review", () => {
         }),
       }),
     ).resolves.toEqual({ ok: true, blockers: [] });
+  });
+
+  it("blocks token or fill drift after the Take message was reviewed", () => {
+    const tokenDrift = validateV3FinalReview({
+      initial,
+      current: { ...initial, shieldedBalance: 100n },
+      terms: { ...v3Terms, buyAddress: "0x3" },
+      now: 150,
+    });
+    expect(tokenDrift.blockers.join(" ")).toMatch(/authorization changed/i);
+
+    const fillDrift = validateV3FinalReview({
+      initial,
+      current: { ...initial, shieldedBalance: 100n },
+      terms: {
+        ...v3Terms,
+        exactSellAmount: 99n,
+        fills: [{ ...v3Terms.fills[0]!, amountA: 99n }],
+      },
+      now: 150,
+    });
+    expect(fillDrift.blockers.join(" ")).toMatch(/authorization changed/i);
+  });
+
+  it("blocks a lock carrying another taker's authorization key", async () => {
+    const result = await validateLiveV3FinalReview({
+      initial,
+      current: { ...initial, shieldedBalance: 100n },
+      terms: v3Terms,
+      now: 150,
+      readLock: async () => ({
+        status: "open",
+        tokenA: "0x1",
+        tokenB: "0x2",
+        rfqId: "0x77",
+        takerCommitment: "0x56",
+        expiry: 300,
+        schedule: [{ a: 100n, b: 200n }],
+        remainingB: 200n,
+        earnedA: 0n,
+        ticket: "0x44",
+        proceedsSettled: false,
+        collateralReleased: false,
+      }),
+    });
+    expect(result.blockers.join(" ")).toMatch(/lock binding changed/i);
   });
 
   it("blocks fill drift, expired locks, floor failure, missing balance, and fees", () => {

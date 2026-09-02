@@ -40,9 +40,9 @@ import {
 } from "@/lib/envelope";
 import {
   backupBlobDigest,
-  openBackupBlob,
-  parseBackupPointer,
+  createBackupPointer,
   sealBackupBlob,
+  verifyBackupPointer,
 } from "@/lib/backup-blob";
 import {
   createIpfsBlobStore,
@@ -198,6 +198,7 @@ import {
   mergeMailMessages,
   mergeDisplayAliases,
   newestBackupMessages,
+  loadBackupSnapshotWithFallback,
   sortMailMessages,
   storedSentToLocal,
   paymentLinkToLocal,
@@ -263,8 +264,9 @@ export default function InboxPage() {
     [aliases, bookEntries],
   );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
-  const [escrowState, setEscrowState] =
-    useState<EscrowState>(emptyEscrowState());
+  const [escrowState, setEscrowState] = useState<EscrowState>(
+    emptyEscrowState(),
+  );
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});
@@ -689,7 +691,27 @@ export default function InboxPage() {
   }, [address, chainId, otcState, providerIndex]);
 
   const mailboxView = useMemo(() => {
-    const visibleMessages = newestBackupMessages(messages);
+    const authenticatedBackupIds = new Set(
+      address && chainId && helperAddress && mailSeed && keyFingerprint
+        ? newestBackupMessages(messages, {
+            mailboxSeed: mailSeed,
+            context: {
+              owner: address,
+              chainId,
+              helperAddress,
+              mailboxFingerprint: keyFingerprint,
+            },
+          }).map((message) => message.id)
+        : [],
+    );
+    const visibleMessages = sortMailMessages(
+      messages.filter(
+        (message) =>
+          (message.envelope.type !== "backup_snapshot" &&
+            message.envelope.type !== "backup_pointer") ||
+          authenticatedBackupIds.has(message.id),
+      ),
+    );
     const folders = partitionMailboxFolders(visibleMessages);
     const folderMessages = mailFolder === "sent" ? folders.sent : folders.inbox;
     const typeCounts =
@@ -706,7 +728,7 @@ export default function InboxPage() {
       mailboxFilter === "all"
         ? drafts
         : drafts.filter((draft) => draftMatchesFilter(draft, mailboxFilter));
-    const allAnnotatedMessages = messages.map((message) => ({
+    const allAnnotatedMessages = visibleMessages.map((message) => ({
       ...message,
       assignedAddress: assignments[message.id]?.address,
       localConversationId: assignments[message.id]?.conversationId,
@@ -727,7 +749,18 @@ export default function InboxPage() {
       allAnnotatedMessages,
       annotatedMessages,
     };
-  }, [assignments, drafts, mailFolder, mailboxFilter, messages]);
+  }, [
+    address,
+    assignments,
+    chainId,
+    drafts,
+    helperAddress,
+    keyFingerprint,
+    mailFolder,
+    mailboxFilter,
+    mailSeed,
+    messages,
+  ]);
 
   useEffect(() => {
     if (mailFolder === "drafts") {
@@ -1342,8 +1375,7 @@ export default function InboxPage() {
     try {
       const env: Record<string, unknown> = {
         VITE_IPFS_RPC_ORIGIN: import.meta.env.VITE_IPFS_RPC_ORIGIN,
-        VITE_IPFS_GATEWAY_ORIGINS:
-          import.meta.env.VITE_IPFS_GATEWAY_ORIGINS,
+        VITE_IPFS_GATEWAY_ORIGINS: import.meta.env.VITE_IPFS_GATEWAY_ORIGINS,
       };
       const resolution = resolveBlobStoreConfig({
         localnetConfig: localnet ? await readLocalBackupConfig() : undefined,
@@ -1416,13 +1448,21 @@ export default function InboxPage() {
           bytes: inline,
         });
         const { cid } = await store.put(blob);
-        envelope = encodeEnvelope("backup_pointer", {
-          kind,
-          seq,
-          cid,
-          bucketBytes: blob.length,
-          blobDigest: backupBlobDigest(blob),
-        });
+        envelope = encodeEnvelope(
+          "backup_pointer",
+          createBackupPointer({
+            owner: context.address,
+            chainId: context.chainId,
+            helperAddress: context.helperAddress,
+            mailboxFingerprint: keyFingerprint,
+            mailboxSeed: mailSeed,
+            kind,
+            seq,
+            cid,
+            bucketBytes: blob.length,
+            blobDigest: backupBlobDigest(blob),
+          }),
+        );
         if (
           envelope.length > MAX_COMPOSITE_ENVELOPE_BYTES ||
           !projectEncryptedMailSize(envelope.length, 1).fits
@@ -1519,17 +1559,13 @@ export default function InboxPage() {
     ) {
       return;
     }
-    const pending = consumePendingRfqHistoryAutoBackup(
-      window.localStorage,
-      { account: address, chainId },
-    );
+    const pending = consumePendingRfqHistoryAutoBackup(window.localStorage, {
+      account: address,
+      chainId,
+    });
     if (!pending) return;
     rfqAutoBackupPostingRef.current = true;
-    void exportRfqHistory(
-      createIndexedDbRfqStorage(),
-      chainId,
-      address,
-    )
+    void exportRfqHistory(createIndexedDbRfqStorage(), chainId, address)
       .then((history) =>
         postAuthenticatedBackup("rfq-resume", history, history.count),
       )
@@ -1594,62 +1630,62 @@ export default function InboxPage() {
           "Connect the matching wallet and unlock its mailbox recovery phrase first.",
         );
       }
+      const startedAt = Date.now();
       setActionState(actionKey, {
         pending: true,
-        message: "Verifying the authenticated backup…",
-        startedAt: Date.now(),
+        message: "Authenticating the newest backup candidates…",
+        startedAt,
       });
-      let candidate: unknown;
-      let expectedKind: BackupKind | undefined;
-      let expectedSeq: number | undefined;
-      if (sourceMessage.envelope.type === "backup_snapshot") {
-        candidate = sourceMessage.envelope.payload;
-      } else if (sourceMessage.envelope.type === "backup_pointer") {
-        const pointer = parseBackupPointer(sourceMessage.envelope.payload);
-        expectedKind = pointer.kind;
-        expectedSeq = pointer.seq;
-        setActionState(actionKey, {
-          pending: true,
-          message: "Fetching and CID-verifying the bounded encrypted blob…",
-          startedAt: Date.now(),
-        });
-        const store = await inboxBlobStore();
-        const blob = await store.get(pointer.cid);
-        if (
-          blob.length !== pointer.bucketBytes ||
-          backupBlobDigest(blob) !== pointer.blobDigest
-        ) {
-          throw new Error(
-            "The fetched backup blob does not match its authenticated pointer.",
-          );
-        }
-        const opened = await openBackupBlob({
-          mailboxSeed: mailSeed,
-          owner: address,
-          chainId,
-          kind: pointer.kind,
-          seq: pointer.seq,
-          blob,
-        });
-        const decoded = decodeEnvelope(opened);
-        if (decoded.type !== "backup_snapshot") {
-          throw new Error(
-            "The backup blob does not contain a versioned snapshot envelope.",
-          );
-        }
-        candidate = decoded.payload;
-      } else {
-        throw new Error("This message is not a versioned backup.");
-      }
-      const snapshot = verifyBackupSnapshot(candidate, {
+      const backupContext = {
         owner: address,
         chainId,
         helperAddress,
         mailboxFingerprint: keyFingerprint,
+      };
+      let requestedKind: BackupKind;
+      if (sourceMessage.envelope.type === "backup_snapshot") {
+        requestedKind = verifyBackupSnapshot(sourceMessage.envelope.payload, {
+          ...backupContext,
+          mailboxSeed: mailSeed,
+        }).kind;
+      } else if (sourceMessage.envelope.type === "backup_pointer") {
+        requestedKind = verifyBackupPointer(sourceMessage.envelope.payload, {
+          ...backupContext,
+          mailboxSeed: mailSeed,
+        }).kind;
+      } else {
+        throw new Error("This message is not an authenticated backup.");
+      }
+
+      let storePromise: Promise<BlobStore> | undefined;
+      const loaded = await loadBackupSnapshotWithFallback(messages, {
         mailboxSeed: mailSeed,
-        ...(expectedKind ? { kind: expectedKind } : {}),
-        ...(expectedSeq === undefined ? {} : { seq: expectedSeq }),
+        context: backupContext,
+        kind: requestedKind,
+        loadBlob: async (cid) => {
+          if (!storePromise) {
+            setActionState(actionKey, {
+              pending: true,
+              message:
+                "Trying CID-verified blobs from up to three authenticated backup candidates…",
+              startedAt,
+            });
+            storePromise = inboxBlobStore();
+          }
+          return (await storePromise).get(cid);
+        },
       });
+      const snapshot = loaded.snapshot;
+      const usedSource =
+        loaded.message.envelope.type === "backup_pointer"
+          ? "encrypted blob pointer"
+          : "inline snapshot";
+      const fallbackWarning = loaded.failures.length
+        ? ` ${loaded.failures.length} newer authenticated backup candidate${loaded.failures.length === 1 ? " was" : "s were"} unavailable or corrupt; sequence ${snapshot.seq} was used instead.`
+        : "";
+      const fallbackPrompt = loaded.failures.length
+        ? ` Warning: ${loaded.failures.length} newer authenticated backup candidate${loaded.failures.length === 1 ? " is" : "s are"} unavailable or corrupt; sequence ${snapshot.seq} will be used instead.`
+        : "";
 
       if (snapshot.kind === "contacts") {
         const value = snapshot.payload;
@@ -1685,7 +1721,7 @@ export default function InboxPage() {
         });
         if (
           !window.confirm(
-            `Merge ${entries.length} authenticated contact${entries.length === 1 ? "" : "s"} from backup sequence ${snapshot.seq}? Newer local labels win.`,
+            `Merge ${entries.length} authenticated contact${entries.length === 1 ? "" : "s"} from backup sequence ${snapshot.seq}?${fallbackPrompt} Newer local labels win.`,
           )
         ) {
           throw new Error(
@@ -1700,7 +1736,7 @@ export default function InboxPage() {
         window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
         setActionState(actionKey, {
           pending: false,
-          message: `${restored.length} contact${restored.length === 1 ? "" : "s"} restored with keep-newer merge rules.`,
+          message: `${restored.length} contact${restored.length === 1 ? "" : "s"} restored from backup sequence ${snapshot.seq} (${usedSource}) with keep-newer merge rules.${fallbackWarning}`,
         });
       } else {
         const value = snapshot.payload;
@@ -1716,7 +1752,7 @@ export default function InboxPage() {
         }
         if (
           !window.confirm(
-            `Merge ${value.count} authenticated RFQ history record${value.count === 1 ? "" : "s"} from backup sequence ${snapshot.seq}? Existing newer records win.`,
+            `Merge ${value.count} authenticated RFQ history record${value.count === 1 ? "" : "s"} from backup sequence ${snapshot.seq}?${fallbackPrompt} Existing newer records win.`,
           )
         ) {
           throw new Error(
@@ -1730,22 +1766,23 @@ export default function InboxPage() {
         );
         setActionState(actionKey, {
           pending: false,
-          message: `${result.imported} RFQ record${result.imported === 1 ? "" : "s"} restored; ${result.skipped} newer or identical local record${result.skipped === 1 ? " was" : "s were"} kept.`,
+          message: `${result.imported} RFQ record${result.imported === 1 ? "" : "s"} restored from backup sequence ${snapshot.seq} (${usedSource}); ${result.skipped} newer or identical local record${result.skipped === 1 ? " was" : "s were"} kept.${fallbackWarning}`,
         });
       }
       setStorageNotice({
         kind: "ok",
-        message:
-          "Authenticated backup restored. Mail and IPFS supplied encrypted evidence only; neither proves settlement.",
+        message: `Authenticated backup sequence ${snapshot.seq} (${usedSource}) restored.${fallbackWarning} Mail and IPFS supplied encrypted evidence only; neither proves settlement.`,
       });
     } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The backup could not be restored.";
       setActionState(actionKey, {
         pending: false,
-        message:
-          error instanceof Error
-            ? error.message
-            : "The backup could not be restored.",
+        message,
       });
+      setStorageNotice({ kind: "error", message });
     }
   }
 

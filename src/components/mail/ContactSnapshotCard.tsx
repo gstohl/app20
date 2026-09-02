@@ -34,7 +34,7 @@ export default function ContactSnapshotCard({
         {contacts ? "address-book" : "RFQ resume"} snapshot scoped to one
         wallet, network, Mail helper, and mailbox key.
         {pointer
-          ? " The encrypted snapshot bytes are stored outside Mail and will be CID-verified before decryption."
+          ? " The encrypted snapshot bytes are stored outside Mail. Only owner-MAC-authenticated pointers are accepted and CID-verified before decryption; older pointers without a valid MAC are ignored."
           : ""}
       </p>
       <p className={styles.riskCopy}>

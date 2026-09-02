@@ -1,3 +1,7 @@
+import {
+  signTake,
+  verifyTakeSignature,
+} from "@app20/private-intents";
 import { feltEquals } from "@/lib/addresses";
 import { buildEscrowTakeActions } from "@/lib/escrow-actions";
 import {
@@ -39,6 +43,7 @@ import {
   type RfqLifecycleRecord,
 } from "../rfq-lifecycle";
 import {
+  takeAuthorizationFromLifecycle,
   validateLiveV3FinalReview,
   type RfqFinalReviewSnapshot,
   type RfqFinalReviewV3Terms,
@@ -87,7 +92,9 @@ function v3ReviewTerms(record: RfqLifecycleRecord): RfqFinalReviewV3Terms {
     record.mode !== "v3" ||
     !record.terms ||
     !record.terms.buyAmount ||
-    !record.fills
+    !record.fills ||
+    !record.settlement ||
+    !record.takerCommitment
   ) {
     throw new Error("The persisted RFQ v3 exact fills are unavailable.");
   }
@@ -110,8 +117,54 @@ function v3ReviewTerms(record: RfqLifecycleRecord): RfqFinalReviewV3Terms {
         }),
       ),
     ),
+    takeAuthorization: takeAuthorizationFromLifecycle(record),
     feeBps: 0,
     app20FeeAmount: 0n,
+  });
+}
+
+export function buildSignedV3TakeActions(
+  record: RfqLifecycleRecord,
+  recoveryAddress: string,
+) {
+  if (
+    record.mode !== "v3" ||
+    record.state !== "reviewing" ||
+    !record.terms ||
+    !record.settlement ||
+    !record.takerSigningKey ||
+    !record.fills
+  ) {
+    throw new Error("The exact Take bindings are unavailable.");
+  }
+  const authorization = takeAuthorizationFromLifecycle(record);
+  const signature = signTake(record.takerSigningKey, authorization.message);
+  if (
+    !verifyTakeSignature(
+      authorization.publicKey,
+      authorization.message,
+      signature.r,
+      signature.s,
+    )
+  ) {
+    throw new Error("The exact Take signature failed local verification.");
+  }
+  return Object.freeze({
+    authorization,
+    signature,
+    actions: buildEscrowTakeActions({
+      escrowAddress: record.settlement.escrowAddress,
+      recoveryAddress,
+      rfqId: record.rfqId,
+      tokenA: record.terms.sellAddress,
+      tokenB: record.terms.buyAddress,
+      signatureR: signature.r,
+      signatureS: signature.s,
+      fills: record.fills.map((fill) => ({
+        lockId: fill.lockId,
+        amountA: BigInt(fill.amountA),
+      })),
+    }),
   });
 }
 
@@ -189,10 +242,12 @@ export async function executeLocalnetV3Take(input: {
   }
   const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
   const currentSnapshot = await readV3FinalReviewSnapshot(current);
+  const reviewedTerms = v3ReviewTerms(current);
+  const reviewedAuthorization = reviewedTerms.takeAuthorization!;
   const review = await validateLiveV3FinalReview({
     initial: input.initialSnapshot ?? currentSnapshot,
     current: currentSnapshot,
-    terms: v3ReviewTerms(current),
+    terms: reviewedTerms,
     now: currentSnapshot.observedAt,
   });
   if (!review.ok) {
@@ -215,32 +270,40 @@ export async function executeLocalnetV3Take(input: {
   );
   current = await persistExact(input.persistence, current);
   const preparedTarget = localnetTakeTargetFromLifecycle(current);
+  let walletLeaseAuthorized = false;
 
   try {
     const submitted = await runLocalnetTakeOrchestration({
       prepareBeforeLease: async () => {
-        if (!current.terms || !current.takerSecret || !current.fills) {
-          throw new Error("The exact Take bindings are unavailable.");
+        const signed = buildSignedV3TakeActions(current, started.address);
+        const { authorization } = signed;
+        if (
+          authorization.message !== reviewedAuthorization.message ||
+          authorization.publicKey !== reviewedAuthorization.publicKey ||
+          authorization.escrowAddress !== reviewedAuthorization.escrowAddress
+        ) {
+          throw new Error(
+            "The exact Take tokens, fills, or escrow changed after final review.",
+          );
         }
         return Object.freeze({
           account: started.account,
           provider,
-          actions: buildEscrowTakeActions({
-            escrowAddress: current.settlement!.escrowAddress,
-            recoveryAddress: started.address,
-            rfqId: current.rfqId,
-            tokenA: current.terms.sellAddress,
-            tokenB: current.terms.buyAddress,
-            takerSecret: current.takerSecret,
-            fills: current.fills.map((fill) => ({
-              lockId: fill.lockId,
-              amountA: BigInt(fill.amountA),
-            })),
-          }),
+          actions: signed.actions,
           target: preparedTarget,
           attemptId,
           policy: () => {
             assertReadyExecutionUnchanged(started, "private-swap");
+            const liveAuthorization = takeAuthorizationFromLifecycle(current);
+            if (
+              liveAuthorization.message !== authorization.message ||
+              liveAuthorization.publicKey !== authorization.publicKey ||
+              liveAuthorization.escrowAddress !== authorization.escrowAddress
+            ) {
+              throw new Error(
+                "The exact Take authorization changed before wallet submission.",
+              );
+            }
             const now = Math.floor(Date.now() / 1_000);
             const liveGate = gateRfqAction(
               operationsAvailability(operationsStatus, now),
@@ -259,11 +322,13 @@ export async function executeLocalnetV3Take(input: {
               Math.floor(Date.now() / 1_000),
               { transactionHash },
             );
-            current = transitionRfqLifecycle(
-              current,
-              "submission-unknown",
-              Math.floor(Date.now() / 1_000),
-            );
+            if (current.state !== "submission-unknown") {
+              current = transitionRfqLifecycle(
+                current,
+                "submission-unknown",
+                Math.floor(Date.now() / 1_000),
+              );
+            }
             current = await persistExact(input.persistence, current);
           },
         });
@@ -272,6 +337,29 @@ export async function executeLocalnetV3Take(input: {
         current = await input.persistence.authorize(current);
       },
       authorizeWalletSubmission: async () => {
+        if (!walletLeaseAuthorized) {
+          walletLeaseAuthorized = true;
+          current = await input.persistence.authorize(current);
+          return;
+        }
+        if (current.state !== "submission-unknown") {
+          current = updateRfqPhaseAttempt(
+            current,
+            "take",
+            "wallet-boundary-unknown",
+            Math.floor(Date.now() / 1_000),
+            {
+              walletBoundary: "entered",
+              observation:
+                "The wallet boundary was durably fenced before Take submission.",
+            },
+          );
+          current = transitionRfqLifecycle(
+            current,
+            "submission-unknown",
+            Math.floor(Date.now() / 1_000),
+          );
+        }
         current = await input.persistence.authorize(current);
       },
       prepareLease: prepareLocalnetTake,
@@ -335,41 +423,56 @@ export async function executeLocalnetV3Take(input: {
         "take",
         "reverted",
         Math.floor(Date.now() / 1_000),
-        { observation: "Take was proven not submitted before wallet entry." },
+        {
+          walletBoundary: "not-entered",
+          observation: "Take was proven not submitted before wallet entry.",
+        },
       );
       current = await persistExact(input.persistence, current);
       return Object.freeze({ kind: "reverted", record: current, reason });
     }
     if (state === "reverted") {
-      if (current.state === "submission-unknown") {
-        await convergeLocalnetTake(
-          localnetTakeTargetFromLifecycle(current),
-          attemptId,
-          "absent",
-        );
-        current = revertRfqV3Take(
-          current,
-          Math.floor(Date.now() / 1_000),
-          "The exact Take transaction reverted.",
-        );
-      } else {
+      if (current.state === "reviewing") {
         current = updateRfqPhaseAttempt(
           current,
           "take",
-          "reverted",
+          "wallet-boundary-unknown",
           Math.floor(Date.now() / 1_000),
           {
             ...(transactionHash ? { transactionHash } : {}),
-            observation: "The exact Take transaction reverted.",
+            walletBoundary: "entered",
+            observation:
+              "The wallet boundary was entered before Take was rejected.",
           },
         );
+        current = transitionRfqLifecycle(
+          current,
+          "submission-unknown",
+          Math.floor(Date.now() / 1_000),
+        );
       }
+      if (current.state !== "submission-unknown") {
+        throw error;
+      }
+      const target = localnetTakeTargetFromLifecycle(current);
+      current = revertRfqV3Take(
+        current,
+        Math.floor(Date.now() / 1_000),
+        "The exact Take transaction reverted after reaching the wallet boundary.",
+      );
       current = await persistExact(input.persistence, current);
+      let convergenceWarning = "";
+      try {
+        await convergeLocalnetTake(target, attemptId, "absent");
+      } catch {
+        convergenceWarning =
+          " Coordinator convergence remains pending, but the RFQ is terminal and cannot be resubmitted.";
+      }
       return Object.freeze({
         kind: "reverted",
         record: current,
         ...(transactionHash ? { transactionHash } : {}),
-        reason,
+        reason: `${reason}${convergenceWarning}`,
       });
     }
     if (current.state === "reviewing") {
@@ -426,6 +529,7 @@ export async function verifyLocalnetV3Take(input: {
         "reverted",
         Math.floor(Date.now() / 1_000),
         {
+          walletBoundary: "not-entered",
           observation:
             "The exact pre-wallet Take lease was abandoned after an empty escrow observation.",
         },

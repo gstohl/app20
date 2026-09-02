@@ -170,8 +170,17 @@ export default function RfqActiveCard({
         onAction={onAction ? () => onAction(record, next.action) : undefined}
       />
       {record.reason ? (
-        <p role={record.state === "quarantined" ? "alert" : undefined}>
-          {record.reason}
+        <p
+          role={
+            record.state === "quarantined" ||
+            record.reason === "take-reverted"
+              ? "alert"
+              : undefined
+          }
+        >
+          {record.reason === "take-reverted"
+            ? "Take reverted on chain. This RFQ is terminal and cannot be resubmitted; start a new RFQ."
+            : record.reason}
         </p>
       ) : null}
       <details className={styles.activeCardDetails}>

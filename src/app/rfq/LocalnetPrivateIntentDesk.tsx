@@ -73,6 +73,7 @@ import RfqFinalReview, {
   type RfqFinalReviewV3DisplayTerms,
 } from "./RfqFinalReview";
 import {
+  takeAuthorizationFromLifecycle,
   validateV3FinalReview,
   type RfqFinalReviewSnapshot,
 } from "./rfq-final-review";
@@ -954,7 +955,7 @@ export default function LocalnetPrivateIntentDesk({
           max: created.bucket.max.toString(),
         },
         takerCommitment: created.takerCommitment,
-        takerSecret: created.takerSecret,
+        takerSigningKey: created.takerSigningKey,
       });
       requestingRecord = await persistLifecycle(requestingRecord, request);
       const response = await requestQuotesV3({
@@ -1220,13 +1221,18 @@ export default function LocalnetPrivateIntentDesk({
     } else if (result.kind === "reverted") {
       setReviewSnapshot(null);
       setReviewSnapshotError(undefined);
-      void refreshReviewSnapshot(result.record);
+      if (result.record.state === "reviewing") {
+        void refreshReviewSnapshot(result.record);
+      }
       setFlow({
         kind: "reverted",
         ...(result.transactionHash
           ? { transactionHash: result.transactionHash }
           : {}),
-        message: `${result.reason} Review again before any new deliberate Take.`,
+        message:
+          result.record.state === "expired"
+            ? `${result.reason} This RFQ is closed after the reverted Take; start a new RFQ.`
+            : `${result.reason} Submission was disproved before wallet entry; review again before a new deliberate Take.`,
       });
     } else if (result.kind === "quarantined") {
       setShowFinalReview(false);
@@ -1298,7 +1304,9 @@ export default function LocalnetPrivateIntentDesk({
       quoted.selection.selection.kind !== "selected" ||
       !lifecycleRecord?.terms?.buyAmount ||
       !lifecycleRecord.fills ||
-      !lifecycleRecord.requestDigest
+      !lifecycleRecord.requestDigest ||
+      !lifecycleRecord.settlement ||
+      !lifecycleRecord.takerCommitment
     ) {
       return undefined;
     }
@@ -1321,6 +1329,7 @@ export default function LocalnetPrivateIntentDesk({
           }),
         ),
       ),
+      takeAuthorization: takeAuthorizationFromLifecycle(lifecycleRecord),
       feeBps: 0,
       app20FeeAmount: 0n,
       sellSymbol: lifecycleRecord.terms.sellSymbol,

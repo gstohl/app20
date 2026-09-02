@@ -3,21 +3,26 @@ use app20_mail::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTra
 use app20_mail::escrow::{
     App20Escrow, EscrowOperation, FillParams, FundParams, IApp20EscrowDispatcher,
     IApp20EscrowDispatcherTrait, IApp20EscrowSafeDispatcher, IApp20EscrowSafeDispatcherTrait,
-    LockParams, LockStatus, TakeFill, TakeParams, evaluate_schedule,
+    LockParams, LockStatus, TAKE_DOMAIN, TakeFill, TakeParams, evaluate_schedule,
 };
 use app20_mail::lock_ticket::{ILockTicketDispatcher, ILockTicketDispatcherTrait};
 use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use core::poseidon::poseidon_hash_span;
+use snforge_std::signature::stark_curve::{
+    StarkCurveKeyPair, StarkCurveKeyPairImpl, StarkCurveSignerImpl,
+};
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait,
-    cheat_block_timestamp, cheat_caller_address, declare, map_entry_address, spy_events, store,
+    cheat_block_timestamp, cheat_caller_address, declare, load, map_entry_address, spy_events,
+    store,
 };
 use starknet::{ClassHash, ContractAddress};
 
 const POOL: felt252 = 0x3000;
 const RFQ: felt252 = 0xA300;
 const LOCK_1: felt252 = 0xB301;
-const SECRET: felt252 = 0xC302;
+const SIGNING_KEY: felt252 = 0xC302;
+const OTHER_SIGNING_KEY: felt252 = 0xC303;
 const CREATED_AT: u64 = 10;
 const EXPIRY: u64 = 100;
 
@@ -93,22 +98,90 @@ fn invoke(
     escrow.privacy_invoke(operation, deal_id, address(0xBAD), note_id)
 }
 
-fn commitment(secret: felt252) -> felt252 {
-    poseidon_hash_span(array![secret].span())
+fn key_pair(private_key: felt252) -> StarkCurveKeyPair {
+    StarkCurveKeyPairImpl::from_secret_key(private_key)
+}
+
+fn take_fills_digest(fills: Span<TakeFill>) -> felt252 {
+    let mut preimage = array![];
+    for fill_ref in fills {
+        let fill = *fill_ref;
+        preimage.append(fill.lock_id);
+        preimage.append(fill.amount_a.into());
+    }
+    poseidon_hash_span(preimage.span())
+}
+
+fn take_message(
+    escrow_address: ContractAddress,
+    rfq_id: felt252,
+    token_a: ContractAddress,
+    token_b: ContractAddress,
+    fills_digest: felt252,
+) -> felt252 {
+    poseidon_hash_span(
+        array![
+            TAKE_DOMAIN, escrow_address.into(), rfq_id, token_a.into(), token_b.into(),
+            fills_digest,
+        ]
+            .span(),
+    )
+}
+
+fn sign_take(
+    key_pair: StarkCurveKeyPair,
+    escrow_address: ContractAddress,
+    rfq_id: felt252,
+    token_a: ContractAddress,
+    token_b: ContractAddress,
+    fills: Span<TakeFill>,
+) -> (felt252, felt252) {
+    key_pair
+        .sign(take_message(escrow_address, rfq_id, token_a, token_b, take_fills_digest(fills)))
+        .unwrap()
+}
+
+fn signed_take_params(
+    key_pair: StarkCurveKeyPair,
+    escrow_address: ContractAddress,
+    rfq_id: felt252,
+    token_a: ContractAddress,
+    token_b: ContractAddress,
+    fills: Array<TakeFill>,
+) -> TakeParams {
+    let (signature_r, signature_s) = sign_take(
+        key_pair, escrow_address, rfq_id, token_a, token_b, fills.span(),
+    );
+    TakeParams { token: token_a, counter_token: token_b, signature_r, signature_s, fills }
+}
+
+fn accounted_balance(escrow_address: ContractAddress, token_address: ContractAddress) -> u256 {
+    let entry = map_entry_address(selector!("accounted"), array![token_address.into()].span());
+    let stored = load(escrow_address, entry, 2);
+    u256 { low: (*stored.at(0)).try_into().unwrap(), high: (*stored.at(1)).try_into().unwrap() }
+}
+
+fn assert_accounted_is_covered(
+    escrow_address: ContractAddress, token_address: ContractAddress, token: IMockErc20Dispatcher,
+) {
+    assert(
+        accounted_balance(escrow_address, token_address) <= token.balance_of(escrow_address),
+        'accounting exceeds balance',
+    );
 }
 
 fn standard_lock_params(
     token_b: ContractAddress,
     token_a: ContractAddress,
     rfq_id: felt252,
-    secret: felt252,
+    taker_authorization_key: felt252,
     expiry: u64,
 ) -> LockParams {
     LockParams {
         token: token_b,
         counter_token: token_a,
         rfq_id,
-        taker_commitment: commitment(secret),
+        taker_commitment: taker_authorization_key,
         expiry,
         points_len: 2,
         p0_a: 10,
@@ -122,6 +195,35 @@ fn standard_lock_params(
     }
 }
 
+fn create_lock_with_key(
+    pool: ContractAddress,
+    escrow_address: ContractAddress,
+    escrow: IApp20EscrowDispatcher,
+    token_a_address: ContractAddress,
+    token_b_address: ContractAddress,
+    token_b: IMockErc20Dispatcher,
+    lock_id: felt252,
+    rfq_id: felt252,
+    taker_authorization_key: felt252,
+) -> OpenNoteDeposit {
+    transfer_token(token_b_address, token_b, pool, escrow_address, 200);
+    let deposits = invoke(
+        pool,
+        escrow_address,
+        escrow,
+        CREATED_AT,
+        EscrowOperation::Lock(
+            standard_lock_params(
+                token_b_address, token_a_address, rfq_id, taker_authorization_key, EXPIRY,
+            ),
+        ),
+        lock_id,
+        0xD301,
+    );
+    assert(deposits.len() == 1, 'lock deposit missing');
+    *deposits.at(0)
+}
+
 fn create_lock(
     pool: ContractAddress,
     escrow_address: ContractAddress,
@@ -132,20 +234,17 @@ fn create_lock(
     lock_id: felt252,
     rfq_id: felt252,
 ) -> OpenNoteDeposit {
-    transfer_token(token_b_address, token_b, pool, escrow_address, 200);
-    let deposits = invoke(
+    create_lock_with_key(
         pool,
         escrow_address,
         escrow,
-        CREATED_AT,
-        EscrowOperation::Lock(
-            standard_lock_params(token_b_address, token_a_address, rfq_id, SECRET, EXPIRY),
-        ),
+        token_a_address,
+        token_b_address,
+        token_b,
         lock_id,
-        0xD301,
-    );
-    assert(deposits.len() == 1, 'lock deposit missing');
-    *deposits.at(0)
+        rfq_id,
+        key_pair(SIGNING_KEY).public_key,
+    )
 }
 
 fn pull_payout(pool: ContractAddress, escrow_address: ContractAddress, deposit: OpenNoteDeposit) {
@@ -172,6 +271,30 @@ fn return_lock_ticket(
     assert(ticket.transfer(escrow_address, 1), 'ticket return failed');
 }
 
+fn take_one_with_key_pair(
+    pool: ContractAddress,
+    escrow_address: ContractAddress,
+    escrow: IApp20EscrowDispatcher,
+    token_a_address: ContractAddress,
+    token_a: IMockErc20Dispatcher,
+    token_b_address: ContractAddress,
+    rfq_id: felt252,
+    lock_id: felt252,
+    amount_a: u128,
+    key_pair: StarkCurveKeyPair,
+) -> Span<OpenNoteDeposit> {
+    transfer_token(token_a_address, token_a, pool, escrow_address, amount_a);
+    let params = signed_take_params(
+        key_pair,
+        escrow_address,
+        rfq_id,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id, amount_a }],
+    );
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), rfq_id, 0xD302)
+}
+
 fn take_one(
     pool: ContractAddress,
     escrow_address: ContractAddress,
@@ -182,25 +305,56 @@ fn take_one(
     rfq_id: felt252,
     lock_id: felt252,
     amount_a: u128,
-    secret: felt252,
+    private_key: felt252,
 ) -> Span<OpenNoteDeposit> {
-    transfer_token(token_a_address, token_a, pool, escrow_address, amount_a);
-    invoke(
+    take_one_with_key_pair(
         pool,
         escrow_address,
         escrow,
-        20,
-        EscrowOperation::Take(
-            TakeParams {
-                token: token_a_address,
-                counter_token: token_b_address,
-                taker_secret: secret,
-                fills: array![TakeFill { lock_id, amount_a }],
-            },
-        ),
+        token_a_address,
+        token_a,
+        token_b_address,
         rfq_id,
-        0xD302,
+        lock_id,
+        amount_a,
+        key_pair(private_key),
     )
+}
+
+#[test]
+fn take_signature_vector_matches_typescript_fixture() {
+    let vector_key_pair = key_pair(0x123456789abcdef123456789abcdef123456789abcdef123456789abcdef);
+    assert(
+        vector_key_pair
+            .public_key == 0x378c6111576cb10b71a66fe66e0d9dce8f2c973f06d52ab8eb05e81a195d512,
+        'vector public key',
+    );
+    assert(TAKE_DOMAIN == 0x61707032302d74616b652d7633, 'take domain encoding');
+
+    let fills = array![
+        TakeFill { lock_id: 0xB301, amount_a: 50 }, TakeFill { lock_id: 0xB302, amount_a: 25 },
+    ];
+    let fills_digest = take_fills_digest(fills.span());
+    assert(
+        fills_digest == 0x12c25d3410ad307ad341d9d0fd0d54474523417268449d99c1b657f22eab61f,
+        'vector fills digest',
+    );
+    let message = take_message(
+        address(0x1234), 0xA300, address(0x1111), address(0x2222), fills_digest,
+    );
+    assert(
+        message == 0x2de03397e068faf4e7dc8e0bee5d80a90cf5e16c1be20ee66567aa5f5548942,
+        'vector message',
+    );
+    let (signature_r, signature_s) = vector_key_pair.sign(message).unwrap();
+    assert(
+        signature_r == 0x65d4d259e8280a90a9792f245f9659a38fd3497724555929e72a3c3a35c5225,
+        'vector signature r',
+    );
+    assert(
+        signature_s == 0x52c501d35533886c15a3e77043dad73628405a58440400d1aa938cc572da3b,
+        'vector signature s',
+    );
 }
 
 #[test]
@@ -392,7 +546,7 @@ fn schedule_rejects_zero_points() {
 }
 
 #[test]
-fn lock_mints_supply_two_and_records_exact_delta_and_event() {
+fn lock_mints_supply_two_and_records_schedule_max_and_event() {
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
         fixture();
     let mut spy = spy_events();
@@ -417,6 +571,7 @@ fn lock_mints_supply_two_and_records_exact_delta_and_event() {
     assert(lock.status == LockStatus::Open, 'lock not open');
     assert(lock.token_a == token_a_address, 'wrong token a');
     assert(lock.token_b == token_b_address, 'wrong token b');
+    assert(lock.taker_commitment == key_pair(SIGNING_KEY).public_key, 'authorization key changed');
     assert(lock.remaining_b == 200, 'wrong remaining');
     assert(lock.earned_a == 0, 'unexpected earnings');
     assert(escrow.quote_schedule(LOCK_1, 50) == 100, 'wrong quote view');
@@ -451,8 +606,36 @@ fn lock_mints_supply_two_and_records_exact_delta_and_event() {
 }
 
 #[test]
+fn lock_ignores_preexisting_token_b_dust_and_keeps_payout_covered() {
+    let dust: u128 = 1;
+    let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
+        fixture();
+    transfer_token(token_b_address, token_b, pool, escrow_address, dust);
+
+    let ticket_deposit = create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    assert(escrow.get_lock(LOCK_1).remaining_b == 200, 'dust changed collateral');
+    assert(accounted_balance(escrow_address, token_b_address) == 200, 'dust was accounted');
+    assert(token_b.balance_of(escrow_address) == (200 + dust).into(), 'dust balance missing');
+    assert_accounted_is_covered(escrow_address, token_b_address, token_b);
+
+    pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let collateral = *invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::ReleaseCollateral, LOCK_1, 0xD401,
+    )
+        .at(0);
+    assert(collateral.amount == 200, 'collateral payout changed');
+    assert(token_b.allowance(escrow_address, pool) == 200, 'collateral not covered');
+    pull_payout(pool, escrow_address, collateral);
+    assert(token_b.balance_of(escrow_address) == dust.into(), 'dust was paid or absorbed');
+    assert(accounted_balance(escrow_address, token_b_address) == 0, 'released balance accounted');
+}
+
+#[test]
 #[should_panic(expected: ('BAD_LOCK_AMOUNT',))]
-fn lock_requires_exact_schedule_max() {
+fn lock_rejects_less_than_schedule_max() {
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
         fixture();
     transfer_token(token_b_address, token_b, pool, escrow_address, 199);
@@ -462,7 +645,9 @@ fn lock_requires_exact_schedule_max() {
         escrow,
         CREATED_AT,
         EscrowOperation::Lock(
-            standard_lock_params(token_b_address, token_a_address, RFQ, SECRET, EXPIRY),
+            standard_lock_params(
+                token_b_address, token_a_address, RFQ, key_pair(SIGNING_KEY).public_key, EXPIRY,
+            ),
         ),
         LOCK_1,
         1,
@@ -483,7 +668,9 @@ fn duplicate_lock_id_reverts() {
         escrow,
         CREATED_AT,
         EscrowOperation::Lock(
-            standard_lock_params(token_b_address, token_a_address, RFQ, SECRET, EXPIRY),
+            standard_lock_params(
+                token_b_address, token_a_address, RFQ, key_pair(SIGNING_KEY).public_key, EXPIRY,
+            ),
         ),
         LOCK_1,
         2,
@@ -502,7 +689,9 @@ fn lock_expiry_must_be_future() {
         escrow,
         CREATED_AT,
         EscrowOperation::Lock(
-            standard_lock_params(token_b_address, token_a_address, RFQ, SECRET, CREATED_AT),
+            standard_lock_params(
+                token_b_address, token_a_address, RFQ, key_pair(SIGNING_KEY).public_key, CREATED_AT,
+            ),
         ),
         LOCK_1,
         3,
@@ -513,11 +702,23 @@ fn lock_expiry_must_be_future() {
 fn take_single_fill_updates_lock_record_and_events() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
-    create_lock(
-        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    let generated_key_pair = StarkCurveKeyPairImpl::generate();
+    create_lock_with_key(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_b_address,
+        token_b,
+        LOCK_1,
+        RFQ,
+        generated_key_pair.public_key,
+    );
+    let expected_fills_digest = take_fills_digest(
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }].span(),
     );
     let mut spy = spy_events();
-    let deposits = take_one(
+    let deposits = take_one_with_key_pair(
         pool,
         escrow_address,
         escrow,
@@ -527,7 +728,7 @@ fn take_single_fill_updates_lock_record_and_events() {
         RFQ,
         LOCK_1,
         50,
-        SECRET,
+        generated_key_pair,
     );
     let deposit = *deposits.at(0);
     let lock = escrow.get_lock(LOCK_1);
@@ -543,6 +744,7 @@ fn take_single_fill_updates_lock_record_and_events() {
     assert(record.token_b == token_b_address, 'record token b');
     assert(record.total_b == 100, 'record total b');
     assert(record.fill_count == 1, 'record count');
+    assert(record.fills_digest == expected_fills_digest, 'record fills digest');
     assert(record.taken_at == 20, 'record timestamp');
     assert(token_b.allowance(escrow_address, pool) == 100, 'payout approval');
     spy
@@ -570,6 +772,7 @@ fn take_single_fill_updates_lock_record_and_events() {
                             token_b: token_b_address,
                             total_b: 100,
                             fill_count: 1,
+                            fills_digest: expected_fills_digest,
                         },
                     ),
                 ),
@@ -592,18 +795,11 @@ fn run_multi_fill(fill_count: u8) {
     }
     let total_a: u128 = 10 * fill_count.into();
     transfer_token(token_a_address, token_a, pool, escrow_address, total_a);
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY), escrow_address, RFQ, token_a_address, token_b_address, fills,
+    );
     let deposits = invoke(
-        pool,
-        escrow_address,
-        escrow,
-        20,
-        EscrowOperation::Take(
-            TakeParams {
-                token: token_a_address, counter_token: token_b_address, taker_secret: SECRET, fills,
-            },
-        ),
-        RFQ,
-        0xE100,
+        pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 0xE100,
     );
     let payout = *deposits.at(0);
     assert(payout.amount == 20 * fill_count.into(), 'wrong aggregate payout');
@@ -626,27 +822,20 @@ fn take_requires_exact_sum_received() {
         pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
     );
     transfer_token(token_a_address, token_a, pool, escrow_address, 49);
-    invoke(
-        pool,
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
         escrow_address,
-        escrow,
-        20,
-        EscrowOperation::Take(
-            TakeParams {
-                token: token_a_address,
-                counter_token: token_b_address,
-                taker_secret: SECRET,
-                fills: array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
-            },
-        ),
         RFQ,
-        4,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
     );
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 4);
 }
 
 #[test]
-#[should_panic(expected: ('BAD_COMMITMENT',))]
-fn take_rejects_wrong_secret() {
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_wrong_signing_key() {
     let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
         fixture();
     create_lock(
@@ -662,8 +851,255 @@ fn take_rejects_wrong_secret() {
         RFQ,
         LOCK_1,
         50,
-        SECRET + 1,
+        OTHER_SIGNING_KEY,
     );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_signature_binds_fills_order() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1 + 1, RFQ,
+    );
+    let submitted_fills = array![
+        TakeFill { lock_id: LOCK_1, amount_a: 10 }, TakeFill { lock_id: LOCK_1 + 1, amount_a: 20 },
+    ];
+    let signed_fills = array![
+        TakeFill { lock_id: LOCK_1 + 1, amount_a: 20 }, TakeFill { lock_id: LOCK_1, amount_a: 10 },
+    ];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_a_address,
+        token_b_address,
+        signed_fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 30);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s,
+                fills: submitted_fills,
+            },
+        ),
+        RFQ,
+        0xB401,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_signature_binds_token_pair() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY), escrow_address, RFQ, token_b_address, token_a_address, fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB402,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_signature_binds_escrow_address() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY), address(0), RFQ, token_a_address, token_b_address, fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB407,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_signature_binds_rfq_id() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ + 1,
+        token_a_address,
+        token_b_address,
+        fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB403,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_tampered_signature_r() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY), escrow_address, RFQ, token_a_address, token_b_address, fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r: signature_r + 1,
+                signature_s,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB404,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_tampered_signature_s() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let (signature_r, signature_s) = sign_take(
+        key_pair(SIGNING_KEY), escrow_address, RFQ, token_a_address, token_b_address, fills.span(),
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s: signature_s + 1,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB405,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_locks_with_different_authorization_keys() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock_with_key(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_b_address,
+        token_b,
+        LOCK_1,
+        RFQ,
+        key_pair(SIGNING_KEY).public_key,
+    );
+    create_lock_with_key(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_b_address,
+        token_b,
+        LOCK_1 + 1,
+        RFQ,
+        key_pair(OTHER_SIGNING_KEY).public_key,
+    );
+    let fills = array![
+        TakeFill { lock_id: LOCK_1, amount_a: 10 }, TakeFill { lock_id: LOCK_1 + 1, amount_a: 10 },
+    ];
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY), escrow_address, RFQ, token_a_address, token_b_address, fills,
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 20);
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 0xB406);
 }
 
 #[test]
@@ -684,7 +1120,7 @@ fn take_rejects_wrong_rfq() {
         RFQ + 1,
         LOCK_1,
         50,
-        SECRET,
+        SIGNING_KEY,
     );
 }
 
@@ -697,22 +1133,15 @@ fn take_rejects_expired_lock() {
         pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
     );
     transfer_token(token_a_address, token_a, pool, escrow_address, 50);
-    invoke(
-        pool,
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
         escrow_address,
-        escrow,
-        EXPIRY,
-        EscrowOperation::Take(
-            TakeParams {
-                token: token_a_address,
-                counter_token: token_b_address,
-                taker_secret: SECRET,
-                fills: array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
-            },
-        ),
         RFQ,
-        5,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
     );
+    invoke(pool, escrow_address, escrow, EXPIRY, EscrowOperation::Take(params), RFQ, 5);
 }
 
 #[test]
@@ -733,7 +1162,8 @@ fn take_rejects_duplicate_lock_ids() {
             TakeParams {
                 token: token_a_address,
                 counter_token: token_b_address,
-                taker_secret: SECRET,
+                signature_r: 0,
+                signature_s: 0,
                 fills: array![
                     TakeFill { lock_id: LOCK_1, amount_a: 10 },
                     TakeFill { lock_id: LOCK_1, amount_a: 10 },
@@ -759,7 +1189,8 @@ fn take_rejects_zero_fills() {
             TakeParams {
                 token: token_a_address,
                 counter_token: token_b_address,
-                taker_secret: SECRET,
+                signature_r: 0,
+                signature_s: 0,
                 fills: array![],
             },
         ),
@@ -782,7 +1213,8 @@ fn take_rejects_five_fills() {
             TakeParams {
                 token: token_a_address,
                 counter_token: token_b_address,
-                taker_secret: SECRET,
+                signature_r: 0,
+                signature_s: 0,
                 fills: array![
                     TakeFill { lock_id: 1, amount_a: 10 }, TakeFill { lock_id: 2, amount_a: 10 },
                     TakeFill { lock_id: 3, amount_a: 10 }, TakeFill { lock_id: 4, amount_a: 10 },
@@ -804,22 +1236,69 @@ fn take_rejects_wrong_tokens() {
         pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
     );
     transfer_token(token_b_address, token_b, pool, escrow_address, 50);
-    invoke(
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_b_address,
+        token_a_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
+    );
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 9);
+}
+
+#[test]
+fn take_ignores_preexisting_token_a_dust_and_keeps_every_payout_covered() {
+    let dust: u128 = 1;
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let ticket_deposit = create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
+    transfer_token(token_a_address, token_a, pool, escrow_address, dust);
+
+    let take_deposit = *take_one(
         pool,
         escrow_address,
         escrow,
-        20,
-        EscrowOperation::Take(
-            TakeParams {
-                token: token_b_address,
-                counter_token: token_a_address,
-                taker_secret: SECRET,
-                fills: array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
-            },
-        ),
+        token_a_address,
+        token_a,
+        token_b_address,
         RFQ,
-        9,
-    );
+        LOCK_1,
+        50,
+        SIGNING_KEY,
+    )
+        .at(0);
+    assert(accounted_balance(escrow_address, token_a_address) == 50, 'dust was accounted');
+    assert(token_a.balance_of(escrow_address) == (50 + dust).into(), 'dust balance missing');
+    assert_accounted_is_covered(escrow_address, token_a_address, token_a);
+    assert_accounted_is_covered(escrow_address, token_b_address, token_b);
+    assert(token_b.allowance(escrow_address, pool) == 100, 'take payout not covered');
+    pull_payout(pool, escrow_address, take_deposit);
+    assert_accounted_is_covered(escrow_address, token_b_address, token_b);
+
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let proceeds = *invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::SettleProceeds, LOCK_1, 0xD402,
+    )
+        .at(0);
+    assert(proceeds.amount == 50, 'proceeds payout changed');
+    assert(token_a.allowance(escrow_address, pool) == 50, 'proceeds not covered');
+    pull_payout(pool, escrow_address, proceeds);
+    assert(token_a.balance_of(escrow_address) == dust.into(), 'dust was paid or absorbed');
+    assert(accounted_balance(escrow_address, token_a_address) == 0, 'settled dust accounted');
+
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let collateral = *invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::ReleaseCollateral, LOCK_1, 0xD403,
+    )
+        .at(0);
+    assert(token_b.allowance(escrow_address, pool) == 100, 'remainder not covered');
+    pull_payout(pool, escrow_address, collateral);
+    assert(token_b.balance_of(escrow_address) == 0, 'collateral not conserved');
+    assert(accounted_balance(escrow_address, token_b_address) == 0, 'collateral still accounted');
 }
 
 #[test]
@@ -840,7 +1319,7 @@ fn take_rejects_second_deal_id_use() {
         RFQ,
         LOCK_1,
         50,
-        SECRET,
+        SIGNING_KEY,
     );
     pull_payout(pool, escrow_address, *first.at(0));
     take_one(
@@ -853,7 +1332,7 @@ fn take_rejects_second_deal_id_use() {
         RFQ,
         LOCK_1,
         10,
-        SECRET,
+        SIGNING_KEY,
     );
 }
 
@@ -875,7 +1354,7 @@ fn take_rejects_amount_outside_schedule() {
         RFQ,
         LOCK_1,
         9,
-        SECRET,
+        SIGNING_KEY,
     );
 }
 
@@ -910,7 +1389,7 @@ fn settlement_pays_both_sides_and_burns_one_unit_each() {
         RFQ,
         LOCK_1,
         50,
-        SECRET,
+        SIGNING_KEY,
     );
     pull_payout(pool, escrow_address, *take.at(0));
     let ticket = ILockTicketDispatcher { contract_address: ticket_deposit.token };
@@ -994,7 +1473,7 @@ fn proceeds_cannot_settle_twice() {
         RFQ,
         LOCK_1,
         50,
-        SECRET,
+        SIGNING_KEY,
     );
     pull_payout(pool, escrow_address, *take.at(0));
     return_lock_ticket(pool, escrow_address, ticket.token);
@@ -1046,7 +1525,7 @@ fn take_defensively_rejects_insufficient_lock_storage() {
         RFQ,
         LOCK_1,
         10,
-        SECRET,
+        SIGNING_KEY,
     );
 }
 
@@ -1105,7 +1584,7 @@ fn legacy_and_v3_operations_conserve_shared_token_balances() {
         RFQ,
         LOCK_1,
         50,
-        SECRET,
+        SIGNING_KEY,
     )
         .at(0);
     pull_payout(pool, escrow_address, v3_taker);

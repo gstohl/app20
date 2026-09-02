@@ -1,3 +1,4 @@
+import { takerPublicKeyFor } from "@app20/private-intents";
 import { describe, expect, it } from "vitest";
 import { createV3Request, v3RequestMaturityGate } from "./rfq-v3-request";
 
@@ -25,7 +26,10 @@ describe("RFQ v3 request construction", () => {
       max: 500_000_000_000_000_000n,
     });
     expect(created.localFloor).toBe(990_000n);
-    expect(created.takerSecret).toMatch(/^0x[0-9a-f]+$/);
+    expect(created.takerSigningKey).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(created.takerCommitment).toBe(
+      takerPublicKeyFor(created.takerSigningKey),
+    );
     expect(created.takerCommitment).toBe(created.rfq.takerCommitment);
     expect(created.rfq).toMatchObject({
       createdAt: NOW,
@@ -37,7 +41,8 @@ describe("RFQ v3 request construction", () => {
       typeof value === "bigint" ? value.toString() : value,
     );
     expect(wire).not.toContain("990000");
-    expect(wire).not.toMatch(/floor|exactSell/i);
+    expect(wire).not.toContain(created.takerSigningKey);
+    expect(wire).not.toMatch(/floor|exactSell|signingKey/i);
   });
 
   it("keeps public networks immutable-off", () => {

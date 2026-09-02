@@ -154,7 +154,7 @@ describe("RFQ lifecycle storage", () => {
     expect(await storage.list("0x1", "0xabc")).toEqual([row]);
   });
 
-  it("persists a live v3 secret but strips it from a backup restore", async () => {
+  it("persists a live v3 signing key but strips it from a backup restore", async () => {
     const source = createRfqLifecycleRecord({
       mode: "v3",
       chainId: "0x1",
@@ -184,8 +184,8 @@ describe("RFQ lifecycle storage", () => {
       },
       bucket: { min: "50", max: "100" },
       takerCommitment:
-        "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-      takerSecret: "0x66",
+        "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+      takerSigningKey: "0x66",
       fills: [
         {
           makerId: "maker-a",
@@ -198,7 +198,7 @@ describe("RFQ lifecycle storage", () => {
     });
     const live = createRfqLifecycleStorage(memoryBackend().backend);
     await expect(live.save(source)).resolves.toBeUndefined();
-    expect(await live.load(source)).toMatchObject({ takerSecret: "0x66" });
+    expect(await live.load(source)).toMatchObject({ takerSigningKey: "0x66" });
 
     const restored = restoreRfqLifecycle(structuredClone(source), {
       chainId: source.chainId,
@@ -206,10 +206,12 @@ describe("RFQ lifecycle storage", () => {
       now: 101,
       fromBackup: true,
     });
-    expect(restored).not.toHaveProperty("takerSecret");
+    expect(restored).not.toHaveProperty("takerSigningKey");
     const backup = createRfqLifecycleStorage(memoryBackend().backend);
     await expect(backup.save(restored)).resolves.toBeUndefined();
-    expect(await backup.load(restored)).not.toHaveProperty("takerSecret");
+    expect(await backup.load(restored)).not.toHaveProperty(
+      "takerSigningKey",
+    );
   });
 
   it("canonicalizes padded accounts and named/felt-equivalent chains at every boundary", async () => {
@@ -829,7 +831,19 @@ describe("RFQ lifecycle storage", () => {
     await expect(storage.save(row as RfqLifecycleRecord)).rejects.toThrow(
       /sensitive field/i,
     );
+    await expect(
+      storage.save({
+        ...createRfqLifecycleRecord({
+          chainId: "0x1",
+          account: "0xabc",
+          rfqId: "r2",
+          now: 100,
+        }),
+        extension: { makerSigningKey: "0x5" },
+      } as unknown as RfqLifecycleRecord),
+    ).rejects.toThrow(/sensitive field/i);
     expect(RFQ_STORAGE_DISCLOSURE).toMatch(/Exact RFQ terms/);
+    expect(RFQ_STORAGE_DISCLOSURE).toMatch(/taker signing key/i);
     expect(RFQ_STORAGE_DISCLOSURE).toMatch(/never stored/i);
   });
 

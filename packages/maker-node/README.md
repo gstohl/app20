@@ -25,7 +25,9 @@ Server-only foundations for independently operated APP20 invited makers.
   intent, quote, selection fence, deal, assets, amounts, deadline, ticket,
   outcome, authority digest, and authority revision before it changes capacity.
 - V3 accepts only reviewed STRK/USDC ladder buckets. It builds a one-to-four-point schedule within available private inventory, evaluates economics at maximum fill, persists `locking`, and signs only after `get_lock` confirms the exact RFQ/commitment/pair/schedule/expiry/ticket binding.
-- V3 lock records retain exact schedule, maximum collateral, taken A/B, quote digest, and maker settlement hashes. Every five-second localnet scan pulls non-zero proceeds and unused collateral after expiry; unknown outcomes quarantine.
+- V3 lock records retain exact schedule, maximum collateral, taken A/B, quote digest, and maker settlement hashes. Every five-second localnet scan pulls non-zero proceeds and unused collateral after expiry. Read failures move a lock to durable `reconcile-pending` while retaining its prior effective state; submitted settlements with uncertain outcomes move to `settlement-unknown` with their action, attempt, and transaction hash when available. Both states reconcile without resubmission using receipt plus `get_lock` reads, exponential backoff capped at 60 seconds, and a 20-failure bound.
+- V3 quarantine is reserved for authenticated WAL/chain contradictions or exhausted reconciliation. An authenticated operator can journal an exact-state reviewed resolution with `POST /v1/locks/{lockId}/resolve` and `{ "expectedState": "quarantined", "reason": "..." }`, which moves the record back to `reconcile-pending` without discarding an unknown settlement attempt.
+- `reconcile-pending` and `settlement-unknown` records continue reserving `maxB`. A quarantined lock reserves `maxB` only until 24 hours after its on-chain expiry, preventing a permanently unavailable record from reducing quote capacity forever while retaining its replay history.
 - Short-lived maker mids use the quote key. Full selection transcripts are journaled with the maker's consistency result; quoted makers verify their digest and loss price.
 - Offers, lock lists, mids, transcripts, and health responses expose no raw private balances or private keys.
 - Durable field strings, felt hex, lock files, and reservation-ledger HTTP bodies are length-capped. Oversize ledger responses are cancelled without JSON parse.
@@ -41,8 +43,9 @@ deterministic **localnet-only** P-256 fixture, and handles:
   token B lock, receipt/readback, then quote signature;
 - `GET /v1/mids`: a fresh 30-second signed 2.00 (A) or 2.01 (B) USDC/STRK mid;
 - `POST`/`GET /v1/transcripts`: verify/journal the full fair-loss transcript;
-- `GET /v1/locks`: no-secret durable lock records; and
-- automatic `SettleProceeds` / `ReleaseCollateral` scans every five seconds.
+- `GET /v1/locks`: no-secret durable lock and reconciliation records;
+- `POST /v1/locks/{lockId}/resolve`: Bearer-authenticated, exact-state reviewed quarantine resolution; and
+- automatic `SettleProceeds` / `ReleaseCollateral` and bounded reconciliation scans every five seconds.
 
 The coordinator fans out RFQ v2, journals quote/refusal outcomes, verifies mids,
 and forwards the same transcript to all invited makers. It never receives raw

@@ -5,8 +5,18 @@ import type { LocalMailMessage } from "@/components/mail/Thread";
 import { parseCompositePayload } from "@/lib/composite";
 import type { CompositeDraft } from "@/lib/drafts";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
-import { parseBackupPointer } from "@/lib/backup-blob";
-import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
+import {
+  backupBlobDigest,
+  openBackupBlob,
+  verifyBackupPointer,
+  type BackupPointerV1,
+} from "@/lib/backup-blob";
+import {
+  verifyBackupSnapshot,
+  type BackupKind,
+  type BackupSnapshotContext,
+  type BackupSnapshotV1,
+} from "@/lib/backup-snapshot";
 import { inspectMailVault } from "@/lib/mail-vault";
 import { isConfiguredMailHelper } from "@/lib/mail-actions";
 import type { DecryptedMail, MailKeypair } from "@/lib/mail";
@@ -149,49 +159,203 @@ export function sortMailMessages(
   return messages.slice().sort(compareMailMessages);
 }
 
-/** Keeps only the highest well-formed sequence loaded for each backup kind. */
-export function newestBackupMessages(
-  messages: readonly LocalMailMessage[],
-): LocalMailMessage[] {
-  type ParsedBackup = {
-    message: LocalMailMessage;
-    kind: "contacts" | "rfq-resume";
-    seq: number;
-  };
-  const parsed = new Map<string, ParsedBackup>();
-  for (const message of messages) {
-    try {
-      const header =
-        message.envelope.type === "backup_snapshot"
-          ? decodeBackupSnapshot(message.envelope.payload)
-          : message.envelope.type === "backup_pointer"
-            ? parseBackupPointer(message.envelope.payload)
-            : null;
-      if (header)
-        parsed.set(message.id, { message, kind: header.kind, seq: header.seq });
-    } catch {
-      // Malformed backup envelopes remain visible and fail closed on restore.
+export const BACKUP_CANDIDATES_PER_KIND = 3;
+
+export type BackupMessageAuthenticationOptions = Readonly<{
+  mailboxSeed: Uint8Array;
+  context: BackupSnapshotContext;
+  now?: number;
+}>;
+
+export type BackupCandidateFailure = Readonly<{
+  messageId: string;
+  seq: number;
+  reason: string;
+}>;
+
+export type LoadedBackupSnapshot = Readonly<{
+  message: LocalMailMessage;
+  snapshot: BackupSnapshotV1;
+  failures: readonly BackupCandidateFailure[];
+}>;
+
+type AuthenticatedBackupMessage = Readonly<{
+  message: LocalMailMessage;
+  kind: BackupKind;
+  seq: number;
+  content:
+    | Readonly<{ type: "inline"; snapshot: BackupSnapshotV1 }>
+    | Readonly<{ type: "pointer"; pointer: BackupPointerV1 }>;
+}>;
+
+function authenticateBackupMessage(
+  message: LocalMailMessage,
+  options: BackupMessageAuthenticationOptions,
+): AuthenticatedBackupMessage | null {
+  try {
+    if (message.envelope.type === "backup_snapshot") {
+      const snapshot = verifyBackupSnapshot(message.envelope.payload, {
+        ...options.context,
+        mailboxSeed: options.mailboxSeed,
+        ...(options.now === undefined ? {} : { now: options.now }),
+      });
+      return {
+        message,
+        kind: snapshot.kind,
+        seq: snapshot.seq,
+        content: { type: "inline", snapshot },
+      };
     }
+    if (message.envelope.type === "backup_pointer") {
+      const pointer = verifyBackupPointer(message.envelope.payload, {
+        ...options.context,
+        mailboxSeed: options.mailboxSeed,
+      });
+      return {
+        message,
+        kind: pointer.kind,
+        seq: pointer.seq,
+        content: { type: "pointer", pointer },
+      };
+    }
+  } catch {
+    // Invalid backup authentication is intentionally indistinguishable here.
   }
-  const newest = new Map<"contacts" | "rfq-resume", ParsedBackup>();
-  for (const candidate of parsed.values()) {
-    const current = newest.get(candidate.kind);
+  return null;
+}
+
+function compareBackupCandidates(
+  left: AuthenticatedBackupMessage,
+  right: AuthenticatedBackupMessage,
+): number {
+  const sequenceDifference = right.seq - left.seq;
+  if (sequenceDifference) return sequenceDifference;
+  const kindDifference = left.kind.localeCompare(right.kind);
+  if (kindDifference) return kindDifference;
+  if (left.content.type !== right.content.type) {
+    return left.content.type === "inline" ? -1 : 1;
+  }
+  return compareMailMessages(left.message, right.message);
+}
+
+function authenticatedBackupCandidates(
+  messages: readonly LocalMailMessage[],
+  options: BackupMessageAuthenticationOptions,
+): AuthenticatedBackupMessage[] {
+  const bestByKindAndSequence = new Map<string, AuthenticatedBackupMessage>();
+  for (const message of messages) {
+    const candidate = authenticateBackupMessage(message, options);
+    if (!candidate) continue;
+    const key = `${candidate.kind}:${candidate.seq}`;
+    const current = bestByKindAndSequence.get(key);
     if (
       !current ||
-      candidate.seq > current.seq ||
-      (candidate.seq === current.seq &&
+      (candidate.content.type === "inline" &&
+        current.content.type === "pointer") ||
+      (candidate.content.type === current.content.type &&
         compareMailMessages(candidate.message, current.message) < 0)
     ) {
-      newest.set(candidate.kind, candidate);
+      bestByKindAndSequence.set(key, candidate);
     }
   }
-  const visible = new Set(
-    [...newest.values()].map(({ message }) => message.id),
+
+  const retained: AuthenticatedBackupMessage[] = [];
+  for (const kind of ["contacts", "rfq-resume"] as const) {
+    retained.push(
+      ...[...bestByKindAndSequence.values()]
+        .filter((candidate) => candidate.kind === kind)
+        .sort(compareBackupCandidates)
+        .slice(0, BACKUP_CANDIDATES_PER_KIND),
+    );
+  }
+  return retained.sort(compareBackupCandidates);
+}
+
+/** Returns authenticated backup messages, newest sequence first, capped per kind. */
+export function newestBackupMessages(
+  messages: readonly LocalMailMessage[],
+  options: BackupMessageAuthenticationOptions,
+): LocalMailMessage[] {
+  return authenticatedBackupCandidates(messages, options).map(
+    ({ message }) => message,
   );
-  return sortMailMessages(
-    messages.filter(
-      (message) => !parsed.has(message.id) || visible.has(message.id),
-    ),
+}
+
+export async function loadBackupSnapshotWithFallback(
+  messages: readonly LocalMailMessage[],
+  options: BackupMessageAuthenticationOptions &
+    Readonly<{
+      kind: BackupKind;
+      loadBlob: (cid: string) => Promise<Uint8Array>;
+    }>,
+): Promise<LoadedBackupSnapshot> {
+  const candidates = authenticatedBackupCandidates(messages, options).filter(
+    (candidate) => candidate.kind === options.kind,
+  );
+  if (candidates.length === 0) {
+    throw new Error("No authenticated backup candidates are available.");
+  }
+
+  const failures: BackupCandidateFailure[] = [];
+  for (const candidate of candidates) {
+    try {
+      let snapshot: BackupSnapshotV1;
+      if (candidate.content.type === "inline") {
+        snapshot = candidate.content.snapshot;
+      } else {
+        const pointer = candidate.content.pointer;
+        const blob = await options.loadBlob(pointer.cid);
+        if (
+          blob.length !== pointer.bucketBytes ||
+          backupBlobDigest(blob) !== pointer.blobDigest
+        ) {
+          throw new Error(
+            "The fetched backup blob does not match its authenticated pointer.",
+          );
+        }
+        const opened = await openBackupBlob({
+          mailboxSeed: options.mailboxSeed,
+          owner: options.context.owner,
+          chainId: options.context.chainId,
+          kind: pointer.kind,
+          seq: pointer.seq,
+          blob,
+        });
+        const decoded = decodeEnvelope(opened);
+        if (decoded.type !== "backup_snapshot") {
+          throw new Error(
+            "The backup blob does not contain a versioned snapshot envelope.",
+          );
+        }
+        snapshot = verifyBackupSnapshot(decoded.payload, {
+          ...options.context,
+          mailboxSeed: options.mailboxSeed,
+          kind: pointer.kind,
+          seq: pointer.seq,
+          ...(options.now === undefined ? {} : { now: options.now }),
+        });
+      }
+      return Object.freeze({
+        message: candidate.message,
+        snapshot,
+        failures: Object.freeze(failures.slice()),
+      });
+    } catch (error: unknown) {
+      failures.push(
+        Object.freeze({
+          messageId: candidate.message.id,
+          seq: candidate.seq,
+          reason:
+            error instanceof Error
+              ? error.message
+              : "The backup candidate could not be opened.",
+        }),
+      );
+    }
+  }
+
+  throw new Error(
+    `None of the ${failures.length} authenticated backup candidates could be opened.`,
   );
 }
 

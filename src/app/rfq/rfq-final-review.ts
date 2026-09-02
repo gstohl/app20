@@ -1,9 +1,16 @@
-import { evaluatePriceSchedule } from "@app20/private-intents";
+import { canonicalizeStarknetFelt } from "@app20/domain";
+import {
+  evaluatePriceSchedule,
+  takeMessageHash,
+} from "@app20/private-intents";
 import {
   readEscrowLock,
   type LocalnetEscrowLock,
 } from "./localnet-private-intents";
-import { canonicalRfqChainId } from "./rfq-lifecycle";
+import {
+  canonicalRfqChainId,
+  type RfqLifecycleRecord,
+} from "./rfq-lifecycle";
 import { LOCALNET_APP20_FEE_POLICY_ID } from "./rfq-operations";
 
 export const FINAL_REVIEW_ENVIRONMENT = "LOCALNET DEMO" as const;
@@ -152,6 +159,12 @@ export type RfqFinalReviewV3Fill = Readonly<{
   lockExpiresAt: number;
 }>;
 
+export type RfqFinalReviewV3TakeAuthorization = Readonly<{
+  escrowAddress: string;
+  publicKey: string;
+  message: string;
+}>;
+
 export type RfqFinalReviewV3Terms = Readonly<{
   mode: "v3";
   rfqId: string;
@@ -161,9 +174,64 @@ export type RfqFinalReviewV3Terms = Readonly<{
   totalBuyAmount: bigint;
   floorBuyAmount: bigint;
   fills: readonly RfqFinalReviewV3Fill[];
+  takeAuthorization: RfqFinalReviewV3TakeAuthorization;
   feeBps: number;
   app20FeeAmount: bigint;
 }>;
+
+export function takeAuthorizationForV3Review(
+  terms: Pick<
+    RfqFinalReviewV3Terms,
+    "rfqId" | "sellAddress" | "buyAddress" | "fills"
+  >,
+  escrowAddress: string,
+  publicKey: string,
+): RfqFinalReviewV3TakeAuthorization {
+  return Object.freeze({
+    escrowAddress,
+    publicKey,
+    message: takeMessageHash({
+      escrowAddress,
+      rfqFelt: terms.rfqId,
+      tokenA: terms.sellAddress,
+      tokenB: terms.buyAddress,
+      fills: terms.fills.map((fill) => ({
+        lockId: fill.lockId,
+        amountA: fill.amountA,
+      })),
+    }),
+  });
+}
+
+export function takeAuthorizationFromLifecycle(
+  record: RfqLifecycleRecord,
+): RfqFinalReviewV3TakeAuthorization {
+  if (
+    record.mode !== "v3" ||
+    !record.terms?.buyAmount ||
+    !record.settlement ||
+    !record.takerCommitment ||
+    !record.fills
+  ) {
+    throw new Error("The persisted RFQ v3 Take authorization is unavailable.");
+  }
+  return takeAuthorizationForV3Review(
+    {
+      rfqId: record.rfqId,
+      sellAddress: record.terms.sellAddress,
+      buyAddress: record.terms.buyAddress,
+      fills: record.fills.map((fill) => ({
+        makerId: fill.makerId,
+        lockId: fill.lockId,
+        amountA: BigInt(fill.amountA),
+        amountB: BigInt(fill.amountB),
+        lockExpiresAt: fill.lockExpiresAt,
+      })),
+    },
+    record.settlement.escrowAddress,
+    record.takerCommitment,
+  );
+}
 
 /** Validates the immutable exact-fill bindings immediately before a v3 Take. */
 export function validateV3FinalReview(input: {
@@ -228,6 +296,25 @@ export function validateV3FinalReview(input: {
         "Exact fill receive amounts do not match the reviewed receive total.",
       );
   }
+  try {
+    const authorization = takeAuthorizationForV3Review(
+      input.terms,
+      input.terms.takeAuthorization.escrowAddress,
+      input.terms.takeAuthorization.publicKey,
+    );
+    if (
+      canonicalizeStarknetFelt(input.terms.takeAuthorization.publicKey) ===
+        "0x0" ||
+      BigInt(authorization.message) !==
+        BigInt(input.terms.takeAuthorization.message)
+    ) {
+      blockers.push(
+        "Exact Take authorization changed after the reviewed tokens or fills were bound.",
+      );
+    }
+  } catch {
+    blockers.push("Exact Take authorization is invalid.");
+  }
   if (input.terms.totalBuyAmount < input.terms.floorBuyAmount)
     blockers.push("Exact receive is below the local floor.");
   if (input.terms.feeBps !== 0 || input.terms.app20FeeAmount !== 0n)
@@ -272,7 +359,11 @@ export async function validateLiveV3FinalReview(input: {
         if (
           !sameFelt(lock.rfqId, input.terms.rfqId) ||
           !sameFelt(lock.tokenA, input.terms.sellAddress) ||
-          !sameFelt(lock.tokenB, input.terms.buyAddress)
+          !sameFelt(lock.tokenB, input.terms.buyAddress) ||
+          !sameFelt(
+            lock.takerCommitment,
+            input.terms.takeAuthorization.publicKey,
+          )
         ) {
           issues.push(`Maker ${fill.makerId}'s lock binding changed.`);
         }

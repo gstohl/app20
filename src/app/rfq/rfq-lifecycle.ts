@@ -1,5 +1,8 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
-import { takerCommitmentFor } from "@app20/private-intents";
+import {
+  fillsDigest,
+  takerPublicKeyFor,
+} from "@app20/private-intents";
 import { LOCALNET_CHAIN_ID } from "@/utils/constants";
 
 export const RFQ_LIFECYCLE_SCHEMA_REVISION = "app20/rfq-lifecycle/v3" as const;
@@ -260,8 +263,9 @@ export type RfqLifecycleRecord = Readonly<{
   reservationExpiresAt?: number;
   transactionHash?: string;
   bucket?: Readonly<{ min: string; max: string }>;
+  /** Wire/lock field name retained; value is the taker Stark public key. */
   takerCommitment?: string;
-  takerSecret?: string;
+  takerSigningKey?: string;
   fills?: readonly RfqV3Fill[];
   takeTransactionHash?: string;
   transcriptAcknowledgements?: readonly RfqTranscriptAcknowledgement[];
@@ -481,6 +485,27 @@ function defaultEvidenceAuthority(now: number): RfqEvidenceAuthority {
   });
 }
 
+const V3_KEY_TERMINAL_STATES = new Set<RfqLifecycleState>([
+  "settled",
+  "expired",
+  "refused",
+  "cancelled",
+]);
+
+function v3StateKeepsSigningKey(state: RfqLifecycleState): boolean {
+  return !V3_KEY_TERMINAL_STATES.has(state);
+}
+
+function takeAttemptWasProvenNotSubmitted(
+  attempt: RfqTakePhaseAttempt | undefined,
+): boolean {
+  return Boolean(
+    attempt?.state === "reverted" &&
+      attempt.walletBoundary === "not-entered" &&
+      !attempt.transactionHash,
+  );
+}
+
 export function createRfqLifecycleRecord(input: {
   chainId: string;
   account: string;
@@ -494,7 +519,7 @@ export function createRfqLifecycleRecord(input: {
   requestDigest?: string;
   bucket?: Readonly<{ min: string; max: string }>;
   takerCommitment?: string;
-  takerSecret?: string;
+  takerSigningKey?: string;
   fills?: readonly RfqV3Fill[];
   transcriptAcknowledgements?: readonly RfqTranscriptAcknowledgement[];
 }): RfqLifecycleRecord {
@@ -521,28 +546,30 @@ export function createRfqLifecycleRecord(input: {
       "Local deal identity must equal the canonical RFQ identity.",
     );
   const mode = input.mode ?? "v2";
+  const state = input.state ?? "draft";
   const selectedV3State = [
     "quoted",
     "reviewing",
     "submission-unknown",
     "settled",
-  ].includes(input.state ?? "draft");
+  ].includes(state);
+  const signingKeyRequired = mode === "v3" && v3StateKeepsSigningKey(state);
   if (
     mode === "v3" &&
     (!input.bucket ||
       !input.takerCommitment ||
-      !input.takerSecret ||
+      (signingKeyRequired && !input.takerSigningKey) ||
       (selectedV3State && (!input.fills || input.fills.length < 1)))
   ) {
     throw new Error(
-      "RFQ v3 requires its bucket, taker commitment, secret, and any selected fills.",
+      "RFQ v3 requires its bucket, taker authorization key, signing key, and any selected fills.",
     );
   }
   if (
     mode === "v2" &&
     (input.bucket ||
       input.takerCommitment ||
-      input.takerSecret ||
+      input.takerSigningKey ||
       input.fills ||
       input.transcriptAcknowledgements)
   ) {
@@ -553,18 +580,22 @@ export function createRfqLifecycleRecord(input: {
   const takerCommitment = input.takerCommitment
     ? canonicalLocalRfqId(input.takerCommitment)
     : undefined;
-  const takerSecret = input.takerSecret
-    ? canonicalLocalRfqId(input.takerSecret)
+  const takerSigningKey = input.takerSigningKey
+    ? canonicalLocalRfqId(input.takerSigningKey)
     : undefined;
   if (
     mode === "v3" &&
-    (!takerSecret ||
-      takerSecret === "0x0" ||
-      !takerCommitment ||
+    (!takerCommitment ||
       takerCommitment === "0x0" ||
-      takerCommitmentFor(takerSecret) !== takerCommitment)
+      (takerSigningKey !== undefined &&
+        (takerSigningKey === "0x0" ||
+          takerPublicKeyFor(takerSigningKey) !== takerCommitment)) ||
+      (signingKeyRequired && !takerSigningKey) ||
+      (!signingKeyRequired && takerSigningKey !== undefined))
   ) {
-    throw new Error("RFQ v3 taker secret does not match its commitment.");
+    throw new Error(
+      "RFQ v3 taker signing key does not match its authorization public key.",
+    );
   }
   if (
     mode === "v3" &&
@@ -616,7 +647,7 @@ export function createRfqLifecycleRecord(input: {
     chainId,
     account: canonicalRfqAccount(input.account),
     rfqId,
-    state: input.state ?? "draft",
+    state,
     updatedAt: now,
     storageRevision: 0,
     ...(input.terms ? { terms: Object.freeze({ ...input.terms }) } : {}),
@@ -629,7 +660,7 @@ export function createRfqLifecycleRecord(input: {
       : {}),
     ...(bucket ? { bucket } : {}),
     ...(takerCommitment ? { takerCommitment } : {}),
-    ...(takerSecret ? { takerSecret } : {}),
+    ...(takerSigningKey ? { takerSigningKey } : {}),
     ...(fills ? { fills } : {}),
     ...(input.transcriptAcknowledgements
       ? {
@@ -667,7 +698,11 @@ export function transitionRfqLifecycle(
       "Only an increasing evidence-authority signal may mark an RFQ reorged.",
     );
   }
-  if (!ALLOWED[record.state].includes(state)) {
+  const terminalV3TakeRevert =
+    record.mode === "v3" &&
+    record.state === "submission-unknown" &&
+    state === "expired";
+  if (!ALLOWED[record.state].includes(state) && !terminalV3TakeRevert) {
     throw new Error(
       `RFQ lifecycle cannot transition from ${record.state} to ${state}.`,
     );
@@ -707,13 +742,31 @@ export function transitionRfqLifecycle(
     }
   }
   if (record.state === "submission-unknown" && state === "reviewing") {
-    const attempt =
-      record.mode === "v3"
-        ? (patch.attempts?.take ?? record.attempts.take)
-        : (patch.attempts?.funding ?? record.attempts.funding);
+    if (record.mode === "v3") {
+      throw new Error(
+        "A Take that reached the wallet boundary cannot return to review.",
+      );
+    }
+    const attempt = patch.attempts?.funding ?? record.attempts.funding;
     if (!attempt || attempt.state !== "reverted") {
       throw new Error(
-        `Only a proven reverted ${record.mode === "v3" ? "Take" : "funding"} attempt may return to deliberate review.`,
+        "Only a proven reverted funding attempt may return to deliberate review.",
+      );
+    }
+  }
+  if (
+    record.mode === "v3" &&
+    record.state === "submission-unknown" &&
+    state === "expired"
+  ) {
+    const attempt = patch.attempts?.take ?? record.attempts.take;
+    if (
+      !attempt ||
+      attempt.state !== "reverted" ||
+      (!attempt.transactionHash && attempt.walletBoundary !== "entered")
+    ) {
+      throw new Error(
+        "Terminal Take reversion requires wallet-boundary or transaction evidence.",
       );
     }
   }
@@ -729,12 +782,14 @@ export function transitionRfqLifecycle(
       );
     }
   }
-  const next = reviseRfqLifecycle(record, {
+  const removesSigningKey =
+    record.mode === "v3" && !v3StateKeepsSigningKey(state);
+  const revised = reviseRfqLifecycle(record, {
     ...patch,
     state,
+    ...(removesSigningKey ? { takerSigningKey: undefined } : {}),
     ...(record.mode === "v3" && state === "settled"
       ? {
-          takerSecret: undefined,
           takeTransactionHash:
             patch.attempts?.take?.transactionHash ??
             record.attempts.take?.transactionHash,
@@ -742,12 +797,12 @@ export function transitionRfqLifecycle(
       : {}),
     updatedAt: timestamp(now, "now"),
   });
+  const next = removesSigningKey
+    ? (({ takerSigningKey: _signingKey, ...withoutSigningKey }) =>
+        Object.freeze(withoutSigningKey))(revised)
+    : revised;
   assertRfqLifecycleAttemptTargets(next);
   assertRfqV3LifecycleBindings(next);
-  if (record.mode === "v3" && state === "settled") {
-    const { takerSecret: _secret, ...withoutSecret } = next;
-    return Object.freeze(withoutSecret);
-  }
   return next;
 }
 
@@ -826,7 +881,7 @@ export function assertRfqV3LifecycleBindings(record: RfqLifecycleRecord): void {
     if (
       record.bucket ||
       record.takerCommitment ||
-      record.takerSecret ||
+      record.takerSigningKey ||
       record.fills ||
       record.takeTransactionHash ||
       record.transcriptAcknowledgements ||
@@ -837,19 +892,20 @@ export function assertRfqV3LifecycleBindings(record: RfqLifecycleRecord): void {
     }
     return;
   }
+  const signingKeyRequired =
+    v3StateKeepsSigningKey(record.state) && !record.restoredFromBackup;
   if (
     !record.bucket ||
     !record.takerCommitment ||
     record.takerCommitment === "0x0" ||
-    (record.restoredFromBackup && record.takerSecret !== undefined) ||
-    (record.takerSecret !== undefined &&
-      (record.takerSecret === "0x0" ||
-        takerCommitmentFor(record.takerSecret) !== record.takerCommitment)) ||
-    (record.state !== "settled" &&
-      !record.restoredFromBackup &&
-      !record.takerSecret)
+    (record.takerSigningKey !== undefined &&
+      (record.takerSigningKey === "0x0" ||
+        takerPublicKeyFor(record.takerSigningKey) !==
+          record.takerCommitment)) ||
+    (signingKeyRequired && !record.takerSigningKey) ||
+    (!signingKeyRequired && record.takerSigningKey !== undefined)
   ) {
-    throw new Error("RFQ v3 execution commitment bindings are invalid.");
+    throw new Error("RFQ v3 execution authorization bindings are invalid.");
   }
   const selectedState = [
     "quoted",
@@ -1087,9 +1143,12 @@ export function beginRfqPhaseAttempt(
     throw new Error(`${phase} is unavailable for RFQ ${record.mode}.`);
   }
   assertRfqV3LifecycleBindings(record);
-  if (phase === "take" && (record.restoredFromBackup || !record.takerSecret)) {
+  if (
+    phase === "take" &&
+    (record.restoredFromBackup || !record.takerSigningKey)
+  ) {
     throw new Error(
-      "Backup-restored RFQ v3 records are verification-only; start a fresh request.",
+      "RFQ v3 signing authority is unavailable; start a fresh request.",
     );
   }
   if (!allowedStates[phase].includes(record.state)) {
@@ -1099,6 +1158,15 @@ export function beginRfqPhaseAttempt(
   if (existing?.state === "confirmed") {
     throw new Error(
       `${phase} is already confirmed and cannot be submitted again.`,
+    );
+  }
+  if (
+    phase === "take" &&
+    existing?.state === "reverted" &&
+    !takeAttemptWasProvenNotSubmitted(existing as RfqTakePhaseAttempt)
+  ) {
+    throw new Error(
+      "Take may retry only after it was proven not submitted before wallet entry.",
     );
   }
   if (existing?.state === "reverted" && existing.attemptId === attemptId) {
@@ -1843,13 +1911,13 @@ export function restoreRfqLifecycle(
               text(row.takerCommitment, "takerCommitment"),
             ),
           }),
-      ...(row.takerSecret === undefined ||
-      state === "settled" ||
+      ...(row.takerSigningKey === undefined ||
+      !v3StateKeepsSigningKey(state as RfqLifecycleState) ||
       restoredFromBackup
         ? {}
         : {
-            takerSecret: canonicalLocalRfqId(
-              text(row.takerSecret, "takerSecret"),
+            takerSigningKey: canonicalLocalRfqId(
+              text(row.takerSigningKey, "takerSigningKey"),
             ),
           }),
       ...(fills ? { fills } : {}),
@@ -1964,17 +2032,18 @@ export function restoreRfqLifecycle(
         "submission-unknown",
         "settled",
       ].includes(record.state);
+      const signingKeyRequired =
+        v3StateKeepsSigningKey(record.state) && !record.restoredFromBackup;
       if (
         !record.bucket ||
         !record.takerCommitment ||
         record.takerCommitment === "0x0" ||
-        (record.takerSecret !== undefined &&
-          (record.takerSecret === "0x0" ||
-            takerCommitmentFor(record.takerSecret) !==
+        (record.takerSigningKey !== undefined &&
+          (record.takerSigningKey === "0x0" ||
+            takerPublicKeyFor(record.takerSigningKey) !==
               record.takerCommitment)) ||
-        (record.state !== "settled" &&
-          !record.restoredFromBackup &&
-          !record.takerSecret) ||
+        (signingKeyRequired && !record.takerSigningKey) ||
+        (!signingKeyRequired && record.takerSigningKey !== undefined) ||
         (record.state !== "draft" && !record.requestDigest)
       ) {
         return false;
@@ -2020,13 +2089,26 @@ export function restoreRfqLifecycle(
                 record.attempts.take.transactionHash
               : record.attempts.take.walletBoundary === "entered" &&
                 record.takeTransactionHash === undefined) &&
-            record.takerSecret === undefined
+            record.takerSigningKey === undefined
           : record.latestObservation?.status === 3 &&
             record.attempts.claim?.state === "confirmed"
         : record.state === "refunded"
           ? record.latestObservation?.status === 4 &&
             record.attempts.refund?.state === "confirmed"
-          : true;
+          : record.mode === "v3" && record.state === "expired"
+            ? record.takerSigningKey === undefined &&
+              (record.reason !== "take-reverted" ||
+                (record.attempts.take?.state === "reverted" &&
+                  Boolean(
+                    record.attempts.take.transactionHash ||
+                      record.attempts.take.walletBoundary === "entered",
+                  )))
+            : true;
+    const retryInvariantOk =
+      record.mode !== "v3" ||
+      record.state !== "reviewing" ||
+      record.attempts.take?.state !== "reverted" ||
+      takeAttemptWasProvenNotSubmitted(record.attempts.take);
     const activeAttempt =
       record.mode === "v3" ? record.attempts.take : record.attempts.funding;
     const submissionInvariantOk =
@@ -2042,6 +2124,7 @@ export function restoreRfqLifecycle(
       v3LegacyState ||
       !v3BindingsOk ||
       !terminalInvariantOk ||
+      !retryInvariantOk ||
       !submissionInvariantOk ||
       !targetMatchesRecord ||
       !identityBindingsOk
@@ -2065,11 +2148,9 @@ export function restoreRfqLifecycle(
             record.selectedQuote?.reservationExpiresAt ??
             0) <= context.now))
     ) {
-      return reviseRfqLifecycle(record, {
-        state: "expired",
+      return transitionRfqLifecycle(record, "expired", context.now, {
         reason:
           "The restored quote or reservation expired. Acceptance is disabled.",
-        updatedAt: context.now,
       });
     }
     return Object.freeze(record);
@@ -2105,9 +2186,11 @@ export function rfqHasFundingEvidence(record: RfqLifecycleRecord): boolean {
 }
 
 export function lifecycleMayForget(record: RfqLifecycleRecord): boolean {
+  const terminal =
+    ["settled", "refunded", "cancelled", "refused"].includes(record.state) ||
+    (record.mode === "v3" && record.state === "expired");
   return (
-    ["settled", "refunded", "cancelled", "refused"].includes(record.state) &&
-    record.evidenceAuthority.status === "local-non-authoritative"
+    terminal && record.evidenceAuthority.status === "local-non-authoritative"
   );
 }
 
@@ -2123,8 +2206,11 @@ export function lifecycleMaySubmit(
       : (record.quoteExpiresAt ?? record.selectedQuote?.quoteExpiresAt ?? 0);
   return (
     record.state === "reviewing" &&
-    (!attempt || (record.mode === "v3" && attempt.state === "reverted")) &&
+    (!attempt ||
+      (record.mode === "v3" &&
+        takeAttemptWasProvenNotSubmitted(record.attempts.take))) &&
     !record.restoredFromBackup &&
+    (record.mode !== "v3" || Boolean(record.takerSigningKey)) &&
     submissionExpiresAt > now &&
     (record.mode === "v3" ||
       (record.reservationExpiresAt ??
@@ -2141,6 +2227,11 @@ export function confirmRfqV3Take(
     tokenB: string;
     totalB: bigint;
     fillCount: number;
+    fillsDigest?: string;
+    lockTaken?: readonly Readonly<{
+      lockId: string;
+      amountA: bigint | string;
+    }>[];
   }>,
   now: number,
 ): RfqLifecycleRecord {
@@ -2175,6 +2266,47 @@ export function confirmRfqV3Take(
       "Observed Take totals contradict the persisted exact v3 fills.",
     );
   }
+  const expectedFillsDigest = fillsDigest(
+    expected.fills.map((fill) => ({
+      lockId: fill.lockId,
+      amountA: BigInt(fill.amountA),
+    })),
+  );
+  let lockEvidenceMatches = true;
+  if (take.lockTaken !== undefined) {
+    try {
+      const observed = take.lockTaken.map((fill) => ({
+        lockId: canonicalLocalRfqId(fill.lockId),
+        amountA:
+          typeof fill.amountA === "bigint"
+            ? fill.amountA.toString()
+            : decimal(fill.amountA, "LockTaken amountA", true),
+      }));
+      lockEvidenceMatches =
+        observed.length === expected.fills.length &&
+        new Set(observed.map(({ lockId }) => lockId)).size === observed.length &&
+        expected.fills.every((fill) =>
+          observed.some(
+            (candidate) =>
+              candidate.lockId === canonicalLocalRfqId(fill.lockId) &&
+              candidate.amountA === fill.amountA,
+          ),
+        );
+    } catch {
+      lockEvidenceMatches = false;
+    }
+  }
+  if (
+    (take.fillsDigest !== undefined &&
+      !sameIdentity(take.fillsDigest, expectedFillsDigest)) ||
+    !lockEvidenceMatches
+  ) {
+    return quarantineRecord(
+      record,
+      now,
+      "Observed Take fill composition contradicts the persisted exact v3 fills.",
+    );
+  }
   const confirmed = updateRfqPhaseAttempt(record, "take", "confirmed", now, {
     observation: "Exact Take record observed on local devnet.",
   });
@@ -2192,7 +2324,9 @@ export function revertRfqV3Take(
   const reverted = updateRfqPhaseAttempt(record, "take", "reverted", now, {
     observation,
   });
-  return transitionRfqLifecycle(reverted, "reviewing", now);
+  return transitionRfqLifecycle(reverted, "expired", now, {
+    reason: "take-reverted",
+  });
 }
 
 export function recordRfqV3TranscriptAcknowledgements(

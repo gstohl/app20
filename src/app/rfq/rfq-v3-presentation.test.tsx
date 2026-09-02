@@ -4,12 +4,13 @@ import RfqActiveCard from "./RfqActiveCard";
 import RfqFinalReview, {
   type RfqFinalReviewV3DisplayTerms,
 } from "./RfqFinalReview";
+import { takeAuthorizationForV3Review } from "./rfq-final-review";
 import { createRfqLifecycleRecord } from "./rfq-lifecycle";
 
 const NOW = 2_000_000_000;
 const DIGEST = `0x${"44".repeat(32)}`;
 
-const terms: RfqFinalReviewV3DisplayTerms = {
+const coreTerms = {
   mode: "v3",
   rfqId: "0x77",
   sellAddress: "0x1",
@@ -40,6 +41,14 @@ const terms: RfqFinalReviewV3DisplayTerms = {
   buySymbol: "USDC",
   buyDecimals: 6,
   requestDigest: DIGEST,
+} as const;
+const terms: RfqFinalReviewV3DisplayTerms = {
+  ...coreTerms,
+  takeAuthorization: takeAuthorizationForV3Review(
+    coreTerms,
+    "0x5",
+    "0x55",
+  ),
 };
 
 describe("RFQ v3 presentation", () => {
@@ -126,8 +135,8 @@ describe("RFQ v3 presentation", () => {
         max: "1000000000000000000",
       },
       takerCommitment:
-        "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-      takerSecret: "0x66",
+        "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+      takerSigningKey: "0x66",
       fills: terms.fills.map((fill) => ({
         makerId: fill.makerId,
         lockId: fill.lockId,
@@ -155,5 +164,20 @@ describe("RFQ v3 presentation", () => {
     );
     expect(markup).not.toContain("Maker fill");
     expect(markup).not.toContain("Reservation release");
+
+    const terminalMarkup = renderToStaticMarkup(
+      <RfqActiveCard
+        record={{
+          ...record,
+          state: "expired",
+          reason: "take-reverted",
+          takerSigningKey: undefined,
+        }}
+        now={NOW}
+      />,
+    );
+    expect(terminalMarkup).toContain(
+      "This RFQ is terminal and cannot be resubmitted",
+    );
   });
 });

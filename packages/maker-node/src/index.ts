@@ -67,6 +67,9 @@ const STARK_FIELD_PRIME =
 const MAX_TEXT_LENGTH = 8192;
 const MAX_FELT_HEX_LENGTH = 66;
 const MAX_LOCK_FILE_BYTES = 4096;
+export const LOCK_RECONCILIATION_MAX_FAILURES = 20;
+export const LOCK_RECONCILIATION_BACKOFF_CAP_SECONDS = 60;
+export const QUARANTINED_LOCK_CAPACITY_GRACE_SECONDS = 24 * 60 * 60;
 
 export type MakerTerminalReconciliation = Readonly<{
   attemptId: string;
@@ -269,8 +272,32 @@ export type LockRecordV1State =
   | "taken"
   | "expired"
   | "settling"
+  | "reconcile-pending"
+  | "settlement-unknown"
   | "settled"
   | "quarantined";
+
+export type LockRecordV1PriorState =
+  | "locking"
+  | "open"
+  | "taken"
+  | "expired"
+  | "settling";
+
+export type MakerLockSettlementAction = "proceeds" | "release";
+
+export type MakerLockSettlementAttempt = Readonly<{
+  action: MakerLockSettlementAction;
+  attempt: number;
+  attemptedAt: number;
+  transactionHash?: string;
+}>;
+
+export type MakerLockOperatorResolution = Readonly<{
+  expectedState: "quarantined";
+  reason: string;
+  resolvedAt: number;
+}>;
 
 export type LockRecordV1 = Readonly<{
   lockId: string;
@@ -290,6 +317,14 @@ export type LockRecordV1 = Readonly<{
   proceedsTxHash?: string;
   releaseTxHash?: string;
   quoteDigest?: string;
+  priorState?: LockRecordV1PriorState;
+  reconciliationFailures?: number;
+  nextReconciliationAt?: number;
+  reason?: string;
+  quarantinedAt?: number;
+  settlementAttemptCount?: number;
+  settlementAttempt?: MakerLockSettlementAttempt;
+  operatorResolution?: MakerLockOperatorResolution;
 }>;
 
 export type LockRecordV1Wire = Readonly<{
@@ -310,6 +345,14 @@ export type LockRecordV1Wire = Readonly<{
   proceedsTxHash?: string;
   releaseTxHash?: string;
   quoteDigest?: string;
+  priorState?: LockRecordV1PriorState;
+  reconciliationFailures?: number;
+  nextReconciliationAt?: number;
+  reason?: string;
+  quarantinedAt?: number;
+  settlementAttemptCount?: number;
+  settlementAttempt?: MakerLockSettlementAttempt;
+  operatorResolution?: MakerLockOperatorResolution;
 }>;
 
 export type MakerOnChainLock = Readonly<{
@@ -343,17 +386,33 @@ export type MakerLockSettlementRequest = Readonly<{
   outputToken: string;
 }>;
 
+export type MakerTransactionReceipt = Readonly<{
+  transactionHash: string;
+  status: "PENDING" | "SUCCEEDED" | "REVERTED";
+}>;
+
+export type MakerLockResolutionRequest = Readonly<{
+  lockId: string;
+  expectedState: "quarantined";
+  reason: string;
+}>;
+
+export type MakerWalletOperationErrorOptions = ErrorOptions &
+  Readonly<{ transactionHash?: string }>;
+
 export class MakerWalletOperationError extends Error {
   readonly outcome: "reverted" | "unknown";
+  readonly transactionHash?: string;
 
   constructor(
     outcome: "reverted" | "unknown",
     message: string,
-    options?: ErrorOptions,
+    options?: MakerWalletOperationErrorOptions,
   ) {
     super(message, options);
     this.name = "MakerWalletOperationError";
     this.outcome = outcome;
+    this.transactionHash = options?.transactionHash;
   }
 }
 
@@ -367,6 +426,9 @@ export type MakerWalletAdapter = Readonly<{
     lock: MakerOnChainLock;
   }>;
   getLock?: (lockId: string) => Promise<MakerOnChainLock>;
+  getTransactionReceipt?: (
+    transactionHash: string,
+  ) => Promise<MakerTransactionReceipt>;
   settleProceeds?: (
     request: MakerLockSettlementRequest,
   ) => Promise<{ transactionHash: string }>;
@@ -558,6 +620,43 @@ function requireText(value: string, label: string): string {
   return normalized;
 }
 
+export function parseMakerLockResolutionRequest(
+  pathname: string,
+  body: unknown,
+): MakerLockResolutionRequest | null {
+  const match = /^\/v1\/locks\/(0x[0-9a-fA-F]{1,64})\/resolve$/.exec(
+    pathname,
+  );
+  if (!match) return null;
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new MakerNodeError("Lock resolution request must be an object.");
+  }
+  const value = body as Record<string, unknown>;
+  const fields = Object.keys(value);
+  if (
+    fields.length !== 2 ||
+    !fields.includes("expectedState") ||
+    !fields.includes("reason")
+  ) {
+    throw new MakerNodeError(
+      "Lock resolution request requires only expectedState and reason.",
+    );
+  }
+  if (value.expectedState !== "quarantined") {
+    throw new MakerNodeError(
+      "Lock resolution request expectedState must be quarantined.",
+    );
+  }
+  if (typeof value.reason !== "string") {
+    throw new MakerNodeError("Lock resolution request reason is invalid.");
+  }
+  return Object.freeze({
+    lockId: match[1]!.toLowerCase(),
+    expectedState: "quarantined",
+    reason: requireText(value.reason, "lock resolution reason"),
+  });
+}
+
 function requireHex32(value: string, label: string): string {
   const normalized = value.trim().toLowerCase();
   if (!HEX_32_PATTERN.test(normalized)) {
@@ -742,9 +841,155 @@ const LOCK_RECORD_STATES = new Set<LockRecordV1State>([
   "taken",
   "expired",
   "settling",
+  "reconcile-pending",
+  "settlement-unknown",
   "settled",
   "quarantined",
 ]);
+
+const LOCK_PRIOR_STATES = new Set<LockRecordV1PriorState>([
+  "locking",
+  "open",
+  "taken",
+  "expired",
+  "settling",
+]);
+
+function requireNonnegativeCounter(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new MakerNodeError(`${label} must be a non-negative safe integer.`);
+  }
+  return value;
+}
+
+function canonicalLockOperationalFields(record: LockRecordV1) {
+  const priorState =
+    record.priorState === undefined
+      ? undefined
+      : LOCK_PRIOR_STATES.has(record.priorState)
+        ? record.priorState
+        : (() => {
+            throw new MakerNodeError("Lock prior state is invalid.");
+          })();
+  const reconciliationFailures =
+    record.reconciliationFailures === undefined
+      ? undefined
+      : requireNonnegativeCounter(
+          record.reconciliationFailures,
+          "lock reconciliationFailures",
+        );
+  const nextReconciliationAt =
+    record.nextReconciliationAt === undefined
+      ? undefined
+      : requireTimestamp(
+          record.nextReconciliationAt,
+          "lock nextReconciliationAt",
+        );
+  const reason =
+    record.reason === undefined
+      ? undefined
+      : requireText(record.reason, "lock reason");
+  const quarantinedAt =
+    record.quarantinedAt === undefined
+      ? undefined
+      : requireTimestamp(record.quarantinedAt, "lock quarantinedAt");
+  const settlementAttemptCount =
+    record.settlementAttemptCount === undefined
+      ? undefined
+      : requireNonnegativeCounter(
+          record.settlementAttemptCount,
+          "lock settlementAttemptCount",
+        );
+  const settlementAttempt =
+    record.settlementAttempt === undefined
+      ? undefined
+      : Object.freeze({
+          action:
+            record.settlementAttempt.action === "proceeds" ||
+            record.settlementAttempt.action === "release"
+              ? record.settlementAttempt.action
+              : (() => {
+                  throw new MakerNodeError(
+                    "Lock settlement attempt action is invalid.",
+                  );
+                })(),
+          attempt: requireNonnegativeCounter(
+            record.settlementAttempt.attempt,
+            "lock settlement attempt",
+          ),
+          attemptedAt: requireTimestamp(
+            record.settlementAttempt.attemptedAt,
+            "lock settlement attemptedAt",
+          ),
+          ...(record.settlementAttempt.transactionHash === undefined
+            ? {}
+            : {
+                transactionHash: requireFeltText(
+                  record.settlementAttempt.transactionHash,
+                  "lock settlement transaction hash",
+                ),
+              }),
+        });
+  if (settlementAttempt?.attempt === 0) {
+    throw new MakerNodeError("Lock settlement attempt must be positive.");
+  }
+  if (
+    settlementAttempt &&
+    settlementAttemptCount !== undefined &&
+    settlementAttempt.attempt > settlementAttemptCount
+  ) {
+    throw new MakerNodeError(
+      "Lock settlement attempt exceeds its durable attempt count.",
+    );
+  }
+  const operatorResolution =
+    record.operatorResolution === undefined
+      ? undefined
+      : Object.freeze({
+          expectedState:
+            record.operatorResolution.expectedState === "quarantined"
+              ? ("quarantined" as const)
+              : (() => {
+                  throw new MakerNodeError(
+                    "Lock operator resolution expected state is invalid.",
+                  );
+                })(),
+          reason: requireText(
+            record.operatorResolution.reason,
+            "lock operator resolution reason",
+          ),
+          resolvedAt: requireTimestamp(
+            record.operatorResolution.resolvedAt,
+            "lock operator resolution time",
+          ),
+        });
+  if (
+    (record.state === "reconcile-pending" ||
+      record.state === "settlement-unknown") &&
+    priorState === undefined
+  ) {
+    throw new MakerNodeError("A reconciling lock must retain its prior state.");
+  }
+  if (record.state === "settlement-unknown" && !settlementAttempt) {
+    throw new MakerNodeError(
+      "An unknown settlement must retain its durable attempt.",
+    );
+  }
+  return {
+    ...(priorState === undefined ? {} : { priorState }),
+    ...(reconciliationFailures === undefined
+      ? {}
+      : { reconciliationFailures }),
+    ...(nextReconciliationAt === undefined ? {} : { nextReconciliationAt }),
+    ...(reason === undefined ? {} : { reason }),
+    ...(quarantinedAt === undefined ? {} : { quarantinedAt }),
+    ...(settlementAttemptCount === undefined
+      ? {}
+      : { settlementAttemptCount }),
+    ...(settlementAttempt === undefined ? {} : { settlementAttempt }),
+    ...(operatorResolution === undefined ? {} : { operatorResolution }),
+  };
+}
 
 function requireNonnegativeAmount(value: bigint, label: string): bigint {
   if (typeof value !== "bigint" || value < 0n || value > MAX_U128) {
@@ -846,6 +1091,7 @@ function canonicalStoredLock(record: StoredLockRecord): StoredLockRecord {
     ...(quoteDigestValue === undefined
       ? {}
       : { quoteDigest: quoteDigestValue }),
+    ...canonicalLockOperationalFields(record),
     nonce: requireHex32(record.nonce, "lock nonce"),
     quotedAt: requireTimestamp(record.quotedAt, "lock quotedAt"),
     spreadBps,
@@ -941,6 +1187,7 @@ export function encodeLockRecordV1(record: LockRecordV1): LockRecordV1Wire {
       : {
           quoteDigest: requireHex32(record.quoteDigest, "lock quoteDigest"),
         }),
+    ...canonicalLockOperationalFields(record),
   });
 }
 
@@ -1419,6 +1666,21 @@ function capacityLockedState(state: MakerReservationV1["state"]): boolean {
   return activeState(state) || state === "quarantined";
 }
 
+function lockReservesCapacity(record: StoredLockRecord, now: number): boolean {
+  if (
+    record.state === "locking" ||
+    record.state === "settling" ||
+    record.state === "reconcile-pending" ||
+    record.state === "settlement-unknown"
+  ) {
+    return true;
+  }
+  return (
+    record.state === "quarantined" &&
+    now < record.expiry + QUARANTINED_LOCK_CAPACITY_GRACE_SECONDS
+  );
+}
+
 function sameTerms(
   record: StoredMakerReservation,
   request: MakerQuoteRequest,
@@ -1718,20 +1980,48 @@ function schedulesMatch(left: PriceSchedule, right: PriceSchedule): boolean {
   }
 }
 
+class AuthenticatedLockContradictionError extends MakerNodeError {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthenticatedLockContradictionError";
+  }
+}
+
 function requireOpenChainLock(
   chain: MakerOnChainLock,
   record: StoredLockRecord,
 ): MakerOnChainLock {
-  if (!chain || chain.status !== "open") {
-    throw new MakerNodeError("Escrow lock is not open on chain.");
+  if (!chain || typeof chain !== "object") {
+    throw new MakerNodeError("Escrow returned a malformed lock.");
+  }
+  if (chain.status === "empty") {
+    throw new AuthenticatedLockContradictionError(
+      "Escrow reports that the durable lock is empty.",
+    );
+  }
+  if (chain.status !== "open") {
+    throw new MakerNodeError("Escrow returned an invalid lock status.");
   }
   assertPriceSchedule(chain.schedule);
+  requireFeltText(chain.rfqId, "on-chain lock rfqId");
+  requireFeltText(chain.takerCommitment, "on-chain taker commitment");
+  requireFeltText(chain.tokenA, "on-chain tokenA");
+  requireFeltText(chain.tokenB, "on-chain tokenB");
+  requireFeltText(chain.ticket, "on-chain lock ticket");
   requireTimestamp(chain.expiry, "on-chain lock expiry");
   requireNonnegativeAmount(chain.remainingB, "on-chain remaining collateral");
   requireNonnegativeAmount(chain.earnedA, "on-chain earned proceeds");
+  if (
+    typeof chain.proceedsSettled !== "boolean" ||
+    typeof chain.collateralReleased !== "boolean"
+  ) {
+    throw new MakerNodeError("Escrow returned malformed settlement flags.");
+  }
   const takenB = record.maxB - chain.remainingB;
   if (
     takenB < 0n ||
+    chain.earnedA < record.takenA ||
+    takenB < record.takenB ||
     !sameFelt(chain.rfqId, record.rfqFelt) ||
     !sameFelt(chain.takerCommitment, record.takerCommitment) ||
     !sameFelt(chain.tokenA, record.tokenA) ||
@@ -1740,11 +2030,120 @@ function requireOpenChainLock(
     !schedulesMatch(chain.schedule, record.schedule) ||
     !sameFelt(chain.ticket, record.ticket)
   ) {
-    throw new MakerNodeError(
+    throw new AuthenticatedLockContradictionError(
       "On-chain lock does not match its durable maker binding.",
     );
   }
   return chain;
+}
+
+function priorLockState(
+  record: StoredLockRecord,
+  now: number,
+): LockRecordV1PriorState {
+  if (record.priorState) return record.priorState;
+  if (
+    record.state === "locking" ||
+    record.state === "open" ||
+    record.state === "taken" ||
+    record.state === "expired" ||
+    record.state === "settling"
+  ) {
+    return record.state;
+  }
+  return now >= record.expiry ? "expired" : "open";
+}
+
+function reconciliationBackoffSeconds(failures: number): number {
+  return Math.min(
+    LOCK_RECONCILIATION_BACKOFF_CAP_SECONDS,
+    2 ** Math.min(failures - 1, 30),
+  );
+}
+
+function lockWithReconciliationFailure(
+  record: StoredLockRecord,
+  now: number,
+  state: "reconcile-pending" | "settlement-unknown",
+): StoredLockRecord {
+  const failures = (record.reconciliationFailures ?? 0) + 1;
+  const priorState = priorLockState(record, now);
+  if (failures >= LOCK_RECONCILIATION_MAX_FAILURES) {
+    return canonicalStoredLock({
+      ...record,
+      state: "quarantined",
+      priorState,
+      reconciliationFailures: failures,
+      nextReconciliationAt: undefined,
+      reason: "reconciliation-exhausted",
+      quarantinedAt: now,
+      settlingAction: undefined,
+    });
+  }
+  return canonicalStoredLock({
+    ...record,
+    state,
+    priorState,
+    reconciliationFailures: failures,
+    nextReconciliationAt: now + reconciliationBackoffSeconds(failures),
+    reason:
+      state === "settlement-unknown"
+        ? "settlement-outcome-unknown"
+        : "rpc-unavailable",
+    quarantinedAt: undefined,
+    settlingAction: undefined,
+  });
+}
+
+function quarantinedLock(
+  record: StoredLockRecord,
+  now: number,
+  reason: "authenticated-contradiction" | "reconciliation-exhausted",
+): StoredLockRecord {
+  return canonicalStoredLock({
+    ...record,
+    state: "quarantined",
+    priorState: priorLockState(record, now),
+    nextReconciliationAt: undefined,
+    reason,
+    quarantinedAt: now,
+    settlingAction: undefined,
+  });
+}
+
+function canonicalSettlementReceipt(
+  receipt: MakerTransactionReceipt,
+  expectedTransactionHash: string,
+): MakerTransactionReceipt {
+  if (!receipt || typeof receipt !== "object") {
+    throw new MakerNodeError("Settlement receipt is malformed.");
+  }
+  const transactionHash = requireFeltText(
+    receipt.transactionHash,
+    "settlement receipt transaction hash",
+  );
+  if (!sameFelt(transactionHash, expectedTransactionHash)) {
+    throw new AuthenticatedLockContradictionError(
+      "Settlement receipt does not match the durable transaction hash.",
+    );
+  }
+  if (
+    receipt.status !== "PENDING" &&
+    receipt.status !== "SUCCEEDED" &&
+    receipt.status !== "REVERTED"
+  ) {
+    throw new MakerNodeError("Settlement receipt status is malformed.");
+  }
+  return Object.freeze({ transactionHash, status: receipt.status });
+}
+
+function settlementActionComplete(
+  action: MakerLockSettlementAction,
+  chain: MakerOnChainLock,
+): boolean {
+  return action === "proceeds"
+    ? chain.proceedsSettled
+    : chain.collateralReleased;
 }
 
 function lockStateFromChain(
@@ -1768,6 +2167,12 @@ function lockStateFromChain(
     state,
     takenA: open.earnedA,
     takenB: record.maxB - open.remainingB,
+    priorState: undefined,
+    reconciliationFailures: undefined,
+    nextReconciliationAt: undefined,
+    reason: undefined,
+    quarantinedAt: undefined,
+    settlementAttempt: undefined,
     settlingAction: undefined,
   });
 }
@@ -1798,6 +2203,7 @@ function publicLockRecord(record: StoredLockRecord): LockRecordV1 {
     ...(canonical.quoteDigest === undefined
       ? {}
       : { quoteDigest: canonical.quoteDigest }),
+    ...canonicalLockOperationalFields(canonical),
   });
 }
 
@@ -1839,22 +2245,17 @@ function quoteV3Refusal(
   });
 }
 
-function settlingActionConfirmed(
-  record: StoredLockRecord,
-  chain: MakerOnChainLock,
-): boolean {
-  if (record.state !== "settling") return true;
-  if (record.settlingAction === "release") return chain.collateralReleased;
-  if (record.settlingAction === "proceeds") return chain.proceedsSettled;
-  return (
-    (chain.earnedA === 0n || chain.proceedsSettled) &&
-    (chain.remainingB === 0n || chain.collateralReleased)
-  );
-}
-
 function terminalLockState(state: LockRecordV1State): boolean {
   return state === "settled" || state === "quarantined";
 }
+
+type LockRefreshResult =
+  | Readonly<{
+      kind: "ready";
+      record: StoredLockRecord;
+      chain: MakerOnChainLock;
+    }>
+  | Readonly<{ kind: "retryable" | "pending" | "terminal" }>;
 
 export class DurableMakerNode {
   readonly #store: DurableReservationStore;
@@ -1884,11 +2285,12 @@ export class DurableMakerNode {
       if (
         typeof config.wallet.lock !== "function" ||
         typeof config.wallet.getLock !== "function" ||
+        typeof config.wallet.getTransactionReceipt !== "function" ||
         typeof config.wallet.settleProceeds !== "function" ||
         typeof config.wallet.releaseCollateral !== "function"
       ) {
         throw new MakerNodeError(
-          "Maker v3 requires lock reads and both settlement wallet actions.",
+          "Maker v3 requires lock and receipt reads plus both settlement wallet actions.",
         );
       }
     }
@@ -2081,7 +2483,7 @@ export class DurableMakerNode {
       const unresolved = [...draft.values()]
         .filter(
           (record) =>
-            (record.state === "locking" || record.state === "quarantined") &&
+            lockReservesCapacity(record, now) &&
             sameFelt(record.tokenB, rfq.buyToken),
         )
         .reduce((total, record) => total + record.maxB, 0n);
@@ -2350,17 +2752,56 @@ export class DurableMakerNode {
       const knownRevert =
         error instanceof MakerWalletOperationError &&
         error.outcome === "reverted";
+      const contradiction =
+        error instanceof AuthenticatedLockContradictionError;
+      let transactionHash: string | undefined;
+      if (
+        error instanceof MakerWalletOperationError &&
+        error.transactionHash !== undefined
+      ) {
+        try {
+          const candidate = requireFeltText(
+            error.transactionHash,
+            "lock transaction hash",
+          );
+          if (BigInt(candidate) !== 0n) transactionHash = candidate;
+        } catch {
+          transactionHash = undefined;
+        }
+      }
       await this.#store.lockTransaction((draft) => {
         const current = draft.get(acquisition.record.lockId);
         if (!current) return;
-        if (knownRevert) draft.delete(current.lockId);
-        else draft.set(current.lockId, { ...current, state: "quarantined" });
+        if (knownRevert) {
+          draft.delete(current.lockId);
+        } else if (contradiction) {
+          draft.set(
+            current.lockId,
+            quarantinedLock(current, now, "authenticated-contradiction"),
+          );
+        } else {
+          draft.set(
+            current.lockId,
+            lockWithReconciliationFailure(
+              {
+                ...current,
+                ...(transactionHash === undefined
+                  ? {}
+                  : { lockTxHash: transactionHash }),
+              },
+              now,
+              "reconcile-pending",
+            ),
+          );
+        }
       });
       return quoteV3Refusal(
         "lock-failed",
         knownRevert
           ? "On-chain lock transaction reverted."
-          : "On-chain lock outcome is unknown; collateral was quarantined.",
+          : contradiction
+            ? "On-chain lock contradicted its durable maker binding."
+            : "On-chain lock outcome is pending RPC reconciliation.",
       );
     }
 
@@ -2484,34 +2925,9 @@ export class DurableMakerNode {
         });
       }
     });
-    if (this.#store.listLocks().length === 0) return;
-    const getLock = this.#v3Wallet().getLock;
     for (const record of this.#store.listLocks()) {
-      if (terminalLockState(record.state)) continue;
-      try {
-        const chain = await getLock(record.lockId);
-        if (chain.status !== "open") {
-          await this.#quarantineLock(record.lockId);
-          continue;
-        }
-        const candidate =
-          record.state === "locking"
-            ? canonicalStoredLock({ ...record, ticket: chain.ticket })
-            : record;
-        const open = requireOpenChainLock(chain, candidate);
-        if (!settlingActionConfirmed(record, open)) {
-          await this.#quarantineLock(record.lockId);
-          continue;
-        }
-        const recovered = lockStateFromChain(candidate, open, now);
-        await this.#store.lockTransaction((draft) => {
-          const current = draft.get(record.lockId);
-          if (current && !terminalLockState(current.state)) {
-            draft.set(record.lockId, recovered);
-          }
-        });
-      } catch {
-        await this.#quarantineLock(record.lockId);
+      if (!terminalLockState(record.state)) {
+        await this.#refreshLock(record.lockId, now);
       }
     }
   }
@@ -2519,177 +2935,419 @@ export class DurableMakerNode {
   async settleExpiredLocks(now: number): Promise<void> {
     requireTimestamp(now, "now");
     for (const snapshot of this.#store.listLocks()) {
-      if (terminalLockState(snapshot.state) || snapshot.expiry > now) continue;
+      if (terminalLockState(snapshot.state)) continue;
+      const reconciling =
+        snapshot.state === "settling" ||
+        snapshot.state === "reconcile-pending" ||
+        snapshot.state === "settlement-unknown";
+      if (!reconciling && snapshot.expiry > now) continue;
+      if (
+        snapshot.nextReconciliationAt !== undefined &&
+        snapshot.nextReconciliationAt > now
+      ) {
+        continue;
+      }
       await this.#settleExpiredLock(snapshot.lockId, now);
     }
   }
 
+  async resolveLock(
+    input: MakerLockResolutionRequest,
+    now: number,
+  ): Promise<LockRecordV1Wire> {
+    requireTimestamp(now, "now");
+    const lockId = requireFeltText(input.lockId, "lockId");
+    if (input.expectedState !== "quarantined") {
+      throw new MakerNodeError(
+        "Lock resolution expectedState must be quarantined.",
+      );
+    }
+    const reason = requireText(input.reason, "lock resolution reason");
+    const resolved = await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (!current) {
+        throw new MakerNodeError(`Maker refused unknown lock id ${lockId}.`);
+      }
+      if (current.state !== input.expectedState) {
+        throw new MakerNodeError(
+          `Lock state ${current.state} does not match expectedState ${input.expectedState}.`,
+        );
+      }
+      const next = canonicalStoredLock({
+        ...current,
+        state: "reconcile-pending",
+        priorState: priorLockState(current, now),
+        reconciliationFailures: 0,
+        nextReconciliationAt: now,
+        reason: "operator-reviewed-resolution",
+        quarantinedAt: undefined,
+        operatorResolution: Object.freeze({
+          expectedState: "quarantined",
+          reason,
+          resolvedAt: now,
+        }),
+        settlingAction: undefined,
+      });
+      draft.set(lockId, next);
+      return next;
+    });
+    return encodeLockRecordV1(publicLockRecord(resolved));
+  }
+
   async #settleExpiredLock(lockId: string, now: number): Promise<void> {
-    const wallet = this.#v3Wallet();
+    let refreshed = await this.#refreshLock(lockId, now);
+    if (refreshed.kind !== "ready" || refreshed.record.expiry > now) return;
+
+    if (refreshed.chain.earnedA > 0n && !refreshed.chain.proceedsSettled) {
+      refreshed = await this.#submitSettlementAction(
+        refreshed.record,
+        "proceeds",
+        now,
+      );
+      if (refreshed.kind !== "ready") return;
+    }
+
+    if (
+      refreshed.chain.remainingB > 0n &&
+      !refreshed.chain.collateralReleased
+    ) {
+      await this.#submitSettlementAction(refreshed.record, "release", now);
+    }
+  }
+
+  async #refreshLock(lockId: string, now: number): Promise<LockRefreshResult> {
     let record = this.#store
       .listLocks()
       .find((candidate) => candidate.lockId === lockId);
-    if (!record || terminalLockState(record.state)) return;
+    if (!record || terminalLockState(record.state)) return { kind: "terminal" };
+    if (
+      record.nextReconciliationAt !== undefined &&
+      record.nextReconciliationAt > now
+    ) {
+      return { kind: "pending" };
+    }
+
+    if (record.state === "settling") {
+      const action = record.settlingAction;
+      if (!action) {
+        await this.#recordReconciliationFailure(
+          lockId,
+          now,
+          "reconcile-pending",
+        );
+        return { kind: "pending" };
+      }
+      record = await this.#store.lockTransaction((draft) => {
+        const current = draft.get(lockId);
+        if (!current || terminalLockState(current.state)) return undefined;
+        const attempt = (current.settlementAttemptCount ?? 0) + 1;
+        const transactionHash =
+          action === "proceeds"
+            ? current.proceedsTxHash
+            : current.releaseTxHash;
+        const next = canonicalStoredLock({
+          ...current,
+          state: "settlement-unknown",
+          priorState: priorLockState(current, now),
+          reconciliationFailures: 0,
+          nextReconciliationAt: undefined,
+          reason: "settlement-outcome-unknown",
+          settlementAttemptCount: attempt,
+          settlementAttempt: Object.freeze({
+            action,
+            attempt,
+            attemptedAt: now,
+            ...(transactionHash === undefined ? {} : { transactionHash }),
+          }),
+          settlingAction: undefined,
+        });
+        draft.set(lockId, next);
+        return next;
+      });
+      if (!record) return { kind: "terminal" };
+    }
+
+    if (record.settlementAttempt) {
+      return this.#reconcileSettlementUnknown(record, now);
+    }
+
     let chain: MakerOnChainLock;
     try {
-      chain = await wallet.getLock(lockId);
-      if (chain.status !== "open") {
-        await this.#quarantineLock(lockId);
-        return;
-      }
-      const candidate =
-        record.state === "locking"
-          ? canonicalStoredLock({ ...record, ticket: chain.ticket })
-          : record;
-      const open = requireOpenChainLock(chain, candidate);
-      if (!settlingActionConfirmed(record, open)) {
-        await this.#quarantineLock(lockId);
-        return;
-      }
-      record = lockStateFromChain(candidate, open, now);
-      await this.#store.lockTransaction((draft) => {
-        if (draft.has(lockId)) draft.set(lockId, record!);
-      });
-      chain = open;
+      chain = await this.#v3Wallet().getLock(lockId);
     } catch {
-      return;
+      await this.#recordReconciliationFailure(
+        lockId,
+        now,
+        "reconcile-pending",
+      );
+      return { kind: "pending" };
     }
-    if (record.state === "settled") return;
+    if (
+      chain?.status === "empty" &&
+      priorLockState(record, now) === "locking"
+    ) {
+      await this.#recordReconciliationFailure(
+        lockId,
+        now,
+        "reconcile-pending",
+      );
+      return { kind: "pending" };
+    }
 
-    if (chain.earnedA > 0n && !chain.proceedsSettled) {
+    let candidate = record;
+    let open: MakerOnChainLock;
+    try {
+      if (
+        priorLockState(record, now) === "locking" &&
+        sameFelt(record.ticket, "0x0") &&
+        chain.status === "open"
+      ) {
+        candidate = canonicalStoredLock({ ...record, ticket: chain.ticket });
+      }
+      open = requireOpenChainLock(chain, candidate);
+    } catch (error) {
+      if (error instanceof AuthenticatedLockContradictionError) {
+        await this.#quarantineLock(
+          lockId,
+          now,
+          "authenticated-contradiction",
+        );
+        return { kind: "terminal" };
+      }
+      await this.#recordReconciliationFailure(
+        lockId,
+        now,
+        "reconcile-pending",
+      );
+      return { kind: "pending" };
+    }
+
+    const exact = lockStateFromChain(candidate, open, now);
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (current && !terminalLockState(current.state)) {
+        draft.set(lockId, exact);
+      }
+    });
+    if (exact.state === "settled") return { kind: "terminal" };
+    return { kind: "ready", record: exact, chain: open };
+  }
+
+  async #reconcileSettlementUnknown(
+    record: StoredLockRecord,
+    now: number,
+  ): Promise<LockRefreshResult> {
+    const attempt = record.settlementAttempt!;
+    let receipt: MakerTransactionReceipt | undefined;
+    if (attempt.transactionHash !== undefined) {
+      try {
+        receipt = canonicalSettlementReceipt(
+          await this.#v3Wallet().getTransactionReceipt(
+            attempt.transactionHash,
+          ),
+          attempt.transactionHash,
+        );
+      } catch (error) {
+        if (error instanceof AuthenticatedLockContradictionError) {
+          await this.#quarantineLock(
+            record.lockId,
+            now,
+            "authenticated-contradiction",
+          );
+          return { kind: "terminal" };
+        }
+      }
+    }
+
+    let open: MakerOnChainLock | undefined;
+    try {
+      open = requireOpenChainLock(
+        await this.#v3Wallet().getLock(record.lockId),
+        record,
+      );
+    } catch (error) {
+      if (error instanceof AuthenticatedLockContradictionError) {
+        await this.#quarantineLock(
+          record.lockId,
+          now,
+          "authenticated-contradiction",
+        );
+        return { kind: "terminal" };
+      }
+    }
+
+    if (!open) {
+      await this.#recordReconciliationFailure(
+        record.lockId,
+        now,
+        receipt?.status === "REVERTED"
+          ? "reconcile-pending"
+          : "settlement-unknown",
+        receipt?.status === "REVERTED",
+      );
+      return { kind: "pending" };
+    }
+
+    const actionComplete = settlementActionComplete(attempt.action, open);
+    if (
+      (receipt?.status === "SUCCEEDED" && !actionComplete) ||
+      (receipt?.status === "REVERTED" && actionComplete)
+    ) {
+      await this.#quarantineLock(
+        record.lockId,
+        now,
+        "authenticated-contradiction",
+      );
+      return { kind: "terminal" };
+    }
+    if (actionComplete || receipt?.status === "REVERTED") {
+      const exact = lockStateFromChain(record, open, now);
       await this.#store.lockTransaction((draft) => {
-        const current = draft.get(lockId);
+        const current = draft.get(record.lockId);
         if (current && !terminalLockState(current.state)) {
-          draft.set(lockId, {
-            ...current,
-            state: "settling",
-            settlingAction: "proceeds",
-          });
+          draft.set(record.lockId, exact);
         }
       });
-      let transactionHash: string;
-      try {
-        transactionHash = requireFeltText(
-          (
-            await wallet.settleProceeds({
-              lockId,
+      if (receipt?.status === "REVERTED") return { kind: "retryable" };
+      if (exact.state === "settled") return { kind: "terminal" };
+      return { kind: "ready", record: exact, chain: open };
+    }
+
+    await this.#recordReconciliationFailure(
+      record.lockId,
+      now,
+      "settlement-unknown",
+    );
+    return { kind: "pending" };
+  }
+
+  async #submitSettlementAction(
+    record: StoredLockRecord,
+    action: MakerLockSettlementAction,
+    now: number,
+  ): Promise<LockRefreshResult> {
+    const pending = await this.#store.lockTransaction((draft) => {
+      const current = draft.get(record.lockId);
+      if (!current || terminalLockState(current.state)) return undefined;
+      const attempt = (current.settlementAttemptCount ?? 0) + 1;
+      const next = canonicalStoredLock({
+        ...current,
+        state: "settlement-unknown",
+        priorState: priorLockState(current, now),
+        reconciliationFailures: 0,
+        nextReconciliationAt: undefined,
+        reason: "settlement-outcome-unknown",
+        quarantinedAt: undefined,
+        settlementAttemptCount: attempt,
+        settlementAttempt: Object.freeze({ action, attempt, attemptedAt: now }),
+        settlingAction: undefined,
+      });
+      draft.set(record.lockId, next);
+      return next;
+    });
+    if (!pending) return { kind: "terminal" };
+
+    const wallet = this.#v3Wallet();
+    try {
+      const response =
+        action === "proceeds"
+          ? await wallet.settleProceeds({
+              lockId: record.lockId,
               ticket: record.ticket,
               outputToken: record.tokenA,
             })
-          ).transactionHash,
-          "proceeds transaction hash",
-        );
-        if (BigInt(transactionHash) === 0n) {
-          throw new MakerNodeError("Proceeds settlement returned a zero hash.");
-        }
-      } catch (error) {
-        if (
-          error instanceof MakerWalletOperationError &&
-          error.outcome === "reverted"
-        ) {
-          await this.#resetKnownRevertedSettlement(lockId, now);
-        } else {
-          await this.#quarantineLock(lockId);
-        }
-        return;
-      }
-      await this.#store.lockTransaction((draft) => {
-        const current = draft.get(lockId);
-        if (current && !terminalLockState(current.state)) {
-          draft.set(lockId, {
-            ...current,
-            state: "settling",
-            proceedsTxHash: transactionHash,
-            settlingAction: "proceeds",
-          });
-        }
-      });
-      try {
-        chain = await wallet.getLock(lockId);
-        const current = this.#store
-          .listLocks()
-          .find((candidate) => candidate.lockId === lockId)!;
-        const open = requireOpenChainLock(chain, current);
-        if (!open.proceedsSettled) {
-          await this.#quarantineLock(lockId);
-          return;
-        }
-        record = lockStateFromChain(current, open, now);
-        await this.#store.lockTransaction((draft) => {
-          if (draft.has(lockId)) draft.set(lockId, record!);
-        });
-        chain = open;
-      } catch {
-        return;
-      }
-    }
-
-    if (chain.remainingB > 0n && !chain.collateralReleased) {
-      await this.#store.lockTransaction((draft) => {
-        const current = draft.get(lockId);
-        if (current && !terminalLockState(current.state)) {
-          draft.set(lockId, {
-            ...current,
-            state: "settling",
-            settlingAction: "release",
-          });
-        }
-      });
-      let transactionHash: string;
-      try {
-        transactionHash = requireFeltText(
-          (
-            await wallet.releaseCollateral({
-              lockId,
+          : await wallet.releaseCollateral({
+              lockId: record.lockId,
               ticket: record.ticket,
               outputToken: record.tokenB,
-            })
-          ).transactionHash,
-          "collateral transaction hash",
+            });
+      const transactionHash = requireFeltText(
+        response.transactionHash,
+        action === "proceeds"
+          ? "proceeds transaction hash"
+          : "collateral transaction hash",
+      );
+      if (BigInt(transactionHash) === 0n) {
+        throw new MakerNodeError("Settlement returned a zero transaction hash.");
+      }
+      const persisted = await this.#persistSettlementHash(
+        record.lockId,
+        action,
+        pending.settlementAttempt!.attempt,
+        transactionHash,
+      );
+      return persisted
+        ? this.#reconcileSettlementUnknown(persisted, now)
+        : { kind: "terminal" };
+    } catch (error) {
+      if (
+        error instanceof MakerWalletOperationError &&
+        error.outcome === "reverted"
+      ) {
+        await this.#resetKnownRevertedSettlement(record.lockId, now);
+        return { kind: "retryable" };
+      }
+      let transactionHash: string | undefined;
+      if (
+        error instanceof MakerWalletOperationError &&
+        error.transactionHash !== undefined
+      ) {
+        try {
+          const candidate = requireFeltText(
+            error.transactionHash,
+            "unknown settlement transaction hash",
+          );
+          if (BigInt(candidate) !== 0n) transactionHash = candidate;
+        } catch {
+          transactionHash = undefined;
+        }
+      }
+      if (transactionHash !== undefined) {
+        await this.#persistSettlementHash(
+          record.lockId,
+          action,
+          pending.settlementAttempt!.attempt,
+          transactionHash,
         );
-        if (BigInt(transactionHash) === 0n) {
-          throw new MakerNodeError("Collateral release returned a zero hash.");
-        }
-      } catch (error) {
-        if (
-          error instanceof MakerWalletOperationError &&
-          error.outcome === "reverted"
-        ) {
-          await this.#resetKnownRevertedSettlement(lockId, now);
-        } else {
-          await this.#quarantineLock(lockId);
-        }
-        return;
       }
-      await this.#store.lockTransaction((draft) => {
-        const current = draft.get(lockId);
-        if (current && !terminalLockState(current.state)) {
-          draft.set(lockId, {
-            ...current,
-            state: "settling",
-            releaseTxHash: transactionHash,
-            settlingAction: "release",
-          });
-        }
-      });
-      try {
-        chain = await wallet.getLock(lockId);
-        const current = this.#store
-          .listLocks()
-          .find((candidate) => candidate.lockId === lockId)!;
-        const open = requireOpenChainLock(chain, current);
-        if (!open.collateralReleased) {
-          await this.#quarantineLock(lockId);
-          return;
-        }
-        record = lockStateFromChain(current, open, now);
-        await this.#store.lockTransaction((draft) => {
-          if (draft.has(lockId)) draft.set(lockId, record!);
-        });
-      } catch {
-        return;
-      }
+      await this.#recordReconciliationFailure(
+        record.lockId,
+        now,
+        "settlement-unknown",
+      );
+      return { kind: "pending" };
     }
+  }
+
+  async #persistSettlementHash(
+    lockId: string,
+    action: MakerLockSettlementAction,
+    attempt: number,
+    transactionHash: string,
+  ): Promise<StoredLockRecord | undefined> {
+    return this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (
+        !current ||
+        current.state !== "settlement-unknown" ||
+        current.settlementAttempt?.action !== action ||
+        current.settlementAttempt.attempt !== attempt
+      ) {
+        return undefined;
+      }
+      const next = canonicalStoredLock({
+        ...current,
+        ...(action === "proceeds"
+          ? { proceedsTxHash: transactionHash }
+          : { releaseTxHash: transactionHash }),
+        settlementAttempt: Object.freeze({
+          ...current.settlementAttempt,
+          transactionHash,
+        }),
+      });
+      draft.set(lockId, next);
+      return next;
+    });
   }
 
   async #resetKnownRevertedSettlement(
@@ -2699,26 +3357,75 @@ export class DurableMakerNode {
     const record = this.#store
       .listLocks()
       .find((candidate) => candidate.lockId === lockId);
-    if (!record) return;
+    if (!record || !record.settlementAttempt) return;
+    let open: MakerOnChainLock;
     try {
-      const chain = requireOpenChainLock(
+      open = requireOpenChainLock(
         await this.#v3Wallet().getLock(lockId),
         record,
       );
-      const refreshed = lockStateFromChain(record, chain, now);
-      await this.#store.lockTransaction((draft) => {
-        if (draft.has(lockId)) draft.set(lockId, refreshed);
-      });
-    } catch {
-      await this.#quarantineLock(lockId);
+    } catch (error) {
+      if (error instanceof AuthenticatedLockContradictionError) {
+        await this.#quarantineLock(
+          lockId,
+          now,
+          "authenticated-contradiction",
+        );
+      } else {
+        await this.#recordReconciliationFailure(
+          lockId,
+          now,
+          "reconcile-pending",
+          true,
+        );
+      }
+      return;
     }
+    if (settlementActionComplete(record.settlementAttempt.action, open)) {
+      await this.#quarantineLock(
+        lockId,
+        now,
+        "authenticated-contradiction",
+      );
+      return;
+    }
+    const exact = lockStateFromChain(record, open, now);
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (current && !terminalLockState(current.state)) {
+        draft.set(lockId, exact);
+      }
+    });
   }
 
-  async #quarantineLock(lockId: string): Promise<void> {
+  async #recordReconciliationFailure(
+    lockId: string,
+    now: number,
+    state: "reconcile-pending" | "settlement-unknown",
+    clearSettlementAttempt = false,
+  ): Promise<void> {
+    await this.#store.lockTransaction((draft) => {
+      const current = draft.get(lockId);
+      if (!current || terminalLockState(current.state)) return;
+      const candidate = clearSettlementAttempt
+        ? ({ ...current, settlementAttempt: undefined } as StoredLockRecord)
+        : current;
+      draft.set(
+        lockId,
+        lockWithReconciliationFailure(candidate, now, state),
+      );
+    });
+  }
+
+  async #quarantineLock(
+    lockId: string,
+    now: number,
+    reason: "authenticated-contradiction" | "reconciliation-exhausted",
+  ): Promise<void> {
     await this.#store.lockTransaction((draft) => {
       const current = draft.get(lockId);
       if (current && current.state !== "settled") {
-        draft.set(lockId, { ...current, state: "quarantined" });
+        draft.set(lockId, quarantinedLock(current, now, reason));
       }
     });
   }
@@ -2733,14 +3440,22 @@ export class DurableMakerNode {
   #v3Wallet(): Required<
     Pick<
       MakerWalletAdapter,
-      "getLock" | "lock" | "releaseCollateral" | "settleProceeds"
+      | "getLock"
+      | "getTransactionReceipt"
+      | "lock"
+      | "releaseCollateral"
+      | "settleProceeds"
     >
   > {
     this.#v3();
     return this.#config.wallet as Required<
       Pick<
         MakerWalletAdapter,
-        "getLock" | "lock" | "releaseCollateral" | "settleProceeds"
+        | "getLock"
+        | "getTransactionReceipt"
+        | "lock"
+        | "releaseCollateral"
+        | "settleProceeds"
       >
     >;
   }
@@ -2820,7 +3535,7 @@ export class DurableMakerNode {
         .listLocks()
         .filter(
           (record) =>
-            (record.state === "locking" || record.state === "quarantined") &&
+            lockReservesCapacity(record, now) &&
             sameFelt(record.tokenB, request.buyToken),
         )
         .reduce((total, record) => total + record.maxB, 0n);
@@ -3249,11 +3964,15 @@ export class DurableMakerNode {
     });
   }
 
-  async #quarantineV3ReconciliationLock(lockId: string): Promise<void> {
-    await this.#store.lockTransaction((draft) => {
-      const current = draft.get(lockId);
-      if (current) draft.set(lockId, { ...current, state: "quarantined" });
-    });
+  async #quarantineV3ReconciliationLock(
+    lockId: string,
+    now: number,
+  ): Promise<void> {
+    await this.#quarantineLock(
+      lockId,
+      now,
+      "authenticated-contradiction",
+    );
   }
 
   async #reconcileV3AuthoritativeTerminal(
@@ -3328,7 +4047,7 @@ export class DurableMakerNode {
       ) {
         return v3ReconciliationSnapshot(initial, this.#config.makerId);
       }
-      await this.#quarantineV3ReconciliationLock(target.lockId);
+      await this.#quarantineV3ReconciliationLock(target.lockId, now);
       throw new MakerNodeError(
         "Maker quarantined an equivocated v3 terminal reconciliation.",
       );
@@ -3345,7 +4064,7 @@ export class DurableMakerNode {
       initial.tokenA !== target.tokenA ||
       initial.tokenB !== target.tokenB
     ) {
-      await this.#quarantineV3ReconciliationLock(target.lockId);
+      await this.#quarantineV3ReconciliationLock(target.lockId, now);
       throw new MakerNodeError(
         "Maker quarantined a v3 reconciliation with mismatched RFQ, quote, or tokens.",
       );
@@ -3358,9 +4077,20 @@ export class DurableMakerNode {
         initial,
       );
     } catch (error) {
-      await this.#quarantineV3ReconciliationLock(target.lockId);
+      if (error instanceof AuthenticatedLockContradictionError) {
+        await this.#quarantineV3ReconciliationLock(target.lockId, now);
+        throw new MakerNodeError(
+          "Maker quarantined a v3 lock whose chain state contradicted its WAL.",
+          { cause: error },
+        );
+      }
+      await this.#recordReconciliationFailure(
+        target.lockId,
+        now,
+        "reconcile-pending",
+      );
       throw new MakerNodeError(
-        "Maker quarantined a v3 lock whose Take could not be confirmed on chain.",
+        "Maker deferred v3 terminal reconciliation while chain reads are unavailable.",
         { cause: error },
       );
     }
@@ -3372,7 +4102,7 @@ export class DurableMakerNode {
       (initial.takenA !== 0n && initial.takenA !== target.takenA) ||
       (initial.takenB !== 0n && initial.takenB !== target.takenB)
     ) {
-      await this.#quarantineV3ReconciliationLock(target.lockId);
+      await this.#quarantineV3ReconciliationLock(target.lockId, now);
       throw new MakerNodeError(
         "Maker quarantined a v3 reconciliation with mismatched taken amounts.",
       );
@@ -3394,15 +4124,19 @@ export class DurableMakerNode {
         (currentPrior !== undefined &&
           currentPrior.authorityRevision >= target.authorityRevision)
       ) {
-        draft.set(target.lockId, { ...current, state: "quarantined" });
+        draft.set(
+          target.lockId,
+          quarantinedLock(current, now, "authenticated-contradiction"),
+        );
         return undefined;
       }
+      const reconciledState =
+        current.settlementAttempt &&
+        !settlementActionComplete(current.settlementAttempt.action, chain)
+          ? current
+          : lockStateFromChain(current, chain, now);
       const next = canonicalStoredLock({
-        ...current,
-        state:
-          current.state === "settled" || current.state === "settling"
-            ? current.state
-            : "taken",
+        ...reconciledState,
         takenA: target.takenA,
         takenB: target.takenB,
         terminalReconciliation: Object.freeze({
@@ -3424,6 +4158,16 @@ export class DurableMakerNode {
     return v3ReconciliationSnapshot(reconciled, this.#config.makerId);
   }
 
+  async reconcileAuthoritativeTerminal(
+    input: MakerTerminalReconciliationRequest &
+      Readonly<{ target: MakerV3TerminalReconciliationTarget }>,
+    now: number,
+  ): Promise<MakerV3ReconciliationSnapshot>;
+  async reconcileAuthoritativeTerminal(
+    input: MakerTerminalReconciliationRequest &
+      Readonly<{ target: MakerReconciliationTarget }>,
+    now: number,
+  ): Promise<MakerReconciliationSnapshot>;
   async reconcileAuthoritativeTerminal(
     input: MakerTerminalReconciliationRequest,
     now: number,

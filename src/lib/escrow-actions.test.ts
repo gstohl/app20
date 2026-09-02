@@ -260,7 +260,8 @@ describe("App20Escrow V3 STRK20 action batches", () => {
         rfqId: dealId,
         tokenA,
         tokenB,
-        takerSecret: "0x1234",
+        signatureR: "0x1234",
+        signatureS: "0x5678",
         fills: [
           { lockId: "0x41", amountA: 100n },
           { lockId: "0x42", amountA: "150" },
@@ -287,6 +288,7 @@ describe("App20Escrow V3 STRK20 action batches", () => {
           tokenA,
           tokenB,
           "0x1234",
+          "0x5678",
           "0x2",
           "0x41",
           "0x64",
@@ -366,7 +368,20 @@ describe("App20Escrow V3 STRK20 action batches", () => {
         rfqId: dealId,
         tokenA,
         tokenB,
-        takerSecret: "0x1234",
+        signatureR: "0x0",
+        signatureS: "0x5678",
+        fills: [{ lockId: "0x41", amountA: 1n }],
+      }),
+    ).toThrow(/signature r/i);
+    expect(() =>
+      buildEscrowTakeActions({
+        escrowAddress,
+        recoveryAddress,
+        rfqId: dealId,
+        tokenA,
+        tokenB,
+        signatureR: "0x1234",
+        signatureS: "0x5678",
         fills: [
           { lockId: "0x41", amountA: 1n },
           { lockId: "0x041", amountA: 1n },
@@ -380,7 +395,8 @@ describe("App20Escrow V3 STRK20 action batches", () => {
         rfqId: dealId,
         tokenA,
         tokenB,
-        takerSecret: "0x1234",
+        signatureR: "0x1234",
+        signatureS: "0x5678",
         fills: [
           { lockId: "0x41", amountA: 2n ** 128n - 1n },
           { lockId: "0x42", amountA: 1n },

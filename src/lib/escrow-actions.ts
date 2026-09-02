@@ -74,7 +74,8 @@ export type EscrowTakeBatchInput = {
   rfqId: string;
   tokenA: string;
   tokenB: string;
-  takerSecret: string;
+  signatureR: string;
+  signatureS: string;
   fills: readonly EscrowTakeFillInput[];
 };
 
@@ -349,7 +350,8 @@ export function buildEscrowTakeActions({
   rfqId,
   tokenA,
   tokenB,
-  takerSecret,
+  signatureR,
+  signatureS,
   fills,
 }: EscrowTakeBatchInput): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
@@ -387,7 +389,8 @@ export function buildEscrowTakeActions({
       ESCROW_OPERATION_VARIANT.Take,
       tokenA,
       tokenB,
-      felt(takerSecret, "Taker secret"),
+      felt(signatureR, "Take signature r"),
+      felt(signatureS, "Take signature s"),
       num.toHex(fills.length),
       ...flattened,
       felt(rfqId, "RFQ id"),

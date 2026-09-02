@@ -75,9 +75,20 @@ browser while binding signed maker schedules to pre-funded escrow locks:
 
 - `size-buckets.ts` defines the fixed STRK/USDC ladder, exact boundary rules,
   maker-side ladder validation, and compact UI labels.
-- `rfq-v2.ts` canonicalizes bucket-only requests, creates high-entropy taker
-  secrets, derives Cairo-compatible Poseidon commitments, and provides a closed
-  decimal-string wire codec.
+- `rfq-v2.ts` canonicalizes bucket-only requests and provides a closed
+  decimal-string wire codec. Its canonical field set and ordering are unchanged:
+  `takerCommitment` retains its wire name, but now carries the x-coordinate felt
+  of the taker's ephemeral Stark public key rather than a Poseidon commitment.
+  The compatibility-named `takerCommitmentFor` export now performs that public
+  key derivation; secret-preimage generation is no longer part of RFQ v2.
+- `take-signature.ts` creates per-RFQ Stark keypairs and binds an authorization
+  signature to the escrow address, RFQ felt, ordered token pair, and ordered
+  `(lockId, amountA)` fill transcript through Cairo-compatible Poseidon spans.
+  Cairo's `core::poseidon::poseidon_hash_span` is the source of truth for the
+  shared fixture's fill digest and message, which TypeScript consumes in tests.
+  The browser retains the private scalar only while the RFQ is active; backups
+  omit it, terminal records delete it, and an on-chain reverted Take closes the
+  RFQ instead of reusing exposed authorization material.
 - `schedule.ts` validates one-to-four-point u128 schedules, evaluates them with
   Cairo-identical floor arithmetic, inverts them, and reports E18 unit prices.
 - `quote-v3.ts` signs canonical lock references and verifies the RFQ, active

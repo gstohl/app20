@@ -186,6 +186,7 @@ export type LocalnetEscrowTake = Readonly<{
   tokenB: string;
   totalB: bigint;
   fillCount: number;
+  fillsDigest?: string;
   takenAt: number;
 }>;
 
@@ -838,7 +839,17 @@ export async function readEscrowTake(
   const take = asRecord(result.take);
   exactResponseKeys(
     take,
-    ["tokenA", "totalA", "tokenB", "totalB", "fillCount", "takenAt"],
+    take.fillsDigest === undefined
+      ? ["tokenA", "totalA", "tokenB", "totalB", "fillCount", "takenAt"]
+      : [
+          "tokenA",
+          "totalA",
+          "tokenB",
+          "totalB",
+          "fillCount",
+          "fillsDigest",
+          "takenAt",
+        ],
     "escrow Take",
   );
   const fillCount = asSafeInteger(take.fillCount, "Take fillCount");
@@ -860,6 +871,15 @@ export async function readEscrowTake(
     tokenB,
     totalB,
     fillCount,
+    ...(take.fillsDigest === undefined
+      ? {}
+      : {
+          fillsDigest: asCanonicalFelt(
+            take.fillsDigest,
+            "Take fillsDigest",
+            true,
+          ),
+        }),
     takenAt: asSafeInteger(take.takenAt, "Take takenAt"),
   });
 }

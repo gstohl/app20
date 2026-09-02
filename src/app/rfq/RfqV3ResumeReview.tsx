@@ -3,6 +3,7 @@ import RfqFinalReview, {
   type RfqFinalReviewV3DisplayTerms,
 } from "./RfqFinalReview";
 import {
+  takeAuthorizationFromLifecycle,
   validateV3FinalReview,
   type RfqFinalReviewSnapshot,
 } from "./rfq-final-review";
@@ -41,6 +42,7 @@ function displayTerms(
         }),
       ),
     ),
+    takeAuthorization: takeAuthorizationFromLifecycle(record),
     feeBps: 0,
     app20FeeAmount: 0n,
     sellSymbol: record.terms.sellSymbol,

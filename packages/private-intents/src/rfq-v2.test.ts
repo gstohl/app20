@@ -1,11 +1,9 @@
-import { poseidonHashMany } from "@scure/starknet";
-import { hash } from "starknet";
+import { getStarkKey } from "@scure/starknet";
 import { describe, expect, it } from "vitest";
 import {
   PRIVATE_RFQ_V2_DOMAIN,
   assertPrivateRfqV2,
   canonicalPrivateRfqV2,
-  createTakerSecret,
   decodePrivateRfqV2,
   digestPrivateRfqV2,
   encodePrivateRfqV2,
@@ -74,6 +72,9 @@ describe("private RFQ v2", () => {
       /must differ/,
     );
     expect(() =>
+      assertPrivateRfqV2(rfq({ takerCommitment: "0x0" })),
+    ).toThrow(/must not be zero/);
+    expect(() =>
       assertPrivateRfqV2(
         rfq({
           sellBucketMinBaseUnits: 2n,
@@ -103,23 +104,29 @@ describe("private RFQ v2", () => {
     expect(() => decodePrivateRfqV2(incomplete)).toThrow(/rfqId is required/);
   });
 
-  it("creates unpredictable canonical secrets with at least 128 bits", () => {
-    const first = createTakerSecret();
-    const second = createTakerSecret();
-    expect(first).toMatch(/^0x[0-9a-f]+$/);
-    expect(BigInt(first)).toBeGreaterThanOrEqual(1n << 128n);
-    expect(BigInt(first)).toBeLessThan(1n << 251n);
-    expect(second).not.toBe(first);
-  });
-
-  it("matches Cairo poseidon_hash_span for a one-element span", () => {
-    const expected =
-      "0x579e8877c7755365d5ec1ec7d3a94a457eff5d1f40482bbe9729c064cdead2";
-    const scure = `0x${poseidonHashMany([1n]).toString(16)}`;
-    const starknet = hash.computePoseidonHashOnElements(["0x1"]);
-    expect(scure).toBe(expected);
-    expect(starknet).toBe(expected);
-    expect(takerCommitmentFor("0x1")).toBe(expected);
-    expect(takerCommitmentFor("1")).toBe(expected);
+  it("keeps the canonical RFQ shape while treating takerCommitment as a public key", () => {
+    const signingKey = "0x456";
+    const expected = getStarkKey(signingKey);
+    expect(takerCommitmentFor(signingKey)).toBe(expected);
+    expect(takerCommitmentFor("1110")).toBe(expected);
+    expect(Object.keys(JSON.parse(canonicalPrivateRfqV2(rfq())))).toEqual([
+      "buyToken",
+      "chainId",
+      "createdAt",
+      "directoryEpoch",
+      "domain",
+      "expiresAt",
+      "lockExpiresAt",
+      "registryRevision",
+      "responseDeadline",
+      "rfqFelt",
+      "rfqId",
+      "sellBucketMaxBaseUnits",
+      "sellBucketMinBaseUnits",
+      "sellToken",
+      "settlementHelper",
+      "takerCommitment",
+      "version",
+    ]);
   });
 });

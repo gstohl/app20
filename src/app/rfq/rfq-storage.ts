@@ -22,7 +22,7 @@ import {
 const DATABASE = "app20-rfq-resume";
 const STORE = "lifecycle";
 const FORBIDDEN_FIELD =
-  /viewing.?key|maker.?secret|capability.?secret|raw.?balance|witness|note.?id|proof|private.?key/i;
+  /viewing.?key|maker.?secret|capability.?secret|raw.?balance|witness|note.?id|proof|private.?key|signing.?key/i;
 const TOMBSTONE_SCHEMA = "app20/rfq-lifecycle-tombstone/v1" as const;
 
 export interface RfqStorageTombstone {
@@ -35,7 +35,7 @@ export interface RfqStorageTombstone {
 type RfqStoredRow = RfqLifecycleRecord | RfqStorageTombstone;
 
 export const RFQ_STORAGE_DISCLOSURE =
-  "Exact RFQ terms, selected quote or lock metadata, public settlement identifiers, attempt status, and the active v3 taker secret are stored in this browser's IndexedDB. The taker secret is removed after Take and from restored backup records. Viewing keys, notes, witnesses, proofs, and raw balances are never stored in RFQ records." as const;
+  "Exact RFQ terms, selected quote or lock metadata, public settlement identifiers, attempt status, and the active v3 taker signing key are stored in this browser's IndexedDB. The signing key is removed when the RFQ becomes terminal and from restored backup records. Viewing keys, unrelated signing keys, notes, witnesses, proofs, and raw balances are never stored in RFQ records." as const;
 
 function canonicalStorageRfqId(chainId: string, rfqId: string): string {
   return isLocalRfqChain(chainId) ? canonicalLocalRfqId(rfqId) : rfqId;
@@ -98,7 +98,9 @@ function assertSafe(value: unknown, path = "record"): void {
   }
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value)) {
-    if (FORBIDDEN_FIELD.test(key)) {
+    const disclosedTakerSigningKey =
+      path === "record" && key === "takerSigningKey";
+    if (FORBIDDEN_FIELD.test(key) && !disclosedTakerSigningKey) {
       throw new Error(
         `RFQ resume storage refuses sensitive field ${path}.${key}.`,
       );
@@ -358,7 +360,7 @@ export function assertRfqStorageReplacement(
     if (
       prior.restoredFromBackup &&
       (replacement.restoredFromBackup !== true ||
-        replacement.takerSecret !== undefined)
+        replacement.takerSigningKey !== undefined)
     ) {
       throw new Error(
         "RFQ storage cannot make a backup-restored record executable.",
@@ -377,13 +379,15 @@ export function assertRfqStorageReplacement(
       "v3 transcript acknowledgements",
     );
     if (
-      prior.takerSecret !== undefined &&
-      prior.takerSecret !== replacement.takerSecret &&
-      replacement.state !== "settled" &&
+      prior.takerSigningKey !== undefined &&
+      prior.takerSigningKey !== replacement.takerSigningKey &&
+      !["settled", "expired", "refused", "cancelled"].includes(
+        replacement.state,
+      ) &&
       replacement.restoredFromBackup !== true
     ) {
       throw new Error(
-        "RFQ storage rejected replacement of the v3 taker secret.",
+        "RFQ storage rejected replacement of the v3 taker signing key.",
       );
     }
   }

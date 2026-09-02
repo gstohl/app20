@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import { MAIL_SCAN_MAX_MESSAGES } from "@/lib/mail-scan";
+import {
+  backupBlobDigest,
+  createBackupPointer,
+  sealBackupBlob,
+} from "@/lib/backup-blob";
+import { createBackupSnapshot } from "@/lib/backup-snapshot";
 import { computeCidV1Raw } from "@/lib/blob-store";
 import { addrSTRK } from "@/utils/constants";
 import type { LocalMailMessage } from "@/components/mail/Thread";
@@ -14,11 +20,26 @@ import {
   mergeDisplayAliases,
   mergeMailMessages,
   newestBackupMessages,
+  loadBackupSnapshotWithFallback,
   parseBlockTimestamp,
   partitionMailboxFolders,
   paymentLinkToLocal,
   sortMailMessages,
 } from "./mailbox-model";
+
+const BACKUP_NOW = 2_000_000_000_000;
+const BACKUP_SEED = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+const BACKUP_CONTEXT = {
+  owner: "0xa11ce",
+  chainId: "SN_SEPOLIA",
+  helperAddress: "0x1234",
+  mailboxFingerprint: "ab".repeat(32),
+};
+const BACKUP_AUTH = {
+  mailboxSeed: BACKUP_SEED,
+  context: BACKUP_CONTEXT,
+  now: BACKUP_NOW,
+};
 
 const emptyRecord: EncryptedMailRecord = {
   ephemeralPub: ["0x1", "0x2"],
@@ -52,13 +73,43 @@ function backupPointerMessage(
   return textMessage(id, {
     localCreatedAt,
     envelope: decodeEnvelope(
-      encodeEnvelope("backup_pointer", {
-        kind,
-        seq,
-        cid: computeCidV1Raw(Uint8Array.of(1, 2, 3)),
-        bucketBytes: 4_096,
-        blobDigest: "00".repeat(32),
-      }),
+      encodeEnvelope(
+        "backup_pointer",
+        createBackupPointer({
+          ...BACKUP_CONTEXT,
+          mailboxSeed: BACKUP_SEED,
+          kind,
+          seq,
+          cid: computeCidV1Raw(Uint8Array.of(seq & 0xff, 2, 3)),
+          bucketBytes: 4_096,
+          blobDigest: "00".repeat(32),
+        }),
+      ),
+    ),
+  });
+}
+
+function backupSnapshotMessage(
+  id: string,
+  kind: "contacts" | "rfq-resume",
+  seq: number,
+  localCreatedAt: number,
+): LocalMailMessage {
+  return textMessage(id, {
+    localCreatedAt,
+    envelope: decodeEnvelope(
+      encodeEnvelope(
+        "backup_snapshot",
+        createBackupSnapshot({
+          ...BACKUP_CONTEXT,
+          mailboxSeed: BACKUP_SEED,
+          kind,
+          seq,
+          now: BACKUP_NOW,
+          payload:
+            kind === "contacts" ? { entries: [] } : { count: 0, records: [] },
+        }),
+      ),
     ),
   });
 }
@@ -141,20 +192,196 @@ describe("mailbox list model", () => {
     expect(merged[0]?.id).toBe("overflow");
   });
 
-  it("shows only the newest loaded backup sequence per kind", () => {
-    const newestContacts = backupPointerMessage("contacts-2", "contacts", 2, 2);
-    const visible = newestBackupMessages([
-      backupPointerMessage("contacts-1", "contacts", 1, 3),
-      newestContacts,
-      backupPointerMessage("rfq-1", "rfq-resume", 1, 1),
-      textMessage("letter", { localCreatedAt: 4 }),
-    ]);
-    expect(visible.map((message) => message.id)).toEqual([
-      "letter",
+  it("keeps the newest three authenticated sequences per backup kind", () => {
+    const newestContacts = backupPointerMessage("contacts-4", "contacts", 4, 2);
+    const candidates = newestBackupMessages(
+      [
+        backupPointerMessage("contacts-1", "contacts", 1, 5),
+        backupPointerMessage("contacts-2", "contacts", 2, 4),
+        backupSnapshotMessage("contacts-3", "contacts", 3, 3),
+        newestContacts,
+        backupPointerMessage("rfq-1", "rfq-resume", 1, 1),
+        textMessage("letter", { localCreatedAt: 6 }),
+      ],
+      BACKUP_AUTH,
+    );
+    expect(candidates.map((message) => message.id)).toEqual([
+      "contacts-4",
+      "contacts-3",
       "contacts-2",
       "rfq-1",
     ]);
     expect(mailboxMatchesFilter(newestContacts, "letters")).toBe(true);
+  });
+
+  it("ignores tampered high-sequence pointers and inline snapshots before ranking", () => {
+    const authentic = backupSnapshotMessage("authentic", "contacts", 7, 1);
+    const pointer = backupPointerMessage("pointer", "contacts", 8, 2);
+    const snapshot = backupSnapshotMessage("snapshot", "contacts", 9, 3);
+    const tamperedPointer = {
+      ...pointer,
+      id: "tampered-pointer",
+      envelope: decodeEnvelope(
+        encodeEnvelope("backup_pointer", {
+          ...(pointer.envelope.payload as Record<string, unknown>),
+          seq: 0xffff_ffff,
+        }),
+      ),
+    };
+    const tamperedSnapshot = {
+      ...snapshot,
+      id: "tampered-snapshot",
+      envelope: decodeEnvelope(
+        encodeEnvelope("backup_snapshot", {
+          ...(snapshot.envelope.payload as Record<string, unknown>),
+          seq: 0xffff_fffe,
+        }),
+      ),
+    };
+
+    expect(
+      newestBackupMessages(
+        [tamperedPointer, tamperedSnapshot, authentic],
+        BACKUP_AUTH,
+      ).map((message) => message.id),
+    ).toEqual(["authentic"]);
+  });
+
+  it("opens an authenticated pointer and verifies its nested snapshot", async () => {
+    const snapshot = createBackupSnapshot({
+      ...BACKUP_CONTEXT,
+      mailboxSeed: BACKUP_SEED,
+      kind: "contacts",
+      seq: 12,
+      now: BACKUP_NOW,
+      payload: { entries: [] },
+    });
+    const inline = encodeEnvelope("backup_snapshot", snapshot);
+    const blob = await sealBackupBlob({
+      mailboxSeed: BACKUP_SEED,
+      owner: BACKUP_CONTEXT.owner,
+      chainId: BACKUP_CONTEXT.chainId,
+      kind: "contacts",
+      seq: 12,
+      bytes: inline,
+    });
+    const cid = computeCidV1Raw(blob);
+    const pointer = textMessage("pointer", {
+      envelope: decodeEnvelope(
+        encodeEnvelope(
+          "backup_pointer",
+          createBackupPointer({
+            ...BACKUP_CONTEXT,
+            mailboxSeed: BACKUP_SEED,
+            kind: "contacts",
+            seq: 12,
+            cid,
+            bucketBytes: blob.length,
+            blobDigest: backupBlobDigest(blob),
+          }),
+        ),
+      ),
+    });
+
+    const loaded = await loadBackupSnapshotWithFallback([pointer], {
+      ...BACKUP_AUTH,
+      kind: "contacts",
+      loadBlob: async (requestedCid) => {
+        expect(requestedCid).toBe(cid);
+        return blob;
+      },
+    });
+
+    expect(loaded.message.id).toBe("pointer");
+    expect(loaded.snapshot).toEqual(snapshot);
+    expect(loaded.failures).toEqual([]);
+  });
+
+  it("does zero blob fetches for a flood of forged pointers", async () => {
+    const authentic = backupSnapshotMessage("authentic", "contacts", 1, 1);
+    const forged = Array.from({ length: 100 }, (_, index) =>
+      textMessage(`forged-${index}`, {
+        localCreatedAt: index + 2,
+        envelope: decodeEnvelope(
+          encodeEnvelope("backup_pointer", {
+            kind: "contacts",
+            seq: 0xffff_ffff - index,
+            cid: computeCidV1Raw(Uint8Array.of(index, 2, 3)),
+            bucketBytes: 4_096,
+            blobDigest: "00".repeat(32),
+            mac: "00".repeat(32),
+          }),
+        ),
+      }),
+    );
+    let fetches = 0;
+    const loaded = await loadBackupSnapshotWithFallback(
+      [...forged, authentic],
+      {
+        ...BACKUP_AUTH,
+        kind: "contacts",
+        loadBlob: async () => {
+          fetches += 1;
+          throw new Error("must not fetch");
+        },
+      },
+    );
+
+    expect(loaded.snapshot.seq).toBe(1);
+    expect(loaded.failures).toEqual([]);
+    expect(fetches).toBe(0);
+  });
+
+  it("falls back after unavailable and corrupt authenticated pointers", async () => {
+    const unavailable = backupPointerMessage("unavailable", "contacts", 4, 4);
+    const corrupt = backupPointerMessage("corrupt", "contacts", 3, 3);
+    const fallback = backupSnapshotMessage("fallback", "contacts", 2, 2);
+    let fetches = 0;
+    const loaded = await loadBackupSnapshotWithFallback(
+      [fallback, corrupt, unavailable],
+      {
+        ...BACKUP_AUTH,
+        kind: "contacts",
+        loadBlob: async () => {
+          fetches += 1;
+          if (fetches === 1) throw new Error("blob unavailable");
+          return new Uint8Array(4_096);
+        },
+      },
+    );
+
+    expect(fetches).toBe(2);
+    expect(loaded.message.id).toBe("fallback");
+    expect(loaded.snapshot.seq).toBe(2);
+    expect(loaded.failures).toHaveLength(2);
+    expect(loaded.failures[0]).toEqual({
+      messageId: "unavailable",
+      seq: 4,
+      reason: "blob unavailable",
+    });
+    expect(loaded.failures[1]).toMatchObject({
+      messageId: "corrupt",
+      seq: 3,
+    });
+    expect(loaded.failures[1]?.reason).toMatch(/does not match/i);
+  });
+
+  it("never fetches more than three authenticated candidates per kind", async () => {
+    const candidates = [4, 3, 2, 1].map((seq) =>
+      backupPointerMessage(`pointer-${seq}`, "contacts", seq, seq),
+    );
+    let fetches = 0;
+    await expect(
+      loadBackupSnapshotWithFallback(candidates, {
+        ...BACKUP_AUTH,
+        kind: "contacts",
+        loadBlob: async () => {
+          fetches += 1;
+          throw new Error("unavailable");
+        },
+      }),
+    ).rejects.toThrow(/3 authenticated backup candidates/i);
+    expect(fetches).toBe(3);
   });
 
   it("partitions inbox and sent in one pass", () => {

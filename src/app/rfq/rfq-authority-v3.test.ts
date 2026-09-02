@@ -41,8 +41,8 @@ function settledV3() {
     },
     bucket: { min: "50", max: "100" },
     takerCommitment:
-      "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-    takerSecret: "0x66",
+      "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+    takerSigningKey: "0x66",
     fills: [
       {
         makerId: "maker-a",

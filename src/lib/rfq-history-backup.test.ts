@@ -44,17 +44,24 @@ class MemoryPreferences {
 }
 
 describe("RFQ history backup adapter", () => {
-  it("exports lifecycle rows and recursively strips takerSecret", async () => {
+  it("exports lifecycle rows and recursively strips taker authorization secrets", async () => {
     const unsafe = {
       ...record("rfq-1"),
-      takerSecret: "0xsecret",
-      extension: { takerSecret: "nested", safe: true },
+      takerSecret: "0xlegacy",
+      takerSigningKey: "0xsigning",
+      extension: {
+        takerSecret: "nested-legacy",
+        takerSigningKey: "nested-signing",
+        safe: true,
+      },
     } as unknown as RfqLifecycleRecord;
     const list = vi.fn(async () => [unsafe]);
     const exported = await exportRfqHistory({ list }, CHAIN, ACCOUNT);
 
     expect(exported.count).toBe(1);
-    expect(JSON.stringify(exported)).not.toContain("takerSecret");
+    expect(JSON.stringify(exported)).not.toMatch(
+      /takerSecret|takerSigningKey|nested-signing/,
+    );
     expect(exported.records[0]).toMatchObject({
       rfqId: "rfq-1",
       state: "draft",

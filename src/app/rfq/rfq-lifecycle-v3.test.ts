@@ -1,3 +1,4 @@
+import { fillsDigest } from "@app20/private-intents";
 import { describe, expect, it } from "vitest";
 import {
   beginRfqPhaseAttempt,
@@ -46,8 +47,8 @@ function reviewing(): RfqLifecycleRecord {
     },
     bucket: { min: "50", max: "100" },
     takerCommitment:
-      "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-    takerSecret: "0x66",
+      "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+    takerSigningKey: "0x66",
     fills: [
       {
         makerId: "maker-a",
@@ -94,7 +95,7 @@ describe("RFQ lifecycle v3", () => {
       terms: selected.terms,
       bucket: selected.bucket,
       takerCommitment: selected.takerCommitment,
-      takerSecret: selected.takerSecret,
+      takerSigningKey: selected.takerSigningKey,
     });
     expect(requesting).not.toHaveProperty("fills");
     expect(
@@ -140,8 +141,43 @@ describe("RFQ lifecycle v3", () => {
       takeTransactionHash: "0xabc",
       attempts: { take: { state: "confirmed" } },
     });
-    expect(settled).not.toHaveProperty("takerSecret");
+    expect(settled).not.toHaveProperty("takerSigningKey");
     expect(settled.attempts).not.toHaveProperty("funding");
+  });
+
+  it("quarantines a Take whose digest or LockTaken composition changed", () => {
+    const unknown = submitted();
+    const exactDigest = fillsDigest([{ lockId: "0x41", amountA: 100n }]);
+    const observed = {
+      tokenA: "0x1",
+      totalA: 100n,
+      tokenB: "0x2",
+      totalB: 200n,
+      fillCount: 1,
+      fillsDigest: exactDigest,
+      lockTaken: [{ lockId: "0x41", amountA: 100n }],
+    };
+    expect(confirmRfqV3Take(unknown, observed, NOW + 3).state).toBe("settled");
+    expect(
+      confirmRfqV3Take(
+        unknown,
+        { ...observed, fillsDigest: "0x123" },
+        NOW + 3,
+      ),
+    ).toMatchObject({
+      state: "quarantined",
+      reason: expect.stringMatching(/fill composition/i),
+    });
+    expect(
+      confirmRfqV3Take(
+        unknown,
+        {
+          ...observed,
+          lockTaken: [{ lockId: "0x42", amountA: 100n }],
+        },
+        NOW + 3,
+      ).state,
+    ).toBe("quarantined");
   });
 
   it("settles a hashless wallet-boundary attempt only after the exact Take read", () => {
@@ -185,36 +221,89 @@ describe("RFQ lifecycle v3", () => {
     ).toBe("settled");
   });
 
-  it("returns to review only after an exact reverted Take", () => {
+  it("closes an RFQ and deletes its key after an on-chain reverted Take", () => {
     const reverted = revertRfqV3Take(submitted(), NOW + 3);
     expect(reverted).toMatchObject({
-      state: "reviewing",
-      takerSecret: "0x66",
+      state: "expired",
+      reason: "take-reverted",
       attempts: { take: { state: "reverted" } },
     });
+    expect(reverted).not.toHaveProperty("takerSigningKey");
     expect(() =>
       transitionRfqLifecycle(submitted(), "reviewing", NOW + 3),
-    ).toThrow(/proven reverted Take/i);
+    ).toThrow(/cannot return to review/i);
     expect(() =>
       transitionRfqLifecycle(submitted(), "funded", NOW + 3),
     ).toThrow(/legacy funded/i);
-    expect(lifecycleMaySubmit(reverted, NOW + 4)).toBe(true);
-    expect(lifecycleMaySubmit(reverted, NOW + 60)).toBe(false);
+    expect(lifecycleMaySubmit(reverted, NOW + 4)).toBe(false);
+    expect(
+      restoreRfqLifecycle(structuredClone(reverted), {
+        chainId: reverted.chainId,
+        account: reverted.account,
+        now: NOW + 4,
+      }),
+    ).toMatchObject({ state: "expired", reason: "take-reverted" });
+    expect(() =>
+      beginRfqPhaseAttempt(
+        reverted,
+        "take",
+        "take-2",
+        NOW + 4,
+        takeAttemptTargetFromLifecycle(reverted),
+      ),
+    ).toThrow(/cannot begin|unavailable/i);
+  });
+
+  it("allows a new deliberate attempt only when pre-wallet submission was disproved", () => {
+    const base = reviewing();
+    const preparing = beginRfqPhaseAttempt(
+      base,
+      "take",
+      "take-not-submitted",
+      NOW + 1,
+      takeAttemptTargetFromLifecycle(base),
+    );
+    const unproven = updateRfqPhaseAttempt(
+      preparing,
+      "take",
+      "reverted",
+      NOW + 2,
+    );
+    expect(lifecycleMaySubmit(unproven, NOW + 3)).toBe(false);
+    expect(() =>
+      beginRfqPhaseAttempt(
+        unproven,
+        "take",
+        "take-unproven",
+        NOW + 3,
+        takeAttemptTargetFromLifecycle(unproven),
+      ),
+    ).toThrow(/proven not submitted/i);
+    const disproved = updateRfqPhaseAttempt(
+      preparing,
+      "take",
+      "reverted",
+      NOW + 2,
+      {
+        walletBoundary: "not-entered",
+        observation: "Take was proven not submitted before wallet entry.",
+      },
+    );
+    expect(lifecycleMaySubmit(disproved, NOW + 3)).toBe(true);
     const retry = beginRfqPhaseAttempt(
-      reverted,
+      disproved,
       "take",
       "take-2",
-      NOW + 4,
-      takeAttemptTargetFromLifecycle(reverted),
+      NOW + 3,
+      takeAttemptTargetFromLifecycle(disproved),
     );
     expect(retry.attempts.take).toMatchObject({
       attemptId: "take-2",
       state: "preparing",
     });
-    expect(retry).not.toHaveProperty("takeTransactionHash");
   });
 
-  it("restores backup rows without the execution secret", () => {
+  it("restores backup rows without the taker signing key", () => {
     const source = reviewing();
     const restored = restoreRfqLifecycle(structuredClone(source), {
       chainId: source.chainId,
@@ -227,9 +316,9 @@ describe("RFQ lifecycle v3", () => {
       state: "reviewing",
       restoredFromBackup: true,
       takerCommitment:
-        "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+        "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
     });
-    expect(restored).not.toHaveProperty("takerSecret");
+    expect(restored).not.toHaveProperty("takerSigningKey");
     expect(() =>
       beginRfqPhaseAttempt(
         restored,
@@ -238,7 +327,7 @@ describe("RFQ lifecycle v3", () => {
         NOW + 2,
         takeAttemptTargetFromLifecycle(restored),
       ),
-    ).toThrow(/verification-only/i);
+    ).toThrow(/signing authority|verification-only/i);
   });
 
   it("quarantines a restored row whose exact fill totals changed", () => {

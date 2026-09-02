@@ -1,6 +1,6 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
-import { poseidonHashMany } from "@scure/starknet";
 import { PrivateIntentError, type StarknetPool } from "./index.ts";
+import { takerPublicKeyFor } from "./take-signature.ts";
 
 export const PRIVATE_RFQ_V2_DOMAIN = "app20/private-rfq/v2" as const;
 
@@ -9,6 +9,7 @@ export type PrivateRfqV2 = Readonly<{
   domain: typeof PRIVATE_RFQ_V2_DOMAIN;
   rfqId: string;
   rfqFelt: string;
+  /** Stark-curve public-key x-coordinate used to authorize the exact Take. */
   takerCommitment: string;
   chainId: StarknetPool;
   registryRevision: string;
@@ -174,7 +175,7 @@ function canonicalBody(rfq: PrivateRfqV2) {
     sellBucketMinBaseUnits: sellBucketMinBaseUnits.toString(),
     sellToken,
     settlementHelper: requireFelt(rfq.settlementHelper, "settlementHelper"),
-    takerCommitment: requireFelt(rfq.takerCommitment, "takerCommitment", true),
+    takerCommitment: requireFelt(rfq.takerCommitment, "takerCommitment"),
     version: rfq.version,
   };
 }
@@ -203,19 +204,9 @@ export async function digestPrivateRfqV2(rfq: PrivateRfqV2): Promise<string> {
   return sha256Hex(canonicalPrivateRfqV2(rfq));
 }
 
-export function createTakerSecret(): string {
-  for (;;) {
-    const bytes = crypto.getRandomValues(new Uint8Array(32));
-    bytes[0] &= 0x07;
-    const secret = BigInt(`0x${bytesToHex(bytes)}`);
-    if (secret >= 1n << 128n) return `0x${secret.toString(16)}`;
-  }
-}
-
-export function takerCommitmentFor(secret: string): string {
-  const canonical = requireFelt(secret, "takerSecret");
-  const commitment = poseidonHashMany([BigInt(canonical)]);
-  return `0x${commitment.toString(16)}`;
+/** Compatibility name; RFQ v2 now carries the derived Stark public key. */
+export function takerCommitmentFor(signingKey: string): string {
+  return takerPublicKeyFor(signingKey);
 }
 
 export function encodePrivateRfqV2(rfq: PrivateRfqV2): PrivateRfqV2Wire {

@@ -4,10 +4,7 @@ import {
   Strk20WalletSubmissionUnknownError,
   submitActions,
 } from "@/lib/strk20";
-import {
-  LocalnetTakeKnownNotSubmittedError,
-  runLocalnetTakeOrchestration,
-} from "./localnet-take-orchestration";
+import { runLocalnetTakeOrchestration } from "./localnet-take-orchestration";
 
 const target = Object.freeze({ dealId: "0x77" });
 
@@ -104,7 +101,10 @@ describe("localnet Take orchestration", () => {
           },
         }),
       ),
-    ).rejects.toBeInstanceOf(LocalnetTakeKnownNotSubmittedError);
+    ).rejects.toMatchObject({
+      name: "LocalnetTakeKnownNotSubmittedError",
+      disposition: "lease-abandoned",
+    });
     expect(abandonLease).toHaveBeenCalledWith(target, "take-exact");
 
     const account = {

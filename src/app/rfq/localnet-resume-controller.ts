@@ -126,19 +126,32 @@ export function localnetResumeDecision(
       );
     }
     if (record.state === "reviewing") {
-      if (record.restoredFromBackup || !record.takerSecret) {
+      if (record.restoredFromBackup || !record.takerSigningKey) {
         return decision(
           "none",
           "Verify-only restored RFQ",
-          "The restored record intentionally carries no taker secret and cannot submit a Take.",
+          "The restored record intentionally carries no taker signing key and cannot submit a Take.",
+          true,
+        );
+      }
+      const priorTake = record.attempts.take;
+      const safeRetry =
+        priorTake?.state === "reverted" &&
+        priorTake.walletBoundary === "not-entered" &&
+        !priorTake.transactionHash;
+      if (priorTake?.state === "reverted" && !safeRetry) {
+        return decision(
+          "none",
+          "Take retry unavailable",
+          "The prior Take lacks proof that submission stopped before wallet entry. Verify or close this RFQ; do not retry it.",
           true,
         );
       }
       return decision(
         "take",
-        record.attempts.take?.state === "reverted" ? "Retry Take" : "Take",
-        record.attempts.take?.state === "reverted"
-          ? "The prior exact transaction was proven reverted; a new deliberate Take attempt may be created."
+        safeRetry ? "Retry Take" : "Take",
+        safeRetry
+          ? "The prior attempt was proven not submitted before wallet entry; a new deliberate Take attempt may be created."
           : "Submit the reviewed exact fills atomically from the open maker locks.",
       );
     }
@@ -147,6 +160,14 @@ export function localnetResumeDecision(
         "none",
         "Complete",
         "The exact Take is settled; no further value action is available.",
+        true,
+      );
+    }
+    if (record.state === "expired" && record.reason === "take-reverted") {
+      return decision(
+        "none",
+        "Reverted Take · RFQ closed",
+        "The Take reached the wallet boundary and reverted. Its authorization key is retired; start a new RFQ instead of resubmitting.",
         true,
       );
     }

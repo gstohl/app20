@@ -42,7 +42,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function stripTakerSecret(
+function stripTakerAuthorizationSecrets(
   value: unknown,
   ancestors = new Set<object>(),
   path = "record",
@@ -70,7 +70,7 @@ function stripTakerSecret(
   try {
     if (Array.isArray(value)) {
       return value.map((child, index) =>
-        stripTakerSecret(child, ancestors, `${path}[${index}]`),
+        stripTakerAuthorizationSecrets(child, ancestors, `${path}[${index}]`),
       );
     }
     const prototype = Object.getPrototypeOf(value);
@@ -79,10 +79,12 @@ function stripTakerSecret(
     }
     return Object.fromEntries(
       Object.entries(value)
-        .filter(([key]) => key !== "takerSecret")
+        .filter(
+          ([key]) => key !== "takerSecret" && key !== "takerSigningKey",
+        )
         .map(([key, child]) => [
           key,
-          stripTakerSecret(child, ancestors, `${path}.${key}`),
+          stripTakerAuthorizationSecrets(child, ancestors, `${path}.${key}`),
         ]),
     );
   } finally {
@@ -170,7 +172,10 @@ export async function exportRfqHistory(
   }
   const now = unixSeconds();
   const records = rows.map((row) => {
-    const restored = restoreBackupRow(stripTakerSecret(row), now);
+    const restored = restoreBackupRow(
+      stripTakerAuthorizationSecrets(row),
+      now,
+    );
     if (
       restored.chainId !== normalizedChain ||
       restored.account !== normalizedAccount
@@ -237,7 +242,7 @@ export async function importRfqHistory(
   const incoming = parsed.records.map((row) => ({
     identity: sourceIdentity(row),
     record: markRestoredVerifyOnly(
-      restoreBackupRow(stripTakerSecret(row), now),
+      restoreBackupRow(stripTakerAuthorizationSecrets(row), now),
       now,
     ),
   }));
