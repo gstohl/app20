@@ -3,13 +3,15 @@ import { readLocalnetRfqOperationsStatus } from "./localnet-private-intents";
 import {
   operationsAvailability,
   shouldPublishOperationsClock,
+  synchronizeOperationsRefresh,
   type OperationsAvailability,
   type RfqOperationsStatus,
 } from "./rfq-operations";
 
 export function useRfqOperations(): OperationsAvailability {
-  const [status, setStatus] = useState<RfqOperationsStatus | null>(null);
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1_000));
+  const [snapshot, setSnapshot] = useState(() =>
+    synchronizeOperationsRefresh(null, Math.floor(Date.now() / 1_000)),
+  );
 
   useEffect(() => {
     let active = true;
@@ -22,12 +24,16 @@ export function useRfqOperations(): OperationsAvailability {
       try {
         const next = await readLocalnetRfqOperationsStatus();
         if (!active) return;
+        const observedNow = Math.floor(Date.now() / 1_000);
         currentStatus = next;
-        setStatus(next);
+        currentNow = observedNow;
+        setSnapshot(synchronizeOperationsRefresh(next, observedNow));
       } catch {
         if (!active) return;
         currentStatus = null;
-        setStatus(null);
+        setSnapshot((current) =>
+          synchronizeOperationsRefresh(null, current.now),
+        );
       } finally {
         refreshing = false;
       }
@@ -39,7 +45,7 @@ export function useRfqOperations(): OperationsAvailability {
       if (!shouldPublishOperationsClock(currentStatus, currentNow, nextNow))
         return;
       currentNow = nextNow;
-      setNow(nextNow);
+      setSnapshot(synchronizeOperationsRefresh(currentStatus, nextNow));
     }, 1_000);
     return () => {
       active = false;
@@ -48,5 +54,5 @@ export function useRfqOperations(): OperationsAvailability {
     };
   }, []);
 
-  return operationsAvailability(status, now);
+  return operationsAvailability(snapshot.status, snapshot.now);
 }

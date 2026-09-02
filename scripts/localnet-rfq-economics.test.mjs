@@ -208,13 +208,24 @@ test("maker schedules use the fixed localnet prices, shapes, tier, and inventory
   });
   assert.ok(capped.aMax < 2_500_000n);
   assert.ok(capped.maxB <= 600_000_000_000_000_000n);
+  const cappedBeforeTier = buildLocalnetMakerSchedule({
+    maker: "B",
+    direction: "USDC_STRK",
+    bucketMinBaseUnits: 1_000_000n,
+    bucketMaxBaseUnits: 2_500_000n,
+    availableBuyBaseUnits: 500_000_000_000_000_000n,
+  });
+  assert.equal(cappedBeforeTier.schedule.length, 2);
+  assert.equal(cappedBeforeTier.schedule[0].a, 1_000_000n);
+  assert.ok(cappedBeforeTier.aMax < 1_750_000n);
+  assert.ok(cappedBeforeTier.maxB <= 500_000_000_000_000_000n);
   assert.equal(
     buildLocalnetMakerSchedule({
       maker: "B",
       direction: "USDC_STRK",
       bucketMinBaseUnits: 1_000_000n,
       bucketMaxBaseUnits: 2_500_000n,
-      availableBuyBaseUnits: 500_000_000_000_000_000n,
+      availableBuyBaseUnits: 490_000_000_000_000_000n,
     }),
     null,
   );

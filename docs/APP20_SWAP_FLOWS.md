@@ -102,7 +102,7 @@ The sketch intended to avoid directly reusing the Ready address as the funder ad
 
 ---
 
-## 3. What does *not* break the link
+## 3. What does _not_ break the link
 
 ```mermaid
 flowchart LR
@@ -245,10 +245,14 @@ there is no v3 taker claim ticket, maker fill wait, or taker timeout/refund.
 After expiry, each maker spends its two-unit `LockTicket` one unit at a time to
 pull earned token A and unused token B.
 
-The request is size-blind, but settlement is not. `LockCreated` publicly exposes
-tokens, expiry, collateral maximum, and the complete schedule; Take helper
-calldata carries the `takerSecret` commitment preimage; `LockTaken` exposes each
-exact fill; and `DealTaken` exposes exact aggregate A/B totals and fill count. The full fair-loss transcript sent after selection also includes
+The request is size-blind, but settlement is not. `takerCommitment` is the
+retained wire name for the ephemeral taker Stark public key. `LockCreated`
+publicly exposes that key, tokens, expiry, collateral maximum, and the complete
+schedule; Take calldata exposes the signature and ordered fills; `LockTaken`
+exposes each exact fill; and `DealTaken` exposes exact aggregate A/B totals,
+fill count, and ordered `fillsDigest`. The signed message cannot bind the
+output-note owner through the current pool API, leaving a relayer/sequencer
+copy-sniping race. The full fair-loss transcript sent after selection also includes
 winning `amountA` allocations, so invited makers can infer exact size by
 summing them even though the request and transcript have no dedicated
 `exactSellAmount` field.
@@ -260,11 +264,10 @@ external price feed. CoinGecko remains a separate browser opt-in. Public pool
 deposit events provide only a ten-block note-maturity estimate and cannot see
 notes received by private transfer.
 
-A localnet USDC invoice can hand off to the RFQ data path for STRK→USDC sizing,
-then wait until the Take output note reaches `takeBlock + 10` before Mail sends
-the exact USDC payment. The current `/rfq` presentation still runs the legacy
-v1 flow and does not consume this handoff or submit v3 Take, so this complete
-invoice journey and the v3 desk controls remain unwired.
+A localnet USDC invoice hands off to the mounted RFQ v3 desk for STRK→USDC
+sizing against verified mids and schedules. The desk records the confirmed Take
+and returns to Mail, which waits until the output note reaches `takeBlock + 10`
+before sending the exact USDC payment.
 
 This is a maker-principal collateralized RFQ, not atomic two-taker crossing.
 Operational netting remains a fail-closed policy model, and public hedges or

@@ -1,6 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 
+export const LOCALNET_IPFS_HOST = "127.0.0.1";
+export const LOCALNET_IPFS_PORT = 5054;
+
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 const DEFAULT_MAX_TOTAL_BYTES = 8 * 1024 * 1024;
 const DEFAULT_MAX_OBJECTS = 64;
@@ -105,9 +108,10 @@ async function requestBytes(request, maxBytes, timeoutMs) {
 
 function multipartPayload(request, bytes) {
   const contentType = request.headers["content-type"] ?? "";
-  const match = /^multipart\/form-data;\s*boundary=(?:"([^"]+)"|([^;\s]+))$/i.exec(
-    contentType,
-  );
+  const match =
+    /^multipart\/form-data;\s*boundary=(?:"([^"]+)"|([^;\s]+))$/i.exec(
+      contentType,
+    );
   const boundary = match?.[1] ?? match?.[2];
   if (!boundary || boundary.length > 200) {
     const error = new Error("Localnet IPFS add requires multipart/form-data.");
@@ -143,8 +147,8 @@ function json(response, status, value, extraHeaders = {}) {
 }
 
 export function createLocalnetIpfsServer({
-  host = "127.0.0.1",
-  port = 5054,
+  host = LOCALNET_IPFS_HOST,
+  port = LOCALNET_IPFS_PORT,
   controlToken,
   expectedOrigin,
   maxBytes = DEFAULT_MAX_BYTES,
@@ -160,12 +164,16 @@ export function createLocalnetIpfsServer({
   if (host !== "127.0.0.1")
     throw new Error("The localnet IPFS emulator must bind to 127.0.0.1.");
   if (typeof controlToken !== "string" || Buffer.byteLength(controlToken) < 32)
-    throw new Error("The localnet IPFS emulator requires a per-run control token.");
+    throw new Error(
+      "The localnet IPFS emulator requires a per-run control token.",
+    );
   let parsedOrigin;
   try {
     parsedOrigin = new URL(expectedOrigin);
   } catch {
-    throw new Error("The localnet IPFS emulator requires the loopback app origin.");
+    throw new Error(
+      "The localnet IPFS emulator requires the loopback app origin.",
+    );
   }
   if (
     parsedOrigin.origin !== expectedOrigin ||
@@ -173,8 +181,11 @@ export function createLocalnetIpfsServer({
     parsedOrigin.hostname !== "127.0.0.1" ||
     !parsedOrigin.port
   )
-    throw new Error("The localnet IPFS emulator requires the loopback app origin.");
-  if (typeof now !== "function") throw new Error("Localnet IPFS clock is invalid.");
+    throw new Error(
+      "The localnet IPFS emulator requires the loopback app origin.",
+    );
+  if (typeof now !== "function")
+    throw new Error("Localnet IPFS clock is invalid.");
   positiveInteger(maxBytes, "Localnet IPFS object limit");
   positiveInteger(maxTotalBytes, "Localnet IPFS aggregate limit");
   positiveInteger(maxObjects, "Localnet IPFS object-count limit");
@@ -184,7 +195,9 @@ export function createLocalnetIpfsServer({
   positiveInteger(maxUploadsPerWindow, "Localnet IPFS upload rate");
   positiveInteger(requestTimeoutMs, "Localnet IPFS request timeout");
   if (maxBytes > maxTotalBytes)
-    throw new Error("The localnet IPFS object limit cannot exceed its aggregate limit.");
+    throw new Error(
+      "The localnet IPFS object limit cannot exceed its aggregate limit.",
+    );
 
   const blobs = new Map();
   const metadata = new Map();
@@ -216,7 +229,10 @@ export function createLocalnetIpfsServer({
     pruneExpired(timestamp);
     const existing = blobs.get(cid);
     if (existing) {
-      metadata.set(cid, { createdAt: metadata.get(cid).createdAt, lastAccess: timestamp });
+      metadata.set(cid, {
+        createdAt: metadata.get(cid).createdAt,
+        lastAccess: timestamp,
+      });
       return;
     }
     while (
@@ -225,7 +241,9 @@ export function createLocalnetIpfsServer({
     ) {
       const evicted = leastRecentlyUsed();
       if (!evicted) {
-        const error = new Error("Localnet IPFS aggregate capacity is unavailable.");
+        const error = new Error(
+          "Localnet IPFS aggregate capacity is unavailable.",
+        );
         error.status = 429;
         throw error;
       }
@@ -281,7 +299,11 @@ export function createLocalnetIpfsServer({
           }
           const cid = computeLocalnetRawCidV1(payload);
           store(cid, payload, timestamp);
-          json(response, 200, { Name: "blob", Hash: cid, Size: String(payload.length) });
+          json(response, 200, {
+            Name: "blob",
+            Hash: cid,
+            Size: String(payload.length),
+          });
         } finally {
           activeUploads -= 1;
         }

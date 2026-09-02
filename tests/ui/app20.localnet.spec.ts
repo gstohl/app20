@@ -8,7 +8,9 @@ import {
   expectNoHorizontalOverflow,
   localnetIdentity,
   newIsolatedLocalnetContext,
+  primeLocalnetMailSeed,
   readStorageSnapshot,
+  restoreLocalnetMailRandomness,
   test,
   type LocalnetConfig,
   type LocalnetIdentityId,
@@ -54,7 +56,12 @@ async function switchIdentity(
   );
 }
 
-async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
+async function registerNewKey(
+  page: Page,
+  identity: LocalnetIdentityId,
+  name: string,
+  testInfo: TestInfo,
+) {
   const setup = page.getByRole("button", {
     name: "Load device key & register",
   });
@@ -62,7 +69,12 @@ async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
     await page.getByRole("button", { name: "Compose", exact: true }).click();
   }
   await expect(setup).toBeVisible();
-  await setup.click();
+  const expectedBackup = await primeLocalnetMailSeed(page, identity);
+  try {
+    await setup.click();
+  } finally {
+    expect(await restoreLocalnetMailRandomness(page)).toBe(true);
+  }
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
@@ -70,7 +82,7 @@ async function registerNewKey(page: Page, name: string, testInfo: TestInfo) {
   const backup = (
     await backupHeading.locator("..").locator("code").innerText()
   ).trim();
-  expect(backup).toMatch(/^(?:[0-9a-f]{8} ){7}[0-9a-f]{8}$/);
+  expect(backup).toBe(expectedBackup);
   await screenshot(page, name, testInfo);
   const acknowledge = page.getByRole("button", {
     name: "I saved the backup — open mailbox",
@@ -241,6 +253,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   } else {
     sharedBobBackup = await registerNewKey(
       page,
+      "bob",
       "standalone-mail-identity-backup",
       testInfo,
     );
@@ -341,6 +354,7 @@ test("all APP20 localnet journeys", async ({
   localnetConfig: config,
 }, testInfo) => {
   test.setTimeout(15 * 60_000);
+  page.setDefaultTimeout(60_000);
   const alice = localnetIdentity(config, "alice");
   const bob = localnetIdentity(config, "bob");
   const compositeBody =
@@ -355,6 +369,7 @@ test("all APP20 localnet journeys", async ({
     await switchIdentity(page, config, "alice");
     const aliceBackup = await registerNewKey(
       page,
+      "alice",
       "01-alice-one-time-backup",
       testInfo,
     );
@@ -367,6 +382,7 @@ test("all APP20 localnet journeys", async ({
     } else {
       sharedBobBackup = await registerNewKey(
         page,
+        "bob",
         "02-bob-one-time-backup",
         testInfo,
       );
@@ -401,7 +417,7 @@ test("all APP20 localnet journeys", async ({
     await expect(backupContacts).toBeEnabled({ timeout: 60_000 });
     await backupContacts.click();
     await expect(
-      page.getByText(/Encrypted 1-contact snapshot posted/),
+      page.getByText(/1 contact backed up inline in 0x/),
     ).toBeVisible({ timeout: 60_000 });
 
     await page.getByRole("link", { name: "Counterparties" }).click();
@@ -427,7 +443,7 @@ test("all APP20 localnet journeys", async ({
     page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Merge verified contacts" }).click();
     await expect(
-      page.getByText(/Authenticated contact snapshot restored/),
+      page.getByText(/Authenticated backup sequence .* restored/),
     ).toBeVisible();
     await page.getByRole("link", { name: "Counterparties" }).click();
     await expect(page.getByText("Bob recovery desk")).toBeVisible();

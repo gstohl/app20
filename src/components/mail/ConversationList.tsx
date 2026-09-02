@@ -3,6 +3,8 @@
 import { memo } from "react";
 import { feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
+import { parseBackupPointer } from "@/lib/backup-blob";
+import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
 import { parseCompositePayload } from "@/lib/composite";
 import {
   formatBaseUnits,
@@ -31,6 +33,22 @@ import styles from "./mail.module.css";
 export type { MailboxFilter };
 export { mailboxMatchesFilter };
 
+function backupKind(
+  message: LocalMailMessage,
+): "contacts" | "rfq-resume" | null {
+  try {
+    if (message.envelope.type === "backup_snapshot") {
+      return decodeBackupSnapshot(message.envelope.payload).kind;
+    }
+    if (message.envelope.type === "backup_pointer") {
+      return parseBackupPointer(message.envelope.payload).kind;
+    }
+  } catch {
+    // Malformed backup-shaped records remain visibly unsupported.
+  }
+  return null;
+}
+
 function envelopeLabel(message: LocalMailMessage): string {
   switch (message.envelope.type) {
     case "text":
@@ -55,6 +73,15 @@ function envelopeLabel(message: LocalMailMessage): string {
       return "Escrow timeout";
     case "contact_snapshot":
       return "Contact backup";
+    case "backup_snapshot":
+    case "backup_pointer": {
+      const kind = backupKind(message);
+      return kind === "contacts"
+        ? "Contact backup"
+        : kind === "rfq-resume"
+          ? "RFQ history backup"
+          : "Unsupported";
+    }
     case "composite": {
       const composite = parseCompositePayload(message.envelope.payload);
       const count = composite?.attachments.length ?? 0;
@@ -121,7 +148,11 @@ export function conversationCorrespondent(
   ) {
     return formatDeviceSentRecipients(message.recipients ?? [], aliases);
   }
-  if (message.envelope.type === "contact_snapshot") {
+  if (
+    message.envelope.type === "contact_snapshot" ||
+    message.envelope.type === "backup_snapshot" ||
+    message.envelope.type === "backup_pointer"
+  ) {
     return {
       primary: "This mailbox",
       detail: "Encrypted self-backup · verify before restore",
@@ -200,6 +231,15 @@ function messagePreview(message: LocalMailMessage): string {
         : "Escrow update";
     case "contact_snapshot":
       return "Wallet + mailbox recovery phrase required";
+    case "backup_snapshot":
+    case "backup_pointer": {
+      const kind = backupKind(message);
+      return kind === "contacts"
+        ? "Wallet + mailbox recovery phrase required"
+        : kind === "rfq-resume"
+          ? "Verification-only RFQ history"
+          : "Unsupported decrypted record";
+    }
     case "composite": {
       const composite = parseCompositePayload(payload);
       if (!composite) return "Unsupported composite document";

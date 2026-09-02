@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { afterEach, test } from "node:test";
 import {
+  LOCALNET_IPFS_HOST,
+  LOCALNET_IPFS_PORT,
   computeLocalnetRawCidV1,
   createLocalnetIpfsServer,
 } from "./localnet-ipfs.mjs";
@@ -12,6 +14,11 @@ const AUTH_HEADERS = Object.freeze({
   origin: APP_ORIGIN,
   "sec-fetch-site": "same-origin",
   "x-app20-localnet-control": CONTROL_TOKEN,
+});
+
+test("exports the loopback-only app composition defaults", () => {
+  assert.equal(LOCALNET_IPFS_HOST, "127.0.0.1");
+  assert.equal(LOCALNET_IPFS_PORT, 5054);
 });
 
 const running = [];

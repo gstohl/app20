@@ -1,5 +1,7 @@
 import { expect, test } from "./support/localnet";
 
+test.describe.configure({ mode: "serial" });
+
 test("real IndexedDB preserves hidden RFQ tombstones across tabs and reopen", async ({
   page,
 }) => {
@@ -224,6 +226,217 @@ test("real IndexedDB preserves hidden RFQ tombstones across tabs and reopen", as
   }
 });
 
+test("real IndexedDB carries verify-only v3 provenance and portable tombstones across fresh runtime epochs", async ({
+  page,
+}) => {
+  await page.route("**/__rfq_backup_portability_test", (route) =>
+    route.fulfill({ contentType: "text/html", body: "<!doctype html>" }),
+  );
+  await page.goto("/__rfq_backup_portability_test");
+
+  const result = await page.evaluate(async () => {
+    const dynamicImport = new Function("path", "return import(path)") as (
+      path: string,
+    ) => Promise<any>;
+    const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+    const lifecycleModule = await dynamicImport(
+      "/src/app/rfq/rfq-lifecycle.ts",
+    );
+    const historyModule = await dynamicImport("/src/lib/rfq-history-backup.ts");
+    const snapshotModule = await dynamicImport("/src/lib/backup-snapshot.ts");
+    const constants = await dynamicImport("/src/utils/constants.ts");
+
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.deleteDatabase("app20-rfq-resume");
+      request.onsuccess = () => resolve();
+      request.onerror = () =>
+        reject(request.error ?? new Error("Could not reset test database."));
+      request.onblocked = () =>
+        reject(new Error("Backup portability test database is blocked."));
+    });
+    window.localStorage.clear();
+
+    const now = Math.floor(Date.now() / 1_000);
+    const chainId = constants.LOCALNET_CHAIN_ID as string;
+    const account = "0xa11ce";
+    const rfqId = "0x991";
+    const source = storageModule.createIndexedDbRfqStorage(
+      "backup-portable-source",
+    );
+    const active = lifecycleModule.createRfqLifecycleRecord({
+      mode: "v3",
+      chainId,
+      account,
+      rfqId,
+      state: "reviewing",
+      now,
+      requestDigest: `0x${"11".repeat(32)}`,
+      terms: {
+        pairId: "STRK_USDC",
+        sellSymbol: "STRK",
+        sellAddress: "0x1",
+        sellDecimals: 18,
+        sellAmount: "100",
+        buySymbol: "USDC",
+        buyAddress: "0x2",
+        buyDecimals: 6,
+        minBuyAmount: "190",
+        buyAmount: "200",
+        rfqExpiresAt: now + 600,
+      },
+      settlement: {
+        version: "Localnet V3",
+        escrowAddress: "0x5",
+        dealId: rfqId,
+        deadline: now + 600,
+      },
+      bucket: { min: "50", max: "100" },
+      takerCommitment:
+        "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+      takerSigningKey: "0x66",
+      fills: [
+        {
+          makerId: "maker-a",
+          lockId: "0x41",
+          amountA: "100",
+          amountB: "200",
+          lockExpiresAt: now + 600,
+        },
+      ],
+    });
+    await source.save(active);
+    const oldHistory = await historyModule.exportRfqHistory(
+      source,
+      chainId,
+      account,
+    );
+
+    const mailboxSeed = Uint8Array.from(
+      { length: 32 },
+      (_, index) => index + 1,
+    );
+    const snapshotContext = {
+      owner: account,
+      chainId,
+      helperAddress: "0x999",
+      mailboxFingerprint: "cd".repeat(32),
+    };
+    const snapshot = (payload: unknown, seq: number) =>
+      snapshotModule.createBackupSnapshot({
+        ...snapshotContext,
+        mailboxSeed,
+        kind: "rfq-resume",
+        seq,
+        payload,
+      });
+    const options = {
+      onConflict: "keep-newer" as const,
+      mailboxSeed,
+      snapshotContext,
+      sequenceStorage: window.localStorage,
+    };
+
+    const destination = storageModule.createIndexedDbRfqStorage(
+      "backup-portable-destination",
+    );
+    await historyModule.importRfqHistory(
+      destination,
+      snapshot(oldHistory, 1),
+      options,
+    );
+    const restored = lifecycleModule.restoreRfqLifecycle(
+      await destination.load(active),
+      { chainId, account, now: now + 1 },
+    );
+
+    const expired = lifecycleModule.transitionRfqLifecycle(
+      active,
+      "expired",
+      now + 1,
+      { reason: "The quote expired." },
+    );
+    await source.save(expired);
+    await source.remove(expired);
+    const deletionHistory = await historyModule.exportRfqHistory(
+      source,
+      chainId,
+      account,
+    );
+    await historyModule.importRfqHistory(
+      destination,
+      snapshot(deletionHistory, 2),
+      options,
+    );
+
+    let resurrectionRejected = false;
+    try {
+      await historyModule.importRfqHistory(
+        destination,
+        snapshot(oldHistory, 3),
+        options,
+      );
+    } catch (error: unknown) {
+      resurrectionRejected = /resurrect|forgotten/i.test(String(error));
+    }
+    let directSaveRejected = false;
+    try {
+      await destination.save(active);
+    } catch (error: unknown) {
+      directSaveRejected = /forgotten RFQ ID/i.test(String(error));
+    }
+
+    const deletionReexport = await historyModule.exportRfqHistory(
+      destination,
+      chainId,
+      account,
+    );
+    const third = storageModule.createIndexedDbRfqStorage(
+      "backup-portable-third",
+    );
+    await historyModule.importRfqHistory(
+      third,
+      snapshot(deletionReexport, 4),
+      options,
+    );
+    let thirdResurrectionRejected = false;
+    try {
+      await historyModule.importRfqHistory(
+        third,
+        snapshot(oldHistory, 5),
+        options,
+      );
+    } catch (error: unknown) {
+      thirdResurrectionRejected = /resurrect|forgotten/i.test(String(error));
+    }
+
+    return {
+      restoredFromBackup: restored.restoredFromBackup === true,
+      signingKeyAbsent: restored.takerSigningKey === undefined,
+      maySubmit: lifecycleModule.lifecycleMaySubmit(restored, now + 1),
+      destinationVisible: await destination.list(chainId, account),
+      destinationTombstones: await destination.listTombstones(chainId, account),
+      thirdVisible: await third.list(chainId, account),
+      thirdTombstones: await third.listTombstones(chainId, account),
+      resurrectionRejected,
+      directSaveRejected,
+      thirdResurrectionRejected,
+    };
+  });
+
+  expect(result).toMatchObject({
+    restoredFromBackup: true,
+    signingKeyAbsent: true,
+    maySubmit: false,
+    destinationVisible: [],
+    thirdVisible: [],
+    resurrectionRejected: true,
+    directSaveRejected: true,
+    thirdResurrectionRejected: true,
+  });
+  expect(result.destinationTombstones).toHaveLength(1);
+  expect(result.thirdTombstones).toHaveLength(1);
+});
+
 test("real IndexedDB synchronizes lifecycle rows and forget-wins tombstones across browser tabs", async ({
   page,
   context,
@@ -405,8 +618,8 @@ test("real IndexedDB canonicalizes every historical local-chain alias fail close
       now: 100,
     });
     const forgotten = { ...record, rfqId: "0x802" };
-    const aliasKey = `app20/rfq-lifecycle/v2|${epoch}|starknet:${historical}|${padded}|${record.rfqId}`;
-    const tombstoneKey = `app20/rfq-lifecycle/v2|${epoch}|APP20_LOCALNET|${padded}|${forgotten.rfqId}`;
+    const aliasKey = `${record.schemaRevision}|${epoch}|starknet:${historical}|${padded}|${record.rfqId}`;
+    const tombstoneKey = `${record.schemaRevision}|${epoch}|APP20_LOCALNET|${padded}|${forgotten.rfqId}`;
     await putRaw(aliasKey, {
       ...record,
       chainId: `starknet:${historical}`,
@@ -423,7 +636,7 @@ test("real IndexedDB canonicalizes every historical local-chain alias fail close
 
     // Simulate an old tab rewriting the pre-migration physical namespace.
     await putRaw(
-      `app20/rfq-lifecycle/v2|${epoch}|QUIETLINE_LOCAL|${padded}|${forgotten.rfqId}`,
+      `${record.schemaRevision}|${epoch}|QUIETLINE_LOCAL|${padded}|${forgotten.rfqId}`,
       { ...forgotten, chainId: "QUIETLINE_LOCAL", account: padded },
     );
     const loadedForgotten = await storage.load(forgotten);
@@ -591,7 +804,7 @@ test("real IndexedDB tombstones mismatched immutable targets and numeric RFQ ali
         },
       };
       await putRaw(
-        `app20/rfq-lifecycle/v2|${epoch}|APP20_LOCALNET|0xabc|${rfqId}`,
+        `${base.schemaRevision}|${epoch}|APP20_LOCALNET|0xabc|${rfqId}`,
         row,
       );
     }
@@ -605,7 +818,7 @@ test("real IndexedDB tombstones mismatched immutable targets and numeric RFQ ali
     await storage.save(terminal);
     await storage.remove(terminal);
     await putRaw(
-      `app20/rfq-lifecycle/v2|${epoch}|QUIETLINE_LOCAL|0x0abc|0X01`,
+      `${terminal.schemaRevision}|${epoch}|QUIETLINE_LOCAL|0x0abc|0X01`,
       {
         ...terminal,
         chainId: "QUIETLINE_LOCAL",

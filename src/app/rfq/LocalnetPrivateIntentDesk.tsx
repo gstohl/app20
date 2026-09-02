@@ -85,12 +85,14 @@ import {
 } from "./rfq-lifecycle";
 import RfqAuthorityStrip from "./RfqAuthorityStrip";
 import SettlementEvidencePanel from "./SettlementEvidencePanel";
-import { createLocalnetQuoteRequestRegistry } from "./localnet/quote-request-controller";
 import {
   assertQuoteProgressMayPersist,
+  createLocalnetQuoteRequestRegistry,
+  decideLocalnetQuoteRequestFailure,
   type LocalnetQuoteRequestHandle,
 } from "./localnet/quote-request-controller";
 import { createLocalnetRfqStorageClient } from "./localnet/rfq-storage-client";
+import { RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE } from "./rfq-quote-scope";
 import {
   createV3Request,
   v3RequestMaturityGate,
@@ -451,7 +453,7 @@ export default function LocalnetPrivateIntentDesk({
   ]);
   const privacyReady = Boolean(
     privacyPreflight &&
-      canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed),
+    canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed),
   );
 
   useEffect(() => {
@@ -483,8 +485,7 @@ export default function LocalnetPrivateIntentDesk({
       resetRequestView();
       setFlow({
         kind: "error",
-        message:
-          "The wallet account, chain, or provider changed while quotes were in flight. The response was discarded.",
+        message: RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
       });
     }
   }, [address, chain, providerIndex]);
@@ -930,6 +931,18 @@ export default function LocalnetPrivateIntentDesk({
         settlementHelper: escrowHelperLocalnet,
         createdAt: now,
       });
+      const requestingTerms = Object.freeze({
+        pairId: pair.id,
+        sellSymbol: pair.sell.symbol,
+        sellAddress: pair.sell.address,
+        sellDecimals: pair.sell.decimals,
+        sellAmount: exact.toString(),
+        buySymbol: pair.buy.symbol,
+        buyAddress: pair.buy.address,
+        buyDecimals: pair.buy.decimals,
+        minBuyAmount: floor.toString(),
+        rfqExpiresAt: created.rfq.expiresAt,
+      });
       requestingRecord = createRfqLifecycleRecord({
         mode: "v3",
         chainId: chain,
@@ -938,18 +951,9 @@ export default function LocalnetPrivateIntentDesk({
         state: "requesting",
         now,
         requestDigest: created.rfq.rfqId,
-        terms: {
-          pairId: pair.id,
-          sellSymbol: pair.sell.symbol,
-          sellAddress: pair.sell.address,
-          sellDecimals: pair.sell.decimals,
-          sellAmount: exact.toString(),
-          buySymbol: pair.buy.symbol,
-          buyAddress: pair.buy.address,
-          buyDecimals: pair.buy.decimals,
-          minBuyAmount: floor.toString(),
-          rfqExpiresAt: created.rfq.expiresAt,
-        },
+        // Invoice sell size is only an indicative-mid estimate until signed
+        // schedules arrive. Do not persist it as immutable exact terms.
+        ...(invoice ? {} : { terms: requestingTerms }),
         bucket: {
           min: created.bucket.min.toString(),
           max: created.bucket.max.toString(),
@@ -1033,7 +1037,7 @@ export default function LocalnetPrivateIntentDesk({
         Math.floor(Date.now() / 1_000),
         {
           terms: Object.freeze({
-            ...requestingRecord.terms!,
+            ...(requestingRecord.terms ?? requestingTerms),
             sellAmount: selected.exactSellAmount.toString(),
             buyAmount: selected.result.selection.totalB.toString(),
           }),
@@ -1068,7 +1072,18 @@ export default function LocalnetPrivateIntentDesk({
       }
       quoteRequestsRef.current.complete(request);
     } catch (error: unknown) {
-      if (requestingRecord?.state === "requesting") {
+      const disposition = decideLocalnetQuoteRequestFailure({
+        request,
+        activeToken: quoteRequestsRef.current.active()?.token ?? null,
+        currentScope: quoteRequestsRef.current.currentScope(),
+        error,
+        requestingPersisted: requestingRecord?.state === "requesting",
+        requestAborted: request.signal.aborted,
+      });
+      if (
+        !disposition.discardedForScope &&
+        requestingRecord?.state === "requesting"
+      ) {
         try {
           const refused = transitionRfqLifecycle(
             requestingRecord,
@@ -1078,13 +1093,23 @@ export default function LocalnetPrivateIntentDesk({
           );
           await persistLifecycle(refused, request);
         } catch {
-          // Scope invalidation intentionally prevents a stale request from
-          // persisting into the new wallet scope.
+          // A concurrent scope change can still invalidate this request
+          // between classification and persistence. Leave recovery to the
+          // original account/chain scope instead of writing through the new one.
         }
       }
-      quoteRequestsRef.current.complete(request);
-      setQuoted(null);
-      setFlow({ kind: "error", message: errorMessage(error) });
+      if (disposition.completeActive) {
+        quoteRequestsRef.current.complete(request);
+      }
+      if (disposition.applyUi) {
+        setQuoted(null);
+        setFlow({
+          kind: "error",
+          message: disposition.discardedForScope
+            ? RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE
+            : errorMessage(error),
+        });
+      }
     }
   }
 
@@ -1184,10 +1209,22 @@ export default function LocalnetPrivateIntentDesk({
     }
     if (!invoice) return;
     try {
+      if (
+        !chain ||
+        !address ||
+        !feltEquals(chain, result.record.chainId) ||
+        !feltEquals(address, result.record.account)
+      ) {
+        throw new Error(
+          "The connected Mail scope changed before invoice settlement could be recorded.",
+        );
+      }
+      // Mail keys local OTC state by the wallet-facing chain/account strings;
+      // RFQ lifecycle rows intentionally canonicalize equivalent felt aliases.
       recordInvoiceTakeSettled(
         window.localStorage,
-        result.record.chainId,
-        result.record.account,
+        chain,
+        address,
         {
           requestId: invoice.requestId,
           takeTransactionHash: result.transactionHash,

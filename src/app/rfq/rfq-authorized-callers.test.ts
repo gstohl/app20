@@ -9,6 +9,7 @@ import {
 } from "./rfq-lifecycle";
 import {
   assertRfqStorageReplacement,
+  assertRfqStorageTombstoneReplacement,
   createRfqLifecycleStorage,
   planRfqAliasMigration,
   replaceRfqWithTombstone,
@@ -43,6 +44,12 @@ function memoryStorage() {
     async compareAndPut(key, value) {
       assertRfqStorageReplacement(rows.get(key), value);
       rows.set(key, structuredClone(finalizeRfqLifecycleForStorage(value)));
+    },
+    async compareAndPutTombstone(key, value) {
+      rows.set(
+        key,
+        assertRfqStorageTombstoneReplacement(rows.get(key), key, value),
+      );
     },
     async compareAndDelete(key, legacyKey, expected) {
       rows.set(key, replaceRfqWithTombstone(rows.get(key), key, expected));
@@ -195,15 +202,14 @@ describe("production RFQ callers preserve forget-wins before mutation sinks", ()
     });
 
     const requests: unknown[] = [];
-    const ensure = vi
-      .fn(async (record: RfqLifecycleRecord) => {
-        requests.push({
-          attemptId: record.attempts.funding!.attemptId,
-          target: record.attempts.funding!.target,
-        });
-        if (requests.length === 1) throw new Error("ticket response lost");
-        return "0x40";
+    const ensure = vi.fn(async (record: RfqLifecycleRecord) => {
+      requests.push({
+        attemptId: record.attempts.funding!.attemptId,
+        target: record.attempts.funding!.target,
       });
+      if (requests.length === 1) throw new Error("ticket response lost");
+      return "0x40";
+    });
     await expect(
       runAuthorizedTicketAcceptance(restored, {
         authorize: tabA.authorize,

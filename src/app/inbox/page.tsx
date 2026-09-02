@@ -264,9 +264,8 @@ export default function InboxPage() {
     [aliases, bookEntries],
   );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
-  const [escrowState, setEscrowState] = useState<EscrowState>(
-    emptyEscrowState(),
-  );
+  const [escrowState, setEscrowState] =
+    useState<EscrowState>(emptyEscrowState());
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});
@@ -351,7 +350,12 @@ export default function InboxPage() {
 
   useEffect(() => {
     if (!address || !chainId) return;
-    const url = new URL(window.location.href);
+    let url: URL;
+    try {
+      url = new URL(window.location.href);
+    } catch {
+      return;
+    }
     const queryRecipient = url.searchParams.get("recipient");
     if (queryRecipient) {
       url.searchParams.delete("recipient");
@@ -839,7 +843,9 @@ export default function InboxPage() {
     const provider = constants.myFrontendProviders[providerIndex];
     await Promise.all(
       Object.values(state.deals).map(async (record) => {
-        if (!feltEquals(record.fund.escrowAddress, escrowAddress)) return;
+        if (!feltEquals(record.fund.escrowAddress, escrowAddress)) {
+          return undefined;
+        }
         try {
           const result = await provider.callContract({
             contractAddress: escrowAddress,
@@ -856,6 +862,7 @@ export default function InboxPage() {
         } catch {
           // A failed/mismatched read never upgrades an encrypted claim to proof.
         }
+        return undefined;
       }),
     );
     if (
@@ -1320,7 +1327,11 @@ export default function InboxPage() {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
     try {
-      const response = await fetch("/config", {
+      const configUrl =
+        import.meta.env.VITE_E2E_WALLET === true
+          ? `${import.meta.env.VITE_LOCALNET_WALLET_URL}/config`
+          : "/config";
+      const response = await fetch(configUrl, {
         signal: controller.signal,
         credentials: "same-origin",
         cache: "no-store",
@@ -1364,7 +1375,11 @@ export default function InboxPage() {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("Local configuration is malformed.");
       }
-      return Object.fromEntries(Object.entries(parsed));
+      const result = (parsed as Record<string, unknown>).result;
+      if (!result || typeof result !== "object" || Array.isArray(result)) {
+        throw new Error("Local configuration result is malformed.");
+      }
+      return Object.fromEntries(Object.entries(result));
     } finally {
       window.clearTimeout(timeout);
     }
@@ -1531,7 +1546,11 @@ export default function InboxPage() {
         chainId,
         address,
       );
-      await postAuthenticatedBackup("rfq-resume", history, history.count);
+      await postAuthenticatedBackup(
+        "rfq-resume",
+        history,
+        history.count + history.tombstoneCount,
+      );
     } catch (error: unknown) {
       setActionState("rfq-resume:backup", {
         pending: false,
@@ -1567,7 +1586,11 @@ export default function InboxPage() {
     rfqAutoBackupPostingRef.current = true;
     void exportRfqHistory(createIndexedDbRfqStorage(), chainId, address)
       .then((history) =>
-        postAuthenticatedBackup("rfq-resume", history, history.count),
+        postAuthenticatedBackup(
+          "rfq-resume",
+          history,
+          history.count + history.tombstoneCount,
+        ),
       )
       .catch((error: unknown) => {
         setActionState("rfq-resume:backup", {
@@ -1746,13 +1769,16 @@ export default function InboxPage() {
           Array.isArray(value) ||
           !("count" in value) ||
           typeof value.count !== "number" ||
-          !Number.isSafeInteger(value.count)
+          !Number.isSafeInteger(value.count) ||
+          !("tombstoneCount" in value) ||
+          typeof value.tombstoneCount !== "number" ||
+          !Number.isSafeInteger(value.tombstoneCount)
         ) {
           throw new Error("The RFQ history backup payload is malformed.");
         }
         if (
           !window.confirm(
-            `Merge ${value.count} authenticated RFQ history record${value.count === 1 ? "" : "s"} from backup sequence ${snapshot.seq}?${fallbackPrompt} Existing newer records win.`,
+            `Merge ${value.count} authenticated RFQ history record${value.count === 1 ? "" : "s"} and ${value.tombstoneCount} portable deletion marker${value.tombstoneCount === 1 ? "" : "s"} from backup sequence ${snapshot.seq}?${fallbackPrompt} Existing newer records and deletion markers win.`,
           )
         ) {
           throw new Error(
@@ -1761,8 +1787,13 @@ export default function InboxPage() {
         }
         const result = await importRfqHistory(
           createIndexedDbRfqStorage(),
-          value,
-          { onConflict: "keep-newer" },
+          snapshot,
+          {
+            onConflict: "keep-newer",
+            mailboxSeed: mailSeed,
+            snapshotContext: backupContext,
+            sequenceStorage: window.localStorage,
+          },
         );
         setActionState(actionKey, {
           pending: false,

@@ -27,13 +27,13 @@ origin is live. This is not a Mainnet value-moving release.
 
 ## Product
 
-| Rank | Feature | Route | Status |
-| --- | --- | --- | --- |
-| 1 | Private RFQ | `/rfq` | Localnet v3 lower layers solicit two fixture makers by fixed size bucket. Each maker confirms an on-chain collateral lock and schedule before signing; the browser data layer verifies locks, can select up to four atomic Take fills, and records same-devnet authority separately from local evidence. Maker settlement, signed mids, and fair-loss transcripts are implemented. The mounted desk still presents legacy v1 and needs v3 wiring; no production maker network is deployed |
-| 2 | Mailbox | `/mail/inbox` | Localnet on-chain ciphertext for letters, OTC/payment records, pay-any-token invoice handoff/completion primitives, and authenticated self-addressed contact/RFQ backups. Oversized backups use client-encrypted CIDv1 IPFS blobs. Mail is evidence/resume transport, never settlement authority |
-| 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase; legacy contact snapshots remain readable |
-| 4 | Separate operations | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay` | Funding readiness, an explicitly unavailable public-send page, dry cross-chain review, Privy recovery, and unsigned payment links. Each is its own route behind a shared `Not RFQ settlement authority` boundary. No public send, live 1Click submission, or TEE execution is implemented |
-| — | Read-only surfaces | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Browser-safe operations status, proposal-only market planning, and a non-executable pair handoff. None can deploy, fund, or settle |
+| Rank | Feature             | Route                                                                               | Status                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | ------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Private RFQ         | `/rfq`                                                                              | The localnet v3 desk solicits two fixture makers by fixed size bucket. Each maker confirms an on-chain collateral lock and schedule before signing; the browser verifies locks, selects one to four atomic Take fills, applies the local floor, delivers the fair-loss transcript, verifies same-devnet chain evidence, and renders maturity/mids. Legacy lifecycle recovery remains additive. No production maker network is deployed |
+| 2    | Mailbox             | `/mail/inbox`                                                                       | Localnet on-chain ciphertext for letters, OTC/payment records, pay-any-token invoice handoff/completion primitives, and authenticated self-addressed contact/RFQ backups. Oversized backups use client-encrypted CIDv1 IPFS blobs. Mail is evidence/resume transport, never settlement authority                                                                                                                                       |
+| 3    | Counterparties      | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase; legacy contact snapshots remain readable                                                                                                                                                                                                                                                     |
+| 4    | Separate operations | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay`               | Funding readiness, an explicitly unavailable public-send page, dry cross-chain review, Privy recovery, and unsigned payment links. Each is its own route behind a shared `Not RFQ settlement authority` boundary. No public send, live 1Click submission, or TEE execution is implemented                                                                                                                                              |
+| —    | Read-only surfaces  | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Browser-safe operations status, proposal-only market planning, and a non-executable pair handoff. None can deploy, fund, or settle                                                                                                                                                                                                                                                                                                     |
 
 `/pay` is a Mail helper, not a fifth product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
@@ -48,16 +48,19 @@ Take.
 
 Counterparty labels and RFQ resume rows remain local unless the user explicitly
 posts an encrypted self-backup through Mail. Small backups stay inline; larger
-ones are AES-GCM encrypted and padded before a CIDv1 pointer is posted. The
-localnet IPFS emulator is in-memory. Production blob storage fails closed unless
-reviewed IPFS RPC/gateway origins and the matching relay CSP allowlist are set.
+ones are AES-GCM encrypted and padded before a CIDv1 pointer is posted. RFQ
+restore authenticates before ranking, rejects rollback/equivocation, imports
+portable deletion tombstones, strips signing authority, and durably keeps every
+restored v3 row verification-only through reload and re-export. The localnet
+IPFS emulator is in-memory. Production blob storage fails closed unless reviewed
+IPFS RPC/gateway origins and the matching relay CSP allowlist are set.
 
 The same wallet opens all three surfaces. Shield, private transfer, and unshield
 remain separate funding actions at `/funding`, which reports wallet-declared
 STRK20 actions and canonical asset eligibility without probing private balances.
-The v3 invoice data path can turn private STRK into a USDC OPEN note and let
-Mail complete the exact payment after ten blocks, but the current RFQ
-presentation does not yet consume that invoice handoff.
+The localnet v3 invoice path consumes a scoped Mail handoff, turns private
+STRK into a USDC OPEN note, records the confirmed Take, and lets Mail complete
+the exact payment after ten blocks.
 
 Dry cross-chain Intents live at `/cross-chain-review`, a fixture-backed review
 of a pinned NEAR 1Click request/response shape. Nothing is sent to 1Click. This
@@ -122,9 +125,11 @@ flowchart LR
 The pool can hide private-transfer ownership and counterparties. It does not
 hide v3 escrow facts: `LockCreated` publishes the schedule and collateral
 maximum, `LockTaken` publishes each exact fill, and `DealTaken` publishes exact
-aggregate A/B totals and fill count. The Take helper calldata also carries the
-`takerSecret` commitment preimage; removing it from local storage after
-settlement does not remove the public transaction copy.
+aggregate A/B totals and fill count. The retained wire field `takerCommitment` is the ephemeral taker Stark public
+key. Take calldata exposes its signature and ordered fills, while the private
+signing key remains local and is deleted after a terminal Take. The signature
+cannot bind output-note ownership through the current pool API, leaving a
+copy-sniping race for a relayer or sequencer that obtains a signed Take.
 
 ### Invited-maker RFQ v3
 
@@ -176,9 +181,9 @@ transcript, and expected exact Take fills/totals; bucket-only disclosure is a
 maker-invitation property, not a promise that the coordinator never learns
 size. Refusal never routes to a public venue.
 
-This service/data path is implemented and localnet-only. The mounted `/rfq`
-presentation still drives legacy v1 and must be wired to the v3 modules before
-the diagram is a complete user journey.
+This service/data path is mounted and browser-tested in the build-gated
+localnet. It is not configured-chain authority or public deployment evidence.
+Legacy v1 rows retain their separate recovery actions.
 
 ### Maker lock recovery
 
@@ -186,14 +191,21 @@ the diagram is a complete user journey.
 stateDiagram-v2
     [*] --> Locking: fsync before wallet call
     Locking --> Open: confirmed lock matches chain
-    Locking --> Quarantined: unknown lock outcome
+    Locking --> ReconcilePending: RPC/outcome unavailable
     Open --> Taken: chain reports earned proceeds
     Open --> Expired: expiry reached
     Taken --> Expired: expiry reached
     Expired --> Settling: fsync side before wallet call
     Settling --> Settled: all non-zero sides confirmed
     Settling --> Expired: known revert, refresh chain
-    Settling --> Quarantined: unknown outcome
+    Settling --> SettlementUnknown: submitted result uncertain
+    ReconcilePending --> Open: chain proves open
+    ReconcilePending --> Taken: chain proves Take
+    ReconcilePending --> Expired: chain proves expiry/no Take
+    SettlementUnknown --> Settled: chain proves both pulls
+    SettlementUnknown --> ReconcilePending: chain disproves attempt
+    ReconcilePending --> Quarantined: contradictory/malformed evidence
+    SettlementUnknown --> Quarantined: contradictory/malformed evidence
     Quarantined --> ManualReview
 ```
 
@@ -311,15 +323,15 @@ Detailed diagrams:
 APP20 can hide in-pool transfers and encrypt mail. It cannot promise
 unlinkability.
 
-| Not directly exposed by the stated mechanism | Public, disclosed, or still correlatable |
-| --- | --- |
-| In-pool private-transfer ownership and amount | Shield/unshield legs, timing, and amount correlation |
-| Exact RFQ size and floor during invitation | Makers receive pair, direction, fixed bucket, RFQ/helper bindings, and expiry; transcript winner allocations can reveal size after selection |
-| Private note ownership in v3 settlement | `LockCreated` schedules/collateral, exact `LockTaken` fills, `DealTaken` totals, Take's `takerSecret` preimage, OPEN-note amounts, helper use, and timing |
-| Mail and backup plaintext | Chain ciphertext metadata; an IPFS service sees CID, padded ciphertext size, source metadata, and timing |
-| Device-local contact labels and notes | Addresses when publicly used; code running in an unlocked browser profile can read them |
-| Direct sender/recipient address fields in `MessagePosted` | Directory registration/lookups, helper access metadata, timing, and small-set inference |
-| OHTTP plaintext at the relay | Ciphertext metadata at the relay and the plaintext witness at the final prover after decapsulation |
+| Not directly exposed by the stated mechanism              | Public, disclosed, or still correlatable                                                                                                                                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In-pool private-transfer ownership and amount             | Shield/unshield legs, timing, and amount correlation                                                                                                                                                                |
+| Exact RFQ size and floor during invitation                | Makers receive pair, direction, fixed bucket, RFQ/helper bindings, and expiry; transcript winner allocations can reveal size after selection                                                                        |
+| Private note ownership in v3 settlement                   | `LockCreated` schedules/collateral and taker public key, exact `LockTaken` fills, `DealTaken` totals/digest, Take signature/ordered fills, OPEN-note amounts, helper use, timing, and output-note copy-sniping risk |
+| Mail and backup plaintext                                 | Chain ciphertext metadata; an IPFS service sees CID, padded ciphertext size, source metadata, and timing                                                                                                            |
+| Device-local contact labels and notes                     | Addresses when publicly used; code running in an unlocked browser profile can read them                                                                                                                             |
+| Direct sender/recipient address fields in `MessagePosted` | Directory registration/lookups, helper access metadata, timing, and small-set inference                                                                                                                             |
+| OHTTP plaintext at the relay                              | Ciphertext metadata at the relay and the plaintext witness at the final prover after decapsulation                                                                                                                  |
 
 A replaced frontend can still request signatures and read browser-owned keys.
 Ready signatures are not used as encryption keys and the Ready Wallet API path
@@ -368,23 +380,23 @@ transcripts, one-to-four-fill atomic Take, and automatic maker proceeds and
 collateral pulls after expiry. Prices, accounts, keys, and proof bytes are
 localnet fixtures.
 
-The currently mounted desk and its Playwright journey still exercise legacy v1
-reservation/fund/fill/claim/refund and maker restart. They do not yet prove the v3 browser
-journey, pay-any-token invoice handoff, or automatic RFQ backup. This is not a
-Mainnet market or send.
+The mounted desk exercises the localnet v3 request, maturity, single/split
+selection, transcript, atomic Take, chain verification, invoice handoff, and
+opt-in RFQ auto-backup paths; separate recovery UI preserves legacy v1 actions.
+This is not a Mainnet market or send.
 
 ## Packages
 
-| Package | Role |
-| --- | --- |
-| `@app20/domain` | Accounts, canonical intents, lifecycle |
-| `@app20/near-intents` | Dry-only NEAR 1Click connector |
-| `@app20/policy-client` | Attestation and policy-receipt verification |
-| `@app20/privacy-adapters` | Fail-closed Starknet wallet and network policy |
-| `@app20/private-intents` | Legacy RFQ plus v3 bucket, schedule, quote, selection, transcript, and maker-mid models |
-| `@app20/maker-node` | Server-only WAL-backed reservations/locks, signing, collateral settlement, and crash recovery |
-| `@app20/privy` | Browser-owned STRK20 and Privy integration |
-| `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
+| Package                   | Role                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `@app20/domain`           | Accounts, canonical intents, lifecycle                                                        |
+| `@app20/near-intents`     | Dry-only NEAR 1Click connector                                                                |
+| `@app20/policy-client`    | Attestation and policy-receipt verification                                                   |
+| `@app20/privacy-adapters` | Fail-closed Starknet wallet and network policy                                                |
+| `@app20/private-intents`  | Legacy RFQ plus v3 bucket, schedule, quote, selection, transcript, and maker-mid models       |
+| `@app20/maker-node`       | Server-only WAL-backed reservations/locks, signing, collateral settlement, and crash recovery |
+| `@app20/privy`            | Browser-owned STRK20 and Privy integration                                                    |
+| `@app20/relay`            | Cloudflare assets, bootstrap, OHTTP, RPC, quotas                                              |
 
 Architecture: [`docs/APP20_ARCHITECTURE.md`](docs/APP20_ARCHITECTURE.md).
 Private RFQ and contact-recovery model:
@@ -413,17 +425,17 @@ npm run test:all
 npm run build
 ```
 
-| Command | Scope |
-| --- | --- |
-| `npm test` | Application unit tests |
-| `npm run test:packages` | Workspace packages |
-| `npm run test:ui` | Playwright localnet journeys, including scope invalidation, accessibility, and 200% reflow |
-| `npm run test:supply-chain` | Lockfile integrity/source/licence review, SBOM drift, generated font notices, and build-determinism helpers |
-| `npm run test:e2e:pool` | Real-pool mail harness |
-| `npm run check:csp` | Loads built routes under the CSP the Worker actually ships |
-| `npm run check:build-determinism` | Two isolated production builds, byte-compared |
-| `npm run sbom:generate` | Regenerates the deterministic CycloneDX SBOM and deployable font notices |
-| `snforge test` | Mail helper contracts, from `cairo/` |
+| Command                           | Scope                                                                                                       |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `npm test`                        | Application unit tests                                                                                      |
+| `npm run test:packages`           | Workspace packages                                                                                          |
+| `npm run test:ui`                 | Playwright localnet journeys, including scope invalidation, accessibility, and 200% reflow                  |
+| `npm run test:supply-chain`       | Lockfile integrity/source/licence review, SBOM drift, generated font notices, and build-determinism helpers |
+| `npm run test:e2e:pool`           | Real-pool mail harness                                                                                      |
+| `npm run check:csp`               | Loads built routes under the CSP the Worker actually ships                                                  |
+| `npm run check:build-determinism` | Two isolated production builds, byte-compared                                                               |
+| `npm run sbom:generate`           | Regenerates the deterministic CycloneDX SBOM and deployable font notices                                    |
+| `snforge test`                    | Mail helper contracts, from `cairo/`                                                                        |
 
 `npm run build` also enforces recorded per-chunk byte budgets, fails if direct
 `eval` enters the initial graph or appears outside the reviewed lazy
@@ -510,7 +522,6 @@ STARKNET_MAINNET_AUTHORIZATION
 
 ## Not in this release
 
-- RFQ v3 presentation wiring, including Take, mids, maturity, invoice handoff, and automatic backup
 - Production maker-specific HPKE transport or replicated reservation/coordinator storage
 - A deployed/audited canonical production escrow, atomic two-taker crossing, or recurring escrow
 - Configured-chain authoritative receipt verification

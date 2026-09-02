@@ -9,6 +9,7 @@ import {
   normalizeRfqOperationsStatus,
   operationsAvailability,
   shouldPublishOperationsClock,
+  synchronizeOperationsRefresh,
   verifyRfqOperationsMids,
 } from "./rfq-operations";
 
@@ -159,6 +160,21 @@ describe("browser-safe localnet RFQ operations", () => {
       wire({ observedAt: NOW + 10, validUntil: NOW + 30 }),
     );
     expect(operationsAvailability(status, NOW).mode).toBe("unknown");
+  });
+
+  it("publishes a refreshed status with the clock observed after the fetch", () => {
+    const status = normalizeRfqOperationsStatus(
+      wire({ observedAt: NOW + 10, validUntil: NOW + 30 }),
+    );
+    const refreshed = synchronizeOperationsRefresh(status, NOW + 10);
+
+    expect(refreshed).toEqual({ status, now: NOW + 10 });
+    expect(operationsAvailability(refreshed.status, refreshed.now).mode).toBe(
+      "running",
+    );
+    expect(() => synchronizeOperationsRefresh(status, -1)).toThrow(
+      /refresh time/i,
+    );
   });
 
   it("derives fresh, expiring, and expired directory states from the published deadline", () => {

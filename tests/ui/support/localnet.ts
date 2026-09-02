@@ -31,6 +31,16 @@ const MAX_FAILURE_EVENTS = 50;
 
 export type LocalnetIdentityId = "alice" | "bob";
 
+export const LOCALNET_MAIL_BACKUPS: Readonly<
+  Record<LocalnetIdentityId, string>
+> = Object.freeze({
+  alice:
+    "a1100001 a1100002 a1100003 a1100004 a1100005 a1100006 a1100007 a1100008",
+  bob: "b0b00001 b0b00002 b0b00003 b0b00004 b0b00005 b0b00006 b0b00007 b0b00008",
+});
+
+const MAIL_SEED_RESTORE_KEY = "__app20PlaywrightRestoreMailRandomness";
+
 export type LocalnetIdentity = {
   id: LocalnetIdentityId;
   label: string;
@@ -192,6 +202,85 @@ export function localnetIdentity(
   const value = config.identities.find((candidate) => candidate.id === id);
   if (!value) throw new Error(`Localnet identity ${id} is missing.`);
   return value;
+}
+
+/**
+ * Make the next 32-byte mailbox seed deterministic without weakening browser
+ * randomness after the setup click. Shared-chain UI files can then restore the
+ * same fixture mailbox identities while still exercising one-time seed setup.
+ */
+export async function primeLocalnetMailSeed(
+  page: Page,
+  id: LocalnetIdentityId,
+): Promise<string> {
+  const backup = LOCALNET_MAIL_BACKUPS[id];
+  await page.evaluate(
+    ({ backupValue, restoreKey }) => {
+      const root = globalThis as unknown as Record<string, unknown>;
+      const priorRestore = root[restoreKey];
+      if (typeof priorRestore === "function") priorRestore();
+
+      const groups = backupValue.replaceAll(" ", "").match(/.{2}/g);
+      if (!groups || groups.length !== 32) {
+        throw new Error("Localnet mailbox fixture seed must contain 32 bytes.");
+      }
+      const seed = Uint8Array.from(groups, (group) =>
+        Number.parseInt(group, 16),
+      );
+      const cryptoObject = globalThis.crypto;
+      const ownDescriptor = Object.getOwnPropertyDescriptor(
+        cryptoObject,
+        "getRandomValues",
+      );
+      const original = cryptoObject.getRandomValues.bind(cryptoObject);
+      let consumed = false;
+
+      Object.defineProperty(cryptoObject, "getRandomValues", {
+        configurable: true,
+        value: (array: ArrayBufferView) => {
+          if (
+            !consumed &&
+            array instanceof Uint8Array &&
+            array.byteLength === seed.byteLength
+          ) {
+            array.set(seed);
+            consumed = true;
+            return array;
+          }
+          return original(array);
+        },
+      });
+      Object.defineProperty(root, restoreKey, {
+        configurable: true,
+        value: () => {
+          if (ownDescriptor) {
+            Object.defineProperty(
+              cryptoObject,
+              "getRandomValues",
+              ownDescriptor,
+            );
+          } else {
+            delete (cryptoObject as unknown as Record<string, unknown>)
+              .getRandomValues;
+          }
+          delete root[restoreKey];
+          return consumed;
+        },
+      });
+    },
+    { backupValue: backup, restoreKey: MAIL_SEED_RESTORE_KEY },
+  );
+  return backup;
+}
+
+export async function restoreLocalnetMailRandomness(
+  page: Page,
+): Promise<boolean> {
+  return page.evaluate((restoreKey) => {
+    const root = globalThis as unknown as Record<string, unknown>;
+    const restore = root[restoreKey];
+    return typeof restore === "function" ? Boolean(restore()) : false;
+  }, MAIL_SEED_RESTORE_KEY);
 }
 
 export function localNetworkToggle(page: Page) {

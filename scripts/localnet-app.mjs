@@ -57,7 +57,10 @@ import {
   terminalizeHttpTargetThroughCoordinator,
 } from "./localnet-release-boundary.mjs";
 import { createLocalnetRfqStateHandlers } from "./localnet-rfq-state-handlers.mjs";
-import { requestLocalnetMaker } from "./localnet-maker-http.mjs";
+import {
+  requestLocalnetMaker,
+  requestLocalnetMakerGet,
+} from "./localnet-maker-http.mjs";
 import {
   canonicalLocalnetTakeExpected,
   validateLocalnetDealObservation,
@@ -557,7 +560,7 @@ async function launchMakerNode(definition, context, authToken) {
         escrowAddress: context.escrowAddress,
         strkToken: context.strkToken,
         usdcToken: context.usdcToken,
-        seedStrk: (5n * 10n ** 18n).toString(),
+        seedStrk: (7n * 10n ** 18n).toString(),
         seedUsdc: (10_000n * 10n ** 6n).toString(),
         walPath: join(makerDir, "reservations.wal"),
         quoteKeyPath: definition.quoteKeyPath,
@@ -648,27 +651,7 @@ async function makerRequest(client, pathname, body, timeoutMs) {
 }
 
 async function makerGet(client, pathname, timeoutMs = 5_000) {
-  const response = await fetch(`${client.endpoint}${pathname}`, {
-    headers: { authorization: `Bearer ${client.authToken}` },
-    redirect: "error",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    throw new Error(`${client.solverId}: maker returned unreadable JSON.`);
-  }
-  if (!response.ok || payload?.error) {
-    throw new Error(
-      `${client.solverId}: ${payload?.error ?? `HTTP ${response.status}`}`,
-    );
-  }
-  if (!payload?.result || typeof payload.result !== "object")
-    throw new Error(
-      `${client.solverId}: maker response envelope is malformed.`,
-    );
-  return payload.result;
+  return requestLocalnetMakerGet(client, pathname, timeoutMs);
 }
 
 function fixtureQuotePublicJwk(client) {

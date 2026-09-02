@@ -94,6 +94,17 @@ function backupSnapshotMessage(
   kind: "contacts" | "rfq-resume",
   seq: number,
   localCreatedAt: number,
+  payload: unknown = kind === "contacts"
+    ? { entries: [] }
+    : {
+        schema: "app20/rfq-history-backup/v2",
+        chainId: BACKUP_CONTEXT.chainId,
+        account: BACKUP_CONTEXT.owner,
+        records: [],
+        tombstones: [],
+        count: 0,
+        tombstoneCount: 0,
+      },
 ): LocalMailMessage {
   return textMessage(id, {
     localCreatedAt,
@@ -106,8 +117,7 @@ function backupSnapshotMessage(
           kind,
           seq,
           now: BACKUP_NOW,
-          payload:
-            kind === "contacts" ? { entries: [] } : { count: 0, records: [] },
+          payload,
         }),
       ),
     ),
@@ -247,6 +257,26 @@ describe("mailbox list model", () => {
     ).toEqual(["authentic"]);
   });
 
+  it("fails closed on authenticated same-sequence equivocation before ranking", async () => {
+    const first = backupSnapshotMessage("rfq-a", "rfq-resume", 12, 1, {
+      payload: "a",
+    });
+    const conflicting = backupSnapshotMessage("rfq-b", "rfq-resume", 12, 2, {
+      payload: "b",
+    });
+
+    expect(() =>
+      newestBackupMessages([first, conflicting], BACKUP_AUTH),
+    ).toThrow(/conflicting authenticated backup candidates/i);
+    await expect(
+      loadBackupSnapshotWithFallback([first, conflicting], {
+        ...BACKUP_AUTH,
+        kind: "rfq-resume",
+        loadBlob: async () => new Uint8Array(),
+      }),
+    ).rejects.toThrow(/conflicting authenticated backup candidates/i);
+  });
+
   it("opens an authenticated pointer and verifies its nested snapshot", async () => {
     const snapshot = createBackupSnapshot({
       ...BACKUP_CONTEXT,
@@ -364,6 +394,29 @@ describe("mailbox list model", () => {
       seq: 3,
     });
     expect(loaded.failures[1]?.reason).toMatch(/does not match/i);
+  });
+
+  it("never rolls RFQ history back when the newest authenticated pointer is unavailable", async () => {
+    const unavailable = backupPointerMessage(
+      "rfq-unavailable",
+      "rfq-resume",
+      4,
+      4,
+    );
+    const older = backupSnapshotMessage("rfq-older", "rfq-resume", 3, 3);
+    let fetches = 0;
+
+    await expect(
+      loadBackupSnapshotWithFallback([older, unavailable], {
+        ...BACKUP_AUTH,
+        kind: "rfq-resume",
+        loadBlob: async () => {
+          fetches += 1;
+          throw new Error("blob unavailable");
+        },
+      }),
+    ).rejects.toThrow(/rollback fallback is disabled/i);
+    expect(fetches).toBe(1);
   });
 
   it("never fetches more than three authenticated candidates per kind", async () => {

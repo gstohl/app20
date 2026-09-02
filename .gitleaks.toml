@@ -4,8 +4,19 @@ useDefault = true
 [[allowlists]]
 description = "Ignored local runtime artifacts plus vendored deterministic signer and devnet fixtures; never source credentials"
 paths = [
-  '''^\.app20-localnet/''',
+  '''(?:^|/)\.app20-localnet/''',
+  '''^dist/''',
   '''^vendor/starknet-privacy/demo/\.env\.example$''',
+  '''^vendor/starknet-privacy/client/tests/signers/snip12-call-set-signer\.test\.ts$''',
+  '''^vendor/starknet-privacy/client/tests/signers/eip712-call-set-signer\.test\.ts$''',
+  '''^vendor/starknet-privacy/crates/discovery-service/tests/fixtures/devnet-dump\.metadata\.json$''',
+  '''^vendor/starknet-privacy/crates/discovery-core/tests/fixtures/devnet-state\.json$''',
+  '''^vendor/starknet-privacy/crates/discovery-core/tests/fixtures/cairo-reference-data\.json$''',
+  '''^vendor/starknet-privacy/e2e/tests/devnet/eth712-account\.test\.ts$''',
+  '''^vendor/starknet-privacy/e2e/tests/devnet/signing-evm\.test\.ts$''',
+  '''^vendor/starknet-privacy/proof-interceptor/tests/e2e\.test\.ts$''',
+  '''^vendor/starknet-privacy/sdk/tests/fixtures/cairo-reference-data\.json$''',
+  '''^vendor/starknet-privacy/sdk/tests/utils/encryption\.test\.ts$''',
   '''^workers/relay/test/security\.test\.ts$''',
   '''^scripts/fixtures/localnet-maker-a\.private\.json$''',
   '''^scripts/fixtures/localnet-maker-b\.private\.json$''',

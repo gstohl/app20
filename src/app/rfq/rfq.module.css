@@ -2230,7 +2230,20 @@
 
 .v3QuoteComparison {
   display: grid;
+  min-width: 0;
   gap: 14px;
+}
+
+.v3QuoteComparison > *,
+.v3QuoteList > li {
+  min-width: 0;
+}
+
+.selectionRationale code,
+.selectionRationale li,
+.v3QuoteList code,
+.v3QuoteList li {
+  overflow-wrap: anywhere;
 }
 
 .v3QuoteList,

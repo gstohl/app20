@@ -33,8 +33,7 @@ import type { AliasRecord } from "@/lib/aliases";
 import * as constants from "@/utils/constants";
 
 export type ScanWorkerResponse =
-  | { ok: true; decrypted: DecryptedMail[] }
-  | { ok: false; message: string };
+  { ok: true; decrypted: DecryptedMail[] } | { ok: false; message: string };
 
 export type ActiveScanWorker = {
   worker: Worker;
@@ -224,6 +223,17 @@ function authenticateBackupMessage(
   return null;
 }
 
+function authenticatedBackupCandidateIdentity(
+  candidate: AuthenticatedBackupMessage,
+): string {
+  if (candidate.content.type === "inline") {
+    const { digest, mac } = candidate.content.snapshot;
+    return `inline:${digest}:${mac}`;
+  }
+  const { cid, bucketBytes, blobDigest, mac } = candidate.content.pointer;
+  return `pointer:${cid}:${bucketBytes}:${blobDigest}:${mac}`;
+}
+
 function compareBackupCandidates(
   left: AuthenticatedBackupMessage,
   right: AuthenticatedBackupMessage,
@@ -248,15 +258,19 @@ function authenticatedBackupCandidates(
     if (!candidate) continue;
     const key = `${candidate.kind}:${candidate.seq}`;
     const current = bestByKindAndSequence.get(key);
-    if (
-      !current ||
-      (candidate.content.type === "inline" &&
-        current.content.type === "pointer") ||
-      (candidate.content.type === current.content.type &&
-        compareMailMessages(candidate.message, current.message) < 0)
-    ) {
+    if (!current) {
       bestByKindAndSequence.set(key, candidate);
+      continue;
     }
+    if (
+      authenticatedBackupCandidateIdentity(current) !==
+      authenticatedBackupCandidateIdentity(candidate)
+    )
+      throw new Error(
+        "Conflicting authenticated backup candidates share one kind and sequence.",
+      );
+    if (compareMailMessages(candidate.message, current.message) < 0)
+      bestByKindAndSequence.set(key, candidate);
   }
 
   const retained: AuthenticatedBackupMessage[] = [];
@@ -341,16 +355,21 @@ export async function loadBackupSnapshotWithFallback(
         failures: Object.freeze(failures.slice()),
       });
     } catch (error: unknown) {
+      const reason =
+        error instanceof Error
+          ? error.message
+          : "The backup candidate could not be opened.";
       failures.push(
         Object.freeze({
           messageId: candidate.message.id,
           seq: candidate.seq,
-          reason:
-            error instanceof Error
-              ? error.message
-              : "The backup candidate could not be opened.",
+          reason,
         }),
       );
+      if (options.kind === "rfq-resume")
+        throw new Error(
+          `The newest authenticated RFQ backup sequence ${candidate.seq} could not be opened; rollback fallback is disabled. ${reason}`,
+        );
     }
   }
 

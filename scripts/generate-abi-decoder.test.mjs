@@ -412,7 +412,7 @@ test("generator refuses to overwrite the localnet decoder or emit into src/", as
   const localnet = await readFile(localnetDecoderPath, "utf8");
   assert.match(
     localnet,
-    /Fixed generated-style decoder for the local legacy fixture only/,
+    /Fixed generated-style decoder pinned to the freshly built local escrow v3 ABI/,
   );
 });
 

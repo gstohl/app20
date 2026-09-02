@@ -8,12 +8,14 @@ import {
   finalizeRfqLifecycleForStorage,
   restoreRfqLifecycle,
   reviseRfqLifecycle,
+  transitionRfqLifecycle,
   updateRfqPhaseAttempt,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
 import {
   RFQ_STORAGE_DISCLOSURE,
   assertRfqStorageReplacement,
+  assertRfqStorageTombstoneReplacement,
   createRfqLifecycleStorage,
   isRfqStorageTombstone,
   planRfqAliasMigration,
@@ -40,6 +42,14 @@ function memoryBackend() {
     async compareAndPut(key, value) {
       assertRfqStorageReplacement(rows.get(key), value);
       rows.set(key, structuredClone(finalizeRfqLifecycleForStorage(value)));
+    },
+    async compareAndPutTombstone(key, value) {
+      rows.set(
+        key,
+        structuredClone(
+          assertRfqStorageTombstoneReplacement(rows.get(key), key, value),
+        ),
+      );
     },
     async compareAndDelete(key, legacyKey, expected) {
       rows.set(
@@ -209,9 +219,62 @@ describe("RFQ lifecycle storage", () => {
     expect(restored).not.toHaveProperty("takerSigningKey");
     const backup = createRfqLifecycleStorage(memoryBackend().backend);
     await expect(backup.save(restored)).resolves.toBeUndefined();
-    expect(await backup.load(restored)).not.toHaveProperty(
-      "takerSigningKey",
-    );
+    expect(await backup.load(restored)).not.toHaveProperty("takerSigningKey");
+  });
+
+  it("persists invoice exact terms only after signed schedules finalize sizing", async () => {
+    const storage = createRfqLifecycleStorage(memoryBackend().backend);
+    const requesting = createRfqLifecycleRecord({
+      mode: "v3",
+      chainId: LOCALNET_CHAIN_ID,
+      account: "0xabc",
+      rfqId: "0x77",
+      state: "requesting",
+      now: 100,
+      requestDigest: `0x${"11".repeat(32)}`,
+      bucket: { min: "50", max: "100" },
+      takerCommitment:
+        "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+      takerSigningKey: "0x66",
+    });
+    await storage.save(requesting);
+
+    const quoted = transitionRfqLifecycle(requesting, "quoted", 101, {
+      terms: {
+        pairId: "STRK_USDC",
+        sellSymbol: "STRK",
+        sellAddress: "0x1",
+        sellDecimals: 18,
+        sellAmount: "75",
+        buySymbol: "USDC",
+        buyAddress: "0x2",
+        buyDecimals: 6,
+        minBuyAmount: "140",
+        buyAmount: "150",
+        rfqExpiresAt: 200,
+      },
+      settlement: {
+        version: "Localnet V3",
+        escrowAddress: "0x5",
+        dealId: "0x77",
+        deadline: 200,
+      },
+      fills: [
+        {
+          makerId: "maker-a",
+          lockId: "0x41",
+          amountA: "75",
+          amountB: "150",
+          lockExpiresAt: 200,
+        },
+      ],
+    });
+
+    await expect(storage.save(quoted)).resolves.toBeUndefined();
+    expect(await storage.load(quoted)).toMatchObject({
+      state: "quoted",
+      terms: { sellAmount: "75", buyAmount: "150" },
+    });
   });
 
   it("canonicalizes padded accounts and named/felt-equivalent chains at every boundary", async () => {
@@ -979,6 +1042,78 @@ describe("RFQ lifecycle storage", () => {
     }
     expect(wallet).not.toHaveBeenCalled();
     expect(server).not.toHaveBeenCalled();
+  });
+
+  it("exports bounded portable tombstones and imports them with forget-wins CAS semantics", async () => {
+    const sourceBackend = memoryBackend();
+    const source = createRfqLifecycleStorage(
+      sourceBackend.backend,
+      "portable-source",
+    );
+    const terminal = createRfqLifecycleRecord({
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "portable-forget",
+      state: "cancelled",
+      now: 500,
+    });
+    await source.save(terminal);
+    await source.remove(terminal);
+    const [portable] = await source.listTombstones("0x1", "0xabc");
+    expect(portable).toMatchObject({
+      tombstoneSchema: "app20/rfq-history-tombstone/v1",
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "portable-forget",
+      storageRevision: 0,
+      recordDigest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    });
+    expect(portable).not.toHaveProperty("storageKey");
+
+    const destinationBackend = memoryBackend();
+    const destination = createRfqLifecycleStorage(
+      destinationBackend.backend,
+      "portable-destination",
+    );
+    await destination.saveTombstone(portable!);
+    await destination.saveTombstone(portable!);
+    expect(await destination.list("0x1", "0xabc")).toEqual([]);
+    expect(await destination.listTombstones("0x1", "0xabc")).toEqual([
+      portable,
+    ]);
+    await expect(destination.save(terminal)).rejects.toThrow(
+      /forgotten RFQ ID/i,
+    );
+    await expect(
+      destination.saveTombstone({
+        ...portable!,
+        recordDigest: `sha256:${"11".repeat(32)}`,
+      }),
+    ).rejects.toThrow(/conflicting authenticated tombstones/i);
+    await expect(
+      destination.saveTombstone({
+        ...portable!,
+        rfqId: "é".repeat(129),
+      }),
+    ).rejects.toThrow(/malformed or oversized/i);
+
+    const unresolvedBackend = memoryBackend();
+    const unresolvedStorage = createRfqLifecycleStorage(
+      unresolvedBackend.backend,
+      "portable-unresolved",
+    );
+    const unresolved = createRfqLifecycleRecord({
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "portable-forget",
+      state: "reviewing",
+      now: 501,
+    });
+    await unresolvedStorage.save(unresolved);
+    await expect(unresolvedStorage.saveTombstone(portable!)).rejects.toThrow(
+      /unresolved or nonmatching/i,
+    );
+    expect(await unresolvedStorage.load(unresolved)).toEqual(unresolved);
   });
 
   it("deletes one visible record or clears every visible v1/v2 record while retaining v2 tombstones", async () => {

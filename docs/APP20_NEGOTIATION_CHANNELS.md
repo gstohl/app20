@@ -51,16 +51,16 @@ After selection, the coordinator forwards one digest-bound transcript to every i
 
 ## Authority and privacy boundaries
 
-| Item | Authority | Visibility |
-| --- | --- | --- |
-| Offer/counter/accept/cancel | Correspondence evidence only | Encrypted Mail participants when transport is integrated |
-| Wallet/Mail certificate | Attests Mail-key control at issuance | Parties receiving the certificate |
-| Attachment manifest | Binds encrypted bytes, type, and size | Negotiation participants |
-| Channel invitation and epoch | Authorizes correspondence quota only | Channel participants; relay should receive opaque capability and ciphertext |
-| RFQ v3 request | Quote invitation only | Invited maker learns pair, direction, bucket, bindings, and expiry; not exact size/floor |
-| Signed quote and collateral lock | Maker/client protocol evidence; lock constrains collateral | Taker/coordinator; lock schedule and collateral facts are public on chain |
-| Selection transcript | Fair-loss evidence only | Every invited maker; winner allocations can reveal exact size |
-| Settlement | Localnet Cairo contract plus pool-applied chain state | `LockCreated`, Take `takerSecret` calldata, `LockTaken`, and `DealTaken` facts are public |
+| Item                             | Authority                                                  | Visibility                                                                                                                                                                                                                                                  |
+| -------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Offer/counter/accept/cancel      | Correspondence evidence only                               | Encrypted Mail participants when transport is integrated                                                                                                                                                                                                    |
+| Wallet/Mail certificate          | Attests Mail-key control at issuance                       | Parties receiving the certificate                                                                                                                                                                                                                           |
+| Attachment manifest              | Binds encrypted bytes, type, and size                      | Negotiation participants                                                                                                                                                                                                                                    |
+| Channel invitation and epoch     | Authorizes correspondence quota only                       | Channel participants; relay should receive opaque capability and ciphertext                                                                                                                                                                                 |
+| RFQ v3 request                   | Quote invitation only                                      | Invited maker learns pair, direction, bucket, bindings, and expiry; not exact size/floor                                                                                                                                                                    |
+| Signed quote and collateral lock | Maker/client protocol evidence; lock constrains collateral | Taker/coordinator; lock schedule and collateral facts are public on chain                                                                                                                                                                                   |
+| Selection transcript             | Fair-loss evidence only                                    | Every invited maker; winner allocations can reveal exact size                                                                                                                                                                                               |
+| Settlement                       | Localnet Cairo contract plus pool-applied chain state      | `LockCreated` publishes schedules and the ephemeral taker public key; Take publishes its signature/ordered fills; `LockTaken` and `DealTaken` publish exact amounts/ordered digest. Output-note ownership is not signature-bound, leaving copy-sniping risk |
 
 No channel or negotiation object contains a STRK20 viewing key, maker private key, raw inventory balance, or universal disclosure key. Relays may still observe delivery timing and participation metadata; padding and batching are future transport controls, not current privacy claims.
 

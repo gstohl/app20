@@ -2,6 +2,7 @@ import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { addrSTRK } from "../../utils/constants";
+import { createBackupSnapshot } from "../../lib/backup-snapshot";
 import { decodeEnvelope, encodeEnvelope } from "../../lib/envelope";
 import type { LocalMailMessage } from "./Thread";
 import ConversationList, {
@@ -132,5 +133,41 @@ describe("conversation list accessibility", () => {
     );
     expect(markup).toContain('aria-label="Unread.');
     expect(markup).toMatch(/dateTime="2026-01-02T15:04:00.000Z"/i);
+  });
+
+  it("labels authenticated backup envelopes instead of presenting them as unsupported", () => {
+    const message = compositeMessage("incoming");
+    message.envelope = decodeEnvelope(
+      encodeEnvelope(
+        "backup_snapshot",
+        createBackupSnapshot({
+          owner: "0xa11ce",
+          chainId: "SN_SEPOLIA",
+          helperAddress: "0x1234",
+          mailboxFingerprint: "ab".repeat(32),
+          mailboxSeed: Uint8Array.from({ length: 32 }, (_, index) => index + 1),
+          kind: "contacts",
+          seq: 1,
+          payload: { entries: [] },
+        }),
+      ),
+    );
+    const markup = renderToStaticMarkup(
+      createElement(ConversationList, {
+        messages: [message],
+        selectedMessageId: null,
+        readMessageIds: new Set<string>(),
+        aliases: [],
+        selfAddress: "0xa11ce",
+        folderLabel: "Inbox",
+        filterLabel: "All types",
+        onSelect: () => undefined,
+      }),
+    );
+
+    expect(markup).toContain("Contact backup");
+    expect(markup).toContain("Wallet + mailbox recovery phrase required");
+    expect(markup).toContain("This mailbox");
+    expect(markup).not.toContain("Unsupported decrypted record");
   });
 });

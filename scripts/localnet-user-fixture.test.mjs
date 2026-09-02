@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  LOCALNET_FIXTURE_ALICE_STRK_BASE_UNITS,
   LOCALNET_FIXTURE_ETH_BASE_UNITS,
   LOCALNET_FIXTURE_STRK_BASE_UNITS,
   createLocalnetPrivateBalanceFixture,
@@ -13,9 +14,13 @@ const identities = Object.freeze({
 });
 const tokens = Object.freeze({ strk: "0xstrk", eth: "0xeth" });
 
-test("gives both localnet demo identities the same exact private STRK fixture", () => {
+test("gives each localnet demo identity its exact private fixture", () => {
   const fixture = createLocalnetPrivateBalanceFixture(identities, tokens);
 
+  assert.equal(
+    LOCALNET_FIXTURE_ALICE_STRK_BASE_UNITS,
+    20_000_000_000_000_000_000n,
+  );
   assert.equal(LOCALNET_FIXTURE_STRK_BASE_UNITS, 10_000_000_000_000_000_000n);
   assert.equal(LOCALNET_FIXTURE_ETH_BASE_UNITS, 10_000_000_000_000_000_000n);
   assert.deepEqual(
@@ -34,7 +39,7 @@ test("gives both localnet demo identities the same exact private STRK fixture", 
         tokenKey: "strk",
         tokenSymbol: "STRK",
         token: "0xstrk",
-        amountBaseUnits: 10_000_000_000_000_000_000n,
+        amountBaseUnits: 20_000_000_000_000_000_000n,
       },
       {
         identityId: "bob",
@@ -58,7 +63,7 @@ test("prints deterministic exact shielded holdings for each identity", () => {
   const fixture = createLocalnetPrivateBalanceFixture(identities, tokens);
 
   assert.deepEqual(formatLocalnetPrivateBalanceSummary(fixture), [
-    "  Alice private fixture: 10 STRK shielded (10000000000000000000 base units)",
+    "  Alice private fixture: 20 STRK shielded (20000000000000000000 base units)",
     "  Bob private fixture: 10 STRK shielded (10000000000000000000 base units) · 10 ETH shielded (10000000000000000000 base units)",
   ]);
 });

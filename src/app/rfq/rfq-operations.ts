@@ -23,17 +23,10 @@ export const LOCALNET_MAX_MAKER_SPREAD_BPS = 50;
 export const LOCALNET_STATUS_MAX_AGE_SECONDS = 30;
 
 export type OperationsMode =
-  | "running"
-  | "paused"
-  | "drain-only"
-  | "stale"
-  | "unknown";
+  "running" | "paused" | "drain-only" | "stale" | "unknown";
 export type CapacityBand = "none" | "small" | "medium" | "large" | "unknown";
 export type MakerInvitationStatus =
-  | "not-invited"
-  | "responded"
-  | "refused"
-  | "unavailable";
+  "not-invited" | "responded" | "refused" | "unavailable";
 
 export type MakerKeyStatus = "valid" | "expired" | "rotated" | "revoked";
 
@@ -495,6 +488,24 @@ export function operationsAvailabilityFingerprint(
     availability.status?.validUntil ?? 0,
     availability.status?.directory.validUntil ?? 0,
   ].join("|");
+}
+
+export type OperationsRefreshSnapshot = Readonly<{
+  status: RfqOperationsStatus | null;
+  now: number;
+}>;
+
+/** Couples a fetched status to the browser time observed after that fetch. */
+export function synchronizeOperationsRefresh(
+  status: RfqOperationsStatus | null,
+  now: number,
+): OperationsRefreshSnapshot {
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new Error(
+      "Operations refresh time must be a non-negative timestamp.",
+    );
+  }
+  return Object.freeze({ status, now });
 }
 
 export function shouldPublishOperationsClock(

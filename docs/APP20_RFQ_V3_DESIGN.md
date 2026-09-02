@@ -1,25 +1,25 @@
 # APP20 RFQ v3 — collateralized, bucket-only invitation, atomic settlement
 
-**Status: implemented below the presentation layer (2026-09-01); RFQ desk wiring remains open.** This document fixes every open decision for the v3 program so that independent lanes (Cairo, protocol, maker, localnet services, browser, Mail/backup) build against one specification. Where this document and older docs disagree, this document wins for localnet. Production/public networks stay immutable-off; nothing here changes the release boundary in [`APP20_RELEASE_GATES.md`](APP20_RELEASE_GATES.md).
+**Status: mounted and browser-tested on the build-gated localnet (2026-09-02); production/public networks remain immutable-off.** This document fixes every open decision for the v3 program so that independent lanes (Cairo, protocol, maker, localnet services, browser, Mail/backup) build against one specification. Where this document and older docs disagree, this document wins for localnet. Nothing here changes the release boundary in [`APP20_RELEASE_GATES.md`](APP20_RELEASE_GATES.md).
 
 ## 1. What changes
 
-| # | Feature | Mechanism |
-| --- | --- | --- |
-| 1 | Collateralized quotes | A maker locks the quoted token B maximum into `App20Escrow` **before** quoting. The lock carries the schedule, so the taker's atomic payout cannot default within that confirmed collateral. |
-| 2 | Bucket-only quoting | The RFQ carries a size bucket from a fixed ladder, never exact size or floor. Makers quote a piecewise-linear schedule over it. Post-selection winner allocations reveal exact size to the coordinator and can reveal it to every invited maker. |
-| 3 | Pay-any-token invoices | Mail and browser-data primitives model private STRK → Take → USDC OPEN note → private payment after maturity. The mounted desk does not yet consume/record the handoff. |
-| 4 | Multi-maker fills | One `Take` consumes one to four distinct locks atomically. |
-| 5 | Fair-loss transcripts | Every invited maker receives the same transcript. Quoted makers verify their own digest/loss price; refused makers currently record it as inconsistent. |
-| 6 | Maturity-aware scheduling | Browser data reads public pool deposit events and estimates maturity at ten blocks; the current desk/funding presentation does not render or schedule from it. |
-| 7 | Chain-anchored encrypted backup | Contacts/RFQ history can be self-backed through Mail; large payloads use encrypted padded blobs and a Mail pointer. RFQ tombstone/provenance and automatic-post wiring remain incomplete. |
-| 8 | Sealed floor | The floor remains in the browser and is applied locally after schedule evaluation. |
-| 9 | Encrypted IPFS blob store | Client-side AES-GCM blobs, CIDv1 raw/sha2-256, verified fetch, a loopback in-memory emulator, and production fail-closed origin configuration are implemented. |
-| 10 | Maker-signed indicative mids | Makers and status/browser operations publish, verify, and aggregate signed fixture mids. The market board has not wired them; CoinGecko stays opt-in. |
+| #   | Feature                         | Mechanism                                                                                                                                                                                                                                        |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Collateralized quotes           | A maker locks the quoted token B maximum into `App20Escrow` **before** quoting. The lock carries the schedule, so the taker's atomic payout cannot default within that confirmed collateral.                                                     |
+| 2   | Bucket-only quoting             | The RFQ carries a size bucket from a fixed ladder, never exact size or floor. Makers quote a piecewise-linear schedule over it. Post-selection winner allocations reveal exact size to the coordinator and can reveal it to every invited maker. |
+| 3   | Pay-any-token invoices          | Mail hands a scoped USDC request to the desk; the desk sizes private STRK against verified schedules, records the Take, and Mail completes payment after note maturity.                                                                          |
+| 4   | Multi-maker fills               | One `Take` consumes one to four distinct locks atomically.                                                                                                                                                                                       |
+| 5   | Fair-loss transcripts           | Every invited maker receives the same transcript before Take. Quoted makers verify their own digest/loss price; refused makers currently record it as inconsistent.                                                                              |
+| 6   | Maturity-aware scheduling       | The desk renders a bounded public-event estimate and can wait locally until the ten-block gate passes before soliciting makers.                                                                                                                  |
+| 7   | Chain-anchored encrypted backup | Contacts/RFQ history can be self-backed through Mail; large payloads use encrypted padded blobs and a Mail pointer. RFQ history v2 includes portable authenticated tombstones and permanent verify-only restore provenance.                      |
+| 8   | Sealed floor                    | The floor remains in the browser and is applied locally after schedule evaluation.                                                                                                                                                               |
+| 9   | Encrypted IPFS blob store       | Client-side AES-GCM blobs, CIDv1 raw/sha2-256, verified fetch, a loopback in-memory emulator, and production fail-closed origin configuration are implemented.                                                                                   |
+| 10  | Maker-signed indicative mids    | Makers and status/browser operations publish, verify, aggregate, and render signed fixture mids. CoinGecko stays independent and opt-in.                                                                                                         |
 
-**Settlement becomes atomic.** Because the maker's leg is pre-locked, the taker's single `privacy_invoke(Take)` sells leg A and receives leg B in the same transaction. Its helper calldata carries the `takerSecret` commitment preimage, so that value is local during quoting but not a post-Take secret. Takers no longer receive claim tickets; there is no funded-waiting state, no fill step, no taker timeout/refund for v3 deals. Makers settle their locks after expiry with a supply-two `LockTicket`.
+**Settlement becomes atomic.** Because the maker's leg is pre-locked, the taker's single `privacy_invoke(Take)` sells leg A and receives leg B in the same transaction. The retained wire field `takerCommitment` is the taker's ephemeral Stark public key. Cairo verifies a signature over escrow, deal, ordered tokens, and mandatory ordered `fillsDigest`; the private `takerSigningKey` is never calldata. Takers no longer receive claim tickets; there is no funded-waiting state, no fill step, no taker timeout/refund for v3 deals. Makers settle their locks after expiry with a supply-two `LockTicket`. Because the current pool helper does not expose output-note ownership to the signed message, a relayer or sequencer that obtains a signed Take can copy it and race with another output note; `TAKE_EXISTS` makes the first accepted Take terminal but does not prevent that theft.
 
-The legacy v1 flow (`Fund`/`Fill`/`Claim`/`Timeout`) stays in the contract (ABI is additive, existing storage untouched) and in libraries/tests. V3 is the target localnet product flow, but the mounted desk still invokes v1.
+The legacy v1 flow (`Fund`/`Fill`/`Claim`/`Timeout`) stays in the contract (ABI is additive, existing storage untouched) and in libraries/tests. V3 is the mounted localnet product flow; legacy lifecycle records keep separate recovery actions.
 
 ## 2. Cairo — `App20Escrow` additive ABI
 
@@ -163,16 +163,23 @@ All new modules are additive; v1 types remain exported. Names below are binding.
 ```ts
 export const PRIVATE_RFQ_V2_DOMAIN = "app20/private-rfq/v2";
 export type PrivateRfqV2 = Readonly<{
-  version: 2; domain: typeof PRIVATE_RFQ_V2_DOMAIN;
-  rfqId: string;               // 32-byte digest (unchanged semantics: intentDigest on localnet)
-  rfqFelt: string;             // the escrow rfq_id/deal_id felt (browser createLocalnetIntentId)
-  takerCommitment: string;     // felt, ephemeral taker Stark public-key x-coordinate
-  chainId: StarknetPool; registryRevision: string; directoryEpoch: number;
-  settlementHelper: string;    // escrow address
-  sellToken: string; buyToken: string;
-  sellBucketMinBaseUnits: bigint; sellBucketMaxBaseUnits: bigint;   // ladder rung
-  createdAt: number; responseDeadline: number; expiresAt: number;
-  lockExpiresAt: number;       // makers must set lock.expiry == lockExpiresAt (== expiresAt)
+  version: 2;
+  domain: typeof PRIVATE_RFQ_V2_DOMAIN;
+  rfqId: string; // 32-byte digest (unchanged semantics: intentDigest on localnet)
+  rfqFelt: string; // the escrow rfq_id/deal_id felt (browser createLocalnetIntentId)
+  takerCommitment: string; // felt, ephemeral taker Stark public-key x-coordinate
+  chainId: StarknetPool;
+  registryRevision: string;
+  directoryEpoch: number;
+  settlementHelper: string; // escrow address
+  sellToken: string;
+  buyToken: string;
+  sellBucketMinBaseUnits: bigint;
+  sellBucketMaxBaseUnits: bigint; // ladder rung
+  createdAt: number;
+  responseDeadline: number;
+  expiresAt: number;
+  lockExpiresAt: number; // makers must set lock.expiry == lockExpiresAt (== expiresAt)
 }>;
 ```
 
@@ -189,19 +196,28 @@ The browser lifecycle stores the private scalar only as `takerSigningKey` while 
 ```ts
 export const QUOTE_V3_DOMAIN = "app20/private-intent-quote/v3";
 export type SolverQuoteV3 = Readonly<{
-  domain: typeof QUOTE_V3_DOMAIN; version: 3;
-  solverId: string; quoteKeyId: string; nonce: string;
-  pool: StarknetPool; helper: string; escrowAddress: string;
-  rfqDigest: string; rfqFelt: string;
-  sellToken: string; buyToken: string;
-  schedule: PriceSchedule;              // over [a_0, a_{n-1}] ⊆ bucket; a_{n-1} = maxFill
-  lockId: string;                       // felt
-  lockTicket: string;                   // felt address
-  lockTransactionHash: string;          // felt
+  domain: typeof QUOTE_V3_DOMAIN;
+  version: 3;
+  solverId: string;
+  quoteKeyId: string;
+  nonce: string;
+  pool: StarknetPool;
+  helper: string;
+  escrowAddress: string;
+  rfqDigest: string;
+  rfqFelt: string;
+  sellToken: string;
+  buyToken: string;
+  schedule: PriceSchedule; // over [a_0, a_{n-1}] ⊆ bucket; a_{n-1} = maxFill
+  lockId: string; // felt
+  lockTicket: string; // felt address
+  lockTransactionHash: string; // felt
   lockExpiresAt: number;
-  spreadBps: number; pricingProvenance: string;
-  quotedAt: number; quoteExpiresAt: number;
-  signature: string;                    // P-256 raw low-S over canonical JSON (same as v1/v2)
+  spreadBps: number;
+  pricingProvenance: string;
+  quotedAt: number;
+  quoteExpiresAt: number;
+  signature: string; // P-256 raw low-S over canonical JSON (same as v1/v2)
 }>;
 ```
 
@@ -223,12 +239,21 @@ Deterministic: (1) if any single quote's domain covers `S`, choose max `evaluate
 ```ts
 export const SELECTION_TRANSCRIPT_DOMAIN = "app20/rfq-selection-transcript/v1";
 export type SelectionTranscriptV1 = Readonly<{
-  version: 1; domain; rfqDigest: string; rule: "app20/rfq-selection/v3";
+  version: 1;
+  domain;
+  rfqDigest: string;
+  rule: "app20/rfq-selection/v3";
   bucket: { min: string; max: string };
   createdAt: number;
-  entries: readonly { makerId: string; quoteDigest: string; outcome: "won" | "lost" | "refused"; rank: number; amountA?: string }[];
-  clearingUnitPriceE18: string;   // best unit price among winning fills
-  digest: string;                 // SHA-256 of canonical body without digest
+  entries: readonly {
+    makerId: string;
+    quoteDigest: string;
+    outcome: "won" | "lost" | "refused";
+    rank: number;
+    amountA?: string;
+  }[];
+  clearingUnitPriceE18: string; // best unit price among winning fills
+  digest: string; // SHA-256 of canonical body without digest
 }>;
 ```
 
@@ -238,8 +263,17 @@ export type SelectionTranscriptV1 = Readonly<{
 
 ```ts
 export const MAKER_MID_DOMAIN = "app20/maker-indicative-mid/v1";
-export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: string; quoteKeyId: string;
-  marketId: "STRK_USDC"; midE18: bigint; observedAt: number; validUntil: number; signature: string }>;
+export type MakerIndicativeMidV1 = Readonly<{
+  version: 1;
+  domain;
+  makerId: string;
+  quoteKeyId: string;
+  marketId: "STRK_USDC";
+  midE18: bigint;
+  observedAt: number;
+  validUntil: number;
+  signature: string;
+}>;
 ```
 
 `canonicalMakerMid`, `encode/decode`, `verifyMakerMid(mid, now, { importPublicKey, verify, resolveKey })`, `aggregateMids(mids) -> { medianE18: bigint; dispersionBps: number; count: number }` — median (even count → floor of the average of the two middle values), `dispersionBps = Number(((max − min) · 10_000n) / medianE18)` (0 when count ≤ 1), empty input → `{ medianE18: 0n, dispersionBps: 0, count: 0 }`. `formatSizeBucketLabel(symbol, bucket)` in `size-buckets.ts` renders e.g. `0.5–1 STRK`.
@@ -248,11 +282,11 @@ export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: strin
 
 ### 4.1 Maker node (`@app20/maker-node`, `scripts/localnet-maker-node.mjs`)
 
-- New WAL record kind `LockRecordV1 { lockId, rfqDigest, rfqFelt, takerCommitment, tokenA, tokenB, schedule, maxB, expiry, ticket, lockTxHash, state: "locking"|"open"|"taken"|"expired"|"settling"|"settled"|"quarantined", takenA, takenB, proceedsTxHash?, releaseTxHash?, quoteDigest? }` alongside existing reservation records (same hash-chained WAL).
+- New WAL record kind `LockRecordV1 { lockId, rfqDigest, rfqFelt, takerCommitment, tokenA, tokenB, schedule, maxB, expiry, ticket, lockTxHash, state: "locking"|"open"|"taken"|"expired"|"settling"|"reconcile-pending"|"settlement-unknown"|"settled"|"quarantined", priorState?, settlementAttempt?, takenA, takenB, proceedsTxHash?, releaseTxHash?, quoteDigest? }` alongside existing reservation records (same hash-chained WAL).
 - Quote pipeline v3: validate RFQ v2 (ladder bucket, expiry ≤ 90 s TTL), build schedule (localnet: fixed price 2 USDC/STRK ± spread; maker B also tiers: 10 bps better above the bucket midpoint), cap `a_max` by inventory, evaluate economic policy at `a_max`, submit `Lock` through the pool (same custody path as today's fill), wait for the receipt, then sign quote v3 referencing the lock. If the lock tx fails → refuse.
-- Settlement worker: every 5 s scan WAL locks with `expiry ≤ now` and settle (`SettleProceeds` when `earned_a > 0`, `ReleaseCollateral` when `remaining_b > 0`), driven by `get_lock`; idempotent; quarantines on unknown outcome.
+- Settlement worker: every 5 s scan WAL locks with `expiry ≤ now` and settle (`SettleProceeds` when `earned_a > 0`, `ReleaseCollateral` when `remaining_b > 0`), driven by `get_lock`. RPC/read uncertainty persists as `reconcile-pending`; submitted settlement uncertainty persists the exact attempt as `settlement-unknown`. Both remain active, back off, and require chain evidence before capacity is released. Contradictory or malformed durable evidence is quarantined.
 - `GET /v1/mids` returns a fresh signed `MakerIndicativeMidV1` (localnet: 2.00 USDC/STRK, maker B 2.01).
-- `POST /v1/transcripts` runs `verifySelectionTranscriptForMaker` when this maker has a signed quote; otherwise it journals an inconsistent “no signed quote” result. `GET /v1/transcripts` lists journaled acknowledgements for the unwired ops dashboard.
+- `POST /v1/transcripts` runs `verifySelectionTranscriptForMaker` when this maker has a signed quote; otherwise it journals an inconsistent “no signed quote” result. `GET /v1/transcripts` lists journaled acknowledgements for the local operations display.
 - `GET /v1/locks` lists lock records (no secrets).
 - `POST /v1/quotes-v3` (Bearer, called by the coordinator): body `PrivateRfqV2` wire → `{ quote: SolverQuoteV3Wire } | { refused: { reason } }`.
 
@@ -273,14 +307,14 @@ export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: strin
 ### 5.1 RFQ desk (`src/app/rfq/*`, `src/lib/escrow-actions.ts`)
 
 - `escrow-actions.ts` implements `buildEscrowLockActions`, `buildEscrowTakeActions`, `buildEscrowSettleProceedsActions`, and `buildEscrowReleaseCollateralActions` with variants `0x4` through `0x7`.
-- `rfq-v3-request.ts` keeps exact sell amount/floor local, derives a fixed ladder bucket, creates/persists the taker secret/commitment, and posts RFQ v2. Its maturity gate can defer a request until the estimated head block; the mounted desk does not call it.
-- `rfq-v3-selection.ts` reads each lock, verifies the quote/signature and value-critical lock fields, evaluates exact size, selects one to four fills, applies the local floor, builds quote-comparison rows, and creates the transcript. As noted below, signed `lockTicket` and `lockTransactionHash` provenance are not fully checked.
-- `rfq-final-review.ts`, `rfq-funding-orchestration.ts`, and lifecycle v3 bind exact fill values and implement the `reviewing → submission-unknown → settled | reviewing(reverted)` Take discipline. A settled transition removes `takerSecret`; restored evidence cannot submit Take.
-- `localnet-private-intents.ts` implements quote, lock, Take, transcript, and authority routes. Transcript posting and per-maker acknowledgement exist in orchestration/data code, but the mounted desk and operations dashboard do not call/render them.
-- `useRfqOperations` verifies maker mids and exposes median/dispersion plus lock/transcript counts. `DeskMarketBoard` and `OperationsDashboard` do not render those v3 fields; CoinGecko remains an independent browser opt-in.
-- `note-maturity.ts` reads bounded public `Deposit`/`OpenNoteDeposited` events keyed to the account and estimates maturity at `blockNumber + NOTE_MATURITY_BLOCKS`. It cannot observe privately transferred notes. The desk/funding display and “request when mature” control are not wired.
-- `rfq-v3-invoice.ts` estimates a STRK bucket from verified mids and computes the minimum selected schedule allocations that reach the exact USDC target. `desk-handoff.ts` actually stores a dedicated `InvoiceDeskHandoff` under `app20/desk-handoff/invoice/v1`, not the proposed mode union. Mail creates the handoff and can complete a recorded mature payment; the desk does not consume/record it.
-- `rfq-history-backup.ts` implements `exportRfqHistory` / `importRfqHistory`. Export recursively strips `takerSecret`, and imported evidence is local/non-authoritative. It does not export tombstone digests or reliably stamp restored provenance, so unresolved v3 rows can quarantine; the automatic settled-Take caller is also absent.
+- `rfq-v3-request.ts` keeps exact sell amount/floor local, derives a fixed ladder bucket, creates/persists an ephemeral Stark signing key and public `takerCommitment`, and posts RFQ v2. The mounted desk renders its maturity gate and can defer solicitation until the estimated head block.
+- `rfq-v3-selection.ts` reads each lock, verifies the maker signature and value-critical lock fields including ticket and observed creation transaction, evaluates exact size, selects one to four fills, applies the local floor, builds quote-comparison rows, and creates the transcript.
+- `rfq-final-review.ts`, `rfq-funding-orchestration.ts`, and lifecycle v3 bind exact ordered fills/`fillsDigest` and implement the `reviewing → submission-unknown → settled | expired(reverted)` discipline. A Take that reached chain and reverted closes the RFQ and deletes its key; retry is possible only when non-submission was proved before wallet entry.
+- `localnet-private-intents.ts` implements quote, lock, Take, transcript, and authority routes. The desk delivers the transcript before enabling Take and renders per-maker acknowledgements; chain evidence, not the transcript, establishes settlement.
+- `useRfqOperations` verifies maker mids and exposes median/dispersion plus lock/transcript counts to `DeskMarketBoard` and `OperationsDashboard`; CoinGecko remains an independent browser opt-in.
+- `note-maturity.ts` reads bounded public `Deposit`/`OpenNoteDeposited` events keyed to the account and estimates maturity at `blockNumber + NOTE_MATURITY_BLOCKS`. It cannot observe privately transferred notes. The desk displays this limit and offers local wait-until-mature polling.
+- `rfq-v3-invoice.ts` estimates a STRK bucket from verified mids and computes the minimum selected schedule allocations that reach the exact USDC target. The desk consumes the account/chain-scoped `InvoiceDeskHandoff`, records the settled Take, and returns to Mail for maturity-gated completion.
+- `rfq-history-backup.ts` implements authenticated `exportRfqHistory` / `importRfqHistory` payload v2. It exports bounded portable tombstones, recursively strips signing secrets, authenticates before ranking, rejects rollback/equivocation and ambiguous collisions, and durably stamps all restored v3 rows local/non-authoritative/`restoredFromBackup` so they remain verify-only across reload and re-export. A settled Take queues the opt-in auto-backup.
 
 ### 5.2 Mail, invoices, backup, IPFS (`src/lib`, `src/app/inbox`, `src/components/mail`, `workers/relay`)
 
@@ -288,7 +322,7 @@ export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: strin
 - `src/lib/backup-snapshot.ts`: `BackupSnapshotV1 { version: 1, kind: "contacts" | "rfq-resume", seq, owner, chainId, helperAddress, mailboxFingerprint, createdAt, payload, digest, mac }` using the same HKDF/HMAC discipline as `contact-backup.ts` (domain `app20/backup/v1`); `contact_snapshot` v1 remains readable.
 - `src/lib/backup-blob.ts`: `sealBackupBlob({ mailboxSeed, owner, chainId, kind, seq, bytes })` → AES-256-GCM (key = HKDF(seed, salt `app20/backup-blob/v1/salt`, info `app20/backup-blob/v1:owner:chainId:kind:seq`), 12-byte nonce, AAD = info), padded to 4096-byte buckets, header `[version=1][kind][seq u32]`; `openBackupBlob`.
 - `src/lib/blob-store.ts`: `BlobStore { put(bytes): Promise<{ cid }>; get(cid): Promise<Uint8Array> }`; `computeCidV1Raw(bytes)` (multihash sha2-256 → base32 `bafkrei…`); `createIpfsBlobStore({ rpcOrigin, gatewayOrigins })` (upload via `/api/v0/add`, fetch via `/ipfs/{cid}?format=raw` on each gateway until one verifies; hash mismatch → reject); `createUnavailableBlobStore(reason)`. Configuration: localnet → `ipfsProxyPath` from `/config`; production → `VITE_IPFS_RPC_ORIGIN`/`VITE_IPFS_GATEWAY_ORIGINS` (default empty → unavailable, fail closed).
-- Backup flow (inbox): "Back up RFQ history" and "Back up contacts" buttons create a snapshot; if its encoded envelope fits one Mail (≤ 4,293 bytes), post `backup_snapshot` inline; otherwise seal/upload a blob and post `backup_pointer { kind, seq, cid, bucketBytes, blobDigest }`. Restore selects the newest message per kind, fetches and re-verifies any pointer, authenticates the snapshot, and performs an explicit keep-newer merge (`importRfqHistory` for RFQ rows). The opt-in auto-backup preference/helper exists, but no settled-Take path invokes it; every eventual backup is a public helper transaction.
+- Backup flow (inbox): "Back up RFQ history" and "Back up contacts" buttons create a snapshot; if its encoded envelope fits one Mail (≤ 4,293 bytes), post `backup_snapshot` inline; otherwise seal/upload a blob and post `backup_pointer { kind, seq, cid, bucketBytes, blobDigest }`. Candidate snapshots/pointers are authenticated before sequence ranking; same-sequence disagreement is rejected and RFQ restore never falls back past an unavailable/invalid newest authenticated candidate. Import enforces scope, a durable sequence high-water, strict bounded v2 record/tombstone shape, and an explicit keep-newer merge. Every backup is a public helper transaction; settled Take only queues the opt-in request for the next unlocked Mailbox session.
 - Invoices: `PaymentRequestPayload.token` may be localnet USDC (registry-resolved) in addition to STRK. `InvoiceCard` shows "Pay privately with STRK" when the invoice token is USDC, which navigates to the desk in invoice mode. Inbox shows "Complete payment" for `awaiting-note-maturity` records once `takeBlock + 10 ≤ head` (uses `note-maturity.ts`), which runs the existing memo-transfer pay path with the USDC token and the recorded amount; states `awaiting-note-maturity → reserved → submitted → confirmed`.
 - Relay CSP: `headers.ts` adds `IPFS_ORIGINS` env (comma-separated HTTPS origins, same validation as Privy origins) appended to `connect-src`; default unset → unchanged CSP. `verify-production-csp.mjs` needs no change while unset.
 
@@ -302,7 +336,7 @@ export type MakerIndicativeMidV1 = Readonly<{ version: 1; domain; makerId: strin
 
 ## 7. Lifecycle of a v3 RFQ (localnet)
 
-1. Taker enters exact size and floor → bucket + `takerSecret` created → RFQ v2 posted.
+1. Taker enters exact size and floor → bucket + ephemeral Stark key created (`takerCommitment` is its public key) → RFQ v2 posted.
 2. Coordinator fans out; each maker locks inventory on chain and returns a signed quote v3 (or refusal).
 3. Browser verifies each quote against `get_lock`, evaluates schedules at the exact size, selects fills, checks the local floor.
 4. Browser posts the fair-loss transcript to all invited makers.
@@ -316,12 +350,13 @@ Personal maker cohorts, constant-shape fanout, maker-sponsored fees, counter-off
 
 ## 9. Implementation notes
 
-Verified against the current tree after the Cairo, protocol, maker, localnet-service, browser-data, and Mail lanes merged:
+Verified against the current tree after the Cairo, protocol, maker, localnet-service, browser, and Mail/backup lanes merged:
 
-- The RFQ v3 service and data layers are present, but `LocalnetPrivateIntentDesk.tsx`, `DeskMarketBoard.tsx`, and `OperationsDashboard.tsx` still drive the legacy v1 presentation. They do not import the v3 request/selection/invoice modules, consume the invoice desk handoff, submit `Take`, or render maker mids, lock counts, transcript acknowledgements, or chain-derived maturity. End-to-end v3 presentation wiring remains an engineering gap.
+- `LocalnetPrivateIntentDesk.tsx` mounts the v3 request, quote, transcript, final review, Take, maturity, invoice, and auto-backup orchestration. `DeskMarketBoard.tsx` and `OperationsDashboard.tsx` render verified mids and local lock/transcript status. Browser evidence remains serial localnet evidence, not production authority.
 - `LockParams.token` is the implemented ABI name for token B, the collateral received from the maker; `counter_token` is token A, received later from the taker. The implementation deliberately stores them as `Lock.token_b` and `Lock.token_a`, respectively. Documentation must not reinterpret `LockParams.token` as token A.
-- `SolverQuoteV3` signs `lockTicket` and `lockTransactionHash`. `readEscrowLock` returns `ticket`, but `SolverQuoteV3LockOnChain` omits it and `verifyQuotesV3` does not compare the two; the verifier also does not resolve the asserted lock transaction receipt. It does bind the current lock selected by `lockId` to RFQ id, taker commitment, pair, expiry, schedule, status, and sufficient remaining B, so Take value comes from contract state; ticket/transaction provenance remains an evidence gap to close before presentation wiring.
+- `SolverQuoteV3` signs `lockTicket` and `lockTransactionHash`; the browser compares them with the chain-derived `get_lock` view before selection. Take value remains defined by current contract state.
 - `LockTicket.transfer_balance` accepts normal one-unit settlement transfers plus one narrowly scoped bootstrap exception: the initial two-unit escrow→pool move that deposits the maker's OPEN ticket note.
 - A transcript has no top-level exact-size field, but each winning entry carries `amountA`. The coordinator receives the full transcript and forwards it to every invited maker, so summing winning allocations reveals exact sell size to the coordinator and can reveal it to each maker after selection. Refused makers can acknowledge receipt but, because they have no signed quote lock, their current maker-node verification is recorded as inconsistent rather than proving a refusal digest. These limit bucket-only disclosure to invitation time and fair-loss verification to makers that produced signed quotes.
-- The implemented RFQ-history API is `exportRfqHistory` / `importRfqHistory`, not `exportRfqResumeRecords` / `importRfqResumeRecords`. It strips locally retained `takerSecret` and makes imported evidence local/non-authoritative, but cannot remove the preimage from submitted Take calldata, export tombstone digests, or reliably stamp `restoredFromBackup`; unresolved v3 rows can therefore be quarantined during export/import validation. The auto-backup preference and helper exist, but no settled-Take caller invokes the helper. Tombstone/provenance and automatic-post wiring remain deferred.
-- Invoice handoff storage is `app20/desk-handoff/invoice/v1` with a dedicated `InvoiceDeskHandoff` shape rather than a `mode: "invoice"` v3 union. Mail can create the handoff and complete a recorded mature USDC payment, while the current RFQ presentation does not yet consume that handoff or record the settled Take.
+- Take authorization binds escrow address, RFQ/deal id, ordered tokens, and mandatory ordered `fillsDigest` to the ephemeral Stark public key retained under the wire name `takerCommitment`. It does not bind the pool's output note id/owner. A copied signed Take can therefore be raced by a relayer or sequencer; the first accepted transaction consumes the RFQ. This cannot be fully repaired without an ownership-binding pool API.
+- RFQ history payload v2 carries lifecycle tombstones and a per-tombstone digest. Import authenticates the containing snapshot first, then rejects rollback, equivocation, duplicates, cross-scope values, record/tombstone ambiguity, malformed/oversized IDs or payloads, and invalid lifecycle state. Tombstones persist on fresh databases and win over records. Restored v3 rows have no signing key and permanently preserve `restoredFromBackup` through reload/export/re-import. A device presented only an older authentic snapshot from before a deletion still cannot infer the absent newer tombstone.
+- Invoice handoff storage is `app20/desk-handoff/invoice/v1` with a dedicated `InvoiceDeskHandoff` shape rather than a `mode: "invoice"` v3 union. Mail creates it; the mounted desk records a settled Take; Mail then enforces the ten-block completion gate.

@@ -346,5 +346,5 @@ export async function requestLocalnetMakerGet(
       `${client.solverId}: ${payload.error ?? `HTTP ${response.status}`}`,
     );
   }
-  return payload;
+  return payload.result === undefined ? payload : payload.result;
 }

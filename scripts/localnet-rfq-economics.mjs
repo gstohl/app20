@@ -251,10 +251,9 @@ export function buildLocalnetMakerSchedule({
     else high = middle - 1n;
   }
   const aMax = low;
-  if (aMax <= bucketMinBaseUnits || (isMakerB && aMax <= midpoint)) {
-    return null;
-  }
-  const schedule = isMakerB
+  if (aMax <= bucketMinBaseUnits) return null;
+  const reachesImprovedTier = isMakerB && aMax > midpoint;
+  const schedule = reachesImprovedTier
     ? Object.freeze([
         Object.freeze({
           a: bucketMinBaseUnits,

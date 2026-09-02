@@ -4,6 +4,7 @@ import { afterEach, test } from "node:test";
 import {
   dispatchLocalnetMakerFill,
   requestLocalnetMaker,
+  requestLocalnetMakerGet,
 } from "./localnet-maker-http.mjs";
 
 const servers = [];
@@ -141,6 +142,30 @@ test("production fill parser rejects noncanonical deadline and ticket before wal
     );
     assert.equal(fixture.walletCalls(), 0);
   }
+});
+
+test("maker GET requests accept direct and result-wrapped response bodies", async () => {
+  const direct = Object.freeze({ mid: "signed-mid" });
+  const server = createServer((request, response) => {
+    assert.equal(request.headers.authorization, "Bearer test-only");
+    respond(
+      response,
+      200,
+      request.url === "/wrapped" ? { result: direct } : direct,
+    );
+  });
+  servers.push(server);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.equal(typeof address, "object");
+  const client = {
+    endpoint: `http://127.0.0.1:${address.port}`,
+    authToken: "test-only",
+    solverId: "maker-get",
+  };
+
+  assert.deepEqual(await requestLocalnetMakerGet(client, "/direct"), direct);
+  assert.deepEqual(await requestLocalnetMakerGet(client, "/wrapped"), direct);
 });
 
 test("maker requests time out when a peer accepts but never responds", async () => {

@@ -6,6 +6,8 @@ import {
 } from "./rfq-authority";
 import { readLocalnetRfqAuthority } from "./localnet-private-intents";
 import {
+  applyRfqAuthoritySignal,
+  assertRfqV3LifecycleBindings,
   beginRfqPhaseAttempt,
   confirmRfqV3Take,
   createRfqLifecycleRecord,
@@ -114,6 +116,22 @@ describe("RFQ v3 authority request", () => {
     ).toThrow(/fill composition/i);
   });
 
+  it("keeps a reorged settled record valid after terminal key deletion", () => {
+    const settled = settledV3();
+    expect(settled.takerSigningKey).toBeUndefined();
+
+    const reorged = applyRfqAuthoritySignal(settled, {
+      status: "reorged",
+      label: "Reorg-invalidated · canonical membership lost",
+      revision: settled.evidenceAuthority.revision + 1,
+      observedAt: NOW + 4,
+    });
+
+    expect(reorged.state).toBe("reorged");
+    expect(reorged.takerSigningKey).toBeUndefined();
+    expect(() => assertRfqV3LifecycleBindings(reorged)).not.toThrow();
+  });
+
   it("sends one exact Take candidate and its fill projection", async () => {
     let body: Record<string, unknown> | undefined;
     vi.stubGlobal(
@@ -131,9 +149,7 @@ describe("RFQ v3 authority request", () => {
               dealId: "0x77",
               lifecycle: "v3",
               status: "authoritative",
-              fillsDigest: fillsDigest([
-                { lockId: "0x41", amountA: 100n },
-              ]),
+              fillsDigest: fillsDigest([{ lockId: "0x41", amountA: 100n }]),
               lockTaken: [{ lockId: "0x41", amountA: "100" }],
               revision: 1,
               observedAt: NOW + 4,

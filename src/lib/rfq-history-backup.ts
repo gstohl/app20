@@ -1,29 +1,66 @@
 import {
   canonicalRfqAccount,
   canonicalRfqChainId,
+  lifecycleMayForget,
   restoreRfqLifecycle,
   type RfqLifecycleRecord,
 } from "@/app/rfq/rfq-lifecycle";
-import type { BackupJsonValue } from "./backup-snapshot";
+import {
+  normalizeRfqPortableTombstone,
+  rfqLifecycleRecordDigest,
+  type RfqPortableTombstone,
+} from "@/app/rfq/rfq-storage";
+import {
+  normalizeBackupSnapshotContext,
+  verifyBackupSnapshot,
+  type BackupJsonValue,
+  type BackupSnapshotContext,
+} from "./backup-snapshot";
 
 export const RFQ_HISTORY_AUTO_BACKUP_PREFIX =
   "app20/rfq-history-auto-backup/v1";
-export const RFQ_HISTORY_BACKUP_MAX_RECORDS = 1_000;
+export const RFQ_HISTORY_BACKUP_SCHEMA = "app20/rfq-history-backup/v2" as const;
+export const RFQ_HISTORY_RESTORE_HIGH_WATER_PREFIX =
+  "app20/rfq-history-restore-high-water/v1";
+export const RFQ_HISTORY_BACKUP_MAX_ENTRIES = 1_000;
+export const RFQ_HISTORY_BACKUP_MAX_BYTES = 1_000_000;
+export const RFQ_HISTORY_BACKUP_MAX_RECORDS = RFQ_HISTORY_BACKUP_MAX_ENTRIES;
 
 export type RfqHistoryExport = Readonly<{
+  schema: typeof RFQ_HISTORY_BACKUP_SCHEMA;
+  chainId: string;
+  account: string;
   records: readonly RfqLifecycleRecord[];
+  tombstones: readonly RfqPortableTombstone[];
   count: number;
+  tombstoneCount: number;
 }>;
 
 export type RfqHistoryStorage = Readonly<{
   list(chainId: string, account: string): Promise<unknown[]>;
+  listTombstones(
+    chainId: string,
+    account: string,
+  ): Promise<RfqPortableTombstone[]>;
   save(record: RfqLifecycleRecord): Promise<void>;
+  saveTombstone(tombstone: RfqPortableTombstone): Promise<void>;
 }>;
 
 export type ImportRfqHistoryResult = Readonly<{
   imported: number;
   skipped: number;
+  tombstonesImported: number;
+  tombstonesSkipped: number;
   count: number;
+  tombstoneCount: number;
+}>;
+
+export type ImportRfqHistoryOptions = Readonly<{
+  onConflict: "keep-newer";
+  mailboxSeed: Uint8Array;
+  snapshotContext: BackupSnapshotContext;
+  sequenceStorage: Pick<Storage, "getItem" | "setItem">;
+  now?: number;
 }>;
 
 export type ExportAndPostRfqHistoryInput = Readonly<{
@@ -40,6 +77,35 @@ function unixSeconds(): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function assertBoundedHistoryBytes(value: unknown): void {
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error("The RFQ history backup is not valid bounded JSON.");
+  }
+  if (
+    encoded === undefined ||
+    new TextEncoder().encode(encoded).length > RFQ_HISTORY_BACKUP_MAX_BYTES
+  )
+    throw new Error("The RFQ history backup exceeds the 1 MB payload limit.");
+}
+
+function canonicalBackupJson(value: BackupJsonValue): string {
+  if (Array.isArray(value))
+    return `[${value.map((item) => canonicalBackupJson(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(
+        ([key, child]) =>
+          `${JSON.stringify(key)}:${canonicalBackupJson(child)}`,
+      )
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function stripTakerAuthorizationSecrets(
@@ -79,9 +145,7 @@ function stripTakerAuthorizationSecrets(
     }
     return Object.fromEntries(
       Object.entries(value)
-        .filter(
-          ([key]) => key !== "takerSecret" && key !== "takerSigningKey",
-        )
+        .filter(([key]) => key !== "takerSecret" && key !== "takerSigningKey")
         .map(([key, child]) => [
           key,
           stripTakerAuthorizationSecrets(child, ancestors, `${path}.${key}`),
@@ -119,12 +183,17 @@ function sourceIdentity(value: unknown): {
   };
 }
 
-function restoreBackupRow(value: unknown, now: number): RfqLifecycleRecord {
+function restoreBackupRow(
+  value: unknown,
+  now: number,
+  fromBackup = false,
+): RfqLifecycleRecord {
   const identity = sourceIdentity(value);
   const restored = restoreRfqLifecycle(value, {
     chainId: identity.chainId,
     account: identity.account,
     now,
+    ...(fromBackup ? { fromBackup: true } : {}),
   });
   if (
     restored.chainId !== identity.chainId ||
@@ -138,42 +207,102 @@ function restoreBackupRow(value: unknown, now: number): RfqLifecycleRecord {
 }
 
 function parseExport(value: unknown): {
+  chainId: string;
+  account: string;
   records: unknown[];
+  tombstones: unknown[];
   count: number;
+  tombstoneCount: number;
 } {
+  const expectedKeys = [
+    "account",
+    "chainId",
+    "count",
+    "records",
+    "schema",
+    "tombstoneCount",
+    "tombstones",
+  ];
   if (
     !isRecord(value) ||
-    Object.keys(value).sort().join(",") !== "count,records"
+    Object.keys(value).sort().join(",") !== expectedKeys.join(",") ||
+    value.schema !== RFQ_HISTORY_BACKUP_SCHEMA ||
+    typeof value.chainId !== "string" ||
+    typeof value.account !== "string"
   ) {
     throw new Error("The RFQ history backup schema is unsupported.");
   }
+  assertBoundedHistoryBytes(value);
   if (
     !Array.isArray(value.records) ||
-    value.records.length > RFQ_HISTORY_BACKUP_MAX_RECORDS ||
+    !Array.isArray(value.tombstones) ||
+    value.records.length + value.tombstones.length >
+      RFQ_HISTORY_BACKUP_MAX_ENTRIES ||
     typeof value.count !== "number" ||
     !Number.isSafeInteger(value.count) ||
-    value.count !== value.records.length
+    value.count !== value.records.length ||
+    typeof value.tombstoneCount !== "number" ||
+    !Number.isSafeInteger(value.tombstoneCount) ||
+    value.tombstoneCount !== value.tombstones.length
   ) {
     throw new Error("The RFQ history backup count is invalid.");
   }
-  return { records: value.records, count: value.count };
+  return {
+    chainId: canonicalRfqChainId(value.chainId),
+    account: canonicalRfqAccount(value.account),
+    records: value.records,
+    tombstones: value.tombstones,
+    count: value.count,
+    tombstoneCount: value.tombstoneCount,
+  };
+}
+
+function assertUniqueHistoryIds(
+  records: readonly RfqLifecycleRecord[],
+  tombstones: readonly RfqPortableTombstone[],
+): void {
+  const recordIds = new Set<string>();
+  for (const record of records) {
+    if (recordIds.has(record.rfqId))
+      throw new Error("The RFQ history backup contains duplicate RFQ ids.");
+    recordIds.add(record.rfqId);
+  }
+  const tombstoneIds = new Set<string>();
+  for (const tombstone of tombstones) {
+    if (tombstoneIds.has(tombstone.rfqId))
+      throw new Error(
+        "The RFQ history backup contains duplicate tombstone RFQ ids.",
+      );
+    if (recordIds.has(tombstone.rfqId))
+      throw new Error(
+        "The RFQ history backup ambiguously contains both a record and tombstone for one RFQ id.",
+      );
+    tombstoneIds.add(tombstone.rfqId);
+  }
 }
 
 export async function exportRfqHistory(
-  storage: Pick<RfqHistoryStorage, "list">,
+  storage: Pick<RfqHistoryStorage, "list" | "listTombstones">,
   chainId: string,
   account: string,
 ): Promise<RfqHistoryExport> {
   const normalizedChain = canonicalRfqChainId(chainId);
   const normalizedAccount = canonicalRfqAccount(account);
-  const rows = await storage.list(normalizedChain, normalizedAccount);
-  if (!Array.isArray(rows) || rows.length > RFQ_HISTORY_BACKUP_MAX_RECORDS) {
-    throw new Error("RFQ history exceeds the bounded backup record count.");
+  const [rows, storedTombstones] = await Promise.all([
+    storage.list(normalizedChain, normalizedAccount),
+    storage.listTombstones(normalizedChain, normalizedAccount),
+  ]);
+  if (
+    !Array.isArray(rows) ||
+    !Array.isArray(storedTombstones) ||
+    rows.length + storedTombstones.length > RFQ_HISTORY_BACKUP_MAX_ENTRIES
+  ) {
+    throw new Error("RFQ history exceeds the bounded backup entry count.");
   }
   const now = unixSeconds();
   const records = rows.map((row) => {
-    const restored = restoreBackupRow(
-      stripTakerAuthorizationSecrets(row),
+    const restored = markRestoredVerifyOnly(
+      restoreBackupRow(stripTakerAuthorizationSecrets(row), now, true),
       now,
     );
     if (
@@ -186,24 +315,113 @@ export async function exportRfqHistory(
     }
     return Object.freeze(restored);
   });
-  return Object.freeze({
+  const tombstones = storedTombstones.map((value) =>
+    normalizeRfqPortableTombstone(value, {
+      chainId: normalizedChain,
+      account: normalizedAccount,
+    }),
+  );
+  assertUniqueHistoryIds(records, tombstones);
+  const history = Object.freeze({
+    schema: RFQ_HISTORY_BACKUP_SCHEMA,
+    chainId: normalizedChain,
+    account: normalizedAccount,
     records: Object.freeze(records),
+    tombstones: Object.freeze(tombstones),
     count: records.length,
+    tombstoneCount: tombstones.length,
   });
+  assertBoundedHistoryBytes(history);
+  return history;
 }
 
 function markRestoredVerifyOnly(
   record: RfqLifecycleRecord,
   observedAt: number,
 ): RfqLifecycleRecord {
+  const { takerSigningKey: _removedSigningKey, ...withoutSigningKey } = record;
   return Object.freeze({
-    ...record,
+    ...withoutSigningKey,
     evidenceAuthority: Object.freeze({
       ...record.evidenceAuthority,
       status: "local-non-authoritative" as const,
       observedAt,
     }),
+    ...(record.mode === "v3" ? { restoredFromBackup: true as const } : {}),
   });
+}
+
+function comparableBackupRecord(
+  value: RfqLifecycleRecord,
+  now: number,
+): string {
+  const normalized = markRestoredVerifyOnly(
+    restoreBackupRow(stripTakerAuthorizationSecrets(value), now, true),
+    now,
+  );
+  const {
+    storageRevision: _storageRevision,
+    storagePredecessorRevision: _storagePredecessorRevision,
+    ...comparable
+  } = normalized;
+  return canonicalBackupJson(stripTakerAuthorizationSecrets(comparable));
+}
+
+function restoreHighWaterKey(context: BackupSnapshotContext): string {
+  const normalized = normalizeBackupSnapshotContext(context);
+  return [
+    RFQ_HISTORY_RESTORE_HIGH_WATER_PREFIX,
+    normalized.chainId,
+    normalized.owner,
+    normalized.helperAddress,
+    normalized.mailboxFingerprint,
+  ].join("/");
+}
+
+function assertRestoreHighWater(
+  storage: Pick<Storage, "getItem">,
+  context: BackupSnapshotContext,
+  snapshot: Readonly<{ seq: number; digest: string }>,
+): void {
+  const key = restoreHighWaterKey(context);
+  const raw = storage.getItem(key);
+  if (raw !== null) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error("The RFQ backup restore high-water is malformed.");
+    }
+    if (
+      !isRecord(parsed) ||
+      Object.keys(parsed).sort().join(",") !== "digest,seq" ||
+      typeof parsed.seq !== "number" ||
+      !Number.isSafeInteger(parsed.seq) ||
+      parsed.seq < 0 ||
+      typeof parsed.digest !== "string" ||
+      !/^[0-9a-f]{64}$/.test(parsed.digest)
+    )
+      throw new Error("The RFQ backup restore high-water is malformed.");
+    if (snapshot.seq < parsed.seq)
+      throw new Error(
+        "RFQ history restore rejected an authenticated backup sequence rollback.",
+      );
+    if (snapshot.seq === parsed.seq && snapshot.digest !== parsed.digest)
+      throw new Error(
+        "RFQ history restore rejected conflicting authenticated snapshots at one sequence.",
+      );
+  }
+}
+
+function persistRestoreHighWater(
+  storage: Pick<Storage, "setItem">,
+  context: BackupSnapshotContext,
+  snapshot: Readonly<{ seq: number; digest: string }>,
+): void {
+  storage.setItem(
+    restoreHighWaterKey(context),
+    JSON.stringify({ seq: snapshot.seq, digest: snapshot.digest }),
+  );
 }
 
 function prepareInitialRecord(record: RfqLifecycleRecord): RfqLifecycleRecord {
@@ -228,66 +446,162 @@ function prepareReplacementRecord(
 
 export async function importRfqHistory(
   storage: RfqHistoryStorage,
-  value: unknown,
-  options: Readonly<{ onConflict: "keep-newer" }>,
+  snapshotValue: unknown,
+  options: ImportRfqHistoryOptions,
 ): Promise<ImportRfqHistoryResult> {
   if (options.onConflict !== "keep-newer") {
     throw new Error("RFQ history import supports only keep-newer conflicts.");
   }
-  const parsed = parseExport(value);
-  if (parsed.records.length === 0) {
-    return Object.freeze({ imported: 0, skipped: 0, count: 0 });
-  }
-  const now = unixSeconds();
-  const incoming = parsed.records.map((row) => ({
-    identity: sourceIdentity(row),
-    record: markRestoredVerifyOnly(
-      restoreBackupRow(stripTakerAuthorizationSecrets(row), now),
-      now,
-    ),
-  }));
-  const scopes = new Set(
-    incoming.map(
-      ({ identity }) => `${identity.chainId}\u0000${identity.account}`,
-    ),
-  );
-  if (scopes.size !== 1) {
+  const verificationNow = options.now ?? Date.now();
+  const snapshot = verifyBackupSnapshot(snapshotValue, {
+    ...options.snapshotContext,
+    mailboxSeed: options.mailboxSeed,
+    kind: "rfq-resume",
+    now: verificationNow,
+  });
+  const parsed = parseExport(snapshot.payload);
+  if (
+    parsed.chainId !== canonicalRfqChainId(snapshot.chainId) ||
+    parsed.account !== canonicalRfqAccount(snapshot.owner)
+  )
     throw new Error(
-      "One RFQ history backup must contain exactly one wallet and chain scope.",
+      "The authenticated RFQ history payload contradicts its wallet or chain scope.",
     );
-  }
-  const ids = new Set<string>();
-  for (const { record } of incoming) {
-    if (ids.has(record.rfqId)) {
-      throw new Error("The RFQ history backup contains duplicate RFQ ids.");
-    }
-    ids.add(record.rfqId);
-  }
+  assertRestoreHighWater(
+    options.sequenceStorage,
+    options.snapshotContext,
+    snapshot,
+  );
+  const now = Math.floor(verificationNow / 1_000);
+  const incoming = parsed.records.map((row) => {
+    const identity = sourceIdentity(row);
+    const record = markRestoredVerifyOnly(
+      restoreBackupRow(stripTakerAuthorizationSecrets(row), now, true),
+      now,
+    );
+    if (
+      identity.chainId !== parsed.chainId ||
+      identity.account !== parsed.account ||
+      (record.mode === "v3" &&
+        (record.restoredFromBackup !== true ||
+          record.takerSigningKey !== undefined))
+    )
+      throw new Error(
+        "The RFQ history backup row failed its authenticated scope or verify-only invariant.",
+      );
+    return { identity, record };
+  });
+  const incomingTombstones = parsed.tombstones.map((value) =>
+    normalizeRfqPortableTombstone(value, parsed),
+  );
+  assertUniqueHistoryIds(
+    incoming.map(({ record }) => record),
+    incomingTombstones,
+  );
 
-  const scope = incoming[0]!.identity;
-  const storedRows = await storage.list(scope.chainId, scope.account);
+  const [storedRows, storedTombstones] = await Promise.all([
+    storage.list(parsed.chainId, parsed.account),
+    storage.listTombstones(parsed.chainId, parsed.account),
+  ]);
+  if (
+    !Array.isArray(storedRows) ||
+    !Array.isArray(storedTombstones) ||
+    storedRows.length + storedTombstones.length > RFQ_HISTORY_BACKUP_MAX_ENTRIES
+  )
+    throw new Error("Local RFQ history exceeds the bounded merge entry count.");
+
   const existingById = new Map<string, RfqLifecycleRecord>();
   for (const row of storedRows) {
     const restored = restoreBackupRow(row, now);
+    if (existingById.has(restored.rfqId))
+      throw new Error("Local RFQ history contains duplicate RFQ ids.");
     existingById.set(restored.rfqId, restored);
   }
+  const localTombstones = storedTombstones.map((value) =>
+    normalizeRfqPortableTombstone(value, parsed),
+  );
+  const localTombstoneById = new Map<string, RfqPortableTombstone>();
+  for (const tombstone of localTombstones) {
+    if (localTombstoneById.has(tombstone.rfqId))
+      throw new Error("Local RFQ history contains duplicate tombstone ids.");
+    localTombstoneById.set(tombstone.rfqId, tombstone);
+  }
 
-  let imported = 0;
+  for (const { record } of incoming) {
+    if (localTombstoneById.has(record.rfqId))
+      throw new Error(
+        "RFQ history restore refused to resurrect a locally forgotten RFQ.",
+      );
+  }
+
+  const tombstonesToSave: RfqPortableTombstone[] = [];
+  let tombstonesSkipped = 0;
+  for (const tombstone of incomingTombstones) {
+    const localTombstone = localTombstoneById.get(tombstone.rfqId);
+    if (localTombstone) {
+      if (localTombstone.recordDigest !== tombstone.recordDigest)
+        throw new Error(
+          "RFQ history restore found conflicting authenticated tombstones.",
+        );
+      tombstonesSkipped += 1;
+      continue;
+    }
+    const existing = existingById.get(tombstone.rfqId);
+    if (
+      existing &&
+      existing.restoredFromBackup !== true &&
+      (!lifecycleMayForget(existing) ||
+        rfqLifecycleRecordDigest(existing) !== tombstone.recordDigest)
+    )
+      throw new Error(
+        "RFQ history restore refused a tombstone over unresolved or nonmatching local evidence.",
+      );
+    tombstonesToSave.push(tombstone);
+  }
+
+  const recordsToSave: RfqLifecycleRecord[] = [];
   let skipped = 0;
   for (const entry of incoming) {
     const existing = existingById.get(entry.record.rfqId);
-    if (existing && existing.updatedAt >= entry.identity.updatedAt) {
+    if (existing && existing.updatedAt > entry.identity.updatedAt) {
       skipped += 1;
       continue;
     }
-    const prepared = existing
-      ? prepareReplacementRecord(entry.record, existing)
-      : prepareInitialRecord(entry.record);
-    await storage.save(prepared);
-    existingById.set(entry.record.rfqId, prepared);
-    imported += 1;
+    if (existing && existing.updatedAt === entry.identity.updatedAt) {
+      if (
+        comparableBackupRecord(existing, now) !==
+        comparableBackupRecord(entry.record, now)
+      )
+        throw new Error(
+          "RFQ history restore found ambiguous same-time lifecycle records.",
+        );
+      skipped += 1;
+      continue;
+    }
+    recordsToSave.push(
+      existing
+        ? prepareReplacementRecord(entry.record, existing)
+        : prepareInitialRecord(entry.record),
+    );
   }
-  return Object.freeze({ imported, skipped, count: parsed.count });
+
+  persistRestoreHighWater(
+    options.sequenceStorage,
+    options.snapshotContext,
+    snapshot,
+  );
+  for (const tombstone of tombstonesToSave)
+    await storage.saveTombstone(tombstone);
+  for (const record of recordsToSave) await storage.save(record);
+
+  return Object.freeze({
+    imported: recordsToSave.length,
+    skipped,
+    tombstonesImported: tombstonesToSave.length,
+    tombstonesSkipped,
+    count: parsed.count,
+    tombstoneCount: parsed.tombstoneCount,
+  });
 }
 
 function autoBackupKey(chainId: string, account: string): string {
@@ -331,5 +645,8 @@ export async function exportAndPostRfqHistoryIfEnabled(
     input.account,
   );
   await input.post(history);
-  return Object.freeze({ posted: true, count: history.count });
+  return Object.freeze({
+    posted: true,
+    count: history.count + history.tombstoneCount,
+  });
 }

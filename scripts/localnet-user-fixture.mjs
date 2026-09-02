@@ -1,5 +1,7 @@
 const LOCALNET_FIXTURE_TOKEN_SCALE = 10n ** 18n;
 
+export const LOCALNET_FIXTURE_ALICE_STRK_BASE_UNITS =
+  20n * LOCALNET_FIXTURE_TOKEN_SCALE;
 export const LOCALNET_FIXTURE_STRK_BASE_UNITS =
   10n * LOCALNET_FIXTURE_TOKEN_SCALE;
 export const LOCALNET_FIXTURE_ETH_BASE_UNITS =
@@ -10,7 +12,7 @@ const PRIVATE_BALANCE_FIXTURE = Object.freeze([
     identityId: "alice",
     tokenKey: "strk",
     tokenSymbol: "STRK",
-    amountBaseUnits: LOCALNET_FIXTURE_STRK_BASE_UNITS,
+    amountBaseUnits: LOCALNET_FIXTURE_ALICE_STRK_BASE_UNITS,
   }),
   Object.freeze({
     identityId: "bob",

@@ -1,8 +1,5 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
-import {
-  fillsDigest,
-  takerPublicKeyFor,
-} from "@app20/private-intents";
+import { fillsDigest, takerPublicKeyFor } from "@app20/private-intents";
 import { LOCALNET_CHAIN_ID } from "@/utils/constants";
 
 export const RFQ_LIFECYCLE_SCHEMA_REVISION = "app20/rfq-lifecycle/v3" as const;
@@ -33,11 +30,7 @@ export type RfqLifecycleState =
   | "quarantined";
 
 export type RfqAttemptPhase =
-  | "funding"
-  | "fill"
-  | "claim"
-  | "refund"
-  | "reservation-release";
+  "funding" | "fill" | "claim" | "refund" | "reservation-release";
 export type RfqLifecycleAttemptPhase = RfqAttemptPhase | "take";
 export type RfqAttemptState =
   | "not-started"
@@ -490,6 +483,7 @@ const V3_KEY_TERMINAL_STATES = new Set<RfqLifecycleState>([
   "expired",
   "refused",
   "cancelled",
+  "reorged",
 ]);
 
 function v3StateKeepsSigningKey(state: RfqLifecycleState): boolean {
@@ -501,8 +495,8 @@ function takeAttemptWasProvenNotSubmitted(
 ): boolean {
   return Boolean(
     attempt?.state === "reverted" &&
-      attempt.walletBoundary === "not-entered" &&
-      !attempt.transactionHash,
+    attempt.walletBoundary === "not-entered" &&
+    !attempt.transactionHash,
   );
 }
 
@@ -827,20 +821,20 @@ function settlementTargetMatchesRecord(
   const { terms, selectedQuote, settlement } = record;
   return Boolean(
     targetCommonMatchesRecord(record, target) &&
-      terms &&
-      selectedQuote &&
-      settlement &&
-      sameIdentity(target.dealId, settlement.dealId) &&
-      target.solverId === selectedQuote.solverId &&
-      target.reservationId === selectedQuote.reservationId &&
-      target.reservationFence === selectedQuote.reservationFence &&
-      target.quoteDigest === selectedQuote.quoteDigest &&
-      sameIdentity(target.sellToken, terms.sellAddress) &&
-      target.sellAmount === terms.sellAmount &&
-      sameIdentity(target.buyToken, terms.buyAddress) &&
-      target.buyAmount === selectedQuote.buyAmount &&
-      target.deadline === settlement.deadline &&
-      selectedQuote.intentDigest === record.requestDigest,
+    terms &&
+    selectedQuote &&
+    settlement &&
+    sameIdentity(target.dealId, settlement.dealId) &&
+    target.solverId === selectedQuote.solverId &&
+    target.reservationId === selectedQuote.reservationId &&
+    target.reservationFence === selectedQuote.reservationFence &&
+    target.quoteDigest === selectedQuote.quoteDigest &&
+    sameIdentity(target.sellToken, terms.sellAddress) &&
+    target.sellAmount === terms.sellAmount &&
+    sameIdentity(target.buyToken, terms.buyAddress) &&
+    target.buyAmount === selectedQuote.buyAmount &&
+    target.deadline === settlement.deadline &&
+    selectedQuote.intentDigest === record.requestDigest,
   );
 }
 
@@ -2101,7 +2095,7 @@ export function restoreRfqLifecycle(
                 (record.attempts.take?.state === "reverted" &&
                   Boolean(
                     record.attempts.take.transactionHash ||
-                      record.attempts.take.walletBoundary === "entered",
+                    record.attempts.take.walletBoundary === "entered",
                   )))
             : true;
     const retryInvariantOk =
@@ -2172,16 +2166,16 @@ export function rfqHasFundingEvidence(record: RfqLifecycleRecord): boolean {
         attempt.state === "submitted-unknown" ||
         attempt.state === "confirmed" ||
         attempt.transactionHash)) ||
-      (record.latestObservation?.status ?? 0) > 0 ||
-      [
-        "submission-unknown",
-        "funded",
-        "filled",
-        "claimable",
-        "settled",
-        "refundable",
-        "refunded",
-      ].includes(record.state),
+    (record.latestObservation?.status ?? 0) > 0 ||
+    [
+      "submission-unknown",
+      "funded",
+      "filled",
+      "claimable",
+      "settled",
+      "refundable",
+      "refunded",
+    ].includes(record.state),
   );
 }
 
@@ -2284,7 +2278,8 @@ export function confirmRfqV3Take(
       }));
       lockEvidenceMatches =
         observed.length === expected.fills.length &&
-        new Set(observed.map(({ lockId }) => lockId)).size === observed.length &&
+        new Set(observed.map(({ lockId }) => lockId)).size ===
+          observed.length &&
         expected.fills.every((fill) =>
           observed.some(
             (candidate) =>

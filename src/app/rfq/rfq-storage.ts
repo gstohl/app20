@@ -24,10 +24,22 @@ const STORE = "lifecycle";
 const FORBIDDEN_FIELD =
   /viewing.?key|maker.?secret|capability.?secret|raw.?balance|witness|note.?id|proof|private.?key|signing.?key/i;
 const TOMBSTONE_SCHEMA = "app20/rfq-lifecycle-tombstone/v1" as const;
+export const RFQ_PORTABLE_TOMBSTONE_SCHEMA =
+  "app20/rfq-history-tombstone/v1" as const;
+export const RFQ_PORTABLE_TOMBSTONE_MAX_ID_BYTES = 256;
 
 export interface RfqStorageTombstone {
   tombstoneSchema: typeof TOMBSTONE_SCHEMA;
   storageKey: string;
+  storageRevision: number;
+  recordDigest: string;
+}
+
+export interface RfqPortableTombstone {
+  tombstoneSchema: typeof RFQ_PORTABLE_TOMBSTONE_SCHEMA;
+  chainId: string;
+  account: string;
+  rfqId: string;
   storageRevision: number;
   recordDigest: string;
 }
@@ -124,6 +136,10 @@ export interface RfqStorageBackend {
   /** Atomically canonicalizes every supported historical physical alias. */
   migrateAliases(scope: RfqAliasMigrationScope): Promise<void>;
   compareAndPut(key: string, value: RfqLifecycleRecord): Promise<void>;
+  compareAndPutTombstone(
+    key: string,
+    value: RfqStorageTombstone,
+  ): Promise<void>;
   compareAndDelete(
     key: string,
     legacyKey: string,
@@ -184,7 +200,7 @@ function valueDigest(value: unknown): string {
   )}`;
 }
 
-function recordDigest(record: RfqLifecycleRecord): string {
+export function rfqLifecycleRecordDigest(record: RfqLifecycleRecord): string {
   return valueDigest(finalizeRfqLifecycleForStorage(record));
 }
 
@@ -197,6 +213,7 @@ export function isRfqStorageTombstone(
     candidate.tombstoneSchema === TOMBSTONE_SCHEMA &&
     typeof candidate.storageKey === "string" &&
     Number.isSafeInteger(candidate.storageRevision) &&
+    Number(candidate.storageRevision) >= 0 &&
     typeof candidate.recordDigest === "string" &&
     /^sha256:[0-9a-f]{64}$/.test(candidate.recordDigest)
   );
@@ -212,8 +229,91 @@ export function createRfqStorageTombstone(
     storageRevision: Number.isSafeInteger(expected.storageRevision)
       ? expected.storageRevision
       : 0,
-    recordDigest: recordDigest(expected),
+    recordDigest: rfqLifecycleRecordDigest(expected),
   });
+}
+
+export function normalizeRfqPortableTombstone(
+  value: unknown,
+  scope: Pick<RfqLifecycleRecord, "chainId" | "account">,
+): RfqPortableTombstone {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("The RFQ backup tombstone is invalid.");
+  const expectedKeys = [
+    "account",
+    "chainId",
+    "recordDigest",
+    "rfqId",
+    "storageRevision",
+    "tombstoneSchema",
+  ];
+  if (Object.keys(value).sort().join(",") !== expectedKeys.join(","))
+    throw new Error("The RFQ backup tombstone schema is unsupported.");
+  const candidate = value as Partial<RfqPortableTombstone>;
+  if (
+    candidate.tombstoneSchema !== RFQ_PORTABLE_TOMBSTONE_SCHEMA ||
+    typeof candidate.chainId !== "string" ||
+    typeof candidate.account !== "string" ||
+    typeof candidate.rfqId !== "string" ||
+    new TextEncoder().encode(candidate.rfqId).length === 0 ||
+    new TextEncoder().encode(candidate.rfqId).length >
+      RFQ_PORTABLE_TOMBSTONE_MAX_ID_BYTES ||
+    !Number.isSafeInteger(candidate.storageRevision) ||
+    Number(candidate.storageRevision) < 0 ||
+    typeof candidate.recordDigest !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(candidate.recordDigest)
+  )
+    throw new Error("The RFQ backup tombstone is malformed or oversized.");
+  const chainId = canonicalRfqChainId(candidate.chainId);
+  const account = canonicalRfqAccount(candidate.account);
+  const rfqId = canonicalStorageRfqId(chainId, candidate.rfqId);
+  if (
+    chainId !== canonicalRfqChainId(scope.chainId) ||
+    account !== canonicalRfqAccount(scope.account)
+  )
+    throw new Error("The RFQ backup tombstone belongs to another scope.");
+  return Object.freeze({
+    tombstoneSchema: RFQ_PORTABLE_TOMBSTONE_SCHEMA,
+    chainId,
+    account,
+    rfqId,
+    storageRevision: Number(candidate.storageRevision),
+    recordDigest: candidate.recordDigest,
+  });
+}
+
+export function assertRfqStorageTombstoneReplacement(
+  existing: unknown,
+  storageKey: string,
+  replacement: RfqStorageTombstone,
+): RfqStorageTombstone {
+  if (
+    !isRfqStorageTombstone(replacement) ||
+    replacement.storageKey !== storageKey
+  )
+    throw new Error("RFQ storage rejected an invalid portable tombstone.");
+  if (isRfqStorageTombstone(existing)) {
+    if (existing.recordDigest !== replacement.recordDigest)
+      throw new Error(
+        "RFQ storage rejected conflicting authenticated tombstones for one RFQ ID.",
+      );
+    return existing.storageRevision >= replacement.storageRevision
+      ? existing
+      : replacement;
+  }
+  if (existing === undefined) return replacement;
+  if (!existing || typeof existing !== "object" || Array.isArray(existing))
+    throw new Error("RFQ storage rejected a tombstone over malformed state.");
+  const record = existing as RfqLifecycleRecord;
+  if (
+    record.restoredFromBackup !== true &&
+    (!lifecycleMayForget(record) ||
+      rfqLifecycleRecordDigest(record) !== replacement.recordDigest)
+  )
+    throw new Error(
+      "RFQ storage rejected a portable tombstone over unresolved or nonmatching local evidence.",
+    );
+  return replacement;
 }
 
 function assertPreserved(prior: unknown, next: unknown, label: string): void {
@@ -247,13 +347,13 @@ function isExactTicketPersistenceTransition(
   const nextAttempt = replacement.attempts.funding;
   return Boolean(
     priorAttempt &&
-      nextAttempt &&
-      priorAttempt.attemptId === nextAttempt.attemptId &&
-      priorAttempt.target?.operation === "funding-ticket" &&
-      nextAttempt.target?.operation === "funding-ticket" &&
-      sameJson(priorAttempt.target, nextAttempt.target) &&
-      canonicalLocalRfqId(priorAttempt.target.dealId) ===
-        canonicalLocalRfqId(nextSettlement.dealId),
+    nextAttempt &&
+    priorAttempt.attemptId === nextAttempt.attemptId &&
+    priorAttempt.target?.operation === "funding-ticket" &&
+    nextAttempt.target?.operation === "funding-ticket" &&
+    sameJson(priorAttempt.target, nextAttempt.target) &&
+    canonicalLocalRfqId(priorAttempt.target.dealId) ===
+      canonicalLocalRfqId(nextSettlement.dealId),
   );
 }
 
@@ -552,6 +652,32 @@ function parsePhysicalKey(
   const rfqId = parts.join("|");
   if (!chainId || !account || !rfqId) return undefined;
   return { key, schema, chainId, account, rfqId };
+}
+
+function portableTombstoneFromStored(
+  value: RfqStorageTombstone,
+  scope: Pick<RfqLifecycleRecord, "chainId" | "account">,
+  runtimeEpoch?: string,
+): RfqPortableTombstone {
+  const parsed = parsePhysicalKey(value.storageKey, runtimeEpoch);
+  if (!parsed || parsed.schema !== RFQ_LIFECYCLE_SCHEMA_REVISION)
+    throw new Error("RFQ storage found an unbound tombstone during backup.");
+  const portable = normalizeRfqPortableTombstone(
+    {
+      tombstoneSchema: RFQ_PORTABLE_TOMBSTONE_SCHEMA,
+      chainId: parsed.chainId,
+      account: parsed.account,
+      rfqId: parsed.rfqId,
+      storageRevision: value.storageRevision,
+      recordDigest: value.recordDigest,
+    },
+    scope,
+  );
+  if (rfqStorageKey(portable, runtimeEpoch) !== value.storageKey)
+    throw new Error(
+      "RFQ storage found a noncanonical tombstone during backup.",
+    );
+  return portable;
 }
 
 function isSupportedLocalnetAlias(value: string): boolean {
@@ -955,6 +1081,50 @@ export function createRfqLifecycleStorage(
       const v1 = await backend.get(v1StorageKey(input, runtimeEpoch));
       return isRfqStorageTombstone(v1) ? undefined : v1;
     },
+    async listTombstones(
+      chainId: string,
+      account: string,
+    ): Promise<RfqPortableTombstone[]> {
+      await migrateAliases(chainId, account);
+      const rows = await backend.list(
+        storagePrefix(
+          RFQ_LIFECYCLE_SCHEMA_REVISION,
+          chainId,
+          account,
+          runtimeEpoch,
+        ),
+      );
+      const tombstones = rows
+        .filter(isRfqStorageTombstone)
+        .map((value) =>
+          portableTombstoneFromStored(
+            value,
+            { chainId, account },
+            runtimeEpoch,
+          ),
+        );
+      const ids = new Set<string>();
+      for (const tombstone of tombstones) {
+        if (ids.has(tombstone.rfqId))
+          throw new Error("RFQ storage returned duplicate backup tombstones.");
+        ids.add(tombstone.rfqId);
+      }
+      return tombstones;
+    },
+    async saveTombstone(value: RfqPortableTombstone): Promise<void> {
+      const tombstone = normalizeRfqPortableTombstone(value, value);
+      await migrateAliases(tombstone.chainId, tombstone.account);
+      const key = rfqStorageKey(tombstone, runtimeEpoch);
+      await backend.compareAndPutTombstone(
+        key,
+        Object.freeze({
+          tombstoneSchema: TOMBSTONE_SCHEMA,
+          storageKey: key,
+          storageRevision: tombstone.storageRevision,
+          recordDigest: tombstone.recordDigest,
+        }),
+      );
+    },
     async authorize(record: RfqLifecycleRecord): Promise<RfqLifecycleRecord> {
       const canonical = canonicalizeStorageRecord(record);
       assertRfqLifecycleAttemptTargets(canonical);
@@ -1253,6 +1423,34 @@ export function createIndexedDbRfqStorage(
             try {
               assertRfqStorageReplacement(get.result, value);
               store.put(finalizeRfqLifecycleForStorage(value), key);
+            } catch (error: unknown) {
+              fail(error);
+              abortIndexedDbTransaction(transaction);
+            }
+          };
+        });
+      } finally {
+        db.close();
+      }
+    },
+    async compareAndPutTombstone(key, value) {
+      const db = await openDatabase();
+      try {
+        const transaction = db.transaction(STORE, "readwrite");
+        const store = transaction.objectStore(STORE);
+        await runIndexedDbMutation(transaction, (fail) => {
+          const get = store.get(key);
+          get.onerror = () =>
+            fail(
+              get.error ??
+                new Error("IndexedDB tombstone compare read failed."),
+            );
+          get.onsuccess = () => {
+            try {
+              store.put(
+                assertRfqStorageTombstoneReplacement(get.result, key, value),
+                key,
+              );
             } catch (error: unknown) {
               fail(error);
               abortIndexedDbTransaction(transaction);

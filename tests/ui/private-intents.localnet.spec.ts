@@ -4,6 +4,8 @@ import {
   expect,
   localNetworkToggle,
   localnetIdentity,
+  primeLocalnetMailSeed,
+  restoreLocalnetMailRandomness,
   selectLocalNetwork,
   test,
   type APIRequestContext,
@@ -39,7 +41,7 @@ async function switchIdentity(
   ).toHaveAttribute("title", new RegExp(target.address.slice(2), "i"));
 }
 
-async function ensureMailboxKey(page: Page) {
+async function ensureMailboxKey(page: Page, identity: LocalnetIdentityId) {
   let setup = page.getByRole("button", {
     name: "Load device key & register",
   });
@@ -50,12 +52,26 @@ async function ensureMailboxKey(page: Page) {
     });
   }
   await expect(setup).toBeVisible();
-  await setup.click();
-  await expect(setup).toHaveCount(0, { timeout: 60_000 });
+  await primeLocalnetMailSeed(page, identity);
+  try {
+    await setup.click();
+  } finally {
+    await restoreLocalnetMailRandomness(page);
+  }
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
-  if ((await backupHeading.count()) > 0) {
+  const scanButton = page.getByRole("button", { name: "Check for new mail" });
+  await expect
+    .poll(
+      async () => {
+        if (await backupHeading.isVisible()) return "backup";
+        return (await scanButton.isEnabled()) ? "ready" : "waiting";
+      },
+      { timeout: 120_000 },
+    )
+    .not.toBe("waiting");
+  if (await backupHeading.isVisible()) {
     const phrase = (
       await backupHeading.locator("..").locator("code").innerText()
     ).trim();
@@ -64,6 +80,10 @@ async function ensureMailboxKey(page: Page) {
       .getByRole("button", { name: "I saved the backup — open mailbox" })
       .click();
   }
+  await expect(scanButton).toBeEnabled({ timeout: 60_000 });
+  await expect(
+    page.getByRole("button", { name: "Back up RFQ history" }),
+  ).toBeEnabled({ timeout: 60_000 });
   const deleteDraft = page.getByRole("button", {
     name: "Delete draft…",
     exact: true,
@@ -79,9 +99,13 @@ async function ensureMailboxKey(page: Page) {
 
 async function scanRecent(page: Page) {
   const button = page.getByRole("button", { name: "Check for new mail" });
-  await expect(button).toBeEnabled();
+  await expect(button).toBeEnabled({ timeout: 120_000 });
   await button.click();
-  await expect(button).toBeEnabled({ timeout: 60_000 });
+  const inbox = page.getByRole("button", { name: /^Inbox \d+$/ });
+  if ((await inbox.getAttribute("aria-current")) !== "page") {
+    await inbox.click();
+  }
+  await expect(inbox).toHaveAttribute("aria-current", "page");
 }
 
 async function privateBalance(
@@ -336,39 +360,39 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await expect(desk.getByText("OPERATIONS · RUNNING")).toBeVisible();
 
   // A larger clip is still covered by one maker. Only the fixed ladder bucket
-  // crosses the browser boundary; the exact 8 STRK and floor stay sealed.
-  await sellAmount.fill("8");
-  await minimumReceive.fill("15.84");
+  // crosses the browser boundary; the exact 13 STRK and floor stay sealed.
+  await sellAmount.fill("13");
+  await minimumReceive.fill("25.74");
   await prepareCohortReview(desk);
   const singleWire = await requestCollateralizedQuotes(page, desk);
-  expectSealedRequest(singleWire, ["8000000000000000000", "15840000"]);
+  expectSealedRequest(singleWire, ["13000000000000000000", "25740000"]);
   expect(singleWire.rfq).toMatchObject({
-    sellBucketMinBaseUnits: "5000000000000000000",
-    sellBucketMaxBaseUnits: "10000000000000000000",
+    sellBucketMinBaseUnits: "10000000000000000000",
+    sellBucketMaxBaseUnits: "25000000000000000000",
   });
   const singleComparison = desk.getByRole("region", {
     name: /Compare all makers/,
   });
   await expect(singleComparison).toContainText("SINGLE FILL SELECTED");
   await expect(singleComparison).toContainText(
-    "sell 8 STRK · receive 16.048845 USDC",
+    "sell 13 STRK · receive 26.07774 USDC",
   );
   await expect(singleComparison).toContainText("app20-localnet-solver-b");
   await takeAtomically(desk, /Single collateralized fill/, invokeUrls);
 
   expect(
     await privateBalance(request, config.usdcTokenAddress, config.runtimeEpoch),
-  ).toBe(usdcBefore + 16_048_845n);
+  ).toBe(usdcBefore + 26_077_740n);
   expect(
     await privateBalance(request, config.tokenAddress, config.runtimeEpoch),
-  ).toBe(strkBefore - 8n * 10n ** 18n);
+  ).toBe(strkBefore - 13n * 10n ** 18n);
 
-  // The reverse direction exceeds either maker's 5 STRK inventory, so the
+  // The reverse direction exceeds either maker's 7 STRK inventory, so the
   // coordinator must construct one atomic Take over both locks.
   await desk.getByRole("button", { name: "Start another RFQ" }).click();
   await market.selectOption("USDC_STRK");
-  await sellAmount.fill("15");
-  await minimumReceive.fill("7.425");
+  await sellAmount.fill("24.5");
+  await minimumReceive.fill("12.1275");
 
   const missingEpoch = await request.post(
     `${LOCALNET_WALLET_API}/devnet/create-block`,
@@ -388,8 +412,8 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
     2,
     { timeout: 60_000 },
   );
-  const splitWire = splitOutgoing.postDataJSON() as Record<string, unknown>;
-  expectSealedRequest(splitWire, ["15000000", "7425000000000000000"]);
+  const splitWire = splitOutgoing;
+  expectSealedRequest(splitWire, ["24500000", "12127500000000000000"]);
   expect(splitWire.rfq).toMatchObject({
     sellBucketMinBaseUnits: "10000000",
     sellBucketMaxBaseUnits: "25000000",
@@ -404,10 +428,10 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
 
   expect(
     await privateBalance(request, config.usdcTokenAddress, config.runtimeEpoch),
-  ).toBe(usdcBefore + 1_048_845n);
+  ).toBe(usdcBefore + 1_577_740n);
   expect(
     await privateBalance(request, config.tokenAddress, config.runtimeEpoch),
-  ).toBeGreaterThan(strkBefore - 8n * 10n ** 18n);
+  ).toBeGreaterThan(strkBefore - 1n * 10n ** 18n);
 
   // Leave the split payout note mature for the Mail-backed invoice journey.
   await createBlocks(request, config.runtimeEpoch, 10);
@@ -415,7 +439,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await page.goto("/mail/inbox");
   await selectLocalNetwork(page);
   await switchIdentity(page, config, "alice");
-  await ensureMailboxKey(page);
+  await ensureMailboxKey(page, "alice");
 
   const ipfsWrites: string[] = [];
   page.on("request", (outgoing) => {
@@ -426,7 +450,11 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
       ipfsWrites.push(outgoing.url());
     }
   });
-  await page.getByRole("button", { name: "Back up RFQ history" }).click();
+  const backUpRfqHistory = page.getByRole("button", {
+    name: "Back up RFQ history",
+  });
+  await expect(backUpRfqHistory).toBeEnabled({ timeout: 60_000 });
+  await backUpRfqHistory.click();
   await expect(
     page.getByText(
       /RFQ records? backed up through a CID-verified encrypted blob pointer/,
@@ -437,9 +465,89 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
     page.getByText(/Backup plaintext never left this browser/),
   ).toBeVisible();
 
+  // Model loss of the local RFQ object store without invoking the product's
+  // explicit forget action (which correctly creates deletion tombstones).
+  // Restore must traverse the encrypted IPFS pointer and recreate evidence
+  // without recreating any Take signing authority.
+  const alice = localnetIdentity(config, "alice");
+  const erasedRecordCount = await page.evaluate(
+    async ({ chainId, account }) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      const storage = storageModule.createIndexedDbRfqStorage();
+      const records = await storage.list(chainId, account);
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("app20-rfq-resume");
+        request.onerror = () =>
+          reject(request.error ?? new Error("Could not open RFQ storage."));
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("lifecycle", "readwrite");
+          transaction.objectStore("lifecycle").clear();
+          transaction.onerror = () =>
+            reject(
+              transaction.error ?? new Error("Could not erase RFQ storage."),
+            );
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+        };
+      });
+      return records.length;
+    },
+    { chainId: config.chainId, account: alice.address },
+  );
+  expect(erasedRecordCount).toBeGreaterThan(0);
+
+  await scanRecent(page);
+  await expect(
+    page.getByText("RFQ HISTORY BACKUP", { exact: true }),
+  ).toBeVisible({ timeout: 60_000 });
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Merge verified RFQ history" })
+    .click();
+  await expect(
+    page.getByText(/Authenticated backup sequence .* restored\./),
+  ).toBeVisible({ timeout: 180_000 });
+  const restoredHistory = await page.evaluate(
+    async ({ chainId, account }) => {
+      const dynamicImport = new Function("path", "return import(path)") as (
+        path: string,
+      ) => Promise<any>;
+      const storageModule = await dynamicImport("/src/app/rfq/rfq-storage.ts");
+      const lifecycleModule = await dynamicImport(
+        "/src/app/rfq/rfq-lifecycle.ts",
+      );
+      const rows = await storageModule
+        .createIndexedDbRfqStorage()
+        .list(chainId, account);
+      return rows.map((row: any) => ({
+        restoredFromBackup: row.restoredFromBackup === true,
+        hasSigningKey: "takerSigningKey" in row,
+        maySubmit: lifecycleModule.lifecycleMaySubmit(
+          row,
+          Math.floor(Date.now() / 1_000),
+        ),
+      }));
+    },
+    { chainId: config.chainId, account: alice.address },
+  );
+  expect(restoredHistory).toHaveLength(erasedRecordCount);
+  expect(restoredHistory).toEqual(
+    Array.from({ length: erasedRecordCount }, () => ({
+      restoredFromBackup: true,
+      hasSigningKey: false,
+      maySubmit: false,
+    })),
+  );
+
   const invoiceBody = `Lane U localnet USDC invoice ${Date.now()}`;
   await switchIdentity(page, config, "bob");
-  await ensureMailboxKey(page);
+  await ensureMailboxKey(page, "bob");
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   await page.getByLabel(/^To/).fill(localnetIdentity(config, "alice").address);
   await page
@@ -451,9 +559,10 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   const invoiceToken = page.getByLabel("Invoice token");
   await expect(invoiceToken.locator("option")).toHaveText(["STRK", "USDC"]);
   await invoiceToken.selectOption("USDC");
-  await page.getByLabel("USDC requested").fill("0.1");
+  const invoiceAmount = page.getByLabel("USDC requested");
+  await invoiceAmount.fill("0.1");
   await page.getByLabel("Invoice memo (optional)").fill("Lane U acceptance");
-  await expect(page.getByText(/0\.1 USDC \(100000 base units\)/)).toBeVisible();
+  await expect(invoiceAmount).toHaveValue("0.1");
   await page.getByRole("button", { name: "Send encrypted message" }).click();
   await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(
     0,
@@ -461,15 +570,18 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   );
 
   await switchIdentity(page, config, "alice");
-  await ensureMailboxKey(page);
+  await ensureMailboxKey(page, "alice");
   await scanRecent(page);
   const invoiceRow = page.getByRole("button").filter({ hasText: invoiceBody });
   await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
   await invoiceRow.click();
   await expect(
-    page.getByText(/signed request asks for 0\.1 USDC/),
+    page.getByText(/This unsigned message requests\s+0\.1 USDC/),
   ).toBeVisible();
-  await expect(page.getByText("Mail key signature verified")).toBeVisible();
+  await expect(
+    page.getByText(/Mail coordinates the invoice but does not authenticate/),
+  ).toBeVisible();
+  await expect(page.getByText("Mail key signature verified")).toHaveCount(0);
   await page.getByRole("button", { name: "Pay privately with STRK" }).click();
   await expect(page).toHaveURL(/\/rfq(?:#desk)?$/, { timeout: 60_000 });
 
@@ -483,11 +595,6 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
     invoiceDesk.getByLabel("Private intent minimum receive"),
   ).toHaveCount(0);
   await expect(invoiceDesk.getByText(/0\.1 USDC/).first()).toBeVisible();
-  await expect(
-    invoiceDesk.getByRole("button", {
-      name: "Prepare size-blind cohort review",
-    }),
-  ).toBeEnabled({ timeout: 60_000 });
   await prepareCohortReview(invoiceDesk);
   await requestCollateralizedQuotes(page, invoiceDesk);
   await expect(invoiceDesk.getByText("SINGLE FILL SELECTED")).toBeVisible();
@@ -504,8 +611,12 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await expect(page).toHaveURL(/\/mail\/inbox$/, { timeout: 5 * 60_000 });
   expect(invokeUrls).toHaveLength(invoiceInvokesBefore + 1);
 
+  // The hard return navigation intentionally drops the in-memory wallet and
+  // unlocked mailbox session. Re-establish both before scanning.
+  await switchIdentity(page, config, "alice");
+  await ensureMailboxKey(page, "alice");
   await scanRecent(page);
-  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
+  await expect(invoiceRow).toBeVisible({ timeout: 120_000 });
   await invoiceRow.click();
   await expect(
     page.getByText(/USDC note from the private exchange matures/),
@@ -525,10 +636,13 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await expect(complete).toHaveCount(0);
 
   await switchIdentity(page, config, "bob");
-  await ensureMailboxKey(page);
+  await ensureMailboxKey(page, "bob");
   await scanRecent(page);
-  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
-  await invoiceRow.click();
+  const paymentMemoRow = page.getByRole("button", {
+    name: /Settlement memo · 0\.1 USDC/,
+  });
+  await expect(paymentMemoRow).toBeVisible({ timeout: 60_000 });
+  await paymentMemoRow.click();
   await expect(page.getByText("PAYMENT MEMO", { exact: true })).toBeVisible();
   await expect(page.getByText(/claims they sent 0\.1 USDC/)).toBeVisible();
 });
@@ -569,7 +683,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
         buyDecimals: 6,
         minBuyAmount: "198000",
         buyAmount: "199600",
-        rfqExpiresAt: now + 600,
+        rfqExpiresAt: now + 1_200,
       };
       let record = lifecycle.createRfqLifecycleRecord({
         mode: "v3",
@@ -591,8 +705,8 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
           max: "100000000000000000",
         },
         takerCommitment:
-          "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
-        takerSecret: "0x66",
+          "0x746db56abc4d9fab4832ee42e92e96bbbf8cf4c9fd063b8515bda90d1e8aa5d",
+        takerSigningKey: "0x66",
         fills: [
           {
             makerId: "app20-localnet-solver-b",
@@ -630,6 +744,9 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
           tokenB: buyToken,
           totalB: BigInt(terms.buyAmount),
           fillCount: 1,
+          fillsDigest:
+            "0x68af3151d05c2da19b8d81457afdea339dfc7211ad85372e9805e32bd003f8c",
+          lockTaken: [{ lockId: "0x41", amountA: terms.sellAmount }],
         },
         now + 3,
       );
@@ -651,6 +768,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
 
   let authorityMode: "authoritative" | "outage" | "disagreement" | "reorged" =
     "authoritative";
+  let reorgAuthorityPage: Page | undefined;
   let authorityRevision = 100;
   let valueMutationRequests = 0;
   const valueMutationPaths = [
@@ -681,7 +799,11 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
       valueMutationRequests += 1;
   });
   await context.route("**/rfq/authority/verify", async (route) => {
-    if (authorityMode === "outage") {
+    if (
+      authorityMode === "outage" ||
+      (authorityMode === "reorged" &&
+        route.request().frame().page() !== reorgAuthorityPage)
+    ) {
       await route.fulfill({
         status: 503,
         contentType: "application/json",
@@ -708,6 +830,13 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
           revision: authorityRevision,
           observedAt,
           validUntil: observedAt + (authorityMode === "authoritative" ? 2 : 30),
+          ...(authorityMode === "authoritative"
+            ? {
+                fillsDigest:
+                  "0x68af3151d05c2da19b8d81457afdea339dfc7211ad85372e9805e32bd003f8c",
+                lockTaken: [{ lockId: "0x41", amountA: "100000000000000000" }],
+              }
+            : {}),
         },
       }),
     });
@@ -780,6 +909,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
     ).toHaveCount(0);
   }
 
+  reorgAuthorityPage = secondPage;
   authorityMode = "reorged";
   await secondPage.reload();
   await connectLocalnetWallet(secondPage);

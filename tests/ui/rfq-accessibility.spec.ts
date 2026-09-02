@@ -92,22 +92,25 @@ async function prepareFinalReview(page: Page) {
   const preflight = desk.getByLabel("Privacy preflight");
   await preflight
     .getByRole("checkbox", {
-      name: "I understand the warnings and known public settlement leakage.",
+      name: "I understand the bucket disclosure, observable timing, and public v3 Take amounts.",
     })
     .check();
   await desk
-    .getByRole("button", { name: "Prepare exact invitation review" })
+    .getByRole("button", { name: "Prepare size-blind cohort review" })
     .click();
+  await desk.getByLabel("Maker cohort review").getByRole("checkbox").check();
   await desk
-    .getByLabel("Exact invitation review")
-    .getByRole("checkbox")
-    .check();
-  await desk.getByRole("button", { name: "Request signed quotes" }).click();
+    .getByRole("button", { name: "Request collateralized quotes" })
+    .click();
 
   const comparison = desk.getByRole("region", { name: /Compare all makers/ });
   await expect(comparison).toBeFocused({ timeout: 60_000 });
-  await desk.getByRole("button", { name: "Review selected quote" }).click();
-  const review = desk.getByRole("region", { name: "Final value review" });
+  await desk
+    .getByRole("button", { name: "Review selected quote fills" })
+    .click();
+  const review = desk.getByRole("region", {
+    name: "Final atomic Take review",
+  });
   await expect(review).toBeFocused({ timeout: 60_000 });
   return { ticket, desk, comparison, review };
 }
@@ -118,7 +121,7 @@ async function expectBefore(earlier: Locator, later: Locator) {
       (element, candidate) =>
         Boolean(
           element.compareDocumentPosition(candidate as Node) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
+          Node.DOCUMENT_POSITION_FOLLOWING,
         ),
       await later.elementHandle(),
     ),
@@ -267,7 +270,7 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
     page.getByRole("status", { name: "RFQ environment" }),
   ).toContainText("LOCALNET DEMO");
   await expect(
-    page.getByRole("region", { name: "Invited-maker cohort" }),
+    page.getByRole("list", { name: "Verified maker quotes" }),
   ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Private RFQ", level: 1 }),
@@ -279,14 +282,14 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
   }
 
   const accept = review.getByRole("button", {
-    name: "Accept and fund on LOCALNET",
+    name: "Take atomically on LOCALNET",
   });
   await expect(accept).toBeEnabled();
-  await page.keyboard.press("Tab");
+  await tabTo(page, accept, 10);
   await expectVisibleFocus(accept);
   await review.getByText("Protocol details", { exact: true }).click();
   const finalCopyControls = review.locator('button[aria-label^="Copy "]');
-  await expect(finalCopyControls).toHaveCount(3);
+  await expect(finalCopyControls).toHaveCount(2);
   const finalCopyNames = await finalCopyControls.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute("aria-label") ?? ""),
   );
@@ -340,8 +343,9 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
   );
 
   const environment = page.getByRole("status", { name: "RFQ environment" });
-  const selectedQuote = ticket.getByLabel("Selected private maker quote");
-  const lifecycle = ticket.getByLabel("Settlement lifecycle");
+  const comparison = ticket.getByRole("region", {
+    name: /Compare all makers/,
+  });
   const publicMarket = page.getByRole("region", {
     name: "Public market context",
   });
@@ -353,13 +357,7 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
   for (const width of [320, 375, 768, 1_440]) {
     await page.setViewportSize({ width, height: 900 });
     await expectNoHorizontalOverflow(page);
-    for (const primary of [
-      environment,
-      ticket,
-      selectedQuote,
-      lifecycle,
-      review,
-    ]) {
+    for (const primary of [environment, ticket, comparison, review]) {
       for (const secondary of [
         publicMarket,
         funding,

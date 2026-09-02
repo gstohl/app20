@@ -12,6 +12,7 @@ import {
 } from "./rfq-lifecycle";
 import {
   assertRfqStorageReplacement,
+  assertRfqStorageTombstoneReplacement,
   createRfqLifecycleStorage,
   planRfqAliasMigration,
   replaceRfqWithTombstone,
@@ -111,6 +112,12 @@ describe("user-triggered exact maker-fill retry", () => {
         assertRfqStorageReplacement(rows.get(key), value);
         rows.set(key, structuredClone(finalizeRfqLifecycleForStorage(value)));
       },
+      async compareAndPutTombstone(key, value) {
+        rows.set(
+          key,
+          assertRfqStorageTombstoneReplacement(rows.get(key), key, value),
+        );
+      },
       async compareAndDelete(key, legacyKey, expected) {
         rows.set(key, replaceRfqWithTombstone(rows.get(key), key, expected));
         rows.delete(legacyKey);
@@ -139,7 +146,8 @@ describe("user-triggered exact maker-fill retry", () => {
     const submitExact = vi.fn();
     await expect(
       retryPersistedMakerFill(record, {
-        authorize: (candidate: RfqLifecycleRecord) => stale.authorize(candidate),
+        authorize: (candidate: RfqLifecycleRecord) =>
+          stale.authorize(candidate),
         beforeSubmit: vi.fn(),
         submitExact,
         persist: vi.fn(),
@@ -163,9 +171,9 @@ describe("user-triggered exact maker-fill retry", () => {
       persist,
       now: () => NOW + 2,
     };
-    await expect(
-      retryPersistedMakerFill(record, dependencies),
-    ).rejects.toThrow(/never reached/i);
+    await expect(retryPersistedMakerFill(record, dependencies)).rejects.toThrow(
+      /never reached/i,
+    );
     expect(persist).not.toHaveBeenCalled();
 
     const submitted = await retryPersistedMakerFill(record, dependencies);
