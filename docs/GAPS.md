@@ -79,13 +79,13 @@ Local-v3 findings to resolve before its presentation is treated as complete; the
 | --- | --- | --- |
 | **P0-33** | Open | Mailbox keys have no on-chain epoch, rotation, revocation, correspondent transition, or compromise recovery. The recovery phrase still grants both decryption and request-signing authority. Design: [`APP20_MAIL_KEY_ROTATION_HANDOFF.md`](APP20_MAIL_KEY_ROTATION_HANDOFF.md). |
 | **P0-36** | Open | Mail recovery funding/action IDs are not bound to an authenticated user and a fresh per-invocation namespace. |
-| **P1-08** | Partial | RFQ backup strips `takerSecret` and uses authenticated Mail/IPFS snapshots, but it omits tombstone digests, does not reliably stamp `restoredFromBackup`, can quarantine unresolved v3 rows during validation, and does not invoke the opt-in auto-backup helper after Take settlement. |
+| **P1-21** | Partial | RFQ history backup strips `takerSecret` and uses authenticated Mail/IPFS snapshots, but it omits tombstone digests and does not stamp restored rows with a provenance marker; restored rows are forced to verify-only until the authority confirms them. The opt-in auto-backup after a settled Take is queued by the desk and posted by the next unlocked Mailbox session. |
 
 ## Final wiring
 
 | ID | Status | Gap |
 | --- | --- | --- |
-| **P1-07** | Partial | RFQ v3 request/selection/invoice/lifecycle/orchestration modules and localnet routes exist, but `LocalnetPrivateIntentDesk`, `DeskMarketBoard`, and `OperationsDashboard` still present v1. Before wiring, bind signed `lockTicket` to `get_lock.ticket`, verify the asserted `lockTransactionHash` receipt, and review public/failed Take secret handling; then wire Take review/submission, transcript acknowledgements, mids, lock counts, maturity scheduling, invoice handoff/recording, and remove the legacy product path. |
+| **P1-22** | Open | The browser quote verifier binds the signed schedule, tokens, RFQ, commitment, expiry, and remaining collateral to `get_lock`, but not the signed `lockTicket` to `get_lock.ticket` nor the asserted `lockTransactionHash` to a `LockCreated` receipt; and the localnet browser journeys (Playwright) still exercise the v1 flow. |
 | **P0-01** | Open | Production RFQ is not mounted. `src/app/rfq/production-private-intents.ts` and `workers/relay/src/index.ts` fix transport and value authority to `false`. This remains the last change, after every row above. |
 
 ## Build order

@@ -111,11 +111,15 @@ function parseBaseUrl(value: string, label: string): URL {
   return url;
 }
 
-function endpoint(base: URL, suffix: string): URL {
-  const url = new URL(base.toString());
-  const prefix = url.pathname.endsWith("/") ? url.pathname : `${url.pathname}/`;
-  url.pathname = `${prefix}${suffix.replace(/^\//, "")}`;
-  return url;
+/** Builds a request string under a validated base; `query` values are URL-encoded. */
+function endpoint(
+  base: URL,
+  suffix: string,
+  query: Readonly<Record<string, string>> = {},
+): string {
+  const prefix = base.pathname.endsWith("/") ? base.pathname : `${base.pathname}/`;
+  const search = new URLSearchParams(query).toString();
+  return `${base.origin}${prefix}${suffix.replace(/^\//, "")}${search ? `?${search}` : ""}`;
 }
 
 function requireTimeout(value: number | undefined): number {
@@ -128,7 +132,7 @@ function requireTimeout(value: number | undefined): number {
 
 async function fetchWithTimeout(
   fetchImpl: typeof globalThis.fetch,
-  input: URL,
+  input: string,
   init: RequestInit,
   timeoutMs: number,
 ): Promise<Response> {
@@ -271,11 +275,12 @@ export function createIpfsBlobStore(config: IpfsBlobStoreConfig): BlobStore {
         new Blob([uploadBytes.buffer], { type: "application/octet-stream" }),
         "backup.bin",
       );
-      const uploadUrl = endpoint(rpc, "api/v0/add");
-      uploadUrl.searchParams.set("cid-version", "1");
-      uploadUrl.searchParams.set("raw-leaves", "true");
-      uploadUrl.searchParams.set("hash", "sha2-256");
-      uploadUrl.searchParams.set("pin", "true");
+      const uploadUrl = endpoint(rpc, "api/v0/add", {
+        "cid-version": "1",
+        "raw-leaves": "true",
+        hash: "sha2-256",
+        pin: "true",
+      });
       const response = await fetchWithTimeout(
         fetchImpl,
         uploadUrl,
@@ -304,8 +309,7 @@ export function createIpfsBlobStore(config: IpfsBlobStoreConfig): BlobStore {
       const failures: string[] = [];
       for (const gateway of gateways) {
         try {
-          const fetchUrl = endpoint(gateway, `ipfs/${cid}`);
-          fetchUrl.searchParams.set("format", "raw");
+          const fetchUrl = endpoint(gateway, `ipfs/${cid}`, { format: "raw" });
           const response = await fetchWithTimeout(
             fetchImpl,
             fetchUrl,
