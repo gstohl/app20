@@ -4,7 +4,10 @@ import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 export const LOCALNET_REFERENCE_STRK_USDC = 2;
 /** Non-executable chart example only; signed fixture makers quote 20 and 30 bps. */
 export const LOCALNET_DESK_SPREAD_BPS = 30;
-export const LOCALNET_FIXTURE_SPREAD_RANGE_BPS = Object.freeze({ minimum: 20, maximum: 30 });
+export const LOCALNET_FIXTURE_SPREAD_RANGE_BPS = Object.freeze({
+  minimum: 20,
+  maximum: 30,
+});
 
 export type DeskExecutionPoint = Readonly<{
   sell: number;
@@ -40,9 +43,7 @@ function buildDeskMarketModel(
     throw new Error("A positive maker reference mid is required.");
   const strkToUsdc = pairId === "STRK_USDC";
   const sizes = strkToUsdc ? [0, 1, 5, 10, 25, 50] : [0, 2, 10, 20, 50, 100];
-  const grossRate = strkToUsdc
-    ? referenceStrkUsdc
-    : 1 / referenceStrkUsdc;
+  const grossRate = strkToUsdc ? referenceStrkUsdc : 1 / referenceStrkUsdc;
   const clientRate = afterSpread(grossRate);
   const points = sizes.map((sell) => ({
     sell,

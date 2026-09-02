@@ -6,7 +6,9 @@ import {
   type PrivateRfqV2,
   type SolverQuoteV3,
 } from "@app20/private-intents";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import QuoteComparison from "./QuoteComparison";
 import {
   buildQuoteComparisonV3,
   createV3Selection,
@@ -142,6 +144,33 @@ describe("browser RFQ v3 verification and selection", () => {
       ["maker-a", "lost"],
       ["maker-c", "refused"],
     ]);
+
+    const markup = renderToStaticMarkup(
+      QuoteComparison({
+        quotes,
+        comparison: result.comparison,
+        refusals: [
+          {
+            makerId: "maker-c",
+            quoteDigest: `0x${"33".repeat(32)}`,
+            reason: "inventory unavailable",
+          },
+        ],
+        selection: result.selection,
+        exactSellAmount: 75n,
+        sellDecimals: 0,
+        buyDecimals: 0,
+        sellSymbol: "STRK",
+        buySymbol: "USDC",
+      }),
+    );
+    expect(markup).toContain("SINGLE FILL SELECTED");
+    expect(markup).toContain("Rank 1 · maker-b");
+    expect(markup).toContain("Rank 2 · maker-a");
+    expect(markup).toContain("151 USDC · 151 base units");
+    expect(markup).toContain("150 USDC · 150 base units");
+    expect(markup).toContain("maker-c · Refused");
+    expect(markup).toContain("inventory unavailable");
   });
 
   it("fails closed when two quotes reuse one lock", async () => {

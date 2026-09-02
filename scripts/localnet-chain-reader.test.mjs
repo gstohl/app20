@@ -209,7 +209,10 @@ test("v3 reader requires one DealTaken plus one distinct LockTaken for every exp
   };
   const rpc = async (method, params) => {
     if (method === "starknet_getClassHashAt") return artifact.escrowClassHash;
-    if (method === "starknet_getBlockWithTxHashes" && params.block_id === "latest")
+    if (
+      method === "starknet_getBlockWithTxHashes" &&
+      params.block_id === "latest"
+    )
       return { block_number: 20, block_hash: "0x999", transactions: [] };
     if (method === "starknet_getTransactionReceipt")
       return {
@@ -257,7 +260,8 @@ test("v3 reader requires one DealTaken plus one distinct LockTaken for every exp
       artifact,
       rpc: async (method, params) => {
         const value = await rpc(method, params);
-        if (method === "starknet_getTransactionReceipt") value.events.splice(0, 1);
+        if (method === "starknet_getTransactionReceipt")
+          value.events.splice(0, 1);
         return value;
       },
     }).observe(v3),

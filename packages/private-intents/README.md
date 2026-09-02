@@ -1,18 +1,19 @@
 # @app20/private-intents
 
-Taker intents over STRK20 notes, sealed invited-maker quotes, and a
-fill-or-refund lifecycle. APP20 is the private venue and verifier, not the
-user's counterparty. Any future NEAR 1Click use remains a separate liquidity
-warehouse behind the dry-only boundary.
+Taker intents over STRK20 notes, invited-maker quotes, and localnet settlement.
+APP20 is the private venue and verifier, not the user's counterparty. Legacy v1
+reservation/fill-or-refund modules remain exported; RFQ v3 adds bucket-only
+invitation, pre-quote collateral, and atomic Take. Any future NEAR 1Click use
+remains a separate liquidity warehouse behind the dry-only boundary.
 
 ```text
-intent  → invited makers reserve inventory and return scoped offers
-        → verify every signature; select best amount deterministically
-        → accept consumes one quote nonce, then locks the sell note
-        → selected maker delivers ≥ quoted buyAmount before expiry
-        → otherwise refund after expiry
-restock → fills net per token; residuals ≥ minBatch round up to a
-          standard denomination; smaller residuals wait
+v3 request → exact size/floor stay local; send fixed ladder bucket
+           → each maker confirms collateral lock + schedule, then signs
+           → verify signature + value-critical get_lock fields; select 1..4 fills locally
+           → send fair-loss transcript
+           → one atomic Take returns aggregate B OPEN note
+           → after expiry makers pull earned A and unused B
+legacy v1  → reserve → select → Fund/Fill → Claim or Timeout (compatibility only)
 ```
 
 ## Boundaries
@@ -80,20 +81,27 @@ browser while binding signed maker schedules to pre-funded escrow locks:
 - `schedule.ts` validates one-to-four-point u128 schedules, evaluates them with
   Cairo-identical floor arithmetic, inverts them, and reports E18 unit prices.
 - `quote-v3.ts` signs canonical lock references and verifies the RFQ, active
-  P-256 key, and caller-supplied `get_lock` state before a quote is eligible.
+  P-256 key, and value-critical caller-supplied `get_lock` state before a quote
+  is eligible. The signed `lockTicket` is not currently compared with the
+  returned lock's `ticket`, and signed `lockTransactionHash` is not resolved to
+  a receipt. Take still uses current contract state, but receipt/evidence
+  binding must close those gaps.
 - `selection-v3.ts` deterministically chooses one covering lock or greedily
   assembles up to four fills, then applies the browser-only floor.
 - `transcript.ts` creates digest-bound fair-loss transcripts for every invited
-  maker and verifies each maker's own outcome without disclosing the exact size
-  as a separate transcript field.
+  maker and verifies a quoted maker's own outcome. There is no separate exact-size
+  field, but winning entries include `amountA`; the full transcript lets every
+  invited maker infer exact size by summing those allocations. A refused maker
+  has no signed lock quote and currently records an inconsistent acknowledgement.
 - `mids.ts` validates signed STRK/USDC indicative mids and aggregates their
   median and full-range dispersion.
 
 The existing HPKE envelope remains intentionally typed to canonical RFQ v1
-plaintext in both its opener and authenticated acceptance path. Generalizing
-that path is not a thin sealing-only change, so this package does not
-misrepresent RFQ v2 as accepted by the reviewed v1 envelope. Production and
-public-network RFQ settlement remain immutable-off.
+plaintext in both its opener and authenticated acceptance path. Localnet RFQ v2
+therefore uses authenticated loopback service transport; this package does not
+misrepresent it as HPKE-protected. Production and public-network RFQ settlement
+remain immutable-off. The current mounted desk also remains v1; these protocol
+modules do not by themselves make v3 a complete user journey.
 
 ## Operations policy
 

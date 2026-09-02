@@ -40,6 +40,8 @@ Public chain constants, reviewed Privy frame/connect origins, and the build-only
 
 `IPFS_ORIGINS` is an optional comma-separated ordinary var containing only reviewed HTTPS origins. When set, those origins are appended to the SPA `connect-src` directive for encrypted backup upload/fetch; invalid, wildcard, HTTP, or path-bearing values fail closed. When unset or empty, the CSP is byte-identical to the existing policy. Keep it aligned with the browser's public `VITE_IPFS_RPC_ORIGIN` and `VITE_IPFS_GATEWAY_ORIGINS`; no IPFS credentials belong in any of these values.
 
+The Worker does not implement an IPFS upload, pinning, or gateway proxy. The browser contacts configured origins directly. Those services can observe the client source metadata, timing, CID, and padded ciphertext size and can retain the encrypted blob; client-side CID verification and AES-GCM protect integrity/confidentiality, not metadata or deletion. Localnet instead uses a loopback-only, in-memory emulator behind the Vite proxy.
+
 ## Distributed gate
 
 Bind `RELAY_GATE` to `RelayGateDurableObject`. One named object serializes global/session/service rate windows and concurrency leases across isolates. Service and budget pairs are bound at the Durable Object (a prover acquire cannot use an RPC budget). Rejected or invalid acquires do not create attacker-keyed rate entries and do not persist. Restored snapshots are validated and discarded if malformed. Failed releases stay retryable until the object acknowledges them; platform write failures return `503` rather than dropping the in-memory lease. Every success, error, timeout, and client disconnect releases its lease; alarms expire abandoned leases.

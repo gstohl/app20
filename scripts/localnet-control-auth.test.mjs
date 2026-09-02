@@ -24,39 +24,76 @@ function statusOf(operation) {
 }
 
 test("text/plain and missing Origin mutations fail closed", () => {
-  assert.equal(statusOf(() => assertLocalnetMutationGuards(request({
-    "content-type": "text/plain",
-    origin: ORIGIN,
-    "x-app20-localnet-control": TOKEN,
-  }), { expectedOrigin: ORIGIN, controlToken: TOKEN })), 415);
-  assert.equal(statusOf(() => assertLocalnetMutationGuards(request({
-    "content-type": "application/json",
-    "x-app20-localnet-control": TOKEN,
-  }), { expectedOrigin: ORIGIN, controlToken: TOKEN })), 403);
+  assert.equal(
+    statusOf(() =>
+      assertLocalnetMutationGuards(
+        request({
+          "content-type": "text/plain",
+          origin: ORIGIN,
+          "x-app20-localnet-control": TOKEN,
+        }),
+        { expectedOrigin: ORIGIN, controlToken: TOKEN },
+      ),
+    ),
+    415,
+  );
+  assert.equal(
+    statusOf(() =>
+      assertLocalnetMutationGuards(
+        request({
+          "content-type": "application/json",
+          "x-app20-localnet-control": TOKEN,
+        }),
+        { expectedOrigin: ORIGIN, controlToken: TOKEN },
+      ),
+    ),
+    403,
+  );
 });
 
 test("a forged Host does not compensate for the wrong Origin", () => {
-  assert.equal(statusOf(() => assertLocalnetMutationGuards(request({
-    host: "127.0.0.1:5173",
-    origin: "https://attacker.invalid",
-    "content-type": "application/json",
-    "x-app20-localnet-control": TOKEN,
-  }), { expectedOrigin: ORIGIN, controlToken: TOKEN })), 403);
+  assert.equal(
+    statusOf(() =>
+      assertLocalnetMutationGuards(
+        request({
+          host: "127.0.0.1:5173",
+          origin: "https://attacker.invalid",
+          "content-type": "application/json",
+          "x-app20-localnet-control": TOKEN,
+        }),
+        { expectedOrigin: ORIGIN, controlToken: TOKEN },
+      ),
+    ),
+    403,
+  );
 });
 
 test("same-origin proxied JSON with the per-run control header passes", () => {
-  assert.doesNotThrow(() => assertLocalnetMutationGuards(request({
-    origin: ORIGIN,
-    "content-type": "application/json; charset=utf-8",
-    "sec-fetch-site": "same-origin",
-    "x-app20-localnet-control": TOKEN,
-  }), { expectedOrigin: ORIGIN, controlToken: TOKEN }));
-  assert.equal(statusOf(() => assertLocalnetMutationGuards(request({
-    origin: ORIGIN,
-    "content-type": "application/json",
-    "sec-fetch-site": "cross-site",
-    "x-app20-localnet-control": TOKEN,
-  }), { expectedOrigin: ORIGIN, controlToken: TOKEN })), 403);
+  assert.doesNotThrow(() =>
+    assertLocalnetMutationGuards(
+      request({
+        origin: ORIGIN,
+        "content-type": "application/json; charset=utf-8",
+        "sec-fetch-site": "same-origin",
+        "x-app20-localnet-control": TOKEN,
+      }),
+      { expectedOrigin: ORIGIN, controlToken: TOKEN },
+    ),
+  );
+  assert.equal(
+    statusOf(() =>
+      assertLocalnetMutationGuards(
+        request({
+          origin: ORIGIN,
+          "content-type": "application/json",
+          "sec-fetch-site": "cross-site",
+          "x-app20-localnet-control": TOKEN,
+        }),
+        { expectedOrigin: ORIGIN, controlToken: TOKEN },
+      ),
+    ),
+    403,
+  );
 });
 
 test("prior runtime epochs reject every wallet, RFQ, and ticket sink before parsing", () => {
@@ -127,8 +164,19 @@ test("prior runtime epochs reject every wallet, RFQ, and ticket sink before pars
 
 test("GET health/config requests cannot pass the mutation guard", () => {
   for (const path of ["/health", "/config", "/private-intents/release-quote"]) {
-    const guarded = request({ origin: ORIGIN, "x-app20-localnet-control": TOKEN }, "GET");
+    const guarded = request(
+      { origin: ORIGIN, "x-app20-localnet-control": TOKEN },
+      "GET",
+    );
     guarded.url = path;
-    assert.equal(statusOf(() => assertLocalnetMutationGuards(guarded, { expectedOrigin: ORIGIN, controlToken: TOKEN })), 405);
+    assert.equal(
+      statusOf(() =>
+        assertLocalnetMutationGuards(guarded, {
+          expectedOrigin: ORIGIN,
+          controlToken: TOKEN,
+        }),
+      ),
+      405,
+    );
   }
 });

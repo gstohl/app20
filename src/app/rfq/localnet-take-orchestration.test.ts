@@ -31,7 +31,9 @@ function seam(overrides: Record<string, unknown> = {}) {
     authorizeWalletSubmission: vi.fn().mockResolvedValue(undefined),
     markUnknown: vi.fn().mockResolvedValue(undefined),
     abandonLease: vi.fn().mockResolvedValue(undefined),
-    submit: vi.fn().mockResolvedValue({ transactionHash: "0xabc", receipt: {} }),
+    submit: vi
+      .fn()
+      .mockResolvedValue({ transactionHash: "0xabc", receipt: {} }),
     ...overrides,
   } as never;
 }
@@ -87,7 +89,12 @@ describe("localnet Take orchestration", () => {
                 throw new Error("stale lock");
               },
             }),
-          submit: async (_account: unknown, _provider: unknown, _actions: unknown, options: { policy: () => void }) => {
+          submit: async (
+            _account: unknown,
+            _provider: unknown,
+            _actions: unknown,
+            options: { policy: () => void },
+          ) => {
             try {
               options.policy();
             } catch (error) {
@@ -101,7 +108,9 @@ describe("localnet Take orchestration", () => {
     expect(abandonLease).toHaveBeenCalledWith(target, "take-exact");
 
     const account = {
-      strk20InvokeTransaction: vi.fn().mockRejectedValue(new Error("wallet rejected")),
+      strk20InvokeTransaction: vi
+        .fn()
+        .mockRejectedValue(new Error("wallet rejected")),
     };
     const afterBoundary = seam({
       prepareBeforeLease: async () => prepared({ account }),

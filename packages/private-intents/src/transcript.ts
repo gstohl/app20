@@ -1,16 +1,10 @@
 import { PrivateIntentError } from "./index.ts";
-import {
-  digestSolverQuoteV3,
-  type SolverQuoteV3,
-} from "./quote-v3.ts";
+import { digestSolverQuoteV3, type SolverQuoteV3 } from "./quote-v3.ts";
 import {
   RFQ_SELECTION_V3_RULE,
   type SelectFillsV3Result,
 } from "./selection-v3.ts";
-import {
-  evaluatePriceSchedule,
-  scheduleUnitPriceE18,
-} from "./schedule.ts";
+import { evaluatePriceSchedule, scheduleUnitPriceE18 } from "./schedule.ts";
 
 export const SELECTION_TRANSCRIPT_DOMAIN =
   "app20/rfq-selection-transcript/v1" as const;
@@ -119,15 +113,9 @@ function compareText(left: string, right: string): number {
   return 0;
 }
 
-function canonicalEntry(
-  entry: SelectionTranscriptEntryV1,
-  label: string,
-) {
+function canonicalEntry(entry: SelectionTranscriptEntryV1, label: string) {
   const makerId = requireText(entry.makerId, `${label}.makerId`);
-  const quoteDigest = requireDigest(
-    entry.quoteDigest,
-    `${label}.quoteDigest`,
-  );
+  const quoteDigest = requireDigest(entry.quoteDigest, `${label}.quoteDigest`);
   if (
     entry.outcome !== "won" &&
     entry.outcome !== "lost" &&
@@ -237,7 +225,9 @@ async function digestBody(
   return `0x${bytesToHex(new Uint8Array(digest))}`;
 }
 
-function freezeTranscript(transcript: SelectionTranscriptV1): SelectionTranscriptV1 {
+function freezeTranscript(
+  transcript: SelectionTranscriptV1,
+): SelectionTranscriptV1 {
   return Object.freeze({
     ...transcript,
     bucket: Object.freeze({ ...transcript.bucket }),
@@ -274,7 +264,9 @@ export async function createSelectionTranscript(
     }),
   );
   const makerIds = [
-    ...quoteRecords.map((record) => requireText(record.quote.solverId, "solverId")),
+    ...quoteRecords.map((record) =>
+      requireText(record.quote.solverId, "solverId"),
+    ),
     ...input.refusals.map((refusal) => requireText(refusal.makerId, "makerId")),
   ];
   if (new Set(makerIds).size !== makerIds.length) {
@@ -296,7 +288,8 @@ export async function createSelectionTranscript(
     quoteRecords.map((record) => record.quoteDigest),
   );
   if (
-    new Set(winners.map((winner) => winner.quoteDigest)).size !== winners.length ||
+    new Set(winners.map((winner) => winner.quoteDigest)).size !==
+      winners.length ||
     winners.some((winner) => !availableDigests.has(winner.quoteDigest))
   ) {
     throw new PrivateIntentError(
@@ -359,10 +352,7 @@ export async function createSelectionTranscript(
   )) {
     entries.push({
       makerId: requireText(refusal.makerId, "refusal.makerId"),
-      quoteDigest: requireDigest(
-        refusal.quoteDigest,
-        "refusal.quoteDigest",
-      ),
+      quoteDigest: requireDigest(refusal.quoteDigest, "refusal.quoteDigest"),
       outcome: "refused",
       rank,
     });
@@ -370,8 +360,7 @@ export async function createSelectionTranscript(
   }
 
   const clearingUnitPriceE18 = winners.reduce((best, winner) => {
-    const unitPrice =
-      (winner.fill.amountB * 10n ** 18n) / winner.fill.amountA;
+    const unitPrice = (winner.fill.amountB * 10n ** 18n) / winner.fill.amountA;
     return unitPrice > best ? unitPrice : best;
   }, 0n);
   const body: Omit<SelectionTranscriptV1, "digest"> = {
@@ -409,7 +398,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-export function decodeSelectionTranscript(value: unknown): SelectionTranscriptV1 {
+export function decodeSelectionTranscript(
+  value: unknown,
+): SelectionTranscriptV1 {
   if (!isRecord(value)) {
     throw new PrivateIntentError(
       "Selection transcript wire payload must be an object.",
@@ -417,7 +408,9 @@ export function decodeSelectionTranscript(value: unknown): SelectionTranscriptV1
   }
   for (const field of TRANSCRIPT_FIELDS) {
     if (!(field in value)) {
-      throw new PrivateIntentError(`Selection transcript ${field} is required.`);
+      throw new PrivateIntentError(
+        `Selection transcript ${field} is required.`,
+      );
     }
   }
   for (const field of Object.keys(value)) {
@@ -428,7 +421,9 @@ export function decodeSelectionTranscript(value: unknown): SelectionTranscriptV1
     }
   }
   if (!isRecord(value.bucket)) {
-    throw new PrivateIntentError("Selection transcript bucket must be an object.");
+    throw new PrivateIntentError(
+      "Selection transcript bucket must be an object.",
+    );
   }
   for (const field of BUCKET_FIELDS) {
     if (!(field in value.bucket)) {
@@ -445,7 +440,9 @@ export function decodeSelectionTranscript(value: unknown): SelectionTranscriptV1
     }
   }
   if (!Array.isArray(value.entries)) {
-    throw new PrivateIntentError("Selection transcript entries must be an array.");
+    throw new PrivateIntentError(
+      "Selection transcript entries must be an array.",
+    );
   }
   const entries = value.entries.map((entry, index) => {
     if (!isRecord(entry)) {
@@ -503,7 +500,9 @@ export async function verifySelectionTranscriptForMaker(
     const { digest, ...body } = transcript;
     const expectedDigest = await digestBody(body);
     if (requireDigest(digest, "digest") !== expectedDigest) {
-      return inconsistent("Selection transcript digest does not match its body.");
+      return inconsistent(
+        "Selection transcript digest does not match its body.",
+      );
     }
     const makerId = requireText(input.makerId, "makerId");
     const ownQuoteDigest = requireDigest(

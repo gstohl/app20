@@ -45,7 +45,8 @@ function reviewing(): RfqLifecycleRecord {
       deadline: NOW + 60,
     },
     bucket: { min: "50", max: "100" },
-    takerCommitment: "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+    takerCommitment:
+      "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
     takerSecret: "0x66",
     fills: [
       {
@@ -225,7 +226,8 @@ describe("RFQ lifecycle v3", () => {
       mode: "v3",
       state: "reviewing",
       restoredFromBackup: true,
-      takerCommitment: "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
+      takerCommitment:
+        "0x493619825a69dfc0fca6523f2714ded59c434c62d2d480d64439b96d9767006",
     });
     expect(restored).not.toHaveProperty("takerSecret");
     expect(() =>

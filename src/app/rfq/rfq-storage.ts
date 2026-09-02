@@ -382,7 +382,9 @@ export function assertRfqStorageReplacement(
       replacement.state !== "settled" &&
       replacement.restoredFromBackup !== true
     ) {
-      throw new Error("RFQ storage rejected replacement of the v3 taker secret.");
+      throw new Error(
+        "RFQ storage rejected replacement of the v3 taker secret.",
+      );
     }
   }
 
@@ -885,7 +887,11 @@ export function planRfqAliasMigration(
       v2.length > 1 && v2.some(({ value }) => !sameJson(value, v2[0]!.value));
     const conflictingV1 =
       v1.length > 1 && v1.some(({ value }) => !sameJson(value, v1[0]!.value));
-    if ((current.length && !strongestCurrent) || conflictingV2 || conflictingV1) {
+    if (
+      (current.length && !strongestCurrent) ||
+      conflictingV2 ||
+      conflictingV1
+    ) {
       putEntries.push([
         canonicalCurrent,
         conflictTombstone(

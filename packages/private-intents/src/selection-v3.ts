@@ -57,9 +57,7 @@ function selected(
   }
   return Object.freeze({
     kind: "selected",
-    fills: Object.freeze(
-      fills.map((fill) => Object.freeze({ ...fill })),
-    ),
+    fills: Object.freeze(fills.map((fill) => Object.freeze({ ...fill }))),
     totalB,
     rule: RFQ_SELECTION_V3_RULE,
   });

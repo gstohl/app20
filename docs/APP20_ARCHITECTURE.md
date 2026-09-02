@@ -56,6 +56,31 @@ APP20 browser
 
 Cloudflare Workers are not the TEE and cannot host the official prover. If this topology is deployed, real RPC, prover, discovery, and future credentialed Intents origins must remain runtime secrets; browser assets receive only public metadata and same-origin paths. Repository configuration is not deployment evidence.
 
+## Localnet RFQ v3 plane
+
+RFQ v3 is additive and localnet-only. Its contracts, protocol, maker, service, browser-data, and Mail primitives are implemented, while the mounted RFQ presentation still invokes legacy v1. Public-network transport and settlement remain immutable-off.
+
+```text
+browser exact size + floor
+  -> fixed ladder bucket + Poseidon taker commitment
+  -> local coordinator (account/chain/RFQ journal)
+  -> invited maker processes (pair, direction, bucket, expiry)
+  -> confirmed App20Escrow collateral locks + signed schedules
+  -> browser get_lock/signature verification and local selection
+  -> fair-loss transcript
+  -> one atomic Take across 1..4 locks
+  -> aggregate OPEN output note
+  -> maker expiry worker pulls proceeds and unused collateral
+```
+
+The request omits exact size and floor. A maker locks token B equal to the maximum schedule payout before signing, so the quoted inventory cannot default. Selection evaluates schedules at the exact local size, applies the local floor, and either uses one covering lock or at most four deterministic fills. `Take` is atomic; unlike legacy v1 it has no funded wait, maker fill, taker claim ticket, or taker timeout/refund. Each maker's supply-two `LockTicket` authorizes separate proceeds and collateral pulls after expiry.
+
+The privacy boundary changes at selection. The full transcript contains winner allocations and reaches every invited maker, so summing `amountA` entries can reveal exact size even though no dedicated exact-size field or floor is sent. Chain observers see complete `LockCreated` schedules, exact `LockTaken` fills, exact `DealTaken` totals, and the `takerSecret` commitment preimage carried by Take helper calldata. The coordinator sees the account, chain, market, RFQ identifiers, invited cohort, quotes/refusals, full transcript and expected exact Take fills/totals; its durable record keeps plans, digest, and Take orchestration state. Maker lock/WAL and coordinator state are durable only on their local hosts.
+
+Maker nodes publish short-lived P-256-signed indicative mids. The coordinator verifies fixture key bindings and caches them for five seconds; browser operations verifies them again and computes median/dispersion. CoinGecko remains opt-in and independent. Note maturity is only a bounded estimate from public pool `Deposit` and `OpenNoteDeposited` events; it does not reveal notes received by private transfer.
+
+Mail can create account/chain-scoped USDC invoice handoffs and complete a recorded payment after the Take output note reaches `takeBlock + 10`. It can also post authenticated contacts or RFQ-history backups as self-addressed encrypted Mail. Oversized snapshots are AES-GCM encrypted and padded to 4,096-byte buckets, addressed by CIDv1 raw sha2-256, and represented on chain by an encrypted pointer. The localnet IPFS emulator is loopback-only and in-memory. Production blob storage is unavailable unless both browser IPFS origins and matching relay CSP origins are configured. The relay does not proxy IPFS; a configured RPC/gateway observes source metadata, timing, CID, and padded ciphertext size.
+
 ## Account model
 
 A profile is not an account. Every action binds an explicit chain-scoped account.
@@ -194,7 +219,10 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 
 | Component | Can observe | Must not receive / cannot guarantee |
 | --- | --- | --- |
-| Browser | Mail plaintext/keys and quote details; optional Privy viewing keys, notes, and witnesses | Protection from XSS or replaced assets |
+| Browser | Mail plaintext/keys; exact RFQ size/floor, quote schedules/fills and taker secret; optional Privy viewing keys, notes, and witnesses | Protection from XSS or replaced assets |
+| Localnet coordinator | Account, chain, RFQ/market/cohort, bucket request, quote/refusal plans, full transcript, expected exact Take fills/totals, and orchestration | Exact size/floor in the invitation itself; raw maker inventory; replicated production authority |
+| Invited maker | Pair, direction, bucket, expiry, RFQ/commitment, own lock/quote, full selection transcript | Floor; exact size during invitation (winner allocations may reveal it later) |
+| IPFS RPC/gateway | Source metadata, timing, CID, padded encrypted blob bytes/size | Backup plaintext or mailbox seed absent browser compromise |
 | Ready | Connected account and requested actions | TEE enforcement when it can submit independently |
 | Privy | Identity, wallet metadata, signature hashes | Mail plaintext or proving witness |
 | APP20 bootstrap | Privy identity and public quorum metadata | Viewing keys, notes, witness, mail plaintext |
@@ -204,7 +232,7 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 | Prover gateway | Full witness and public transaction metadata | Blind proving |
 | Intents provider/solver | Quote, deposit, destination, amount, timing | Private cross-chain execution |
 | TEE enclave | Inputs marked `SENT TO ENCLAVE` and policy history | Protection from policy bugs or side channels |
-| Public chains | Public boundaries, deposits, fills, refunds, timing | Relationship unlinkability |
+| Public chains | Public boundaries; Mail ciphertext; lock schedules/collateral; Take secret preimage and exact fills/totals; legacy fills/refunds; timing | Relationship unlinkability or deletion |
 
 ## Package boundaries
 
@@ -213,9 +241,12 @@ The standalone Shade Agent framework is deprecated and not formally audited. APP
 @app20/near-intents          Vendor-isolated dry-first connector
 @app20/policy-client         Attestation and policy-receipt contracts
 @app20/privacy-adapters      Existing Starknet network and wallet policy
+@app20/private-intents       Legacy protocol plus v3 buckets/schedules/quotes/selection/transcripts/mids
+@app20/maker-node            Single-host WAL-backed reservations, collateral locks and settlement
 @app20/privy                 Generic browser/Node STRK20 integration
-src/lib/mail*                Frozen Mail compatibility implementation
-workers/relay                Cloudflare edge; no private-state imports
+src/app/rfq                  Legacy mounted desk plus unwired v3 browser data/orchestration modules
+src/lib/mail*, backup-*      Mail compatibility plus authenticated encrypted backup/blob primitives
+workers/relay                Cloudflare edge and optional IPFS CSP origins; no blob proxy/private state
 future policy-enclave service  Separately scoped; no repository path or deployable exists
 ```
 

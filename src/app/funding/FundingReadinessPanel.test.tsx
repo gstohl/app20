@@ -81,6 +81,50 @@ describe("FundingReadinessPanel", () => {
     expect(html).toContain("Funding does not prove settlement");
   });
 
+  it("shows a chain-derived maturity estimate without claiming a private balance read", () => {
+    const model = createFundingReadinessModel({
+      isConnected: true,
+      address: "0x1234567890abcdef1234567890abcdef",
+      capability: capableWallet,
+      network: "localnet",
+      pair: localnetPair,
+      sessionCompatible: true,
+      maturityEstimate: {
+        kind: "ready",
+        status: {
+          headBlock: 105,
+          maturityBlocks: 10,
+          mature: [],
+          pending: [
+            {
+              deposit: {
+                kind: "shield",
+                blockNumber: 100,
+                transactionHash: "0xabc",
+                token: "0x1",
+                amountBaseUnits: 10n,
+              },
+              matureAtBlock: 110,
+              blocksRemaining: 5,
+            },
+          ],
+          allMatureAtBlock: 110,
+        },
+      },
+    });
+    const html = renderToStaticMarkup(
+      <FundingReadinessPanelView model={model} />,
+    );
+
+    expect(model.noteMaturity.exposed).toBe(true);
+    expect(html).toContain("Chain-derived estimate");
+    expect(html).toContain("block 110");
+    expect(html).toContain("5 blocks left");
+    expect(html).toContain("estimate from public deposit events");
+    expect(html).toContain("APP20 never reads private balances");
+    expect(html).not.toContain("Not exposed by this wallet");
+  });
+
   it("fails closed without a wallet or a reviewed API declaration", () => {
     const disconnected = createFundingReadinessModel({
       isConnected: false,

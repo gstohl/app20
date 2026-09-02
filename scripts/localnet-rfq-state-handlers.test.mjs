@@ -127,11 +127,7 @@ function exactDeal(status) {
 }
 
 function productionValidator(target, observed, expectedStatus) {
-  return validateLocalnetDealObservation(
-    observed,
-    target,
-    expectedStatus,
-  );
+  return validateLocalnetDealObservation(observed, target, expectedStatus);
 }
 
 function barrier() {
@@ -298,8 +294,12 @@ test("release-check and release-pending winners accept exact abandonment", async
 
   const pending = await fixture({ releaseResult: false });
   assert.equal(
-    (await pending.handlers.releaseIntent(pending.target, "release-pending-first"))
-      .released,
+    (
+      await pending.handlers.releaseIntent(
+        pending.target,
+        "release-pending-first",
+      )
+    ).released,
     false,
   );
   assert.equal(
@@ -404,11 +404,7 @@ test("production-composed solve -> status 2 -> claim/status 3 is exact and effec
   await authorizeTicket(exact, "funding-composed");
   await exact.handlers.prepareFunding(exact.target, "funding-composed");
   await exact.handlers.markFundingUnknown(exact.target, "funding-composed");
-  await exact.handlers.convergeObservation(
-    exact.target,
-    "funding-composed",
-    1,
-  );
+  await exact.handlers.convergeObservation(exact.target, "funding-composed", 1);
 
   let makerEffects = 0;
   let completed;
@@ -529,11 +525,16 @@ test("v3 take handlers journal before observation and converge only exact taken 
   const calls = [];
   let observed = null;
   const coordinator = {
-    prepareTake: async (_target, attemptId) => calls.push(`prepare:${attemptId}`),
-    markTakeUnknown: async (_target, attemptId) => calls.push(`unknown:${attemptId}`),
-    abandonTake: async (_target, attemptId) => calls.push(`abandon:${attemptId}`),
-    observeTaken: async (_target, attemptId) => calls.push(`taken:${attemptId}`),
-    markTakeAbsent: async (_target, attemptId) => calls.push(`absent:${attemptId}`),
+    prepareTake: async (_target, attemptId) =>
+      calls.push(`prepare:${attemptId}`),
+    markTakeUnknown: async (_target, attemptId) =>
+      calls.push(`unknown:${attemptId}`),
+    abandonTake: async (_target, attemptId) =>
+      calls.push(`abandon:${attemptId}`),
+    observeTaken: async (_target, attemptId) =>
+      calls.push(`taken:${attemptId}`),
+    markTakeAbsent: async (_target, attemptId) =>
+      calls.push(`absent:${attemptId}`),
   };
   const target = {
     dealId: "0x77",
@@ -558,7 +559,10 @@ test("v3 take handlers journal before observation and converge only exact taken 
   });
   await handlers.prepareTake(target, "take-1");
   await handlers.markTakeUnknown(target, "take-1");
-  await assert.rejects(handlers.observeTake(target, "take-1"), /not been observed/i);
+  await assert.rejects(
+    handlers.observeTake(target, "take-1"),
+    /not been observed/i,
+  );
   await handlers.convergeTake(target, "take-1", "absent");
   observed = { totalA: "100" };
   await handlers.observeTake(target, "take-2");

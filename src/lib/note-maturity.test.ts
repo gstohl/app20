@@ -14,7 +14,8 @@ import {
 
 const ALICE = "0x00a11ce";
 const BOB = "0xb0b";
-const STRK = "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+const STRK =
+  "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const POOL = "0x7001";
 const DEPOSIT = hash.getSelectorFromName("Deposit");
 const OPEN_NOTE = hash.getSelectorFromName("OpenNoteDeposited");
@@ -46,7 +47,9 @@ describe("note maturity", () => {
 
   it("parses shield and OPEN-note deposits keyed by the account only", () => {
     const selectors = poolDepositEventSelectors();
-    expect(parsePoolDepositEvent(shieldEvent(12), "0xa11ce", selectors)).toEqual({
+    expect(
+      parsePoolDepositEvent(shieldEvent(12), "0xa11ce", selectors),
+    ).toEqual({
       kind: "shield",
       blockNumber: 12,
       transactionHash: "0xcaa",
@@ -61,16 +64,25 @@ describe("note maturity", () => {
       amountBaseUnits: 7n,
       noteId: "0x77",
     });
-    expect(parsePoolDepositEvent(shieldEvent(12, BOB), ALICE, selectors)).toBeNull();
+    expect(
+      parsePoolDepositEvent(shieldEvent(12, BOB), ALICE, selectors),
+    ).toBeNull();
     expect(
       parsePoolDepositEvent(
-        { ...shieldEvent(12), keys: [hash.getSelectorFromName("Withdrawal"), ALICE, STRK] },
+        {
+          ...shieldEvent(12),
+          keys: [hash.getSelectorFromName("Withdrawal"), ALICE, STRK],
+        },
         ALICE,
         selectors,
       ),
     ).toBeNull();
     expect(
-      parsePoolDepositEvent({ ...shieldEvent(12), block_number: undefined }, ALICE, selectors),
+      parsePoolDepositEvent(
+        { ...shieldEvent(12), block_number: undefined },
+        ALICE,
+        selectors,
+      ),
     ).toBeNull();
   });
 
@@ -81,18 +93,31 @@ describe("note maturity", () => {
       getEvents: async (filter) => {
         calls.push(filter);
         if (!filter.continuation_token) {
-          return { events: [shieldEvent(30), shieldEvent(31, BOB)], continuation_token: "p2" };
+          return {
+            events: [shieldEvent(30), shieldEvent(31, BOB)],
+            continuation_token: "p2",
+          };
         }
         return { events: [openNoteEvent(39)], continuation_token: null };
       },
     };
-    const deposits = await readAccountDeposits({ provider, poolAddress: POOL, account: ALICE });
-    expect(deposits.map((deposit) => [deposit.kind, deposit.blockNumber])).toEqual([
+    const deposits = await readAccountDeposits({
+      provider,
+      poolAddress: POOL,
+      account: ALICE,
+    });
+    expect(
+      deposits.map((deposit) => [deposit.kind, deposit.blockNumber]),
+    ).toEqual([
       ["shield", 30],
       ["openNote", 39],
     ]);
     expect(calls).toHaveLength(2);
-    const first = calls[0] as { keys: string[][]; chunk_size: number; from_block: { block_number: number } };
+    const first = calls[0] as {
+      keys: string[][];
+      chunk_size: number;
+      from_block: { block_number: number };
+    };
     expect(first.keys[0]).toHaveLength(2);
     expect(first.keys[1]).toEqual(["0xa11ce"]);
     expect(first.chunk_size).toBe(POOL_DEPOSIT_SCAN_CHUNK_SIZE);
@@ -105,16 +130,26 @@ describe("note maturity", () => {
       getEvents: async () => ({ events: [], continuation_token: "same" }),
     };
     await expect(
-      readAccountDeposits({ provider: looping, poolAddress: POOL, account: ALICE }),
+      readAccountDeposits({
+        provider: looping,
+        poolAddress: POOL,
+        account: ALICE,
+      }),
     ).rejects.toThrow(/repeated an event continuation token/);
     const oversized: PoolEventsProvider = {
       getBlockNumber: async () => 40,
       getEvents: async () => ({
-        events: Array.from({ length: POOL_DEPOSIT_SCAN_CHUNK_SIZE + 1 }, () => shieldEvent(1)),
+        events: Array.from({ length: POOL_DEPOSIT_SCAN_CHUNK_SIZE + 1 }, () =>
+          shieldEvent(1),
+        ),
       }),
     };
     await expect(
-      readAccountDeposits({ provider: oversized, poolAddress: POOL, account: ALICE }),
+      readAccountDeposits({
+        provider: oversized,
+        poolAddress: POOL,
+        account: ALICE,
+      }),
     ).rejects.toThrow(/bounded pool event page size/);
   });
 
@@ -124,16 +159,27 @@ describe("note maturity", () => {
       .map((event) => parsePoolDepositEvent(event, ALICE, selectors))
       .filter((deposit) => deposit !== null);
     const status = noteMaturityStatus(deposits, 40);
-    expect(status.mature.map((deposit) => deposit.blockNumber)).toEqual([20, 28]);
-    expect(status.pending.map((entry) => [entry.matureAtBlock, entry.blocksRemaining])).toEqual([
-      [45, 5],
+    expect(status.mature.map((deposit) => deposit.blockNumber)).toEqual([
+      20, 28,
     ]);
+    expect(
+      status.pending.map((entry) => [
+        entry.matureAtBlock,
+        entry.blocksRemaining,
+      ]),
+    ).toEqual([[45, 5]]);
     expect(status.allMatureAtBlock).toBe(45);
-    expect(describeNoteMaturity(status)).toContain("next spendable at block 45 (5 blocks left)");
+    expect(describeNoteMaturity(status)).toContain(
+      "next spendable at block 45 (5 blocks left)",
+    );
     const settled = noteMaturityStatus(deposits, 45);
     expect(settled.pending).toHaveLength(0);
     expect(settled.allMatureAtBlock).toBeNull();
-    expect(describeNoteMaturity(settled)).toContain("All 3 observed deposits matured");
-    expect(describeNoteMaturity(noteMaturityStatus([], 45))).toContain("No pool deposits observed");
+    expect(describeNoteMaturity(settled)).toContain(
+      "All 3 observed deposits matured",
+    );
+    expect(describeNoteMaturity(noteMaturityStatus([], 45))).toContain(
+      "No pool deposits observed",
+    );
   });
 });

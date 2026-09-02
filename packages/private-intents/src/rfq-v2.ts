@@ -1,9 +1,6 @@
 import { canonicalizeStarknetFelt } from "@app20/domain";
 import { poseidonHashMany } from "@scure/starknet";
-import {
-  PrivateIntentError,
-  type StarknetPool,
-} from "./index.ts";
+import { PrivateIntentError, type StarknetPool } from "./index.ts";
 
 export const PRIVATE_RFQ_V2_DOMAIN = "app20/private-rfq/v2" as const;
 
@@ -28,10 +25,7 @@ export type PrivateRfqV2 = Readonly<{
 }>;
 
 export type PrivateRfqV2Wire = Readonly<
-  Omit<
-    PrivateRfqV2,
-    "sellBucketMinBaseUnits" | "sellBucketMaxBaseUnits"
-  > & {
+  Omit<PrivateRfqV2, "sellBucketMinBaseUnits" | "sellBucketMaxBaseUnits"> & {
     sellBucketMinBaseUnits: string;
     sellBucketMaxBaseUnits: string;
   }
@@ -72,11 +66,7 @@ function requireDigest(value: string, label: string): string {
   return normalized;
 }
 
-function requireFelt(
-  value: string,
-  label: string,
-  allowZero = false,
-): string {
+function requireFelt(value: string, label: string, allowZero = false): string {
   let felt: string;
   try {
     felt = canonicalizeStarknetFelt(value);
@@ -95,11 +85,7 @@ function requireText(value: string, label: string): string {
   return normalized;
 }
 
-function requireInteger(
-  value: number,
-  label: string,
-  minimum = 0,
-): number {
+function requireInteger(value: number, label: string, minimum = 0): number {
   if (!Number.isSafeInteger(value) || value < minimum) {
     throw new PrivateIntentError(
       `${label} must be a safe integer >= ${minimum}.`,
@@ -139,11 +125,7 @@ function canonicalBody(rfq: PrivateRfqV2) {
     1,
   );
   const expiresAt = requireInteger(rfq.expiresAt, "expiresAt", 1);
-  const lockExpiresAt = requireInteger(
-    rfq.lockExpiresAt,
-    "lockExpiresAt",
-    1,
-  );
+  const lockExpiresAt = requireInteger(rfq.lockExpiresAt, "lockExpiresAt", 1);
   if (
     responseDeadline <= createdAt ||
     expiresAt <= responseDeadline ||
@@ -192,11 +174,7 @@ function canonicalBody(rfq: PrivateRfqV2) {
     sellBucketMinBaseUnits: sellBucketMinBaseUnits.toString(),
     sellToken,
     settlementHelper: requireFelt(rfq.settlementHelper, "settlementHelper"),
-    takerCommitment: requireFelt(
-      rfq.takerCommitment,
-      "takerCommitment",
-      true,
-    ),
+    takerCommitment: requireFelt(rfq.takerCommitment, "takerCommitment", true),
     version: rfq.version,
   };
 }
@@ -251,7 +229,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function decodePrivateRfqV2(value: unknown): PrivateRfqV2 {
   if (!isRecord(value)) {
-    throw new PrivateIntentError("Private RFQ v2 wire payload must be an object.");
+    throw new PrivateIntentError(
+      "Private RFQ v2 wire payload must be an object.",
+    );
   }
   for (const field of PRIVATE_RFQ_V2_WIRE_FIELDS) {
     if (!(field in value)) {

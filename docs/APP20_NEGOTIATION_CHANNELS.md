@@ -43,6 +43,12 @@ The channel protocol defines:
 
 The epoch schema records the required `Double-Ratchet/X25519/HKDF-SHA256/AES-256-GCM` suite and root-key commitments. APP20 does **not** implement or claim an audited Double Ratchet yet; production channel encryption remains blocked on a reviewed library, recovery design, relay integration, and independent security review.
 
+## RFQ v3 quote and transcript channel
+
+Localnet RFQ v3 does not use negotiation documents as quote authority. The coordinator sends each invited maker a canonical RFQ v2 containing the pair/direction, fixed ladder bucket, taker commitment, helper/network bindings, and expiry; exact size and floor are absent. A maker returns a P-256-signed quote only after its on-chain collateral lock is confirmed. The browser verifies the signature and value-critical `get_lock` fields before selection. The current verifier neither compares the quote's signed `lockTicket` with the returned lock's `ticket` nor resolves its `lockTransactionHash`, so those evidence fields are not yet chain-bound.
+
+After selection, the coordinator forwards one digest-bound transcript to every invited maker. It contains all maker ids, quote/refusal digests, outcomes, ranks, bucket, clearing unit price, and each winner's `amountA`. The latter allocations can be summed to infer exact size, so bucket-only disclosure applies to invitation, not the complete post-selection channel. This transcript is fairness evidence, not settlement authorization.
+
 ## Authority and privacy boundaries
 
 | Item | Authority | Visibility |
@@ -51,8 +57,10 @@ The epoch schema records the required `Double-Ratchet/X25519/HKDF-SHA256/AES-256
 | Wallet/Mail certificate | Attests Mail-key control at issuance | Parties receiving the certificate |
 | Attachment manifest | Binds encrypted bytes, type, and size | Negotiation participants |
 | Channel invitation and epoch | Authorizes correspondence quota only | Channel participants; relay should receive opaque capability and ciphertext |
-| Quote and reservation | Maker/client protocol evidence | Invited maker and taker |
-| Settlement | Cairo contract plus finalized chain events | Public settlement boundary |
+| RFQ v3 request | Quote invitation only | Invited maker learns pair, direction, bucket, bindings, and expiry; not exact size/floor |
+| Signed quote and collateral lock | Maker/client protocol evidence; lock constrains collateral | Taker/coordinator; lock schedule and collateral facts are public on chain |
+| Selection transcript | Fair-loss evidence only | Every invited maker; winner allocations can reveal exact size |
+| Settlement | Localnet Cairo contract plus pool-applied chain state | `LockCreated`, Take `takerSecret` calldata, `LockTaken`, and `DealTaken` facts are public |
 
 No channel or negotiation object contains a STRK20 viewing key, maker private key, raw inventory balance, or universal disclosure key. Relays may still observe delivery timing and participation metadata; padding and batching are future transport controls, not current privacy claims.
 

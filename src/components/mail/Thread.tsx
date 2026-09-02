@@ -681,8 +681,8 @@ export default function Thread({
           status={deal?.chainStatus}
           termsVerified={Boolean(
             deal?.chainDeal &&
-            deal.chainDeal.status !== "empty" &&
-            contractDealMatchesFund(deal.chainDeal, fund),
+              deal.chainDeal.status !== "empty" &&
+              contractDealMatchesFund(deal.chainDeal, fund),
           )}
           ownDeal={ownDeal}
           busy={action?.pending}

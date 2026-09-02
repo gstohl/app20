@@ -6,8 +6,8 @@ execution are disabled and unauthorized.**
 
 Three surfaces form one workflow:
 
-1. **RFQ** — inventory-backed private USDC↔STRK requests and shielded funding
-2. **Mailbox** — encrypted deal correspondence, structured evidence, and contact recovery
+1. **RFQ** — collateralized, bucket-only private USDC↔STRK requests and atomic localnet Take
+2. **Mailbox** — encrypted correspondence, structured evidence, invoice completion, and backup recovery
 3. **Counterparties** — a device-encrypted directory with RFQ and Mail handoffs
 
 Users connect once in the header. The Ready Wallet API path does not expose a
@@ -29,9 +29,9 @@ origin is live. This is not a Mainnet value-moving release.
 
 | Rank | Feature | Route | Status |
 | --- | --- | --- | --- |
-| 1 | Private RFQ | `/rfq` | Localnet solicits two invited USDC↔STRK fixture makers with distinct processes, settlement accounts, quote keys, private-note inventories, and fsynced reservation WALs. APP20 verifies both signatures, selects deterministically, and tests crash recovery, lock, fill, claim, expiry refund, and insufficient-inventory refusal. Every saved record carries an authority label separating a local observation from a same-devnet chain-verified outcome, and disagreement, reorg, or quarantine blocks its actions. No order book is published. Funding remains a distinct STRK20 rail. No production maker network is deployed |
-| 2 | Mailbox | `/mail/inbox` | Localnet on-chain ciphertext for letters, legacy OTC documents, receipts, and authenticated self-addressed contact snapshots. Mail is correspondence/evidence, never settlement authority |
-| 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase |
+| 1 | Private RFQ | `/rfq` | Localnet v3 lower layers solicit two fixture makers by fixed size bucket. Each maker confirms an on-chain collateral lock and schedule before signing; the browser data layer verifies locks, can select up to four atomic Take fills, and records same-devnet authority separately from local evidence. Maker settlement, signed mids, and fair-loss transcripts are implemented. The mounted desk still presents legacy v1 and needs v3 wiring; no production maker network is deployed |
+| 2 | Mailbox | `/mail/inbox` | Localnet on-chain ciphertext for letters, OTC/payment records, pay-any-token invoice handoff/completion primitives, and authenticated self-addressed contact/RFQ backups. Oversized backups use client-encrypted CIDv1 IPFS blobs. Mail is evidence/resume transport, never settlement authority |
+| 3 | Counterparties | `/contacts` | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase; legacy contact snapshots remain readable |
 | 4 | Separate operations | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay` | Funding readiness, an explicitly unavailable public-send page, dry cross-chain review, Privy recovery, and unsigned payment links. Each is its own route behind a shared `Not RFQ settlement authority` boundary. No public send, live 1Click submission, or TEE execution is implemented |
 | — | Read-only surfaces | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Browser-safe operations status, proposal-only market planning, and a non-executable pair handoff. None can deploy, fund, or settle |
 
@@ -40,18 +40,24 @@ payment-request link. Nothing is sent until the payer confirms in Mail.
 
 ### RFQ, Mailbox, and Counterparties
 
-Within the localnet fixture, only Cairo plus finalized pool state can confirm an
-RFQ lifecycle. Same-devnet confirmation is not production configured-chain
-authority, which remains unavailable. Mailbox letters can carry coordination
-and evidence but cannot prove a fill.
-Counterparty labels remain local unless the user explicitly posts an encrypted
-self-backup through Mail.
+Within the localnet fixture, only Cairo plus pool-applied chain state can confirm
+an RFQ lifecycle. Same-devnet confirmation is not production configured-chain
+authority, which remains unavailable. Mail, signed quotes, transcript digests,
+backup pointers, and browser/WAL records can carry evidence but cannot prove a
+Take.
 
-The same wallet opens all three surfaces. A Counterparty can start a prefilled
-RFQ or encrypted letter; a settled local RFQ produces a lifecycle receipt and
-links back to Mailbox. Shield, private transfer, and unshield remain separate
-funding actions at `/funding`, which reports the wallet-declared STRK20 actions
-and canonical asset eligibility without probing private balances.
+Counterparty labels and RFQ resume rows remain local unless the user explicitly
+posts an encrypted self-backup through Mail. Small backups stay inline; larger
+ones are AES-GCM encrypted and padded before a CIDv1 pointer is posted. The
+localnet IPFS emulator is in-memory. Production blob storage fails closed unless
+reviewed IPFS RPC/gateway origins and the matching relay CSP allowlist are set.
+
+The same wallet opens all three surfaces. Shield, private transfer, and unshield
+remain separate funding actions at `/funding`, which reports wallet-declared
+STRK20 actions and canonical asset eligibility without probing private balances.
+The v3 invoice data path can turn private STRK into a USDC OPEN note and let
+Mail complete the exact payment after ten blocks, but the current RFQ
+presentation does not yet consume that invoice handoff.
 
 Dry cross-chain Intents live at `/cross-chain-review`, a fixture-backed review
 of a pinned NEAR 1Click request/response shape. Nothing is sent to 1Click. This
@@ -106,81 +112,101 @@ silently borrows another rail's signer.
 ```mermaid
 flowchart LR
     A[Public wallet balance] -->|Shield: public amount and timing| P[STRK20 private note pool]
-    P -->|Private transfer| Q[New encrypted notes]
-    Q -->|Localnet private note ownership| E[APP20 localnet escrow interaction]
+    P -->|Private transfer| Q[Encrypted notes]
+    Q -->|Maker Lock and taker Take| E[APP20 localnet escrow]
+    E --> O[Private OPEN output notes]
     Q -->|Unshield: public amount and timing| B[Public wallet balance]
-    E --> C[Public pair, amounts, deadline, and lifecycle]
+    E --> C[PUBLIC schedules, exact fills and totals, expiry and timing]
 ```
 
-The pool can hide private-transfer ownership and counterparties. Shield,
-unshield, and first-version settlement remain public and correlatable.
+The pool can hide private-transfer ownership and counterparties. It does not
+hide v3 escrow facts: `LockCreated` publishes the schedule and collateral
+maximum, `LockTaken` publishes each exact fill, and `DealTaken` publishes exact
+aggregate A/B totals and fill count. The Take helper calldata also carries the
+`takerSecret` commitment preimage; removing it from local storage after
+settlement does not remove the public transaction copy.
 
-### Invited-maker RFQ
+### Invited-maker RFQ v3
 
 ```mermaid
 sequenceDiagram
     actor T as Taker
-    participant B as APP20 browser
+    participant B as APP20 browser data layer
+    participant C as Localnet coordinator
     participant A as Maker A
-    participant C as Maker B
+    participant M as Maker B
     participant P as STRK20 pool
-    participant E as Localnet escrow
+    participant E as App20Escrow v3
 
-    T->>B: Enter pair, exact size, floor, and expiry
-    B->>B: Run privacy preflight
-    B-->>T: Show unavailable evidence and public leakage
-    T->>B: Explicit informed confirmation
+    T->>B: Enter pair, exact size, local floor
+    B->>B: Derive fixed ladder bucket and taker commitment
+    B->>C: RFQ v2: bucket, pair, direction, expiry; no exact size/floor
 
     par Invite Maker A
-        B->>A: Canonical RFQ
-        A->>A: Reserve inventory and fsync WAL
-        A-->>B: Reservation-bound signed quote
+        C->>A: Bucket-only RFQ
+        A->>P: Lock token B collateral and schedule
+        P->>E: Apply Lock
+        A-->>C: Signed quote referencing confirmed lock
     and Invite Maker B
-        B->>C: Canonical RFQ
-        C->>C: Reserve inventory and fsync WAL
-        C-->>B: Reservation-bound signed quote
+        C->>M: Bucket-only RFQ
+        M->>P: Lock token B collateral and schedule
+        P->>E: Apply Lock
+        M-->>C: Signed quote referencing confirmed lock
     end
 
-    B->>B: Verify every quote and rank locally
-    B->>A: Release loser
-    B->>C: Select winner and persist begin-fill
-    T->>P: Fund escrow
-    C->>P: Fill from private inventory
-    P->>E: Apply Fund and Fill
-
-    alt Filled before deadline
-        T->>P: Return ticket and claim
-        P->>E: Apply Claim
-    else Not filled before deadline
-        T->>P: Return ticket and timeout
-        P->>E: Apply exact refund
-    end
+    C-->>B: Signed quotes and refusals
+    B->>E: Verify every quote against get_lock
+    B->>B: Evaluate exact size; select one or up to four fills; apply floor
+    B->>C: Fair-loss transcript
+    C->>A: Full transcript
+    C->>M: Full transcript
+    T->>P: One atomic Take
+    P->>E: Deposit total A and return total B OPEN note
+    A->>P: After expiry, pull proceeds and unused collateral
+    M->>P: After expiry, pull proceeds and unused collateral
 ```
 
-Only invited makers receive exact pre-trade terms. There is no public RFQ book,
-and refusal never triggers automatic public routing.
+At invitation time makers learn the pair, direction, fixed bucket, RFQ/helper
+bindings, and expiry—not the exact size or floor. The current full transcript
+has winning `amountA` entries, so makers can infer exact size after selection by
+summing them. One Take succeeds across every fill or reverts as a whole. There
+is no v3 funded wait, maker fill, taker claim, or timeout/refund. The local
+coordinator sees account/chain/cohort metadata, quotes/refusals, the full
+transcript, and expected exact Take fills/totals; bucket-only disclosure is a
+maker-invitation property, not a promise that the coordinator never learns
+size. Refusal never routes to a public venue.
 
-### Maker reservation and recovery
+This service/data path is implemented and localnet-only. The mounted `/rfq`
+presentation still drives legacy v1 and must be wired to the v3 modules before
+the diagram is a complete user journey.
+
+### Maker lock recovery
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Reserved: reserve and fsync
-    Reserved --> Reserved: identical idempotent request
-    Reserved --> Selected: winner selected
-    Reserved --> Released: loser or user release
-    Reserved --> Expired: lease expires
-    Selected --> Filling: fsync before wallet call
-    Filling --> Consumed: finalized fill reconciled
-    Filling --> Quarantined: unknown outcome or crash
-    Selected --> Quarantined: ambiguous recovery
-    Released --> [*]
-    Expired --> [*]
-    Consumed --> [*]
+    [*] --> Locking: fsync before wallet call
+    Locking --> Open: confirmed lock matches chain
+    Locking --> Quarantined: unknown lock outcome
+    Open --> Taken: chain reports earned proceeds
+    Open --> Expired: expiry reached
+    Taken --> Expired: expiry reached
+    Expired --> Settling: fsync side before wallet call
+    Settling --> Settled: all non-zero sides confirmed
+    Settling --> Expired: known revert, refresh chain
+    Settling --> Quarantined: unknown outcome
     Quarantined --> ManualReview
 ```
 
-Localnet uses one PID-locked hash-chain WAL per maker. Production still needs
-replicated linearizable storage and chain reconciliation.
+Each maker stores lock and legacy reservation records in one PID-locked,
+hash-chain WAL. Unknown collateral is never counted as spare inventory.
+Production still needs replicated linearizable coordinator/custody state and
+configured-chain reconciliation.
+
+Maker nodes also publish short-lived signed indicative mids. The localnet status
+service and browser verify the fixture keys, then aggregate median and
+dispersion; CoinGecko remains a separate direct-browser opt-in. Public pool
+`Deposit` and `OpenNoteDeposited` events provide a bounded, chain-derived
+10-block maturity estimate, not a complete view of private notes.
 
 ### Mail and settlement authority
 
@@ -229,13 +255,15 @@ be revoked.
 ```mermaid
 flowchart TD
     L[Current localnet] --> LM[App20Mail]
-    L --> LE[App20Escrow V2]
-    L --> CT[ClaimTicket]
+    L --> LE[App20Escrow v3 plus legacy variants]
+    L --> LT[LockTicket supply two]
+    L --> CT[Legacy ClaimTicket supply one]
     L --> ME[MockErc20 test fixture]
 
     LM -->|Separate approval and review| MS[Optional Mainnet Mail scoring]
-    LE -. do not deploy directly .-> VN[New quote-bound escrow VNext]
-    CT -. replace; do not reuse .-> TN[New App20Claim]
+    LE -. do not deploy directly .-> VN[Canonical production App20Escrow]
+    LT -. localnet only; no production-v3 commitment .-> LTO[No approved v3 rollout]
+    CT -. replace; do not reuse .-> TN[Canonical production App20Claim]
     VN --> A[Independent audits]
     TN --> A
     A --> S[Sepolia two-maker soak]
@@ -244,8 +272,12 @@ flowchart TD
     H -->|Yes, hard caps| MM[Tiny Mainnet RFQ evidence]
 ```
 
-Nothing is authorized for deployment now. `App20Escrow` is a localnet
-development contract, not the production class. See
+Nothing is authorized for deployment now. The localnet escrow constructor takes
+the pool, `ClaimTicket` class hash, and `LockTicket` class hash. It retains v1
+operations 0–3 and adds `Lock`, `Take`, `SettleProceeds`, and
+`ReleaseCollateral` as 4–7. Legacy operations are slated for explicit later
+removal. This localnet class and `LockTicket` are not production candidates and
+do not modify the separately frozen App20Escrow/App20Claim VNext target. See
 [`docs/APP20_CONTRACTS.md`](docs/APP20_CONTRACTS.md).
 
 ### Release ladder
@@ -282,19 +314,22 @@ unlinkability.
 | Not directly exposed by the stated mechanism | Public, disclosed, or still correlatable |
 | --- | --- |
 | In-pool private-transfer ownership and amount | Shield/unshield legs, timing, and amount correlation |
-| Mail plaintext and self-backed contact labels | Ciphertext, size, timing, helper use, recipient count, backup frequency |
+| Exact RFQ size and floor during invitation | Makers receive pair, direction, fixed bucket, RFQ/helper bindings, and expiry; transcript winner allocations can reveal size after selection |
+| Private note ownership in v3 settlement | `LockCreated` schedules/collateral, exact `LockTaken` fills, `DealTaken` totals, Take's `takerSecret` preimage, OPEN-note amounts, helper use, and timing |
+| Mail and backup plaintext | Chain ciphertext metadata; an IPFS service sees CID, padded ciphertext size, source metadata, and timing |
 | Device-local contact labels and notes | Addresses when publicly used; code running in an unlocked browser profile can read them |
 | Direct sender/recipient address fields in `MessagePosted` | Directory registration/lookups, helper access metadata, timing, and small-set inference |
-| Private note ownership in the localnet RFQ | Prototype escrow pair, amounts, deadline, OPEN-note amount, and helper activity |
 | OHTTP plaintext at the relay | Ciphertext metadata at the relay and the plaintext witness at the final prover after decapsulation |
 
 A replaced frontend can still request signatures and read browser-owned keys.
 Ready signatures are not used as encryption keys and the Ready Wallet API path
 never requests a STRK20 viewing key. The optional Privy browser-owned SDK has a
-separate, documented local viewing-key trust boundary. Wallet connection identifies the mailbox but cannot decrypt
-Mail or contact snapshots by itself: recovery also requires the mailbox backup
-phrase. Old on-chain ciphertext cannot be deleted. Cross-chain amounts, assets,
-destinations, and timing remain correlatable.
+separate, documented local viewing-key trust boundary. Wallet connection alone
+cannot decrypt Mail or backups: recovery also requires the mailbox phrase. A
+configured IPFS pinning/gateway service receives encrypted padded bytes, not the
+phrase or snapshot plaintext; the local emulator keeps blocks only in memory.
+Old chain ciphertext and public escrow events cannot be deleted. Cross-chain
+amounts, assets, destinations, and timing remain correlatable.
 
 ## Develop
 
@@ -325,16 +360,18 @@ npm run dev:localnet
 npm run localnet:stop
 ```
 
-This deploys the real Cairo pool, a six-decimal local USDC fixture, and the
-production-shaped mail action sequence, including the fixed 7-base-unit helper
-funding withdrawal. It also serves fixture support for both directions of the private USDC↔STRK RFQ
-market: lock, inventory-first maker fill, claim, expiry refund, and
-insufficient-inventory refusal. The Playwright journey SIGKILLs the selected
-maker after quote selection, observes its automatic restart from the `0600`
-hash-chain WAL, and completes the fill. That journey also exercises Counterparty
-→ RFQ handoff and contact snapshot → encrypted self-mail → explicit merge
-restore. Prices and private keys are deterministic localnet fixtures and proof
-bytes are simulated. This is not a Mainnet market or send.
+This deploys the real Cairo pool, six-decimal local USDC, `App20Escrow` with
+both ticket class hashes, two maker processes, and a loopback-only in-memory
+IPFS emulator. RFQ v3 services support both USDC↔STRK directions: fixed ladder
+buckets, confirmed collateral schedules, signed quotes/mids, fair-loss
+transcripts, one-to-four-fill atomic Take, and automatic maker proceeds and
+collateral pulls after expiry. Prices, accounts, keys, and proof bytes are
+localnet fixtures.
+
+The currently mounted desk and its Playwright journey still exercise legacy v1
+reservation/fund/fill/claim/refund and maker restart. They do not yet prove the v3 browser
+journey, pay-any-token invoice handoff, or automatic RFQ backup. This is not a
+Mainnet market or send.
 
 ## Packages
 
@@ -344,8 +381,8 @@ bytes are simulated. This is not a Mainnet market or send.
 | `@app20/near-intents` | Dry-only NEAR 1Click connector |
 | `@app20/policy-client` | Attestation and policy-receipt verification |
 | `@app20/privacy-adapters` | Fail-closed Starknet wallet and network policy |
-| `@app20/private-intents` | Canonical RFQ, signed directory, HPKE envelope, quote, reservation, and settlement models |
-| `@app20/maker-node` | Server-only WAL-backed reservation, signing, custody-adapter, and crash-recovery core |
+| `@app20/private-intents` | Legacy RFQ plus v3 bucket, schedule, quote, selection, transcript, and maker-mid models |
+| `@app20/maker-node` | Server-only WAL-backed reservations/locks, signing, collateral settlement, and crash recovery |
 | `@app20/privy` | Browser-owned STRK20 and Privy integration |
 | `@app20/relay` | Cloudflare assets, bootstrap, OHTTP, RPC, quotas |
 
@@ -426,15 +463,15 @@ gate.
 The Worker runs first and replaces asset security headers, so
 `workers/relay/src/headers.ts` is the single source of the shipped
 Content-Security-Policy; a static `_headers` file would never reach a browser.
-That policy omits `'unsafe-eval'`. Its only third-party origin is
-`https://api.coingecko.com`, declared in code rather than runtime configuration
-so that widening it stays a security decision; the browser reaches it only after
-the user opts into public market context, and that request discloses the user's
-IP and timing to that third party. `npm run check:csp` loads the configured
-built-route set through the real Worker handler and fails if the observed
-violation set changes in either
-direction against `scripts/production-csp-known-violations.json`, which is
-currently empty.
+That policy omits `'unsafe-eval'`. CoinGecko is the only third-party origin in
+the default policy and the browser reaches it only after explicit market-data
+opt-in. Optional `IPFS_ORIGINS` may add reviewed HTTPS origins to `connect-src`
+for encrypted backup upload/fetch; invalid origins fail closed and an unset
+value leaves the prior CSP unchanged. IPFS RPC/gateway requests go directly
+from the browser, so those operators can observe source metadata, timing, CID,
+and padded ciphertext size. `npm run check:csp` loads the configured built-route
+set through the real Worker handler and compares observed violations with
+`scripts/production-csp-known-violations.json`, currently empty.
 
 Public browser variables:
 
@@ -443,9 +480,17 @@ VITE_PRIVY_APP_ID
 VITE_PRIVY_CLIENT_ID
 VITE_PROVER_OHTTP_KEY_CONFIG
 VITE_DISCOVERY_OHTTP_KEY_CONFIG
+VITE_IPFS_RPC_ORIGIN              # optional; configure with gateways
+VITE_IPFS_GATEWAY_ORIGINS         # optional comma-separated HTTPS origins
 
 # APP20 Mail/escrow addresses are localnet-generated only. Live helper build
 # variables are not part of the runtime configuration surface.
+```
+
+Optional ordinary Worker variable (not a secret):
+
+```text
+IPFS_ORIGINS                      # match the reviewed browser IPFS origins
 ```
 
 Worker secrets:
@@ -465,8 +510,9 @@ STARKNET_MAINNET_AUTHORIZATION
 
 ## Not in this release
 
-- Production maker-specific HPKE transport or replicated reservation storage
-- A deployed/audited quote-bound escrow, atomic crossing, or recurring escrow
+- RFQ v3 presentation wiring, including Take, mids, maturity, invoice handoff, and automatic backup
+- Production maker-specific HPKE transport or replicated reservation/coordinator storage
+- A deployed/audited canonical production escrow, atomic two-taker crossing, or recurring escrow
 - Configured-chain authoritative receipt verification
 - Live NEAR Intents quotes, deposits, or settlement
 - An attested TEE that can authorize value

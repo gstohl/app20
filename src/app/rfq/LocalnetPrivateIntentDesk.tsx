@@ -1,19 +1,19 @@
 "use client";
 
 import {
-  acceptQuote,
-  digestPrivateSwapIntent,
-  quotePrivateSwapIntent,
-  selectBestSolverQuote,
-  type PrivateSwapIntentV1,
-  type SolverQuote,
+  bucketForAmount,
+  formatSizeBucketLabel,
+  type SizeBucket,
 } from "@app20/private-intents";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { feltEquals } from "@/lib/addresses";
-import { localnetRuntimeEpoch } from "@/dev/localnet-runtime-epoch";
-import { consumeDeskHandoff, storeDeskHandoff } from "@/lib/desk-handoff";
-import { verifyLocalnetSolverQuote } from "@/lib/localnet-quote-authority";
+import {
+  consumeDeskHandoff,
+  consumeInvoiceDeskHandoff,
+  storeDeskHandoff,
+  type InvoiceDeskHandoff,
+} from "@/lib/desk-handoff";
 import {
   deskLeakChips,
   deskVenueCopy,
@@ -21,7 +21,6 @@ import {
   type DeskSurface,
   type DeskVenue,
 } from "@/lib/desk-disclosure";
-import { buildEscrowFundActions } from "@/lib/escrow-actions";
 import {
   canProceedFromPrivacyPreflight,
   evaluatePrivacyPreflight,
@@ -31,11 +30,13 @@ import {
   configuredMarketPair,
 } from "@/lib/token-registry";
 import {
-  assertReadyExecutionUnchanged,
-  snapshotReadyExecution,
-} from "@/lib/ready-execution";
-import { submitActions, transactionStateFromError } from "@/lib/strk20";
-import { readLivePoolFee, readPublicStrkBalance } from "@/lib/mainnet-safety";
+  describeNoteMaturity,
+  noteMaturityStatus,
+  readAccountDeposits,
+  type NoteMaturityStatus,
+  type PoolEventsProvider,
+} from "@/lib/note-maturity";
+import { recordInvoiceTakeSettled } from "@/lib/otc";
 import {
   addrSTRK,
   escrowHelperLocalnet,
@@ -44,127 +45,77 @@ import {
   myFrontendProviders,
   strk20PoolLocalnet,
 } from "@/utils/constants";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { validateAndParseAddress } from "starknet";
 import {
-  abandonLocalnetFunding,
-  askLocalnetSolverToFill,
-  buildLocalnetIntentPayoutActions,
   createLocalnetIntentId,
-  convergeLocalnetPrivateIntent,
-  ensureLocalnetEscrowTicket,
-  expireLocalnetPrivateIntent,
   formatLocalnetTokenAmount,
-  fundingTicketAttemptTarget,
-  markLocalnetFundingUnknown,
-  localnetCommandWasRejected,
   parseLocalnetTokenAmount,
-  prepareLocalnetFunding,
-  readLocalnetEscrowDeal,
+  postSelectionTranscript,
   readLocalnetRfqOperationsStatus,
-  releaseLocalnetRfqReservations,
-  requestLocalnetSolverQuotes,
-  selectLocalnetSolverQuote,
-  signLocalnetSolverQuote,
+  requestQuotesV3,
   type LocalnetMarketToken,
-  type LocalnetSolverOffer,
+  type LocalnetQuoteRefusalV3,
+  type LocalnetTranscriptAcknowledgement,
+  type LocalnetV3Cohort,
 } from "./localnet-private-intents";
 import MakerCohortPanel from "./MakerCohortPanel";
 import {
-  LOCALNET_APP20_FEE_POLICY_ID,
   gateRfqAction,
   localnetEconomicReview,
   operationsAvailability,
-  type BrowserSafeMakerStatus,
-  type MakerDirectoryStatus,
 } from "./rfq-operations";
 import { useRfqOperations } from "./use-rfq-operations";
 import styles from "./rfq.module.css";
 import QuoteComparison from "./QuoteComparison";
-import RfqCountdown from "./RfqCountdown";
-import RfqFinalReview from "./RfqFinalReview";
+import RfqFinalReview, {
+  type RfqFinalReviewV3DisplayTerms,
+} from "./RfqFinalReview";
 import {
-  validateFinalReview,
+  validateV3FinalReview,
   type RfqFinalReviewSnapshot,
-  type RfqFinalReviewTerms,
 } from "./rfq-final-review";
 import {
-  beginRfqPhaseAttempt,
   createRfqLifecycleRecord,
-  rfqHasFundingEvidence,
-  reviseRfqLifecycle,
+  recordRfqV3TranscriptAcknowledgements,
   transitionRfqLifecycle,
-  updateRfqPhaseAttempt,
-  type RfqAttemptPhase,
-  type RfqAttemptTarget,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
-import {
-  prepareFundedSettlementExpiry,
-  preparePreFundingReservationRelease,
-  reconcilePersistedReservationRelease,
-  reservationReleaseReconciliationRoute,
-} from "./localnet-release-recovery";
-import { localnetResumeDecision } from "./localnet-resume-controller";
-import { recoverLocalnetPreparingFundingAfterEmptyObservation } from "./localnet-prewallet-recovery";
-import {
-  assertLocalnetRecoveryContextUnchanged,
-  recoveryContextMatches,
-  snapshotLocalnetRecoveryContext,
-} from "./localnet-recovery-context";
-import RfqPhaseAction from "./RfqPhaseAction";
-import {
-  LocalnetFundingPrewalletRecoveryPendingError,
-  runLocalnetFundingOrchestration,
-} from "./localnet-funding-orchestration";
-import { applyLocalnetFundingFailureEvidence } from "./localnet-funding-failure-recovery";
-import { applyLocalnetPayoutFailureEvidence } from "./localnet/payout-failure-recovery";
-import { reconcileFundingBeforeBrowserPersistence } from "./localnet-funded-persistence";
-import {
-  runAuthorizedInitialMakerFill,
-  runAuthorizedPayout,
-  runAuthorizedTicketAcceptance,
-} from "./rfq-authorized-callers";
-import {
-  makerFillAttemptTarget,
-  retryPersistedMakerFill,
-} from "./localnet-maker-fill-recovery";
-import {
-  RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
-  RfqQuoteScopeInvalidatedError,
-} from "./rfq-quote-scope";
+import RfqAuthorityStrip from "./RfqAuthorityStrip";
+import SettlementEvidencePanel from "./SettlementEvidencePanel";
+import { createLocalnetQuoteRequestRegistry } from "./localnet/quote-request-controller";
 import {
   assertQuoteProgressMayPersist,
-  createLocalnetQuoteRequestRegistry,
-  decideLocalnetQuoteRequestFailure,
   type LocalnetQuoteRequestHandle,
 } from "./localnet/quote-request-controller";
 import { createLocalnetRfqStorageClient } from "./localnet/rfq-storage-client";
-
-function consumeAccountScopedQuoteNonce(
-  account: string,
-  chainId: string,
-  nonce: string,
-): boolean {
-  const key = `app20:rfq-replay:v1:${chainId}:${account.toLowerCase()}`;
-  try {
-    const parsed: unknown = JSON.parse(
-      window.localStorage.getItem(key) ?? "[]",
-    );
-    const values = Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : [];
-    if (values.includes(nonce)) return false;
-    window.localStorage.setItem(
-      key,
-      JSON.stringify([...values.slice(-127), nonce]),
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
+import {
+  createV3Request,
+  v3RequestMaturityGate,
+  type CreatedV3Request,
+} from "./rfq-v3-request";
+import {
+  createV3Selection,
+  type V3SelectionResult,
+} from "./rfq-v3-selection";
+import {
+  estimateInvoiceSellSize,
+  sizeInvoiceFromSelectedFills,
+} from "./rfq-v3-invoice";
+import {
+  executeLocalnetV3Take,
+  readV3FinalReviewSnapshot,
+  verifyLocalnetV3Take,
+  type V3TakeExecutionResult,
+} from "./ui/v3-take-controller";
+import { requestRfqHistoryAutoBackup } from "./ui/rfq-auto-backup";
 
 export type LocalnetMarketPairId = "STRK_USDC" | "USDC_STRK";
 
@@ -176,164 +127,165 @@ export type LocalnetPrivateIntentDeskProps = Readonly<{
   requestBlockedReason?: string;
 }>;
 
-type MarketPair = {
+type MarketPair = Readonly<{
   id: LocalnetMarketPairId;
   label: string;
   sell: LocalnetMarketToken;
   buy: LocalnetMarketToken;
   defaultSellAmount: string;
   defaultMinBuyAmount: string;
-};
-
-type QuotedIntent = {
-  intent: PrivateSwapIntentV1;
-  quote: SolverQuote;
-  quotes: readonly SolverQuote[];
-  cohort: readonly BrowserSafeMakerStatus[];
-  directory: MakerDirectoryStatus;
-  governedMakerCount: number;
-  pair: MarketPair;
-  surface: DeskSurface;
-};
-
-function finalReviewTerms(quoted: QuotedIntent): RfqFinalReviewTerms {
-  const economics = localnetEconomicReview({
-    pairId: quoted.pair.id,
-    sellAmount: quoted.intent.sellAmount,
-    requestedFloor: quoted.intent.minBuyAmount,
-    surface: quoted.surface,
-  });
-  return {
-    rfqId: quoted.intent.intentId,
-    intentDigest: quoted.quote.intentDigest,
-    quoteNonce: quoted.quote.nonce,
-    reservationId: quoted.quote.reservationId,
-    makerId: quoted.quote.solverId,
-    makerKeyId: quoted.quote.solverKey,
-    sellSymbol: quoted.pair.sell.symbol,
-    sellAddress: quoted.pair.sell.address,
-    sellDecimals: quoted.pair.sell.decimals,
-    sellAmount: quoted.intent.sellAmount,
-    buySymbol: quoted.pair.buy.symbol,
-    buyAddress: quoted.pair.buy.address,
-    buyDecimals: quoted.pair.buy.decimals,
-    buyAmount: quoted.quote.buyAmount,
-    minBuyAmount: quoted.intent.minBuyAmount,
-    referenceGrossBuyAmount: economics.referenceGrossBuyAmount,
-    perTradeCapBaseUnits: economics.perTradeCapBaseUnits,
-    maximumTotalDeviationBps: economics.maximumTotalDeviationBps,
-    maximumMakerSpreadBps: economics.maximumMakerSpreadBps,
-    economicPolicyId: economics.policyId,
-    app20FeePolicyId: LOCALNET_APP20_FEE_POLICY_ID,
-    app20FeeAmount: 0n,
-    spreadBps: quoted.quote.spreadBps,
-    quoteExpiresAt: quoted.quote.quoteExpiresAt,
-    reservationExpiresAt: quoted.quote.reservationExpiresAt,
-    settlementExpiresAt: quoted.intent.expiresAt,
-    registryRevision: APP20_TOKEN_REGISTRY_REVISION,
-    requiresMatureNote: false,
-  };
-}
+}>;
 
 type InvitationReview = Readonly<{
   createdAt: number;
-  expiresAt: number;
-  sellAmount: bigint;
-  minBuyAmount: bigint;
-  directoryEpoch: MakerDirectoryStatus["epoch"];
-  directoryCheckpoint: MakerDirectoryStatus["checkpoint"];
-  directoryValidUntil: number;
+  exactSellAmount: bigint;
+  localFloor: bigint;
+  bucket: SizeBucket;
+  cohort: LocalnetV3Cohort;
   governedMakerCount: number;
-  cohort: readonly Readonly<{ makerId: string; keyId: string }>[];
-  cohortBinding: string;
 }>;
 
-type FlowPhase = "quote" | "lock" | "fill" | "claim" | "expire" | "refund";
+type QuotedV3 = Readonly<{
+  created: CreatedV3Request;
+  selection: V3SelectionResult;
+  refusals: readonly LocalnetQuoteRefusalV3[];
+  pair: MarketPair;
+  surface: DeskSurface;
+  exactSellAmount: bigint;
+  localFloor: bigint;
+  transcriptAcknowledgements: readonly LocalnetTranscriptAcknowledgement[];
+}>;
 
 type FlowState =
-  | { kind: "idle" }
-  | { kind: "working"; phase: FlowPhase; message: string }
-  | {
-      kind: "success";
-      outcome: "settled" | "refunded";
+  | Readonly<{ kind: "idle" }>
+  | Readonly<{ kind: "working" | "waiting" | "ready"; message: string }>
+  | Readonly<{
+      kind: "submission-unknown" | "reverted" | "settled";
       message: string;
-      transactionHashes: string[];
-    }
-  | { kind: "ready"; message: string }
-  | { kind: "refused"; message: string }
-  | { kind: "error"; message: string };
+      transactionHash?: string;
+    }>
+  | Readonly<{ kind: "refused" | "error"; message: string }>;
 
-function surfaceFromHash(hash: string): DeskSurface {
-  const value = hash.replace(/^#/, "");
-  return value === "desk" || value === "block" ? "block" : "swap";
-}
+type MaturityState =
+  | Readonly<{ kind: "idle" | "loading" }>
+  | Readonly<{ kind: "ready"; status: NoteMaturityStatus }>
+  | Readonly<{ kind: "error"; message: string }>;
 
-function currentLifecycleStep(
-  quoted: QuotedIntent | null,
-  flow: FlowState,
-  solverOutcome: "fill" | "refund",
-): number {
-  if (!quoted) return 0;
-  if (flow.kind === "success") return 4;
-  if (flow.kind !== "working") return 1;
-  const phases: readonly FlowPhase[] =
-    solverOutcome === "fill"
-      ? ["quote", "lock", "fill", "claim"]
-      : ["quote", "lock", "expire", "refund"];
-  const index = phases.indexOf(flow.phase);
-  return index < 0 ? 1 : index;
-}
-
-function matchesToken(left: string, right: string): boolean {
-  return feltEquals(left, right);
-}
-
-function marketPairs(): Record<MarketPair["id"], MarketPair> {
+function marketPairs(): Record<LocalnetMarketPairId, MarketPair> {
   const configured = configuredMarketPair("localnet");
   const strk: LocalnetMarketToken = configured.ok
     ? configured.pair.tokenA
-    : {
-        symbol: "STRK",
-        address: addrSTRK,
-        decimals: 18,
-      };
+    : { symbol: "STRK", address: addrSTRK, decimals: 18 };
   const usdc: LocalnetMarketToken = configured.ok
     ? configured.pair.tokenB
-    : {
-        symbol: "USDC",
-        address: localnetUsdcToken,
-        decimals: 6,
-      };
+    : { symbol: "USDC", address: localnetUsdcToken, decimals: 6 };
   return {
-    STRK_USDC: {
+    STRK_USDC: Object.freeze({
       id: "STRK_USDC",
       label: "STRK → USDC",
       sell: strk,
       buy: usdc,
       defaultSellAmount: "0.1",
       defaultMinBuyAmount: "0.198",
-    },
-    USDC_STRK: {
+    }),
+    USDC_STRK: Object.freeze({
       id: "USDC_STRK",
       label: "USDC → STRK",
       sell: usdc,
       buy: strk,
       defaultSellAmount: "0.1",
       defaultMinBuyAmount: "0.0495",
-    },
+    }),
   };
+}
+
+function surfaceFromHash(hash: string): DeskSurface {
+  const value = hash.replace(/^#/, "");
+  return value === "desk" || value === "block" ? "block" : "swap";
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
     ? error.message
-    : "The local private intent failed.";
+    : "The local private RFQ failed.";
 }
 
-function isInventoryRefusal(message: string): boolean {
-  return /inventory (?:cannot|can) cover|does not cover|no output|below the intent floor/i.test(
-    message,
+function randomDigest(): string {
+  const bytes = new Uint8Array(32);
+  globalThis.crypto.getRandomValues(bytes);
+  const digest = `0x${Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
+  bytes.fill(0);
+  return digest;
+}
+
+function cohortFromStatus(
+  status: NonNullable<ReturnType<typeof useRfqOperations>["status"]>,
+): LocalnetV3Cohort {
+  const makers = Object.freeze(
+    status.makers.map(({ makerId, keyId }) =>
+      Object.freeze({ makerId, keyId }),
+    ),
   );
+  return Object.freeze({
+    epoch: status.directory.epoch,
+    checkpoint: status.directory.checkpoint,
+    validUntil: status.directory.validUntil,
+    makers,
+    binding: [
+      status.schema,
+      status.directory.epoch,
+      status.directory.checkpoint,
+      status.directory.validUntil,
+      ...makers.flatMap(({ makerId, keyId }) => [makerId, keyId]),
+    ].join("|"),
+  });
+}
+
+function sameCohort(left: LocalnetV3Cohort, right: LocalnetV3Cohort): boolean {
+  return (
+    left.epoch === right.epoch &&
+    left.checkpoint === right.checkpoint &&
+    left.validUntil === right.validUntil &&
+    left.binding === right.binding &&
+    left.makers.length === right.makers.length &&
+    left.makers.every(
+      (maker, index) =>
+        maker.makerId === right.makers[index]?.makerId &&
+        maker.keyId === right.makers[index]?.keyId,
+    )
+  );
+}
+
+function maturityLine(
+  state: MaturityState,
+  token: string,
+): ReactNode {
+  if (state.kind !== "ready") {
+    return state.kind === "error"
+      ? state.message
+      : "Reading public pool deposit events…";
+  }
+  const pending = state.status.pending
+    .filter(({ deposit }) => feltEquals(deposit.token, token))
+    .sort(
+      (left, right) =>
+        right.deposit.blockNumber - left.deposit.blockNumber,
+    )[0];
+  if (pending) {
+    return `Notes from your latest shield mature at block ${pending.matureAtBlock} (${pending.blocksRemaining} block${pending.blocksRemaining === 1 ? "" : "s"} left).`;
+  }
+  return describeNoteMaturity({
+    ...state.status,
+    mature: Object.freeze(
+      state.status.mature.filter((deposit) =>
+        feltEquals(deposit.token, token),
+      ),
+    ),
+    pending: Object.freeze([]),
+    allMatureAtBlock: null,
+  });
 }
 
 function LeakChips({ venue }: { venue: DeskVenue }) {
@@ -353,8 +305,8 @@ export default function LocalnetPrivateIntentDesk({
   onLifecycleRecord,
   requestBlockedReason,
 }: LocalnetPrivateIntentDeskProps = {}) {
-  const pairs = marketPairs();
-  const [pairId, setPairId] = useState<MarketPair["id"]>(initialPairId);
+  const pairs = useMemo(() => marketPairs(), []);
+  const [pairId, setPairId] = useState<LocalnetMarketPairId>(initialPairId);
   const pair = pairs[pairId];
   const connected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
@@ -367,31 +319,33 @@ export default function LocalnetPrivateIntentDesk({
   const requestedSurface = surfaceFromHash(hash);
   const [sellAmount, setSellAmount] = useState(pair.defaultSellAmount);
   const [minBuyAmount, setMinBuyAmount] = useState(pair.defaultMinBuyAmount);
-  const [solverOutcome, setSolverOutcome] = useState<"fill" | "refund">("fill");
-  const [quoted, setQuoted] = useState<QuotedIntent | null>(null);
-  const [reviewing, setReviewing] = useState(false);
-  const [lifecycleRecord, setLifecycleRecord] =
-    useState<RfqLifecycleRecord | null>(null);
-  const [reviewSnapshot, setReviewSnapshot] =
-    useState<RfqFinalReviewSnapshot | null>(null);
-  const [flow, setFlow] = useState<FlowState>({ kind: "idle" });
-  const [requotePending, setRequotePending] = useState(false);
-  const [counterparty, setCounterparty] = useState<string | null>(null);
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [invitationReview, setInvitationReview] =
     useState<InvitationReview | null>(null);
   const [invitationConfirmed, setInvitationConfirmed] = useState(false);
-  const [latestCohort, setLatestCohort] = useState<
-    readonly BrowserSafeMakerStatus[]
-  >([]);
+  const [quoted, setQuoted] = useState<QuotedV3 | null>(null);
+  const [lifecycleRecord, setLifecycleRecord] =
+    useState<RfqLifecycleRecord | null>(null);
+  const [reviewSnapshot, setReviewSnapshot] =
+    useState<RfqFinalReviewSnapshot | null>(null);
+  const [reviewSnapshotError, setReviewSnapshotError] = useState<string>();
+  const [showFinalReview, setShowFinalReview] = useState(false);
+  const [flow, setFlow] = useState<FlowState>({ kind: "idle" });
+  const [maturity, setMaturity] = useState<MaturityState>({ kind: "idle" });
+  const [waitForMaturity, setWaitForMaturity] = useState(false);
+  const [counterparty, setCounterparty] = useState<string | null>(null);
+  const [invoice, setInvoice] = useState<InvoiceDeskHandoff | null>(null);
+  const [invoiceEstimateReady, setInvoiceEstimateReady] = useState(false);
+  const [preflightObservedAt] = useState(() => Math.floor(Date.now() / 1_000));
+  const [preflightNow, setPreflightNow] = useState(preflightObservedAt);
   const operations = useRfqOperations();
   const requestGate = gateRfqAction(operations, "request");
-  const fundingGate = gateRfqAction(operations, "fund", quoted?.quote.solverId);
-  const [executionLocked, setExecutionLocked] = useState(false);
-  const executionStartedRef = useRef(false);
+  const takeGate = gateRfqAction(operations, "take");
   const quoteComparisonRef = useRef<HTMLElement>(null);
   const finalReviewRef = useRef<HTMLElement>(null);
   const quoteFocusPendingRef = useRef(false);
+  const maturityTimerRef = useRef<number | undefined>(undefined);
+  const consumedScopeRef = useRef<string | undefined>(undefined);
   const quoteRequestsRef = useRef(
     createLocalnetQuoteRequestRegistry({
       account: address,
@@ -405,9 +359,119 @@ export default function LocalnetPrivateIntentDesk({
     chainId: chain,
     providerIndex,
   });
-  const [preflightObservedAt] = useState(() => Math.floor(Date.now() / 1_000));
-  const [preflightNow, setPreflightNow] = useState(preflightObservedAt);
-  const working = flow.kind === "working";
+
+  const localnetReady = Boolean(
+    connected &&
+      address &&
+      chain &&
+      providerIndex === LOCALNET_PROVIDER_INDEX,
+  );
+  const working = flow.kind === "working" || flow.kind === "waiting";
+  const surface: DeskSurface = invoice
+    ? "swap"
+    : swapOnly
+      ? "swap"
+      : quoted
+        ? quoted.surface
+        : requestedSurface;
+  const venue: DeskVenue =
+    flow.kind === "refused" ? "refused" : quoted ? "inventory" : "idle";
+  const blockHint = suggestsBlockSurface({
+    sellSymbol: pair.sell.symbol,
+    sellAmount,
+  });
+
+  const exactDraft = useMemo(() => {
+    try {
+      return parseLocalnetTokenAmount(sellAmount, pair.sell);
+    } catch {
+      return null;
+    }
+  }, [pair.sell, sellAmount]);
+
+  const economics = useMemo(() => {
+    if (exactDraft === null) return null;
+    try {
+      if (invoice) {
+        return Object.freeze({
+          reviewedFloor: BigInt(invoice.targetBuyBaseUnits),
+        });
+      }
+      return localnetEconomicReview({
+        pairId: pair.id,
+        sellAmount: exactDraft,
+        surface,
+        ...(surface === "block"
+          ? {
+              requestedFloor: parseLocalnetTokenAmount(
+                minBuyAmount,
+                pair.buy,
+              ),
+            }
+          : {}),
+      });
+    } catch {
+      return null;
+    }
+  }, [exactDraft, invoice, minBuyAmount, pair, surface]);
+
+  const draftBucket = useMemo(() => {
+    if (exactDraft === null) return null;
+    try {
+      return bucketForAmount(pair.sell.symbol, exactDraft);
+    } catch {
+      return null;
+    }
+  }, [exactDraft, pair.sell.symbol]);
+
+  const privacyPreflight = useMemo(() => {
+    if (exactDraft === null) return null;
+    const stamp = {
+      observedAt: preflightObservedAt,
+      validUntil: preflightObservedAt + 24 * 60 * 60,
+    };
+    return evaluatePrivacyPreflight({
+      amount: exactDraft,
+      asset: pair.sell.symbol,
+      network: "starknet:APP20_LOCALNET",
+      now: preflightNow,
+      denominationAlternatives: {
+        ...stamp,
+        provenance: "app20-client-denomination-policy:v1",
+        amounts: [exactDraft / 2n, exactDraft * 2n].filter(
+          (value) => value > 0n,
+        ),
+      },
+      invitedMakerDisclosure: {
+        ...stamp,
+        provenance: "app20-localnet-maker-directory:v3",
+        makerCount: operations.status?.cohort.governed ?? 2,
+        disclosedFields: ["pair", "side", "size bucket", "expiry"],
+      },
+      publicSettlementLeakage: {
+        ...stamp,
+        provenance: "app20-escrow-v3-disclosure:v1",
+        publicFields: [
+          "pair",
+          "per-lock Take amounts",
+          "lock deadline",
+          "OPEN payout-note amount",
+          "helper activity",
+        ],
+      },
+    });
+  }, [
+    exactDraft,
+    operations.status?.cohort.governed,
+    pair.sell.symbol,
+    preflightNow,
+    preflightObservedAt,
+  ]);
+  const privacyReady = Boolean(
+    privacyPreflight &&
+      canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed),
+  );
+
   useEffect(() => {
     const tick = () => setPreflightNow(Math.floor(Date.now() / 1_000));
     tick();
@@ -422,98 +486,23 @@ export default function LocalnetPrivateIntentDesk({
       if (interval !== undefined) window.clearInterval(interval);
     };
   }, []);
-  const privacyPreflight = useMemo(() => {
-    try {
-      const amount = parseLocalnetTokenAmount(sellAmount, pair.sell);
-      const stamp = {
-        observedAt: preflightObservedAt,
-        validUntil: preflightObservedAt + 24 * 60 * 60,
-      };
-      return evaluatePrivacyPreflight({
-        amount,
-        asset: pair.sell.symbol,
-        network: "starknet:APP20_LOCALNET",
-        now: preflightNow,
-        denominationAlternatives: {
-          ...stamp,
-          provenance: "app20-client-denomination-policy:v1",
-          amounts: [amount / 2n, amount * 2n].filter(
-            (alternative) => alternative > 0n,
-          ),
-        },
-        invitedMakerDisclosure: {
-          ...stamp,
-          provenance: "app20-localnet-maker-directory:v1",
-          makerCount: 2,
-          disclosedFields: ["pair", "side", "exact size", "floor", "expiry"],
-        },
-        publicSettlementLeakage: {
-          ...stamp,
-          provenance: "app20-escrow-disclosure:v1",
-          publicFields: [
-            "pair",
-            "amount",
-            "deadline",
-            "lifecycle timing",
-            "helper activity",
-          ],
-        },
-      });
-    } catch {
-      return null;
-    }
-  }, [pair, preflightNow, preflightObservedAt, sellAmount]);
-  const privacyReady =
-    privacyPreflight !== null &&
-    canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed);
-
-  const localnetReady =
-    connected && Boolean(address) && providerIndex === LOCALNET_PROVIDER_INDEX;
-  const lifecycleContextReady = Boolean(
-    lifecycleRecord &&
-      address &&
-      chain &&
-      recoveryContextMatches(lifecycleRecord, {
-        account: address,
-        chainId: chain,
-        providerIndex,
-      }),
-  );
-  const surface = swapOnly
-    ? "swap"
-    : quoted
-      ? quoted.surface
-      : requestedSurface;
-  const venue: DeskVenue =
-    flow.kind === "refused" ? "refused" : quoted ? "inventory" : "idle";
-  const blockHint = suggestsBlockSurface({
-    sellSymbol: pair.sell.symbol,
-    sellAmount,
-  });
 
   useEffect(() => {
-    const nextPair = marketPairs()[initialPairId];
+    const nextPair = pairs[initialPairId];
     setPairId(initialPairId);
     setSellAmount(nextPair.defaultSellAmount);
     setMinBuyAmount(nextPair.defaultMinBuyAmount);
-    setQuoted(null);
-    setFlow({ kind: "idle" });
-    setRequotePending(false);
-    setPrivacyConfirmed(false);
-    setInvitationReview(null);
-    setInvitationConfirmed(false);
-    setLatestCohort([]);
-    executionStartedRef.current = false;
-    setExecutionLocked(false);
-  }, [initialPairId]);
+    resetRequestView();
+  }, [initialPairId, pairs]);
 
   useEffect(() => {
     const invalidated = quoteRequestsRef.current.invalidateIfScopeChanged();
-    invalidateQuote();
     if (invalidated) {
+      resetRequestView();
       setFlow({
         kind: "error",
-        message: RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
+        message:
+          "The wallet account, chain, or provider changed while quotes were in flight. The response was discarded.",
       });
     }
   }, [address, chain, providerIndex]);
@@ -521,202 +510,248 @@ export default function LocalnetPrivateIntentDesk({
   useEffect(
     () => () => {
       quoteRequestsRef.current.cancelActive();
+      if (maturityTimerRef.current !== undefined) {
+        window.clearTimeout(maturityTimerRef.current);
+      }
     },
     [],
   );
 
   useEffect(() => {
-    if (!requotePending || requestBlockedReason) return;
-    setRequotePending(false);
-    void buildQuote();
-  }, [requotePending, requestBlockedReason]);
-
-  useEffect(() => {
-    if (!quoted || reviewing || !quoteFocusPendingRef.current) return;
+    if (!quoted || showFinalReview || !quoteFocusPendingRef.current) return;
     quoteComparisonRef.current?.focus();
     quoteFocusPendingRef.current = false;
-  }, [quoted, reviewing]);
+  }, [quoted, showFinalReview]);
 
   useEffect(() => {
-    if (reviewing) finalReviewRef.current?.focus();
-  }, [reviewing]);
+    if (showFinalReview) finalReviewRef.current?.focus();
+  }, [showFinalReview]);
 
   useEffect(() => {
     if (!address || !chain) return;
-    const url = new URL(window.location.href);
+    const scope = `${chain}:${address.toLowerCase()}`;
+    if (consumedScopeRef.current === scope) return;
+    consumedScopeRef.current = scope;
+    const invoiceHandoff = consumeInvoiceDeskHandoff(
+      window.sessionStorage,
+      { account: address, chainId: chain },
+    );
     if (
-      url.searchParams.has("counterparty") ||
-      url.searchParams.has("action") ||
-      url.searchParams.has("intent")
+      invoiceHandoff &&
+      feltEquals(invoiceHandoff.buyToken, localnetUsdcToken)
     ) {
-      url.searchParams.delete("counterparty");
-      url.searchParams.delete("action");
-      url.searchParams.delete("intent");
-      window.history.replaceState(
-        window.history.state,
-        "",
-        `${url.pathname}${url.search}${url.hash}`,
-      );
+      setInvoice(invoiceHandoff);
+      setInvoiceEstimateReady(false);
+      setPairId("STRK_USDC");
+      onPairChange?.("STRK_USDC");
+    } else {
+      setInvoice(null);
+      setInvoiceEstimateReady(false);
     }
-    const input = consumeDeskHandoff(window.sessionStorage, "rfq", {
+    const contact = consumeDeskHandoff(window.sessionStorage, "rfq", {
       account: address,
       chainId: chain,
     });
-    if (!input) {
+    if (!contact) {
       setCounterparty(null);
       return;
     }
     try {
-      setCounterparty(validateAndParseAddress(input));
+      setCounterparty(validateAndParseAddress(contact));
     } catch {
       setCounterparty(null);
     }
-  }, [address, chain]);
+  }, [address, chain, onPairChange]);
+
+  useEffect(() => {
+    if (
+      !invoice ||
+      invoiceEstimateReady ||
+      quoted ||
+      !operations.midAggregate ||
+      operations.midAggregate.count === 0 ||
+      operations.midAggregate.medianE18 <= 0n
+    ) {
+      return;
+    }
+    try {
+      const estimate = estimateInvoiceSellSize({
+        targetBuyBaseUnits: BigInt(invoice.targetBuyBaseUnits),
+        medianMidE18: operations.midAggregate.medianE18,
+      });
+      setSellAmount(
+        formatLocalnetTokenAmount(
+          estimate.estimatedSellAmount,
+          pairs.STRK_USDC.sell,
+        ),
+      );
+      setMinBuyAmount(
+        formatLocalnetTokenAmount(
+          BigInt(invoice.targetBuyBaseUnits),
+          pairs.STRK_USDC.buy,
+        ),
+      );
+      setInvitationReview(null);
+      setInvitationConfirmed(false);
+      setInvoiceEstimateReady(true);
+    } catch (error: unknown) {
+      setInvoiceEstimateReady(false);
+      setFlow({ kind: "error", message: errorMessage(error) });
+    }
+  }, [
+    invoice,
+    invoiceEstimateReady,
+    operations.midAggregate,
+    pairs,
+    quoted,
+  ]);
+
+  useEffect(() => {
+    if (!localnetReady || !address) {
+      setMaturity({ kind: "idle" });
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      setMaturity((current) =>
+        current.kind === "ready" ? current : { kind: "loading" },
+      );
+      try {
+        // SAFETY: Starknet's selected localnet provider implements the same
+        // getBlockNumber/getEvents RPC subset required by PoolEventsProvider.
+        const provider = myFrontendProviders[
+          LOCALNET_PROVIDER_INDEX
+        ] as unknown as PoolEventsProvider;
+        const deposits = await readAccountDeposits({
+          provider,
+          poolAddress: strk20PoolLocalnet,
+          account: address,
+        });
+        const head = await provider.getBlockNumber();
+        if (active) {
+          setMaturity({ kind: "ready", status: noteMaturityStatus(deposits, head) });
+        }
+      } catch (error: unknown) {
+        if (active) {
+          setMaturity({ kind: "error", message: errorMessage(error) });
+        }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [address, localnetReady]);
+
+  function rfqStorage() {
+    return rfqStorageClientRef.current.current();
+  }
+
+  async function persistLifecycle(
+    record: RfqLifecycleRecord,
+    request?: LocalnetQuoteRequestHandle,
+  ): Promise<RfqLifecycleRecord> {
+    assertQuoteProgressMayPersist(request, quoteRequestsRef.current, record);
+    await rfqStorage().save(record);
+    assertQuoteProgressMayPersist(request, quoteRequestsRef.current, record);
+    setLifecycleRecord(record);
+    onLifecycleRecord?.(record);
+    return record;
+  }
+
+  async function authorizeLifecycle(
+    record: RfqLifecycleRecord,
+  ): Promise<RfqLifecycleRecord> {
+    const authorized = await rfqStorage().authorize(record);
+    setLifecycleRecord(authorized);
+    onLifecycleRecord?.(authorized);
+    return authorized;
+  }
+
+  function cancelMaturityTimer() {
+    if (maturityTimerRef.current !== undefined) {
+      window.clearTimeout(maturityTimerRef.current);
+      maturityTimerRef.current = undefined;
+    }
+    setWaitForMaturity(false);
+  }
+
+  function resetRequestView() {
+    cancelMaturityTimer();
+    setQuoted(null);
+    setLifecycleRecord(null);
+    setReviewSnapshot(null);
+    setReviewSnapshotError(undefined);
+    setShowFinalReview(false);
+    setPrivacyConfirmed(false);
+    setInvitationReview(null);
+    setInvitationConfirmed(false);
+    setFlow({ kind: "idle" });
+  }
+
+  function selectPair(nextId: LocalnetMarketPairId) {
+    if (invoice) return;
+    const next = pairs[nextId];
+    setPairId(nextId);
+    setSellAmount(next.defaultSellAmount);
+    setMinBuyAmount(next.defaultMinBuyAmount);
+    resetRequestView();
+    onPairChange?.(nextId);
+  }
 
   function setSurface(next: DeskSurface) {
-    if (quoted || swapOnly) return;
+    if (quoted || swapOnly || invoice) return;
     setPrivacyConfirmed(false);
+    setInvitationReview(null);
+    setInvitationConfirmed(false);
     void navigate({
       to: "/rfq",
       hash: next === "block" ? "desk" : "swap",
     });
   }
 
-  function rfqStorage() {
-    return rfqStorageClientRef.current.current();
-  }
-
-  function assertActiveQuoteRequest(request: LocalnetQuoteRequestHandle) {
-    quoteRequestsRef.current.assertActive(request);
-  }
-
-  function assertLiveRecordScope(record: RfqLifecycleRecord) {
-    const current = quoteRequestsRef.current.currentScope();
-    if (
-      !current.account ||
-      !current.chainId ||
-      !recoveryContextMatches(record, {
-        account: current.account,
-        chainId: current.chainId,
-        providerIndex: current.providerIndex,
-      })
-    ) {
-      throw new RfqQuoteScopeInvalidatedError();
+  function exactAndFloor(): { exact: bigint; floor: bigint } {
+    const exact = parseLocalnetTokenAmount(sellAmount, pair.sell);
+    if (invoice) {
+      return { exact, floor: BigInt(invoice.targetBuyBaseUnits) };
     }
-  }
-
-  async function persistLifecycle(
-    record: RfqLifecycleRecord,
-    quoteRequest?: LocalnetQuoteRequestHandle,
-  ) {
-    assertQuoteProgressMayPersist(
-      quoteRequest,
-      quoteRequestsRef.current,
-      record,
-    );
-    await rfqStorage().save(record);
-    assertQuoteProgressMayPersist(
-      quoteRequest,
-      quoteRequestsRef.current,
-      record,
-    );
-    setLifecycleRecord(record);
-    onLifecycleRecord?.(record);
-  }
-
-  const authorizeLifecycle = async (
-    record: RfqLifecycleRecord,
-    quoteRequest?: LocalnetQuoteRequestHandle,
-  ) => {
-    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
-    const authorized = await rfqStorage().authorize(record);
-    if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
-    setLifecycleRecord(authorized);
-    onLifecycleRecord?.(authorized);
-    return authorized;
-  };
-
-  async function releasePreFundingRecord(
-    record: RfqLifecycleRecord,
-    quoteRequest?: LocalnetQuoteRequestHandle,
-  ): Promise<RfqLifecycleRecord> {
-    const started = snapshotLocalnetRecoveryContext(record);
-    const pending = preparePreFundingReservationRelease(
-      record,
-      createLocalnetIntentId(),
-      Math.floor(Date.now() / 1_000),
-    );
-    await persistLifecycle(pending, quoteRequest);
-    return reconcilePersistedReservationRelease(pending, {
-      releaseRequestReservations: releaseLocalnetRfqReservations,
-      expireFundedSettlement: expireLocalnetPrivateIntent,
-      persist: async (next) => {
-        await persistLifecycle(next, quoteRequest);
-        return next;
-      },
-      authorize: (next) => authorizeLifecycle(next, quoteRequest),
-      beforeSubmit: () => {
-        if (quoteRequest) assertActiveQuoteRequest(quoteRequest);
-        assertLocalnetRecoveryContextUnchanged(started, record);
-      },
-      now: () => Math.floor(Date.now() / 1_000),
+    const review = localnetEconomicReview({
+      pairId: pair.id,
+      sellAmount: exact,
+      surface,
+      ...(surface === "block"
+        ? {
+            requestedFloor: parseLocalnetTokenAmount(minBuyAmount, pair.buy),
+          }
+        : {}),
     });
-  }
-
-  function invalidateQuote() {
-    setQuoted(null);
-    setReviewing(false);
-    setLifecycleRecord(null);
-    setFlow({ kind: "idle" });
-    setRequotePending(false);
-    setPrivacyConfirmed(false);
-    setInvitationReview(null);
-    setInvitationConfirmed(false);
-    setLatestCohort([]);
-    executionStartedRef.current = false;
-    setExecutionLocked(false);
+    return { exact, floor: review.reviewedFloor };
   }
 
   function prepareInvitationReview() {
     try {
-      const createdAt = Math.floor(Date.now() / 1_000);
-      const exactSell = parseLocalnetTokenAmount(sellAmount, pair.sell);
-      const economics = localnetEconomicReview({
-        pairId: pair.id,
-        sellAmount: exactSell,
-        surface,
-        ...(surface === "block"
-          ? { requestedFloor: parseLocalnetTokenAmount(minBuyAmount, pair.buy) }
-          : {}),
-      });
-      const status = operations.status;
-      if (!status || !requestGate.allowed) {
+      if (!operations.status || !requestGate.allowed) {
         throw new Error("A fresh planned maker cohort is unavailable.");
       }
-      const cohort = Object.freeze(
-        status.makers.map(({ makerId, keyId }) =>
-          Object.freeze({ makerId, keyId }),
-        ),
+      if (invoice && !invoiceEstimateReady) {
+        throw new Error(
+          "A verified maker median is required before sizing this invoice RFQ.",
+        );
+      }
+      const { exact, floor } = exactAndFloor();
+      const reviewedBucket = bucketForAmount(pair.sell.symbol, exact);
+      setInvitationReview(
+        Object.freeze({
+          createdAt: Math.floor(Date.now() / 1_000),
+          exactSellAmount: exact,
+          localFloor: floor,
+          bucket: reviewedBucket,
+          cohort: cohortFromStatus(operations.status),
+          governedMakerCount: operations.status.cohort.governed,
+        }),
       );
-      const cohortBinding = [
-        status.schema,
-        status.directory.epoch,
-        status.directory.checkpoint,
-        status.directory.validUntil,
-        ...cohort.flatMap(({ makerId, keyId }) => [makerId, keyId]),
-      ].join("|");
-      setInvitationReview({
-        createdAt,
-        expiresAt: createdAt + 20 * 60,
-        sellAmount: exactSell,
-        minBuyAmount: economics.reviewedFloor,
-        directoryEpoch: status.directory.epoch,
-        directoryCheckpoint: status.directory.checkpoint,
-        directoryValidUntil: status.directory.validUntil,
-        governedMakerCount: status.cohort.governed,
-        cohort,
-        cohortBinding,
-      });
       setInvitationConfirmed(false);
       setFlow({ kind: "idle" });
     } catch (error: unknown) {
@@ -726,18 +761,102 @@ export default function LocalnetPrivateIntentDesk({
     }
   }
 
-  function selectPair(nextId: LocalnetMarketPairId) {
-    const nextPair = pairs[nextId];
-    setPairId(nextId);
-    setSellAmount(nextPair.defaultSellAmount);
-    setMinBuyAmount(nextPair.defaultMinBuyAmount);
-    invalidateQuote();
-    onPairChange?.(nextId);
+  async function selectionForRequest(input: {
+    created: CreatedV3Request;
+    quotes: Awaited<ReturnType<typeof requestQuotesV3>>;
+    exactSellAmount: bigint;
+    localFloor: bigint;
+    now: number;
+  }): Promise<Readonly<{ result: V3SelectionResult; exactSellAmount: bigint }>> {
+    let exactSellAmount = input.exactSellAmount;
+    let invoiceFloorApplied = !invoice;
+    let result = await createV3Selection({
+      rfq: input.created.rfq,
+      quotes: input.quotes.quotes,
+      refusals: input.quotes.refusals,
+      exactSellAmount,
+      // Invoice sizing first needs verified schedule depth. The invoice target
+      // is enforced immediately after deriving the minimum in-bucket sell.
+      localFloor: invoice ? 0n : input.localFloor,
+      now: input.now,
+    });
+    if (!invoice) return Object.freeze({ result, exactSellAmount });
+    for (let iteration = 0; iteration < 4; iteration += 1) {
+      if (result.selection.kind !== "selected") break;
+      const sized = sizeInvoiceFromSelectedFills({
+        targetBuyBaseUnits: BigInt(invoice.targetBuyBaseUnits),
+        selection: result.selection,
+        bucket: input.created.bucket,
+      });
+      if (
+        sized.exactSellAmount === exactSellAmount &&
+        invoiceFloorApplied
+      ) {
+        break;
+      }
+      exactSellAmount = sized.exactSellAmount;
+      invoiceFloorApplied = true;
+      result = await createV3Selection({
+        rfq: input.created.rfq,
+        quotes: input.quotes.quotes,
+        refusals: input.quotes.refusals,
+        exactSellAmount,
+        localFloor: input.localFloor,
+        now: input.now,
+      });
+    }
+    return Object.freeze({ result, exactSellAmount });
   }
 
-  async function buildQuote() {
-    let offers: readonly LocalnetSolverOffer[] = [];
-    let requestingRecord: RfqLifecycleRecord | null = null;
+  async function refreshReviewSnapshot(record: RfqLifecycleRecord) {
+    setReviewSnapshotError(undefined);
+    try {
+      setReviewSnapshot(await readV3FinalReviewSnapshot(record));
+    } catch (error: unknown) {
+      setReviewSnapshot(null);
+      setReviewSnapshotError(errorMessage(error));
+    }
+  }
+
+  async function deliverTranscript(
+    nextQuoted: Omit<QuotedV3, "transcriptAcknowledgements">,
+    quotedRecord: RfqLifecycleRecord,
+    request?: LocalnetQuoteRequestHandle,
+  ) {
+    const acknowledgements = await postSelectionTranscript({
+      account: quotedRecord.account,
+      chainId: quotedRecord.chainId,
+      rfqDigest: nextQuoted.selection.transcript.rfqDigest,
+      transcript: nextQuoted.selection.transcript,
+    });
+    let current = recordRfqV3TranscriptAcknowledgements(
+      quotedRecord,
+      acknowledgements,
+      Math.floor(Date.now() / 1_000),
+    );
+    current = transitionRfqLifecycle(
+      current,
+      "reviewing",
+      Math.floor(Date.now() / 1_000),
+    );
+    current = await persistLifecycle(current, request);
+    setQuoted(
+      Object.freeze({
+        ...nextQuoted,
+        transcriptAcknowledgements: acknowledgements,
+      }),
+    );
+    await refreshReviewSnapshot(current);
+    setFlow({
+      kind: "ready",
+      message:
+        "Every invited maker received the fair-loss transcript. Review the exact atomic fills before Take.",
+    });
+  }
+
+  async function runQuoteRequest(
+    maturityOverride?: NoteMaturityStatus,
+  ) {
     if (!address || !chain) {
       setFlow({
         kind: "error",
@@ -745,1464 +864,518 @@ export default function LocalnetPrivateIntentDesk({
       });
       return;
     }
-    const quoteRequest = quoteRequestsRef.current.start(
-      Object.freeze({
-        account: address,
-        chainId: chain,
-        providerIndex,
-      }),
-    );
+    const maturityStatus =
+      maturityOverride ?? (maturity.kind === "ready" ? maturity.status : null);
+    if (!maturityStatus) {
+      setFlow({
+        kind: "error",
+        message:
+          "The chain-derived note maturity estimate is unavailable. Retry the public event read before requesting quotes.",
+      });
+      return;
+    }
+    const gate = v3RequestMaturityGate(maturityStatus, pair.sell.address);
+    if (!gate.ready) {
+      setWaitForMaturity(true);
+      setFlow({
+        kind: "waiting",
+        message: `The latest matching deposit matures at block ${gate.matureAtBlock} (${gate.blocksRemaining} blocks left). Choose Request quotes when mature to keep checking locally.`,
+      });
+      return;
+    }
+    const request = quoteRequestsRef.current.start({
+      account: address,
+      chainId: chain,
+      providerIndex,
+    });
+    let requestingRecord: RfqLifecycleRecord | undefined;
     setFlow({
       kind: "working",
-      phase: "quote",
-      message: "Requesting signed quotes from 2 localnet fixture makers…",
+      message:
+        "Requesting collateralized schedules from the confirmed maker cohort…",
     });
     try {
       if (requestBlockedReason) throw new Error(requestBlockedReason);
-      if (!requestGate.allowed) throw new Error(requestGate.reason);
-      const exactNow = Math.floor(Date.now() / 1_000);
-      const currentPreflight = privacyPreflight
-        ? evaluatePrivacyPreflight({
-            amount: parseLocalnetTokenAmount(sellAmount, pair.sell),
-            asset: pair.sell.symbol,
-            network: "starknet:APP20_LOCALNET",
-            now: exactNow,
-            denominationAlternatives: {
-              observedAt: preflightObservedAt,
-              validUntil: preflightObservedAt + 24 * 60 * 60,
-              provenance: "app20-client-denomination-policy:v1",
-              amounts: [
-                parseLocalnetTokenAmount(sellAmount, pair.sell) / 2n,
-                parseLocalnetTokenAmount(sellAmount, pair.sell) * 2n,
-              ].filter((value) => value > 0n),
-            },
-            invitedMakerDisclosure: {
-              observedAt: preflightObservedAt,
-              validUntil: preflightObservedAt + 24 * 60 * 60,
-              provenance: "app20-localnet-maker-directory:v1",
-              makerCount: 2,
-              disclosedFields: [
-                "pair",
-                "side",
-                "exact size",
-                "floor",
-                "expiry",
-              ],
-            },
-            publicSettlementLeakage: {
-              observedAt: preflightObservedAt,
-              validUntil: preflightObservedAt + 24 * 60 * 60,
-              provenance: "app20-escrow-disclosure:v1",
-              publicFields: [
-                "pair",
-                "amount",
-                "deadline",
-                "lifecycle timing",
-                "helper activity",
-              ],
-            },
-          })
-        : null;
-      if (
-        !currentPreflight ||
-        !canProceedFromPrivacyPreflight(currentPreflight, privacyConfirmed)
-      ) {
+      if (!privacyReady) {
         throw new Error(
-          "Review the privacy preflight and acknowledge the known disclosures before requesting quotes.",
+          "Review the privacy preflight before requesting quotes.",
         );
       }
       if (!invitationReview || !invitationConfirmed) {
+        throw new Error("Confirm the size-blind maker cohort review first.");
+      }
+      if (invoice && !invoiceEstimateReady) {
         throw new Error(
-          "Confirm the exact invitation review before maker terms leave the browser.",
+          "A verified maker median is required before sizing this invoice RFQ.",
         );
       }
       if (!localnetReady) {
         throw new Error(
-          "No private inventory on this network. The RFQ was not published or routed elsewhere.",
+          "Select LOCAL and connect Localnet (dev) before requesting quotes.",
         );
       }
-      const configured = configuredMarketPair("localnet");
-      if (!configured.ok) {
-        throw new Error("The reviewed localnet market is not configured.");
+      const freshStatus = await readLocalnetRfqOperationsStatus();
+      quoteRequestsRef.current.assertActive(request);
+      const freshAvailability = operationsAvailability(
+        freshStatus,
+        Math.floor(Date.now() / 1_000),
+      );
+      const freshGate = gateRfqAction(freshAvailability, "request");
+      if (!freshGate.allowed) throw new Error(freshGate.reason);
+      const freshCohort = cohortFromStatus(freshStatus);
+      if (!sameCohort(freshCohort, invitationReview.cohort)) {
+        throw new Error(
+          "The maker cohort changed after review. Prepare and confirm it again.",
+        );
       }
-      const forward =
-        matchesToken(pair.sell.address, configured.pair.tokenA.address) &&
-        matchesToken(pair.buy.address, configured.pair.tokenB.address);
-      const reverse =
-        matchesToken(pair.sell.address, configured.pair.tokenB.address) &&
-        matchesToken(pair.buy.address, configured.pair.tokenA.address);
-      if (!forward && !reverse) {
-        throw new Error("The selected pair is not a reviewed localnet market.");
-      }
-      if (BigInt(escrowHelperLocalnet) === 0n) {
-        throw new Error("The local escrow deployment is unavailable.");
-      }
-      if (BigInt(localnetUsdcToken) === 0n) {
-        throw new Error("The local private-market token is unavailable.");
-      }
-      const sell = parseLocalnetTokenAmount(sellAmount, pair.sell);
-      const economics = localnetEconomicReview({
-        pairId: pair.id,
-        sellAmount: sell,
-        surface,
-        ...(surface === "block"
-          ? { requestedFloor: parseLocalnetTokenAmount(minBuyAmount, pair.buy) }
-          : {}),
-      });
-      const floor = economics.reviewedFloor;
+      const { exact, floor } = exactAndFloor();
       if (
-        sell !== invitationReview.sellAmount ||
-        floor !== invitationReview.minBuyAmount
+        exact !== invitationReview.exactSellAmount ||
+        floor !== invitationReview.localFloor
       ) {
         throw new Error(
-          "RFQ terms changed after invitation review. Prepare and confirm them again.",
+          "Local RFQ terms changed after cohort review. Prepare them again.",
         );
       }
-      if (exactNow >= invitationReview.expiresAt) {
-        throw new Error("The reviewed invitation expired before it was sent.");
-      }
-      if (exactNow >= invitationReview.directoryValidUntil) {
-        throw new Error(
-          "The confirmed maker-directory snapshot expired before it was sent. Prepare the invitation review again.",
-        );
-      }
-      const now = invitationReview.createdAt;
-      const intent: PrivateSwapIntentV1 = {
-        version: 1,
-        intentId: createLocalnetIntentId(),
-        pool: "starknet:APP20_LOCALNET",
-        sellToken: pair.sell.address,
-        sellAmount: sell,
-        buyToken: pair.buy.address,
-        minBuyAmount: floor,
-        createdAt: invitationReview.createdAt,
-        expiresAt: invitationReview.expiresAt,
-      };
-      const intentDigest = await digestPrivateSwapIntent(intent);
-      assertActiveQuoteRequest(quoteRequest);
-      const draftRecord = createRfqLifecycleRecord({
-        chainId: quoteRequest.scope.chainId,
-        account: quoteRequest.scope.account,
-        rfqId: intent.intentId,
+      const now = Math.floor(Date.now() / 1_000);
+      const created = createV3Request({
+        exactSellAmount: exact,
+        floor,
+        tokens: {
+          sellSymbol: pair.sell.symbol,
+          sellToken: pair.sell.address,
+          buyToken: pair.buy.address,
+        },
+        rfqId: randomDigest(),
+        rfqFelt: createLocalnetIntentId(),
+        chainId: "starknet:APP20_LOCALNET",
+        registryRevision: APP20_TOKEN_REGISTRY_REVISION,
+        directoryEpoch: freshStatus.directory.epoch,
+        settlementHelper: escrowHelperLocalnet,
+        createdAt: now,
+      });
+      requestingRecord = createRfqLifecycleRecord({
+        mode: "v3",
+        chainId: chain,
+        account: address,
+        rfqId: created.rfq.rfqFelt,
+        state: "requesting",
         now,
-        requestDigest: intentDigest,
+        requestDigest: created.rfq.rfqId,
         terms: {
           pairId: pair.id,
           sellSymbol: pair.sell.symbol,
           sellAddress: pair.sell.address,
           sellDecimals: pair.sell.decimals,
-          sellAmount: intent.sellAmount.toString(),
+          sellAmount: exact.toString(),
           buySymbol: pair.buy.symbol,
           buyAddress: pair.buy.address,
           buyDecimals: pair.buy.decimals,
-          minBuyAmount: intent.minBuyAmount.toString(),
-          rfqExpiresAt: intent.expiresAt,
+          minBuyAmount: floor.toString(),
+          rfqExpiresAt: created.rfq.expiresAt,
         },
-      });
-      requestingRecord = transitionRfqLifecycle(draftRecord, "requesting", now);
-      await persistLifecycle(requestingRecord, quoteRequest);
-      const quoteResponse = await requestLocalnetSolverQuotes({
-        account: draftRecord.account,
-        chainId: draftRecord.chainId,
-        rfqId: draftRecord.rfqId,
-        intentDigest,
-        createdAt: intent.createdAt,
-        expiresAt: intent.expiresAt,
-        sellToken: intent.sellToken,
-        sellAmount: intent.sellAmount,
-        buyToken: intent.buyToken,
-        minBuyAmount: intent.minBuyAmount,
-        cohort: {
-          epoch: invitationReview.directoryEpoch,
-          checkpoint: invitationReview.directoryCheckpoint,
-          validUntil: invitationReview.directoryValidUntil,
-          makers: invitationReview.cohort,
-          binding: invitationReview.cohortBinding,
+        bucket: {
+          min: created.bucket.min.toString(),
+          max: created.bucket.max.toString(),
         },
-        signal: quoteRequest.signal,
+        takerCommitment: created.takerCommitment,
+        takerSecret: created.takerSecret,
       });
-      assertActiveQuoteRequest(quoteRequest);
-      offers = quoteResponse.offers;
-      setLatestCohort(quoteResponse.cohort);
-      if (offers.length === 0)
-        throw new Error("No private maker inventory can cover this RFQ.");
-      const signedQuotes: SolverQuote[] = [];
-      for (const offer of offers) {
-        if (offer.spreadBps > economics.maximumMakerSpreadBps) {
-          throw new Error(
-            "A maker quote exceeded the named localnet spread cap.",
-          );
-        }
-        if (offer.grossBuyAmount !== economics.referenceGrossBuyAmount) {
-          throw new Error(
-            "A maker quote deviated from the named localnet fixture reference.",
-          );
-        }
-        if (
-          !matchesToken(offer.sellToken, pair.sell.address) ||
-          !matchesToken(offer.buyToken, pair.buy.address)
-        ) {
-          throw new Error("A private maker changed the requested pair.");
-        }
-        const outcome = await quotePrivateSwapIntent(
-          intent,
-          {
-            price: async () => ({
-              buyAmount: offer.grossBuyAmount,
-              provenance: offer.provenance,
-            }),
-          },
-          {
-            solverId: offer.solverId,
-            solverKey: offer.solverKey,
-            helper: escrowHelperLocalnet,
-            spreadBps: offer.spreadBps,
-            quoteTtlSeconds: 10 * 60,
-            now,
-            nonce: offer.nonce,
-            reservationId: offer.reservationId,
-            reservationExpiresAt: offer.reservationExpiresAt,
-            sign: (canonical, unsigned) =>
-              signLocalnetSolverQuote(canonical, unsigned, quoteRequest.signal),
-          },
+      requestingRecord = await persistLifecycle(requestingRecord, request);
+      const response = await requestQuotesV3({
+        account: requestingRecord.account,
+        chainId: requestingRecord.chainId,
+        rfq: created.rfq,
+        cohort: freshCohort,
+        signal: request.signal,
+      });
+      quoteRequestsRef.current.assertActive(request);
+      const selected = await selectionForRequest({
+        created,
+        quotes: response,
+        exactSellAmount: exact,
+        localFloor: floor,
+        now: Math.floor(Date.now() / 1_000),
+      });
+      quoteRequestsRef.current.assertActive(request);
+      const nextQuotedBase = Object.freeze({
+        created,
+        selection: selected.result,
+        refusals: response.refusals,
+        pair,
+        surface,
+        exactSellAmount: selected.exactSellAmount,
+        localFloor: floor,
+      });
+      quoteFocusPendingRef.current = true;
+      if (selected.result.selection.kind !== "selected") {
+        let refused = transitionRfqLifecycle(
+          requestingRecord,
+          "refused",
+          Math.floor(Date.now() / 1_000),
+          { reason: `Local selection refused: ${selected.result.selection.reason}.` },
         );
-        if (outcome.kind !== "quoted") {
-          throw new Error(outcome.reason);
+        refused = await persistLifecycle(refused, request);
+        let acknowledgements: readonly LocalnetTranscriptAcknowledgement[] = [];
+        try {
+          acknowledgements = await postSelectionTranscript({
+            rfqDigest: selected.result.transcript.rfqDigest,
+            transcript: selected.result.transcript,
+          });
+        } catch {
+          // Selection is already refused; transcript delivery failure is shown
+          // but can never enable a Take.
         }
-        assertActiveQuoteRequest(quoteRequest);
-        signedQuotes.push(outcome.quote);
+        setQuoted(
+          Object.freeze({
+            ...nextQuotedBase,
+            transcriptAcknowledgements: acknowledgements,
+          }),
+        );
+        setLifecycleRecord(refused);
+        setFlow({
+          kind: "refused",
+          message: `No executable fill: ${selected.result.selection.reason}.`,
+        });
+        quoteRequestsRef.current.complete(request);
+        return;
       }
-      const selectedQuote = await selectBestSolverQuote(
-        intent,
-        signedQuotes,
-        now,
-        {
-          helper: escrowHelperLocalnet,
-          verify: verifyLocalnetSolverQuote,
-        },
+      const fills = selected.result.selection.fills.map((fill) =>
+        Object.freeze({
+          makerId: fill.quote.solverId,
+          lockId: fill.quote.lockId,
+          amountA: fill.amountA.toString(),
+          amountB: fill.amountB.toString(),
+          lockExpiresAt: fill.quote.lockExpiresAt,
+        }),
       );
-      if (!requestingRecord)
-        throw new Error("The requesting lifecycle record is unavailable.");
-      const quotedRecord = transitionRfqLifecycle(
+      let quotedRecord = transitionRfqLifecycle(
         requestingRecord,
         "quoted",
-        now,
+        Math.floor(Date.now() / 1_000),
         {
           terms: Object.freeze({
             ...requestingRecord.terms!,
-            buyAmount: selectedQuote.buyAmount.toString(),
+            sellAmount: selected.exactSellAmount.toString(),
+            buyAmount: selected.result.selection.totalB.toString(),
           }),
-          selectedQuote: Object.freeze({
-            version: "Quote V1",
-            solverId: selectedQuote.solverId,
-            solverKey: selectedQuote.solverKey,
-            nonce: selectedQuote.nonce,
-            reservationId: selectedQuote.reservationId,
-            spreadBps: selectedQuote.spreadBps,
-            pricingProvenance: selectedQuote.pricingProvenance,
-            quotedAt: selectedQuote.quotedAt,
-            quoteExpiresAt: selectedQuote.quoteExpiresAt,
-            reservationExpiresAt: selectedQuote.reservationExpiresAt,
-            buyAmount: selectedQuote.buyAmount.toString(),
-            intentDigest: selectedQuote.intentDigest,
-            signature: selectedQuote.signature,
+          settlement: Object.freeze({
+            version: "Localnet V3" as const,
+            escrowAddress: escrowHelperLocalnet,
+            dealId: created.rfq.rfqFelt,
+            deadline: created.rfq.lockExpiresAt,
           }),
-          quoteExpiresAt: selectedQuote.quoteExpiresAt,
-          reservationExpiresAt: selectedQuote.reservationExpiresAt,
+          fills: Object.freeze(fills),
+          quoteExpiresAt: Math.min(
+            ...selected.result.selection.fills.map(
+              (fill) => fill.quote.quoteExpiresAt,
+            ),
+          ),
         },
       );
-      await persistLifecycle(quotedRecord, quoteRequest);
-      assertActiveQuoteRequest(quoteRequest);
-      quoteFocusPendingRef.current = true;
-      setQuoted({
-        intent,
-        quote: selectedQuote,
-        quotes: signedQuotes,
-        cohort: quoteResponse.cohort,
-        directory: Object.freeze({
-          epoch: invitationReview.directoryEpoch,
-          checkpoint: invitationReview.directoryCheckpoint,
-          validUntil: invitationReview.directoryValidUntil,
-        }),
-        governedMakerCount: invitationReview.governedMakerCount,
-        pair,
-        surface,
-      });
-      setReviewing(false);
-      setFlow({ kind: "idle" });
-      quoteRequestsRef.current.complete(quoteRequest);
-    } catch (error: unknown) {
-      const disposition = decideLocalnetQuoteRequestFailure({
-        request: quoteRequest,
-        activeToken: quoteRequestsRef.current.active()?.token ?? null,
-        currentScope: quoteRequestsRef.current.currentScope(),
-        error,
-        requestingPersisted: requestingRecord?.state === "requesting",
-        requestAborted: quoteRequest.signal.aborted,
-      });
-      if (disposition.releaseReservations && requestingRecord) {
-        await releasePreFundingRecord(requestingRecord, quoteRequest).catch(
-          () => undefined,
-        );
-      }
-      if (disposition.completeActive)
-        quoteRequestsRef.current.complete(quoteRequest);
-      if (!disposition.applyUi) return;
-      const message = disposition.discardedForScope
-        ? RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE
-        : errorMessage(error);
-      const refused =
-        !disposition.discardedForScope && isInventoryRefusal(message);
-      setQuoted(null);
-      setFlow(
-        refused ? { kind: "refused", message } : { kind: "error", message },
-      );
-    }
-  }
-
-  async function enterReview() {
-    if (!quoted) return;
-    try {
-      const now = Math.floor(Date.now() / 1_000);
-      if (
-        now >= quoted.quote.quoteExpiresAt ||
-        now >= quoted.quote.reservationExpiresAt
-      ) {
-        await expireSelectedQuote(
-          now >= quoted.quote.quoteExpiresAt
-            ? "Quote expired."
-            : "Reservation expired.",
-        );
-        return;
-      }
-      if (!lifecycleRecord || !address || !chain)
-        throw new Error("The local resume record is unavailable.");
-      assertLiveRecordScope(lifecycleRecord);
-      const selectionAttempt = transitionRfqLifecycle(
-        lifecycleRecord,
-        "reviewing",
-        now,
-        {
-          reason:
-            "Quote selection submitted; exact outcome requires reconciliation.",
-        },
-      );
-      await persistLifecycle(selectionAttempt);
-      assertLiveRecordScope(lifecycleRecord);
-      const authorization = await selectLocalnetSolverQuote({
-        intentDigest: quoted.quote.intentDigest,
-        selectedReservationId: quoted.quote.reservationId,
-      });
-      assertLiveRecordScope(lifecycleRecord);
-      if (authorization.solverId !== quoted.quote.solverId) {
-        throw new Error("Selection authorization names a different maker.");
-      }
-      const started = snapshotReadyExecution();
-      const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
-      const [poolFee, publicFeeBalance] = await Promise.all([
-        readLivePoolFee(provider, strk20PoolLocalnet),
-        readPublicStrkBalance(provider, started.address),
-      ]);
-      assertLiveRecordScope(lifecycleRecord);
-      setReviewSnapshot({
-        account: started.address,
-        chainId: chain,
-        walletRail: "ready",
-        observedAt: Math.floor(Date.now() / 1_000),
-        poolFee,
-        poolAddress: strk20PoolLocalnet,
-        publicFeeBalance,
-      });
-      await persistLifecycle(
-        reviseRfqLifecycle(selectionAttempt, {
-          updatedAt: Math.floor(Date.now() / 1_000),
-          reason: undefined,
-          selectedQuote: selectionAttempt.selectedQuote
-            ? Object.freeze({
-                ...selectionAttempt.selectedQuote,
-                reservationFence: authorization.reservationFence,
-                quoteDigest: authorization.quoteDigest,
-              })
-            : undefined,
+      quotedRecord = await persistLifecycle(quotedRecord, request);
+      setQuoted(
+        Object.freeze({
+          ...nextQuotedBase,
+          transcriptAcknowledgements: Object.freeze([]),
         }),
       );
-      assertLiveRecordScope(lifecycleRecord);
-      setReviewing(true);
-    } catch (error: unknown) {
-      if (error instanceof RfqQuoteScopeInvalidatedError) {
-        setQuoted(null);
-        setReviewing(false);
+      try {
+        await deliverTranscript(nextQuotedBase, quotedRecord, request);
+      } catch (error: unknown) {
         setFlow({
           kind: "error",
-          message: RFQ_QUOTE_SCOPE_INVALIDATED_MESSAGE,
+          message: `Locked quotes are verified, but transcript delivery failed. Take remains blocked: ${errorMessage(error)}`,
         });
-        return;
       }
-      const message = `Quote selection requires reservation-release verification: ${errorMessage(error)}`;
-      const current = lifecycleRecord;
-      if (current && ["quoted", "reviewing"].includes(current.state)) {
-        const releasable =
-          current.state === "reviewing"
-            ? current
-            : transitionRfqLifecycle(
-                current,
-                "reviewing",
-                Math.floor(Date.now() / 1_000),
-              );
-        await releasePreFundingRecord(releasable).catch(() => undefined);
-      }
-      setFlow({ kind: "error", message });
-    }
-  }
-
-  async function cancelRfq(reason: "decline" | "cancel"): Promise<boolean> {
-    if (!quoted || !lifecycleRecord) return false;
-    const unsafeState =
-      [
-        "submission-unknown",
-        "funded",
-        "filled",
-        "claimable",
-        "settled",
-        "refundable",
-        "refunded",
-      ].includes(lifecycleRecord.state) ||
-      (lifecycleRecord.state === "expired" &&
-        rfqHasFundingEvidence(lifecycleRecord));
-    if (executionStartedRef.current || unsafeState) {
-      setFlow({
-        kind: "error",
-        message:
-          "Cancellation is unavailable after acceptance starts. Monitor or recover the submitted lifecycle instead.",
-      });
-      return false;
-    }
-    setFlow({
-      kind: "working",
-      phase: "quote",
-      message:
-        "Persisting the release attempt before reconciling all request reservations…",
-    });
-    try {
-      const started = snapshotLocalnetRecoveryContext(lifecycleRecord);
-      const pending = preparePreFundingReservationRelease(
-        lifecycleRecord,
-        createLocalnetIntentId(),
-        Math.floor(Date.now() / 1_000),
-      );
-      await persistLifecycle(pending);
-      await reconcilePersistedReservationRelease(pending, {
-        releaseRequestReservations: releaseLocalnetRfqReservations,
-        expireFundedSettlement: expireLocalnetPrivateIntent,
-        persist: persistLifecycle,
-        authorize: authorizeLifecycle,
-        beforeSubmit: () =>
-          assertLocalnetRecoveryContextUnchanged(started, lifecycleRecord),
-        now: () => Math.floor(Date.now() / 1_000),
-      });
+      quoteRequestsRef.current.complete(request);
     } catch (error: unknown) {
-      setFlow({
-        kind: "error",
-        message: `Reservation release remains pending: ${errorMessage(error)} Retry verifies the same persisted request and does not allocate a wallet attempt.`,
-      });
-      return false;
-    }
-    setQuoted(null);
-    setReviewing(false);
-    setFlow({ kind: "idle" });
-    if (reason === "decline") setPrivacyConfirmed(false);
-    return true;
-  }
-
-  async function requote() {
-    if (!(await cancelRfq("cancel"))) return;
-    setFlow({
-      kind: "working",
-      phase: "quote",
-      message:
-        "Reservation release verified. Waiting for the persisted workspace fence to refresh before requesting new quotes…",
-    });
-    setRequotePending(true);
-  }
-
-  function exactLocalTerms(current: QuotedIntent, record: RfqLifecycleRecord) {
-    if (
-      !record.requestDigest ||
-      !record.selectedQuote?.reservationFence ||
-      !record.selectedQuote.quoteDigest
-    )
-      throw new Error(
-        "The exact request and selected reservation authorization are unavailable.",
-      );
-    return {
-      account: record.account,
-      chainId: record.chainId,
-      rfqId: record.rfqId,
-      dealId: current.intent.intentId,
-      intentDigest: record.requestDigest,
-      solverId: current.quote.solverId,
-      reservationId: current.quote.reservationId,
-      reservationFence: record.selectedQuote.reservationFence,
-      quoteDigest: record.selectedQuote.quoteDigest,
-      sellToken: current.intent.sellToken,
-      sellAmount: current.intent.sellAmount,
-      buyToken: current.intent.buyToken,
-      buyAmount: current.quote.buyAmount,
-      deadline: record.settlement?.deadline ?? current.intent.expiresAt,
-      ticketAddress:
-        record.settlement?.ticketAddress ??
-        (() => {
-          throw new Error("The exact settlement ticket is unavailable.");
-        })(),
-    };
-  }
-
-  async function persistPreparingAttempt(
-    record: RfqLifecycleRecord,
-    phase: RfqAttemptPhase,
-    target?: RfqAttemptTarget,
-  ): Promise<RfqLifecycleRecord> {
-    const next = beginRfqPhaseAttempt(
-      record,
-      phase,
-      createLocalnetIntentId(),
-      Math.floor(Date.now() / 1_000),
-      target,
-    );
-    await persistLifecycle(next);
-    return next;
-  }
-
-  async function reconcileRecord(
-    record: RfqLifecycleRecord,
-  ): Promise<RfqLifecycleRecord> {
-    const observed = await readLocalnetEscrowDeal(
-      record.settlement?.dealId ?? record.rfqId,
-    );
-    const next = await reconcileFundingBeforeBrowserPersistence(
-      record,
-      observed,
-      Math.floor(Date.now() / 1_000),
-      {
-        authorize: authorizeLifecycle,
-        convergeServer: async (fundedRecord, status, attemptId) => {
-          if (!quoted)
-            throw new Error(
-              "Funded browser state cannot be persisted without restored canonical quote terms.",
-            );
-          await convergeLocalnetPrivateIntent(
-            exactLocalTerms(quoted, fundedRecord),
-            attemptId,
-            status,
+      if (requestingRecord?.state === "requesting") {
+        try {
+          const refused = transitionRfqLifecycle(
+            requestingRecord,
+            "refused",
+            Math.floor(Date.now() / 1_000),
+            { reason: errorMessage(error) },
           );
-        },
-        persistBrowser: persistLifecycle,
-      },
-    );
-    return next;
+          await persistLifecycle(refused, request);
+        } catch {
+          // Scope invalidation intentionally prevents a stale request from
+          // persisting into the new wallet scope.
+        }
+      }
+      quoteRequestsRef.current.complete(request);
+      setQuoted(null);
+      setFlow({ kind: "error", message: errorMessage(error) });
+    }
   }
 
-  async function acceptAndFund() {
-    if (
-      !quoted ||
-      !reviewing ||
-      executionStartedRef.current ||
-      !lifecycleRecord
-    )
-      return;
-    if (!fundingGate.allowed) {
-      setFlow({ kind: "error", message: fundingGate.reason });
-      return;
-    }
-    executionStartedRef.current = true;
-    setExecutionLocked(true);
+  async function repollUntilMature() {
+    cancelMaturityTimer();
+    setWaitForMaturity(true);
     setFlow({
-      kind: "working",
-      phase: "lock",
+      kind: "waiting",
       message:
-        "Revalidating and persisting the funding attempt before wallet submission…",
+        "Waiting locally for the latest matching deposit to mature. No maker request has been sent.",
     });
-    let current = lifecycleRecord;
-    try {
-      const preflightNow = Math.floor(Date.now() / 1_000);
-      const acceptancePreflight = evaluatePrivacyPreflight({
-        amount: quoted.intent.sellAmount,
-        asset: quoted.pair.sell.symbol,
-        network: "starknet:APP20_LOCALNET",
-        now: preflightNow,
-        denominationAlternatives: {
-          observedAt: preflightObservedAt,
-          validUntil: preflightObservedAt + 24 * 60 * 60,
-          provenance: "app20-client-denomination-policy:v1",
-          amounts: [
-            quoted.intent.sellAmount / 2n,
-            quoted.intent.sellAmount * 2n,
-          ].filter((value) => value > 0n),
-        },
-        invitedMakerDisclosure: {
-          observedAt: preflightObservedAt,
-          validUntil: preflightObservedAt + 24 * 60 * 60,
-          provenance: "app20-localnet-maker-directory:v1",
-          makerCount: 2,
-          disclosedFields: ["pair", "side", "exact size", "floor", "expiry"],
-        },
-        publicSettlementLeakage: {
-          observedAt: preflightObservedAt,
-          validUntil: preflightObservedAt + 24 * 60 * 60,
-          provenance: "app20-escrow-disclosure:v1",
-          publicFields: [
-            "pair",
-            "amount",
-            "deadline",
-            "lifecycle timing",
-            "helper activity",
-          ],
-        },
-      });
-      if (
-        !canProceedFromPrivacyPreflight(acceptancePreflight, privacyConfirmed)
-      )
-        throw new Error(
-          "Privacy evidence expired or became unavailable before acceptance. Request fresh quotes.",
-        );
-      const started = snapshotReadyExecution();
-      if (started.providerIndex !== LOCALNET_PROVIDER_INDEX)
-        throw new Error("Select LOCAL and connect Localnet (dev) first.");
-      if (!reviewSnapshot || !chain)
-        throw new Error("Fresh final-review evidence is unavailable.");
-      const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
-      const [poolFee, publicFeeBalance] = await Promise.all([
-        readLivePoolFee(provider, strk20PoolLocalnet),
-        readPublicStrkBalance(provider, started.address),
-      ]);
-      const reviewNow = Math.floor(Date.now() / 1_000);
-      const finalCheck = validateFinalReview({
-        initial: reviewSnapshot,
-        current: {
-          account: started.address,
-          chainId: chain,
-          walletRail: "ready",
-          observedAt: reviewNow,
-          poolFee,
-          poolAddress: strk20PoolLocalnet,
-          publicFeeBalance,
-        },
-        terms: finalReviewTerms(quoted),
-        now: reviewNow,
-      });
-      if (!finalCheck.ok)
-        throw new Error(
-          `Final review changed: ${finalCheck.blockers.join(" ")}`,
-        );
-      const freshOperationsStatus = await readLocalnetRfqOperationsStatus();
-      const commitNow = Math.floor(Date.now() / 1_000);
-      const commitGate = gateRfqAction(
-        operationsAvailability(freshOperationsStatus, commitNow),
-        "fund",
-        quoted.quote.solverId,
-      );
-      if (!commitGate.allowed) throw new Error(commitGate.reason);
-      const boundaryCheck = validateFinalReview({
-        initial: reviewSnapshot,
-        current: {
-          account: started.address,
-          chainId: chain,
-          walletRail: "ready",
-          observedAt: commitNow,
-          poolFee,
-          poolAddress: strk20PoolLocalnet,
-          publicFeeBalance,
-        },
-        terms: finalReviewTerms(quoted),
-        now: commitNow,
-      });
-      if (!boundaryCheck.ok)
-        throw new Error(
-          `Final review changed at submission boundary: ${boundaryCheck.blockers.join(" ")}`,
-        );
-      const fundingAttemptId = createLocalnetIntentId();
-      const ticketTarget = fundingTicketAttemptTarget({
-        account: current.account,
-        chainId: current.chainId,
-        rfqId: current.rfqId,
-        dealId: quoted.intent.intentId,
-        intentDigest:
-          current.requestDigest ??
-          (() => {
-            throw new Error("The exact request digest is unavailable.");
-          })(),
-        solverId: quoted.quote.solverId,
-        reservationId: quoted.quote.reservationId,
-        reservationFence:
-          current.selectedQuote?.reservationFence ??
-          (() => {
-            throw new Error("The reservation fence is unavailable.");
-          })(),
-        quoteDigest:
-          current.selectedQuote?.quoteDigest ??
-          (() => {
-            throw new Error("The quote digest is unavailable.");
-          })(),
-        sellToken: quoted.intent.sellToken,
-        sellAmount: quoted.intent.sellAmount,
-        buyToken: quoted.intent.buyToken,
-        buyAmount: quoted.quote.buyAmount,
-        deadline: quoted.intent.expiresAt,
-      });
-      current = reviseRfqLifecycle(current, {
-        settlement: Object.freeze({
-          version: "Localnet V2" as const,
-          escrowAddress: escrowHelperLocalnet,
-          dealId: quoted.intent.intentId,
-          deadline: quoted.intent.expiresAt,
-        }),
-        updatedAt: commitNow,
-      });
-      current = beginRfqPhaseAttempt(
-        current,
-        "funding",
-        fundingAttemptId,
-        commitNow,
-        ticketTarget,
-      );
-      await persistLifecycle(current);
-      let ticketAddress: string;
-      const ticketRuntimeEpoch = localnetRuntimeEpoch();
+    const poll = async () => {
       try {
-        const ticket = await runAuthorizedTicketAcceptance(current, {
-          authorize: authorizeLifecycle,
-          accept: async (authorized) => {
-            current = authorized;
-            await acceptQuote(quoted.intent, quoted.quote, commitNow, {
-              helper: escrowHelperLocalnet,
-              verify: verifyLocalnetSolverQuote,
-              consumeNonce: (nonce) =>
-                Boolean(address && chain) &&
-                consumeAccountScopedQuoteNonce(address, chain, nonce),
-            });
-          },
-          beforeEnsureTicket: () => {
-            assertReadyExecutionUnchanged(started, "private-swap");
-            if (localnetRuntimeEpoch() !== ticketRuntimeEpoch)
-              throw new Error(
-                "The localnet runtime changed before ticket deployment.",
-              );
-          },
-          ensureTicket: (authorized) => {
-            const exactAttempt = authorized.attempts.funding;
-            if (
-              exactAttempt?.attemptId !== fundingAttemptId ||
-              exactAttempt.target?.operation !== "funding-ticket"
-            )
-              throw new Error(
-                "The exact ticket-authorized funding attempt changed.",
-              );
-            return ensureLocalnetEscrowTicket({
-              target: exactAttempt.target,
-              attemptId: exactAttempt.attemptId,
-            });
-          },
+        if (!address) throw new Error("The connected account changed.");
+        // SAFETY: Starknet's selected localnet provider implements the same
+        // getBlockNumber/getEvents RPC subset required by PoolEventsProvider.
+        const provider = myFrontendProviders[
+          LOCALNET_PROVIDER_INDEX
+        ] as unknown as PoolEventsProvider;
+        const deposits = await readAccountDeposits({
+          provider,
+          poolAddress: strk20PoolLocalnet,
+          account: address,
         });
-        current = ticket.authorized;
-        ticketAddress = ticket.result;
+        const head = await provider.getBlockNumber();
+        const status = noteMaturityStatus(deposits, head);
+        setMaturity({ kind: "ready", status });
+        const gate = v3RequestMaturityGate(status, pair.sell.address);
+        if (gate.ready) {
+          setWaitForMaturity(false);
+          await runQuoteRequest(status);
+          return;
+        }
+        setFlow({
+          kind: "waiting",
+          message: `Latest matching deposit matures at block ${gate.matureAtBlock} (${gate.blocksRemaining} blocks left). No maker request has been sent.`,
+        });
+        maturityTimerRef.current = window.setTimeout(
+          () => void poll(),
+          2_000,
+        );
       } catch (error: unknown) {
-        throw new LocalnetFundingPrewalletRecoveryPendingError(error);
+        setWaitForMaturity(false);
+        setFlow({ kind: "error", message: errorMessage(error) });
       }
-      current = reviseRfqLifecycle(current, {
-        settlement: Object.freeze({
-          ...current.settlement!,
-          ticketAddress,
-        }),
-        updatedAt: Math.floor(Date.now() / 1_000),
-      });
-      await persistLifecycle(current);
-      const funded = await runLocalnetFundingOrchestration({
-        prepareBeforeLease: async () => {
-          const actions = buildEscrowFundActions({
-            escrowAddress: escrowHelperLocalnet,
-            recoveryAddress: started.address,
-            ticketAddress,
-            dealId: quoted.intent.intentId,
-            token: quoted.intent.sellToken,
-            amount: quoted.intent.sellAmount,
-            counterToken: quoted.intent.buyToken,
-            counterAmount: quoted.quote.buyAmount,
-            deadline: quoted.intent.expiresAt,
-          });
-          return {
-            account: started.account,
-            provider,
-            actions,
-            target: exactLocalTerms(quoted, current),
-            attemptId: fundingAttemptId,
-            policy: () => {
-              assertReadyExecutionUnchanged(started, "private-swap");
-              const submissionNow = Math.floor(Date.now() / 1_000);
-              const liveGate = gateRfqAction(
-                operationsAvailability(freshOperationsStatus, submissionNow),
-                "fund",
-                quoted.quote.solverId,
-              );
-              if (!liveGate.allowed) throw new Error(liveGate.reason);
-              if (
-                submissionNow >= quoted.quote.quoteExpiresAt ||
-                submissionNow >= quoted.quote.reservationExpiresAt
-              ) {
-                throw new Error(
-                  "Quote or reservation expired before wallet submission.",
-                );
-              }
-            },
-            onSubmitted: async (transactionHash: string) => {
-              current = updateRfqPhaseAttempt(
-                current,
-                "funding",
-                "submitted-unknown",
-                Math.floor(Date.now() / 1_000),
-                { transactionHash },
-              );
-              current = transitionRfqLifecycle(
-                current,
-                "submission-unknown",
-                Math.floor(Date.now() / 1_000),
-              );
-              await persistLifecycle(current);
-            },
-          };
-        },
-        persistPreparedAttempt: async () => {
-          if (
-            current.attempts.funding?.attemptId !== fundingAttemptId ||
-            current.attempts.funding.target?.operation !== "funding-ticket"
-          )
-            throw new Error(
-              "The exact ticket-authorized funding lease was lost.",
-            );
-          current = await authorizeLifecycle(current);
-        },
-        authorizeWalletSubmission: async () => {
-          current = await authorizeLifecycle(current);
-        },
-        prepareLease: prepareLocalnetFunding,
-        markUnknown: markLocalnetFundingUnknown,
-        abandonLease: abandonLocalnetFunding,
-        leaseDefinitelyNotAcquired: localnetCommandWasRejected,
-      });
-      if (current.attempts.funding?.state !== "submitted-unknown") {
-        await markLocalnetFundingUnknown(
-          exactLocalTerms(quoted, current),
-          current.attempts.funding!.attemptId,
-        );
-        current = updateRfqPhaseAttempt(
-          current,
-          "funding",
-          "submitted-unknown",
-          Math.floor(Date.now() / 1_000),
-          { transactionHash: funded.transactionHash },
-        );
-        current = transitionRfqLifecycle(
-          current,
-          "submission-unknown",
-          Math.floor(Date.now() / 1_000),
-        );
-        await persistLifecycle(current);
-      }
-      current = await reconcileRecord(current);
-      if (current.state !== "funded")
-        throw new Error(
-          "Funding receipt succeeded but exact local deal reconciliation did not confirm Funded.",
-        );
-      executionStartedRef.current = false;
-      setExecutionLocked(false);
-      setFlow({
-        kind: "ready",
-        message:
-          "Funding confirmed from an exact local deal observation. Choose the next persisted phase.",
-      });
-    } catch (error: unknown) {
-      let recoveryMessage = errorMessage(error);
-      try {
-        const attemptState = transactionStateFromError(error);
-        if (
-          attemptState === "unknown" &&
-          current.attempts.funding?.state === "preparing"
-        ) {
-          try {
-            await markLocalnetFundingUnknown(
-              exactLocalTerms(quoted, current),
-              current.attempts.funding.attemptId,
-            );
-          } catch {
-            // Fail closed: an active or committed unknown lease stays fenced.
-          }
-        }
-        const stamp = Math.floor(Date.now() / 1_000);
-        const evidence = applyLocalnetFundingFailureEvidence(
-          current,
-          error,
-          stamp,
-        );
-        if (evidence.record !== current) {
-          current = evidence.record;
-          await persistLifecycle(current);
-        }
-        if (evidence.releaseRequired) {
-          const releaseStarted = snapshotLocalnetRecoveryContext(current);
-          current = preparePreFundingReservationRelease(
-            current,
-            createLocalnetIntentId(),
-            stamp,
-          );
-          await persistLifecycle(current);
-          current = await reconcilePersistedReservationRelease(current, {
-            releaseRequestReservations: releaseLocalnetRfqReservations,
-            expireFundedSettlement: expireLocalnetPrivateIntent,
-            persist: async (next) => {
-              current = next;
-              await persistLifecycle(next);
-            },
-            authorize: authorizeLifecycle,
-            beforeSubmit: () =>
-              assertLocalnetRecoveryContextUnchanged(releaseStarted, current),
-            now: () => Math.floor(Date.now() / 1_000),
-          });
-          setQuoted(null);
-          setReviewing(false);
-          setPrivacyConfirmed(false);
-          recoveryMessage =
-            "Funding was proven not submitted. The consumed quote was released request-wide; request fresh quotes.";
-        } else if (evidence.verificationOnly) {
-          recoveryMessage =
-            current.attempts.funding?.state === "wallet-boundary-unknown"
-              ? "The wallet boundary was entered without a hash. Funding remains verification-only and cannot be retried."
-              : "Funding submission is unknown. Verify the exact transaction; do not retry.";
-        }
-      } catch (recoveryError: unknown) {
-        recoveryMessage = `Funding recovery remains safely fenced: ${errorMessage(recoveryError)}`;
-      } finally {
-        executionStartedRef.current = false;
-        setExecutionLocked(false);
-      }
-      setFlow({ kind: "error", message: recoveryMessage });
-    }
+    };
+    await poll();
   }
 
-  async function requestMakerFill() {
-    if (!quoted || !lifecycleRecord || lifecycleRecord.state !== "funded")
-      return;
-    const recoveryStarted = snapshotLocalnetRecoveryContext(lifecycleRecord);
-    const fillGate = gateRfqAction(operations, "fill", quoted.quote.solverId);
-    if (!fillGate.allowed) {
-      setFlow({ kind: "error", message: fillGate.reason });
-      return;
-    }
-    let current = lifecycleRecord;
-    setFlow({
-      kind: "working",
-      phase: "fill",
-      message:
-        "Persisting maker-fill attempt before requesting the selected maker…",
-    });
-    try {
-      current = await reconcileRecord(current);
-      const fillNow = Math.floor(Date.now() / 1_000);
-      if (
-        current.state !== "funded" ||
-        fillNow >= (current.settlement?.deadline ?? 0)
-      ) {
-        throw new Error(
-          "A fresh exact deal observation does not permit maker fill before the deadline.",
-        );
-      }
-      const freshStatus = await readLocalnetRfqOperationsStatus();
-      const freshFillGate = gateRfqAction(
-        operationsAvailability(freshStatus, Math.floor(Date.now() / 1_000)),
-        "fill",
-        quoted.quote.solverId,
-      );
-      if (!freshFillGate.allowed) throw new Error(freshFillGate.reason);
-      const fillTerms = exactLocalTerms(quoted, current);
-      current = await persistPreparingAttempt(
-        current,
-        "fill",
-        makerFillAttemptTarget(fillTerms),
-      );
-      const fill = await runAuthorizedInitialMakerFill(current, {
-        authorize: authorizeLifecycle,
-        beforeSubmit: () =>
-          assertLocalnetRecoveryContextUnchanged(
-            recoveryStarted,
-            lifecycleRecord,
-          ),
-        submit: (authorized) =>
-          askLocalnetSolverToFill(
-            fillTerms,
-            authorized.attempts.fill!.attemptId,
-          ),
-      });
-      current = fill.authorized;
-      const transactionHash = fill.result;
-      current = updateRfqPhaseAttempt(
-        current,
-        "fill",
-        "submitted-unknown",
-        Math.floor(Date.now() / 1_000),
-        { transactionHash },
-      );
-      await persistLifecycle(current);
-      current = await reconcileRecord(current);
-      if (current.state !== "claimable")
-        throw new Error(
-          "Maker fill was not confirmed by exact local deal reconciliation.",
-        );
-      setFlow({
-        kind: "ready",
-        message:
-          "Exact maker fill observed. Claim is now available as a separate persisted command.",
-      });
-    } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  async function retryMakerFill() {
-    if (!quoted || !lifecycleRecord) return;
-    const recoveryStarted = snapshotLocalnetRecoveryContext(lifecycleRecord);
-    setFlow({
-      kind: "working",
-      phase: "fill",
-      message:
-        "Retrying the exact persisted maker-fill request; no new attempt is allocated…",
-    });
-    try {
-      const freshStatus = await readLocalnetRfqOperationsStatus();
-      const gate = gateRfqAction(
-        operationsAvailability(freshStatus, Math.floor(Date.now() / 1_000)),
-        "fill",
-        lifecycleRecord.selectedQuote?.solverId,
-      );
-      if (!gate.allowed) throw new Error(gate.reason);
-      let current = await retryPersistedMakerFill(lifecycleRecord, {
-        authorize: authorizeLifecycle,
-        beforeSubmit: () =>
-          assertLocalnetRecoveryContextUnchanged(
-            recoveryStarted,
-            lifecycleRecord,
-          ),
-        submitExact: askLocalnetSolverToFill,
-        persist: async (next) => {
-          await persistLifecycle(next);
-        },
-        now: () => Math.floor(Date.now() / 1_000),
-      });
-      current = await reconcileRecord(current);
-      setFlow({
-        kind: "ready",
-        message:
-          current.state === "claimable"
-            ? "The exact retried maker fill was observed. Claim is available."
-            : "The exact maker-fill retry returned; verify its persisted outcome.",
-      });
-    } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  async function observeExpiry() {
-    if (!lifecycleRecord || lifecycleRecord.state !== "funded") return;
-    setFlow({
-      kind: "working",
-      phase: "expire",
-      message: "Waiting for the local harness to report settlement expiry…",
-    });
-    try {
-      const started = snapshotLocalnetRecoveryContext(lifecycleRecord);
-      const observedFunded = await reconcileRecord(lifecycleRecord);
-      const pending = prepareFundedSettlementExpiry(
-        observedFunded,
-        createLocalnetIntentId(),
-        Math.floor(Date.now() / 1_000),
-      );
-      await persistLifecycle(pending);
-      await reconcilePersistedReservationRelease(pending, {
-        releaseRequestReservations: releaseLocalnetRfqReservations,
-        expireFundedSettlement: expireLocalnetPrivateIntent,
-        persist: persistLifecycle,
-        authorize: authorizeLifecycle,
-        beforeSubmit: () =>
-          assertLocalnetRecoveryContextUnchanged(started, lifecycleRecord),
-        now: () => Math.floor(Date.now() / 1_000),
-      });
-      setFlow({
-        kind: "ready",
-        message:
-          "Settlement expiry observed by the local harness. Refund is now a separate persisted command.",
-      });
-    } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  async function verifyReservationRelease() {
-    if (!lifecycleRecord) return;
-    try {
-      const started = snapshotLocalnetRecoveryContext(lifecycleRecord);
-      const route = reservationReleaseReconciliationRoute(lifecycleRecord);
-      setFlow({
-        kind: "working",
-        phase: route === "request-reservations" ? "quote" : "expire",
-        message:
-          route === "request-reservations"
-            ? "Verifying the same idempotent coordinator request release…"
-            : "Verifying the same idempotent funded settlement expiry…",
-      });
-      const reconciled =
-        route === "funded-settlement-expiry"
-          ? await reconcileRecord(lifecycleRecord)
-          : lifecycleRecord;
-      await reconcilePersistedReservationRelease(reconciled, {
-        releaseRequestReservations: releaseLocalnetRfqReservations,
-        expireFundedSettlement: expireLocalnetPrivateIntent,
-        persist: persistLifecycle,
-        authorize: authorizeLifecycle,
-        beforeSubmit: () =>
-          assertLocalnetRecoveryContextUnchanged(started, lifecycleRecord),
-        now: () => Math.floor(Date.now() / 1_000),
-      });
-      if (route === "request-reservations") {
-        setQuoted(null);
-        setReviewing(false);
-        setFlow({
-          kind: "ready",
-          message:
-            "The coordinator verified release for the persisted request digest.",
-        });
-      } else {
-        setFlow({
-          kind: "ready",
-          message:
-            "Funded settlement expiry was verified. Refund is now available.",
-        });
-      }
-    } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  async function submitOutcome(phase: "claim" | "refund") {
-    if (!quoted || !lifecycleRecord) return;
-    if (
-      (phase === "claim" && lifecycleRecord.state !== "claimable") ||
-      (phase === "refund" && lifecycleRecord.state !== "refundable")
-    )
-      return;
-    let current = lifecycleRecord;
-    setFlow({
-      kind: "working",
-      phase,
-      message: `Persisting ${phase} attempt before wallet submission…`,
-    });
-    try {
-      const started = snapshotReadyExecution();
-      if (
-        started.providerIndex !== LOCALNET_PROVIDER_INDEX ||
-        !recoveryContextMatches(lifecycleRecord, {
-          account: started.address,
-          chainId: started.chainId,
-          providerIndex: started.providerIndex,
-        })
-      )
-        throw new Error(
-          "Select LOCAL and reconnect the bound wallet and chain first.",
-        );
-      const settlement = current.settlement;
-      if (!settlement?.ticketAddress)
-        throw new Error("Persisted settlement ticket identity is unavailable.");
-      const ticketAddress = settlement.ticketAddress;
-      current = await persistPreparingAttempt(current, phase);
-      const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
-      const payout = await runAuthorizedPayout(current, {
-        authorize: authorizeLifecycle,
-        submitWallet: async (authorized) => {
-          current = authorized;
-          return submitActions(
-            started.account,
-            provider,
-            buildLocalnetIntentPayoutActions({
-              operation: phase === "claim" ? "claim" : "timeout",
-              escrowAddress: settlement.escrowAddress,
-              recoveryAddress: started.address,
-              ticketAddress,
-              dealId: settlement.dealId,
-              payoutToken:
-                phase === "claim"
-                  ? quoted.intent.buyToken
-                  : quoted.intent.sellToken,
-            }),
-            {
-              policy: () =>
-                assertReadyExecutionUnchanged(started, "private-swap"),
-              onSubmitted: async (transactionHash) => {
-                current = updateRfqPhaseAttempt(
-                  current,
-                  phase,
-                  "submitted-unknown",
-                  Math.floor(Date.now() / 1_000),
-                  { transactionHash },
-                );
-                await persistLifecycle(current);
-              },
-            },
-          );
-        },
-      });
-      const submitted = payout.result;
-      if (current.attempts[phase]?.state === "preparing") {
-        current = updateRfqPhaseAttempt(
-          current,
-          phase,
-          "submitted-unknown",
-          Math.floor(Date.now() / 1_000),
-          { transactionHash: submitted.transactionHash },
-        );
-        await persistLifecycle(current);
-      }
-      current = await reconcileRecord(current);
-      const expected = phase === "claim" ? "settled" : "refunded";
-      if (current.state !== expected)
-        throw new Error(
-          `${phase} was not confirmed by exact local deal reconciliation.`,
-        );
-      setFlow({
-        kind: "success",
-        outcome: expected,
-        message:
-          phase === "claim"
-            ? "Local demo escrow observation confirms the selected-maker claim."
-            : "Local demo escrow observation confirms the timeout refund.",
-        transactionHashes: [submitted.transactionHash],
-      });
-    } catch (error: unknown) {
-      const next = applyLocalnetPayoutFailureEvidence(
-        current,
-        phase,
-        error,
-        Math.floor(Date.now() / 1_000),
-      );
-      if (next !== current) {
-        current = next;
-        await persistLifecycle(current);
-      }
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  async function verifyCurrentPhase() {
-    if (!lifecycleRecord?.settlement) return;
-    setFlow({
-      kind: "working",
-      phase: "lock",
-      message:
-        "Reading and binding the exact local deal; no action will be resubmitted…",
-    });
-    try {
-      let next: RfqLifecycleRecord;
-      if (lifecycleRecord.attempts.funding?.state === "preparing") {
-        let recoveryRecord = lifecycleRecord;
-        const attempt = recoveryRecord.attempts.funding;
-        if (!recoveryRecord.settlement?.ticketAddress) {
-          if (attempt?.target?.operation !== "funding-ticket")
-            throw new Error(
-              "The persisted funding ticket authorization is unavailable.",
-            );
-          const ticketContext = snapshotLocalnetRecoveryContext(recoveryRecord);
-          const ticketRuntimeEpoch = localnetRuntimeEpoch();
-          const ticket = await runAuthorizedTicketAcceptance(recoveryRecord, {
-            authorize: authorizeLifecycle,
-            accept: async () => undefined,
-            beforeEnsureTicket: (authorized) => {
-              assertLocalnetRecoveryContextUnchanged(ticketContext, authorized);
-              if (localnetRuntimeEpoch() !== ticketRuntimeEpoch)
-                throw new Error(
-                  "The localnet runtime changed before ticket recovery.",
-                );
-            },
-            ensureTicket: (authorized) => {
-              const exactAttempt = authorized.attempts.funding;
-              if (exactAttempt?.target?.operation !== "funding-ticket")
-                throw new Error(
-                  "The exact ticket-authorized funding attempt changed.",
-                );
-              return ensureLocalnetEscrowTicket({
-                target: exactAttempt.target,
-                attemptId: exactAttempt.attemptId,
-              });
-            },
-          });
-          recoveryRecord = ticket.authorized;
-          recoveryRecord = reviseRfqLifecycle(recoveryRecord, {
-            settlement: {
-              ...recoveryRecord.settlement!,
-              ticketAddress: ticket.result,
-            },
-            updatedAt: Math.floor(Date.now() / 1_000),
-          });
-          await persistLifecycle(recoveryRecord);
-        }
-        const started = snapshotLocalnetRecoveryContext(recoveryRecord);
-        const recoveryRuntimeEpoch = localnetRuntimeEpoch();
-        const assertRecoveryContext = (authorized: RfqLifecycleRecord) => {
-          assertLocalnetRecoveryContextUnchanged(started, authorized);
-          if (localnetRuntimeEpoch() !== recoveryRuntimeEpoch)
-            throw new Error(
-              "The localnet runtime changed before pre-wallet recovery.",
-            );
-        };
-        const observed = await readLocalnetEscrowDeal(
-          recoveryRecord.settlement!.dealId,
-        );
-        next = await recoverLocalnetPreparingFundingAfterEmptyObservation(
-          recoveryRecord,
-          observed,
-          {
-            abandonFunding: abandonLocalnetFunding,
-            releaseRequestReservations: releaseLocalnetRfqReservations,
-            persist: persistLifecycle,
-            authorize: authorizeLifecycle,
-            createAttemptId: createLocalnetIntentId,
-            now: () => Math.floor(Date.now() / 1_000),
-            beforeAbandon: assertRecoveryContext,
-            beforeRelease: assertRecoveryContext,
-          },
-        );
-      } else {
-        next = await reconcileRecord(lifecycleRecord);
-      }
-      const converged = (next.latestObservation?.status ?? 0) > 0;
-      setFlow({
-        kind: "ready",
-        message:
-          next.state === "cancelled"
-            ? "Exact status 0 proved funding was not entered; the coordinator tombstoned the attempt and released the request."
-            : converged
-              ? `Exact ${next.state} state was reconciled server-before-browser. No transaction was resubmitted.`
-              : `Funding is still unknown after observing ${next.latestObservation?.stage ?? "no funded deal"}. Nothing was resubmitted.`,
-      });
-      if (
-        next.attempts.funding?.state !== "preparing" &&
-        next.attempts.funding?.state !== "submitted-unknown"
-      ) {
-        executionStartedRef.current = false;
-        setExecutionLocked(false);
-      }
-    } catch (error: unknown) {
-      setFlow({ kind: "error", message: errorMessage(error) });
-    }
-  }
-
-  function nextDeskPhase(record: RfqLifecycleRecord) {
-    if (!lifecycleContextReady) {
-      const blocked = localnetResumeDecision(
-        record,
-        Math.floor(Date.now() / 1_000),
-      );
-      return Object.freeze({
-        ...blocked,
-        disabled: true,
-        reason:
-          "Reconnect the exact account and wallet chain and select the LOCAL provider before recovery.",
-      });
-    }
-    if (
-      record.state === "funded" &&
-      solverOutcome === "refund" &&
-      quoted?.surface === "block"
-    ) {
-      return Object.freeze({
-        action: "observe-expiry" as const,
-        label: "Await and observe settlement expiry",
-        reason:
-          "The local fixture will advance to the bound deadline; refund stays disabled until expiry is observed.",
-        disabled: false,
-      });
-    }
-    const decision = localnetResumeDecision(
-      record,
-      Math.floor(Date.now() / 1_000),
-    );
-    if (
-      decision.action === "request-maker-fill" ||
-      decision.action === "retry-maker-fill"
-    ) {
-      const fillGate = gateRfqAction(
-        operations,
-        "fill",
-        record.selectedQuote?.solverId,
-      );
-      if (!fillGate.allowed)
-        return Object.freeze({
-          ...decision,
-          disabled: true,
-          reason: fillGate.reason,
-        });
-    }
-    return decision;
-  }
-
-  async function runNextPhaseAction() {
-    if (!lifecycleRecord) return;
-    const next = nextDeskPhase(lifecycleRecord);
-    if (
-      next.action === "verify-funding" ||
-      next.action === "reconcile-fill" ||
-      next.action === "reconcile-outcome"
-    )
-      return verifyCurrentPhase();
-    if (next.action === "request-maker-fill") return requestMakerFill();
-    if (next.action === "retry-maker-fill") return retryMakerFill();
-    if (next.action === "observe-expiry") return observeExpiry();
-    if (next.action === "verify-reservation-release")
-      return verifyReservationRelease();
-    if (next.action === "retry-reservation-release") return cancelRfq("cancel");
-    if (next.action === "claim") return submitOutcome("claim");
-    if (next.action === "refund") return submitOutcome("refund");
-  }
-
-  async function expireSelectedQuote(reason: string) {
+  async function declineLockedQuotes() {
     if (
       !lifecycleRecord ||
-      (lifecycleRecord.state !== "quoted" &&
-        lifecycleRecord.state !== "reviewing")
-    )
+      !["quoted", "reviewing"].includes(lifecycleRecord.state)
+    ) {
       return;
+    }
     try {
-      const released = await releasePreFundingRecord(lifecycleRecord);
-      if (released.state === "cancelled") {
-        setQuoted(null);
-        setReviewing(false);
-        setExecutionLocked(false);
-        executionStartedRef.current = false;
-        setFlow({
-          kind: "ready",
-          message: `${reason} Request reservations were released. Start another RFQ when ready.`,
-        });
-        return;
-      }
-      setReviewing(false);
-      setExecutionLocked(true);
+      let current = transitionRfqLifecycle(
+        lifecycleRecord,
+        "cancel-pending",
+        Math.floor(Date.now() / 1_000),
+        {
+          reason:
+            "The taker declined. Maker collateral remains locked until its on-chain expiry.",
+        },
+      );
+      current = await persistLifecycle(current);
+      current = transitionRfqLifecycle(
+        current,
+        "cancelled",
+        Math.floor(Date.now() / 1_000),
+      );
+      await persistLifecycle(current);
+      setQuoted(null);
+      setShowFinalReview(false);
       setFlow({
-        kind: "error",
-        message: `${reason} Release is still pending; verify the same request reservation lease.`,
+        kind: "ready",
+        message:
+          "RFQ cancelled. No Take was submitted; makers recover unused collateral after lock expiry.",
       });
     } catch (error: unknown) {
-      setReviewing(false);
-      setExecutionLocked(true);
+      setFlow({ kind: "error", message: errorMessage(error) });
+    }
+  }
+
+  async function finishSettledTake(
+    result: Extract<V3TakeExecutionResult, { kind: "settled" }>,
+  ) {
+    try {
+      await requestRfqHistoryAutoBackup({
+        chainId: result.record.chainId,
+        account: result.record.account,
+      });
+    } catch (error: unknown) {
       setFlow({
-        kind: "error",
-        message: `${reason} Release remains pending: ${errorMessage(error)}`,
+        kind: "settled",
+        transactionHash: result.transactionHash,
+        message: `Take settled. Optional RFQ history auto-backup could not be queued: ${errorMessage(error)}`,
+      });
+    }
+    if (!invoice) return;
+    try {
+      recordInvoiceTakeSettled(
+        window.localStorage,
+        result.record.chainId,
+        result.record.account,
+        {
+          requestId: invoice.requestId,
+          takeTransactionHash: result.transactionHash,
+          takeBlock: result.takeBlock,
+          buyToken: invoice.buyToken,
+          amount: invoice.targetBuyBaseUnits,
+        },
+        Math.floor(Date.now() / 1_000),
+      );
+      window.location.assign(invoice.returnTo);
+    } catch (error: unknown) {
+      setFlow({
+        kind: "settled",
+        transactionHash: result.transactionHash,
+        message: `Take settled, but the invoice handoff could not be recorded: ${errorMessage(error)}`,
       });
     }
   }
+
+  function applyTakeResult(result: V3TakeExecutionResult) {
+    setLifecycleRecord(result.record);
+    onLifecycleRecord?.(result.record);
+    if (result.kind === "settled") {
+      setFlow({
+        kind: "settled",
+        transactionHash: result.transactionHash,
+        message:
+          "Atomic Take settled. The exact escrow record matches every reviewed fill.",
+      });
+      void finishSettledTake(result);
+    } else if (result.kind === "reverted") {
+      setReviewSnapshot(null);
+      setReviewSnapshotError(undefined);
+      void refreshReviewSnapshot(result.record);
+      setFlow({
+        kind: "reverted",
+        ...(result.transactionHash
+          ? { transactionHash: result.transactionHash }
+          : {}),
+        message: `${result.reason} Review again before any new deliberate Take.`,
+      });
+    } else if (result.kind === "quarantined") {
+      setShowFinalReview(false);
+      setFlow({
+        kind: "error",
+        message: result.reason,
+      });
+    } else {
+      setFlow({
+        kind: "submission-unknown",
+        ...(result.transactionHash
+          ? { transactionHash: result.transactionHash }
+          : {}),
+        message: result.reason,
+      });
+    }
+  }
+
+  async function submitTake() {
+    if (!lifecycleRecord || !reviewSnapshot) return;
+    setFlow({
+      kind: "working",
+      message:
+        "Revalidating every live lock and balance before the wallet boundary…",
+    });
+    try {
+      const result = await executeLocalnetV3Take({
+        record: lifecycleRecord,
+        initialSnapshot: reviewSnapshot,
+        persistence: {
+          persist: persistLifecycle,
+          authorize: authorizeLifecycle,
+        },
+      });
+      applyTakeResult(result);
+    } catch (error: unknown) {
+      setFlow({ kind: "error", message: errorMessage(error) });
+    }
+  }
+
+  async function verifyTake() {
+    if (!lifecycleRecord) return;
+    setFlow({
+      kind: "working",
+      message:
+        "Reading the exact escrow Take record. Nothing will be submitted or retried…",
+    });
+    try {
+      const result = await verifyLocalnetV3Take({
+        record: lifecycleRecord,
+        persistence: {
+          persist: persistLifecycle,
+          authorize: authorizeLifecycle,
+        },
+      });
+      if (result.kind === "absent") {
+        setFlow({ kind: "submission-unknown", message: result.reason });
+        return;
+      }
+      applyTakeResult(result);
+    } catch (error: unknown) {
+      setFlow({ kind: "error", message: errorMessage(error) });
+    }
+  }
+
+  const finalTerms: RfqFinalReviewV3DisplayTerms | undefined = useMemo(() => {
+    if (
+      !quoted ||
+      quoted.selection.selection.kind !== "selected" ||
+      !lifecycleRecord?.terms?.buyAmount ||
+      !lifecycleRecord.fills ||
+      !lifecycleRecord.requestDigest
+    ) {
+      return undefined;
+    }
+    return Object.freeze({
+      mode: "v3",
+      rfqId: lifecycleRecord.rfqId,
+      sellAddress: lifecycleRecord.terms.sellAddress,
+      exactSellAmount: BigInt(lifecycleRecord.terms.sellAmount),
+      buyAddress: lifecycleRecord.terms.buyAddress,
+      totalBuyAmount: BigInt(lifecycleRecord.terms.buyAmount),
+      floorBuyAmount: BigInt(lifecycleRecord.terms.minBuyAmount ?? "0"),
+      fills: Object.freeze(
+        lifecycleRecord.fills.map((fill) =>
+          Object.freeze({
+            makerId: fill.makerId,
+            lockId: fill.lockId,
+            amountA: BigInt(fill.amountA),
+            amountB: BigInt(fill.amountB),
+            lockExpiresAt: fill.lockExpiresAt,
+          }),
+        ),
+      ),
+      feeBps: 0,
+      app20FeeAmount: 0n,
+      sellSymbol: lifecycleRecord.terms.sellSymbol,
+      sellDecimals: lifecycleRecord.terms.sellDecimals,
+      buySymbol: lifecycleRecord.terms.buySymbol,
+      buyDecimals: lifecycleRecord.terms.buyDecimals,
+      requestDigest: lifecycleRecord.requestDigest,
+    });
+  }, [lifecycleRecord, quoted]);
+
+  const finalBlockers = useMemo(() => {
+    if (!finalTerms) return Object.freeze(["Exact final terms are unavailable."]);
+    if (!reviewSnapshot) {
+      return Object.freeze([
+        reviewSnapshotError ?? "Fresh private balance is unavailable.",
+      ]);
+    }
+    return validateV3FinalReview({
+      initial: reviewSnapshot,
+      current: reviewSnapshot,
+      terms: finalTerms,
+      now: preflightNow,
+    }).blockers;
+  }, [finalTerms, preflightNow, reviewSnapshot, reviewSnapshotError]);
+
+  const presentedBucket = invitationReview?.bucket ?? draftBucket;
+  const presentedBucketLabel = presentedBucket
+    ? formatSizeBucketLabel(pair.sell.symbol, presentedBucket)
+    : null;
 
   return (
     <section
@@ -2213,36 +1386,29 @@ export default function LocalnetPrivateIntentDesk({
       {swapOnly ? null : (
         <header className={styles.privateIntentHeader}>
           <div>
-            <span>APP20 / PRIVATE RFQ</span>
+            <span>APP20 / PRIVATE RFQ V3</span>
             <h3 id="local-private-intent-title">
-              {surface === "swap" ? "Instant RFQ" : "Block RFQ"}
+              {invoice
+                ? "Pay invoice privately"
+                : surface === "swap"
+                  ? "Instant RFQ"
+                  : "Block RFQ"}
             </h3>
           </div>
-          <strong>{surface === "swap" ? "DAY-TO-DAY" : "INVENTORY RFQ"}</strong>
+          <strong>COLLATERALIZED · ATOMIC</strong>
         </header>
       )}
 
       <aside className={styles.operationsGate} role="status">
         <strong>OPERATIONS · {operations.mode.toUpperCase()}</strong>
         <span>
-          {operations.reason}{" "}
-          {requestBlockedReason
-            ? `New RFQs are blocked: ${requestBlockedReason}`
-            : lifecycleRecord && !lifecycleContextReady
-              ? "Recovery actions are blocked until the bound wallet, chain, and provider context is restored."
-              : requestGate.allowed
-                ? "New RFQs may proceed when no persisted market fence remains."
-                : "New requests and funding are blocked; recovery availability depends on the bound lifecycle context."}
+          {operations.reason} {requestGate.allowed ? "New v3 requests may proceed." : requestGate.reason}
         </span>
         <Link to="/rfq/operations">Open browser-safe operations</Link>
       </aside>
 
-      {swapOnly ? null : (
-        <div
-          className={styles.deskModeSwitch}
-          role="group"
-          aria-label="RFQ surface"
-        >
+      {swapOnly || invoice ? null : (
+        <div className={styles.deskModeSwitch} role="group" aria-label="RFQ surface">
           <button
             type="button"
             aria-pressed={surface === "swap"}
@@ -2269,32 +1435,57 @@ export default function LocalnetPrivateIntentDesk({
         </>
       )}
 
-      {!swapOnly && blockHint && surface === "swap" && !quoted ? (
+      {!swapOnly && !invoice && blockHint && surface === "swap" && !quoted ? (
         <p className={styles.deskHint} role="status">
-          This clip is large enough that a negotiated Block quote with a floor
-          and expiry is usually the better shape.
+          This clip may benefit from a typed Block floor.
           <button type="button" onClick={() => setSurface("block")}>
             Open Block RFQ
           </button>
         </p>
       ) : null}
-      {!swapOnly && !blockHint && surface === "block" && !quoted ? (
-        <p className={styles.deskHint} role="status">
-          This clip is small enough that an immediate invited-maker RFQ is
-          usually faster.
-          <button type="button" onClick={() => setSurface("swap")}>
-            Open Instant RFQ
-          </button>
-        </p>
+
+      {invoice ? (
+        <aside className={styles.invoiceTerms} aria-labelledby="invoice-terms-title">
+          <strong>INVOICE MODE · STRK → USDC</strong>
+          <h4 id="invoice-terms-title">Invoice terms</h4>
+          <dl>
+            <div>
+              <dt>Payee</dt>
+              <dd><code>{invoice.payee}</code></dd>
+            </div>
+            <div>
+              <dt>Target</dt>
+              <dd>
+                {formatLocalnetTokenAmount(
+                  BigInt(invoice.targetBuyBaseUnits),
+                  pairs.STRK_USDC.buy,
+                )}{" "}
+                USDC
+              </dd>
+            </div>
+            <div>
+              <dt>Memo</dt>
+              <dd>{invoice.memo ?? "No memo"}</dd>
+            </div>
+          </dl>
+          <p>
+            The maker median estimates a bucket before the request. Exact STRK
+            is minimized locally from verified schedules after quotes.
+          </p>
+          {invoiceEstimateReady ? null : (
+            <p role="status">
+              Waiting for a fresh verified maker median; quote requesting is
+              blocked until invoice sizing is available.
+            </p>
+          )}
+        </aside>
       ) : null}
 
       {surface === "block" && counterparty ? (
         <aside className={styles.privateIntentCounterparty}>
           <div>
             <span>CORRESPONDENCE CONTACT</span>
-            <code title={counterparty}>
-              {counterparty.slice(0, 12)}…{counterparty.slice(-8)}
-            </code>
+            <code title={counterparty}>{counterparty}</code>
           </div>
           {address && chain ? (
             <Link
@@ -2318,10 +1509,10 @@ export default function LocalnetPrivateIntentDesk({
           <select
             aria-label="Private intent market"
             value={pairId}
-            onChange={(event) => {
-              selectPair(event.target.value as LocalnetMarketPairId);
-            }}
-            disabled={working || Boolean(quoted)}
+            onChange={(event) =>
+              selectPair(event.target.value as LocalnetMarketPairId)
+            }
+            disabled={working || Boolean(quoted) || Boolean(invoice)}
           >
             {Object.values(pairs).map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
@@ -2334,8 +1525,8 @@ export default function LocalnetPrivateIntentDesk({
         <div className={styles.swapAssetStack}>
           <label className={styles.swapAssetCard}>
             <span className={styles.swapAssetHead}>
-              <b>Sell</b>
-              <small>Private note</small>
+              <b>{invoice ? "Estimated sell before quotes" : "Exact sell"}</b>
+              <small>Stays in this browser</small>
             </span>
             <span className={styles.swapAssetControl}>
               <input
@@ -2343,10 +1534,10 @@ export default function LocalnetPrivateIntentDesk({
                 value={sellAmount}
                 onChange={(event) => {
                   setSellAmount(event.target.value);
-                  invalidateQuote();
+                  resetRequestView();
                 }}
                 inputMode="decimal"
-                disabled={working || Boolean(quoted)}
+                disabled={working || Boolean(quoted) || Boolean(invoice)}
               />
               <strong>{pair.sell.symbol}</strong>
             </span>
@@ -2357,40 +1548,37 @@ export default function LocalnetPrivateIntentDesk({
             type="button"
             aria-label="Reverse swap direction"
             title="Reverse market"
-            onClick={() => {
-              selectPair(pairId === "STRK_USDC" ? "USDC_STRK" : "STRK_USDC");
-            }}
-            disabled={working || Boolean(quoted)}
+            onClick={() =>
+              selectPair(pairId === "STRK_USDC" ? "USDC_STRK" : "STRK_USDC")
+            }
+            disabled={working || Boolean(quoted) || Boolean(invoice)}
           >
             ⇅
           </button>
 
           <label className={styles.swapAssetCard}>
             <span className={styles.swapAssetHead}>
-              <b>{surface === "block" ? "Minimum receive" : "Buy"}</b>
-              <small>
-                {quoted ? "Selected signed quote" : "Quote required"}
-              </small>
+              <b>{surface === "block" ? "Local floor" : "Policy floor"}</b>
+              <small>Never sent to makers</small>
             </span>
             <span className={styles.swapAssetControl}>
-              {surface === "block" ? (
+              {surface === "block" && !invoice ? (
                 <input
                   aria-label="Private intent minimum receive"
                   value={minBuyAmount}
                   onChange={(event) => {
                     setMinBuyAmount(event.target.value);
-                    invalidateQuote();
+                    resetRequestView();
                   }}
                   inputMode="decimal"
                   disabled={working || Boolean(quoted)}
                 />
               ) : (
-                <output aria-label="Private intent quoted buy amount">
-                  {quoted
+                <output aria-label="Private intent local policy floor">
+                  {economics
                     ? formatLocalnetTokenAmount(
-                        quoted.quote.buyAmount,
-                        quoted.pair.buy,
-                        6,
+                        economics.reviewedFloor,
+                        pair.buy,
                       )
                     : "—"}
                 </output>
@@ -2400,49 +1588,49 @@ export default function LocalnetPrivateIntentDesk({
           </label>
         </div>
 
+        <aside className={styles.bucketNotice} aria-label="Size-blind request bucket">
+          <strong>SIZE-BLIND MAKER REQUEST</strong>
+          <p>
+            {presentedBucketLabel
+              ? `Reviewed ladder bucket: ${presentedBucketLabel}.`
+              : "Enter a valid ladder amount to see its fixed bucket."}{" "}
+            Makers see only this fixed bucket, never your exact sell amount or
+            local floor.
+          </p>
+        </aside>
+
+        <aside className={styles.maturityEstimate} aria-label="Note maturity estimate">
+          <strong>CHAIN-DERIVED ESTIMATE</strong>
+          <p>{maturityLine(maturity, pair.sell.address)}</p>
+          <small>
+            Estimate from public deposit events; APP20 never reads private
+            balances for this maturity line.
+          </small>
+        </aside>
+
         {quoted ? null : (
           <>
-            <button
-              type="button"
-              disabled={working}
-              onClick={() => {
-                setSellAmount("");
-                setMinBuyAmount("");
-                setPrivacyConfirmed(false);
-                setInvitationReview(null);
-                setInvitationConfirmed(false);
-                setFlow({ kind: "idle" });
-              }}
-            >
-              Clear draft
-            </button>
-            <aside
-              className={styles.privacyPreflight}
-              aria-label="Privacy preflight"
-            >
+            <aside className={styles.privacyPreflight} aria-label="Privacy preflight">
               <strong>PRIVACY PREFLIGHT</strong>
               <p>
-                Check amount fingerprinting, denominations, note maturity,
-                timing, maker disclosure, and first-version settlement leakage.
+                Exact size and floor stay local. Invited makers learn pair,
+                side, fixed bucket, expiry, and request timing; Take later makes
+                exact on-chain fill amounts public.
               </p>
               {privacyPreflight ? (
                 <ul>
                   {privacyPreflight.findings.map((finding) => (
                     <li key={finding.id}>
                       <strong>{finding.level.toUpperCase()}</strong>{" "}
-                      {finding.message}{" "}
+                      {finding.message}
                       <small>
-                        Source: {finding.provenance}; freshness:{" "}
-                        {finding.freshness}
+                        Source: {finding.provenance}; freshness: {finding.freshness}
                       </small>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p role="status">
-                  <strong>UNAVAILABLE</strong> Enter a valid exact sell amount
-                  to build the preflight.
-                </p>
+                <p role="status">Enter a valid exact sell amount.</p>
               )}
               <label>
                 <input
@@ -2455,9 +1643,11 @@ export default function LocalnetPrivateIntentDesk({
                     setInvitationConfirmed(false);
                   }}
                 />
-                I understand the warnings and known public settlement leakage.
+                I understand the bucket disclosure, observable timing, and
+                public v3 Take amounts.
               </label>
             </aside>
+
             <button
               type="button"
               onClick={prepareInvitationReview}
@@ -2465,110 +1655,53 @@ export default function LocalnetPrivateIntentDesk({
                 working ||
                 !privacyReady ||
                 !requestGate.allowed ||
-                Boolean(requestBlockedReason)
+                Boolean(requestBlockedReason) ||
+                (Boolean(invoice) && !invoiceEstimateReady)
               }
             >
-              Prepare exact invitation review
+              Prepare size-blind cohort review
             </button>
-            {invitationReview ? (
-              <aside
-                className={styles.privacyPreflight}
-                aria-label="Exact invitation review"
-              >
-                <strong>INVITATION REVIEW · BEFORE MAKER DISCLOSURE</strong>
+
+            {invitationReview && operations.status ? (
+              <aside className={styles.privacyPreflight} aria-label="Maker cohort review">
+                <strong>COHORT REVIEW · BEFORE MAKER DISCLOSURE</strong>
                 <dl>
                   <div>
-                    <dt>Direction / policy</dt>
+                    <dt>Direction</dt>
+                    <dd>{pair.label}</dd>
+                  </div>
+                  <div>
+                    <dt>What makers receive</dt>
                     <dd>
-                      {pair.label} · Full fill only ·{" "}
-                      {
-                        localnetEconomicReview({
-                          pairId: pair.id,
-                          sellAmount: invitationReview.sellAmount,
-                          requestedFloor: invitationReview.minBuyAmount,
-                          surface,
-                        }).policyId
-                      }
+                      {formatSizeBucketLabel(pair.sell.symbol, invitationReview.bucket)} ·
+                      pair, side, and 90-second expiry only
                     </dd>
                   </div>
                   <div>
-                    <dt>Exact sell</dt>
+                    <dt>Local-only exact sell</dt>
                     <dd>
-                      {invitationReview.sellAmount.toString()} base units ·{" "}
-                      {pair.sell.address} · {pair.sell.decimals} decimals
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Exact floor</dt>
-                    <dd>
-                      {invitationReview.minBuyAmount.toString()} base units ·{" "}
                       {formatLocalnetTokenAmount(
-                        invitationReview.minBuyAmount,
+                        invitationReview.exactSellAmount,
+                        pair.sell,
+                      )}{" "}
+                      {pair.sell.symbol}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Local-only floor</dt>
+                    <dd>
+                      {formatLocalnetTokenAmount(
+                        invitationReview.localFloor,
                         pair.buy,
                       )}{" "}
-                      {pair.buy.symbol} · max 100 bps total reference deviation
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Registry</dt>
-                    <dd>{APP20_TOKEN_REGISTRY_REVISION}</dd>
-                  </div>
-                  <div>
-                    <dt>Planned maker cohort</dt>
-                    <dd>
-                      {invitationReview.cohort
-                        .map(({ makerId, keyId }) => `${makerId} · ${keyId}`)
-                        .join("; ")}
+                      {pair.buy.symbol}
                     </dd>
                   </div>
                   <div>
                     <dt>Directory binding</dt>
                     <dd>
-                      epoch {invitationReview.directoryEpoch} · checkpoint{" "}
-                      {invitationReview.directoryCheckpoint} · valid through{" "}
-                      {new Date(
-                        invitationReview.directoryValidUntil * 1_000,
-                      ).toISOString()}{" "}
-                      · snapshot <code>{invitationReview.cohortBinding}</code>
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Created</dt>
-                    <dd>
-                      {new Date(
-                        invitationReview.createdAt * 1_000,
-                      ).toISOString()}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Invitation / RFQ clock</dt>
-                    <dd>
-                      <RfqCountdown
-                        expiresAt={invitationReview.expiresAt}
-                        onExpire={() => {
-                          setInvitationConfirmed(false);
-                          setFlow({
-                            kind: "error",
-                            message:
-                              "Invitation review expired. Prepare the exact terms again; no maker request was sent.",
-                          });
-                        }}
-                      />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Fees before disclosure</dt>
-                    <dd>
-                      APP20 fee: 0 · pool fee, public fee balance, and gas
-                      unavailable until fresh post-selection review
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Public facts</dt>
-                    <dd>
-                      legacy escrow pair, OPEN amounts, deadline, fees, helper
-                      activity, and lifecycle timing become public during
-                      settlement
+                      epoch {invitationReview.cohort.epoch} ·{" "}
+                      <code>{invitationReview.cohort.checkpoint}</code>
                     </dd>
                   </div>
                 </dl>
@@ -2581,132 +1714,47 @@ export default function LocalnetPrivateIntentDesk({
                       setInvitationConfirmed(event.target.checked)
                     }
                   />
-                  I confirm these exact terms may be disclosed to the two named
-                  fixture makers.
+                  Invite every named fixture maker with only the reviewed size
+                  bucket.
                 </label>
+                <MakerCohortPanel
+                  makers={operations.status.makers}
+                  directory={operations.status.directory}
+                  governedMakerCount={invitationReview.governedMakerCount}
+                  now={preflightNow}
+                />
               </aside>
             ) : null}
-            {invitationReview && operations.status ? (
-              <MakerCohortPanel
-                makers={operations.status.makers}
-                directory={operations.status.directory}
-                governedMakerCount={operations.status.cohort.governed}
-                now={preflightNow}
-              />
-            ) : null}
-            {requestBlockedReason ? (
-              <p role="alert">{requestBlockedReason}</p>
-            ) : null}
+
+            {requestBlockedReason ? <p role="alert">{requestBlockedReason}</p> : null}
             <button
               className={styles.privateIntentQuoteButton}
               type="button"
-              onClick={() => void buildQuote()}
+              onClick={() => void runQuoteRequest()}
               disabled={
                 working ||
                 !privacyReady ||
                 !invitationReview ||
                 !invitationConfirmed ||
                 !requestGate.allowed ||
-                Boolean(requestBlockedReason)
+                Boolean(requestBlockedReason) ||
+                (Boolean(invoice) && !invoiceEstimateReady)
               }
             >
-              {working ? "Requesting…" : "Request signed quotes"}
+              {flow.kind === "working" ? "Requesting…" : "Request collateralized quotes"}
             </button>
+            {waitForMaturity ? (
+              <button
+                type="button"
+                disabled={flow.kind === "working"}
+                onClick={() => void repollUntilMature()}
+              >
+                Request quotes when mature
+              </button>
+            ) : null}
           </>
         )}
       </div>
-
-      {quoted ? (
-        <div
-          className={styles.privateIntentQuote}
-          aria-label="Selected private maker quote"
-        >
-          <div>
-            <span>YOU RECEIVE</span>
-            <strong>
-              {formatLocalnetTokenAmount(
-                quoted.quote.buyAmount,
-                quoted.pair.buy,
-                6,
-              )}{" "}
-              {quoted.pair.buy.symbol}
-            </strong>
-          </div>
-          <div>
-            <span>PRIVATE RESPONSES</span>
-            <strong>
-              {quoted.quotes.length} VERIFIED{" "}
-              {quoted.quotes.length === 1 ? "QUOTE" : "QUOTES"}
-            </strong>
-          </div>
-          <div>
-            <span>SPREAD</span>
-            <strong>{quoted.quote.spreadBps} BPS</strong>
-          </div>
-          <div>
-            <span>TIME BOUNDS</span>
-            <strong>QUOTE 10 MIN · REFUND 20 MIN</strong>
-          </div>
-        </div>
-      ) : null}
-
-      {surface === "block" ? (
-        <ol
-          className={styles.privateIntentStepper}
-          aria-label="Settlement lifecycle"
-        >
-          {(solverOutcome === "fill"
-            ? ["Quote", "Lock", "Maker fill", "Claim"]
-            : ["Quote", "Lock", "Expiry", "Refund"]
-          ).map((label, index) => {
-            const current = currentLifecycleStep(quoted, flow, solverOutcome);
-            return (
-              <li
-                key={label}
-                data-state={
-                  current > index
-                    ? "complete"
-                    : current === index
-                      ? "current"
-                      : "pending"
-                }
-              >
-                <span>{index + 1}</span>
-                <strong>{label}</strong>
-              </li>
-            );
-          })}
-        </ol>
-      ) : null}
-
-      {surface === "block" ? (
-        <details className={styles.privateIntentDemoControls} open>
-          <summary>Demo controls</summary>
-          <fieldset className={styles.privateIntentOutcome} disabled={working}>
-            <legend>LOCALNET TEST OUTCOME</legend>
-            <label>
-              <input
-                type="radio"
-                name="local-private-intent-outcome"
-                value="fill"
-                checked={solverOutcome === "fill"}
-                onChange={() => setSolverOutcome("fill")}
-              />
-              Maker fills
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="local-private-intent-outcome"
-                value="refund"
-                checked={solverOutcome === "refund"}
-                onChange={() => setSolverOutcome("refund")}
-              />
-              No fill → expiry refund
-            </label>
-          </fieldset>
-        </details>
-      ) : null}
 
       {quoted ? (
         <section
@@ -2716,167 +1764,189 @@ export default function LocalnetPrivateIntentDesk({
           aria-labelledby="rfq-maker-comparison"
         >
           <h3 id="rfq-maker-comparison">
-            Compare all makers ({quoted.quotes.length} verified{" "}
-            {quoted.quotes.length === 1 ? "quote" : "quotes"})
+            Compare all makers ({quoted.selection.comparison.length} verified{" "}
+            {quoted.selection.comparison.length === 1 ? "quote" : "quotes"})
           </h3>
           <p>
-            Review every verified response, refusal, capacity state, and the
-            deterministic selection rationale before continuing.
+            Review every verified response, refusal, exact-size evaluation,
+            rank, outcome, and deterministic selection rationale.
           </p>
           <QuoteComparison
-            quotes={quoted.quotes}
-            cohort={quoted.cohort}
-            directory={quoted.directory}
-            governedMakerCount={quoted.governedMakerCount}
-            now={preflightNow}
-            selectedReservationId={quoted.quote.reservationId}
+            quotes={quoted.selection.verifiedQuotes.map(({ quote }) => quote)}
+            comparison={quoted.selection.comparison}
+            refusals={quoted.refusals}
+            selection={quoted.selection.selection}
+            exactSellAmount={quoted.exactSellAmount}
             sellDecimals={quoted.pair.sell.decimals}
             buyDecimals={quoted.pair.buy.decimals}
             sellSymbol={quoted.pair.sell.symbol}
             buySymbol={quoted.pair.buy.symbol}
-            onSelectedExpire={() => void expireSelectedQuote("Quote expired.")}
           />
+          <section aria-labelledby="transcript-ack-title">
+            <h4 id="transcript-ack-title">Fair-loss transcript acknowledgements</h4>
+            {quoted.transcriptAcknowledgements.length ? (
+              <ul className={styles.transcriptAcknowledgements}>
+                {quoted.transcriptAcknowledgements.map((acknowledgement) => (
+                  <li key={acknowledgement.makerId}>
+                    <strong>{acknowledgement.makerId}</strong> ·{" "}
+                    {acknowledgement.accepted ? "received" : "not accepted"} ·{" "}
+                    {acknowledgement.consistent ? "consistent" : "inconsistent"}
+                    {acknowledgement.reason
+                      ? ` · ${acknowledgement.reason}`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p role="alert">
+                Acknowledgements are unavailable. Take remains blocked until
+                transcript delivery succeeds.
+              </p>
+            )}
+          </section>
         </section>
       ) : null}
 
-      {quoted && !reviewing && lifecycleRecord?.state === "quoted" ? (
-        <div>
+      {quoted &&
+      quoted.selection.selection.kind === "selected" &&
+      lifecycleRecord?.state === "quoted" ? (
+        <button
+          type="button"
+          className={styles.privateIntentExecute}
+          onClick={() =>
+            void deliverTranscript(
+              {
+                created: quoted.created,
+                selection: quoted.selection,
+                refusals: quoted.refusals,
+                pair: quoted.pair,
+                surface: quoted.surface,
+                exactSellAmount: quoted.exactSellAmount,
+                localFloor: quoted.localFloor,
+              },
+              lifecycleRecord,
+            ).catch((error: unknown) =>
+              setFlow({ kind: "error", message: errorMessage(error) }),
+            )
+          }
+          disabled={working}
+        >
+          Retry transcript delivery
+        </button>
+      ) : null}
+
+      {quoted &&
+      lifecycleRecord?.state === "reviewing" &&
+      !showFinalReview ? (
+        <div className={styles.reviewEntryActions}>
           <button
             type="button"
-            onClick={() => void cancelRfq("cancel")}
-            disabled={working || !lifecycleContextReady}
+            onClick={() => {
+              setShowFinalReview(true);
+              void refreshReviewSnapshot(lifecycleRecord);
+            }}
+            disabled={working}
           >
-            Cancel RFQ and release reservations
+            Review selected quote fills
           </button>
           <button
             type="button"
-            onClick={() => void requote()}
-            disabled={working || !lifecycleContextReady}
+            onClick={() => void declineLockedQuotes()}
+            disabled={working}
           >
-            Request new quotes
-          </button>
-          <button
-            className={styles.privateIntentExecute}
-            type="button"
-            disabled={!localnetReady || !lifecycleContextReady || working}
-            onClick={() => void enterReview()}
-          >
-            Review selected quote
+            Decline locked quotes
           </button>
         </div>
       ) : null}
 
-      {quoted &&
-      lifecycleRecord?.state === "expired" &&
-      !lifecycleRecord.settlement ? (
-        <button
-          type="button"
-          disabled={working || !lifecycleContextReady}
-          onClick={() => void requote()}
-        >
-          Request fresh quotes
-        </button>
-      ) : null}
-
-      {quoted && reviewing && lifecycleRecord?.state === "reviewing" ? (
+      {showFinalReview &&
+      finalTerms &&
+      lifecycleRecord?.state === "reviewing" ? (
         <RfqFinalReview
-          terms={Object.freeze({
-            ...finalReviewTerms(quoted),
-            ...(lifecycleRecord.selectedQuote?.quoteDigest
-              ? { quoteDigest: lifecycleRecord.selectedQuote.quoteDigest }
-              : {}),
-            ...(lifecycleRecord.selectedQuote?.reservationFence
-              ? {
-                  reservationFence: BigInt(
-                    lifecycleRecord.selectedQuote.reservationFence,
-                  ),
-                }
-              : {}),
-          })}
+          terms={finalTerms}
           snapshot={reviewSnapshot ?? undefined}
           blockers={[
-            ...(fundingGate.allowed ? [] : [fundingGate.reason]),
-            ...(reviewSnapshot
-              ? validateFinalReview({
-                  initial: reviewSnapshot,
-                  current: reviewSnapshot,
-                  terms: finalReviewTerms(quoted),
-                  now: preflightNow,
-                }).blockers
-              : ["Fresh final-review fee evidence is unavailable."]),
+            ...(takeGate.allowed ? [] : [takeGate.reason]),
+            ...finalBlockers,
           ]}
-          disabled={
-            !localnetReady ||
-            !lifecycleContextReady ||
-            !fundingGate.allowed ||
-            working ||
-            executionLocked ||
-            preflightNow >= quoted.quote.quoteExpiresAt ||
-            preflightNow >= quoted.quote.reservationExpiresAt
-          }
-          declineDisabled={working || executionLocked || !lifecycleContextReady}
-          onDecline={() => void cancelRfq("decline")}
-          onAccept={() => void acceptAndFund()}
-          onQuoteExpire={() => void expireSelectedQuote("Quote expired.")}
-          onReservationExpire={() =>
-            void expireSelectedQuote("Reservation expired.")
-          }
+          disabled={!localnetReady || working || !takeGate.allowed}
+          declineDisabled={working}
+          onAccept={() => void submitTake()}
+          onDecline={() => void declineLockedQuotes()}
           focusRef={finalReviewRef}
         />
       ) : null}
 
-      {quoted &&
-      lifecycleRecord &&
-      [
-        "cancel-pending",
-        "submission-unknown",
-        "funded",
-        "filled",
-        "claimable",
-        "refundable",
-      ].includes(lifecycleRecord.state) ? (
-        <section aria-label="Persisted recovery phase">
-          <h3>Next persisted localnet phase</h3>
-          <RfqPhaseAction
-            decision={nextDeskPhase(lifecycleRecord)}
-            busy={working}
-            onAction={
-              lifecycleContextReady
-                ? () => void runNextPhaseAction()
-                : undefined
+      {lifecycleRecord?.state === "submission-unknown" ? (
+        <section className={styles.takeOutcome} aria-labelledby="take-unknown-title">
+          <h3 id="take-unknown-title">Take submission outcome unknown</h3>
+          <p>
+            Do not retry. Verify the exact escrow Take record for lifecycle v3.
+          </p>
+          {lifecycleRecord.takeTransactionHash ? (
+            <code>{lifecycleRecord.takeTransactionHash}</code>
+          ) : (
+            <strong>No transaction hash returned · wallet boundary entered</strong>
+          )}
+          <button type="button" disabled={working} onClick={() => void verifyTake()}>
+            Verify exact Take
+          </button>
+        </section>
+      ) : null}
+
+      {lifecycleRecord &&
+      (lifecycleRecord.state === "submission-unknown" ||
+        lifecycleRecord.state === "settled" ||
+        lifecycleRecord.attempts.take?.state === "reverted" ||
+        lifecycleRecord.state === "quarantined") ? (
+        <section className={styles.takeEvidence} aria-label="RFQ v3 settlement evidence">
+          <p>
+            <strong>Authority stage:</strong> lifecycle v3 · Take transaction only
+          </p>
+          <RfqAuthorityStrip record={lifecycleRecord} />
+          <SettlementEvidencePanel
+            records={[lifecycleRecord]}
+            transactionHashes={
+              lifecycleRecord.takeTransactionHash
+                ? [lifecycleRecord.takeTransactionHash]
+                : []
             }
           />
         </section>
       ) : null}
 
+      {flow.kind !== "idle" && flow.kind !== "refused" ? (
+        <p
+          className={`${styles.privateIntentStatus} ${flow.kind === "error" ? styles.privateIntentError : ""}`}
+          role={flow.kind === "error" ? "alert" : "status"}
+        >
+          {flow.message}
+          {"transactionHash" in flow && flow.transactionHash
+            ? ` Take transaction: ${flow.transactionHash}`
+            : ""}
+        </p>
+      ) : null}
+
       {flow.kind === "refused" ? (
         <div className={styles.deskRefusal} role="alert">
-          {latestCohort.length && invitationReview ? (
-            <MakerCohortPanel
-              makers={latestCohort}
-              directory={Object.freeze({
-                epoch: invitationReview.directoryEpoch,
-                checkpoint: invitationReview.directoryCheckpoint,
-                validUntil: invitationReview.directoryValidUntil,
-              })}
-              governedMakerCount={invitationReview.governedMakerCount}
-              now={preflightNow}
-            />
-          ) : null}
           <strong>No private fill</strong>
           <p>{flow.message}</p>
           <p>
-            Public-route swap is a separate action and is not enabled in this
-            build. The RFQ was not published or routed elsewhere.
+            No public fallback was attempted. Every quote and refusal remains
+            visible above.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              setFlow({ kind: "idle" });
-              setPrivacyConfirmed(false);
-            }}
-          >
+          <button type="button" onClick={resetRequestView}>
             Start new RFQ
+          </button>
+        </div>
+      ) : null}
+
+      {flow.kind === "settled" ? (
+        <div className={styles.privateIntentSuccess} role="status">
+          <strong>Atomic receive confirmed from the exact escrow Take.</strong>
+          {flow.transactionHash ? <code>{flow.transactionHash}</code> : null}
+          <button type="button" onClick={resetRequestView}>
+            Start another RFQ
           </button>
         </div>
       ) : null}
@@ -2887,125 +1957,13 @@ export default function LocalnetPrivateIntentDesk({
           settle private maker quotes.
         </p>
       )}
-      {flow.kind === "working" ||
-      flow.kind === "ready" ||
-      flow.kind === "error" ? (
-        <p
-          className={`${styles.privateIntentStatus} ${flow.kind === "error" ? styles.privateIntentError : ""}`}
-          role={flow.kind === "error" ? "alert" : "status"}
-        >
-          {flow.message}
-        </p>
-      ) : null}
-      {flow.kind === "ready" &&
-      !quoted &&
-      flow.message.includes("Start another RFQ") ? (
-        <button type="button" onClick={() => setFlow({ kind: "idle" })}>
-          Start another RFQ
-        </button>
-      ) : null}
-      {flow.kind === "success" && quoted ? (
-        <div className={styles.privateIntentSuccess} role="status">
-          <div>
-            <strong>{flow.message}</strong>
-            <span>
-              {flow.transactionHashes.length} local transaction references
-              recorded
-            </span>
-          </div>
-          <dl className={styles.privateIntentReceipt}>
-            <div>
-              <dt>SOLD</dt>
-              <dd>
-                {formatLocalnetTokenAmount(
-                  quoted.intent.sellAmount,
-                  quoted.pair.sell,
-                  6,
-                )}{" "}
-                {quoted.pair.sell.symbol}
-              </dd>
-            </div>
-            <div>
-              <dt>
-                {flow.outcome === "settled"
-                  ? "RECEIVED (LOCALLY OBSERVED)"
-                  : "REFUNDED (LOCALLY OBSERVED)"}
-              </dt>
-              <dd>
-                {flow.outcome === "settled"
-                  ? `${formatLocalnetTokenAmount(
-                      quoted.quote.buyAmount,
-                      quoted.pair.buy,
-                      6,
-                    )} ${quoted.pair.buy.symbol}`
-                  : `${formatLocalnetTokenAmount(
-                      quoted.intent.sellAmount,
-                      quoted.pair.sell,
-                      6,
-                    )} ${quoted.pair.sell.symbol}`}
-              </dd>
-            </div>
-            <div>
-              <dt>QUOTE BINDING</dt>
-              <dd>
-                <code title={quoted.quote.intentDigest}>
-                  {quoted.quote.intentDigest.slice(0, 18)}…
-                </code>
-              </dd>
-            </div>
-            <div>
-              <dt>EVIDENCE</dt>
-              <dd>
-                {flow.transactionHashes.length} local references · this browser
-                watched the local devnet; no configured-chain verifier confirmed
-                it
-              </dd>
-            </div>
-          </dl>
-          <details className={styles.privateIntentTransactions}>
-            <summary>Transaction references</summary>
-            {flow.transactionHashes.map((transactionHash, index) => (
-              <code key={`${index}:${transactionHash}`}>
-                {index + 1}. {transactionHash}
-              </code>
-            ))}
-          </details>
-          <button type="button" onClick={invalidateQuote}>
-            Start another RFQ
-          </button>
-          <nav
-            className={styles.privateIntentLinks}
-            aria-label="Desk follow-up actions"
-          >
-            {address && chain && counterparty ? (
-              <Link
-                to="/mail/inbox"
-                onClick={() =>
-                  storeDeskHandoff(
-                    window.sessionStorage,
-                    "mail",
-                    counterparty,
-                    {
-                      account: address,
-                      chainId: chain,
-                    },
-                  )
-                }
-              >
-                Open encrypted correspondence
-              </Link>
-            ) : (
-              <Link to="/mail/inbox">Open mailbox</Link>
-            )}
-            <Link to="/contacts">Open counterparties</Link>
-          </nav>
-        </div>
-      ) : null}
 
       <p className={styles.privateIntentDisclosure}>
-        {swapOnly
-          ? "Request-scoped signed invited-maker quotes only. A refusal never falls through to a public venue."
-          : "Swap and Block solicit request-scoped signed quotes from 2 localnet fixture makers without publishing an order book. Invited makers learn the exact pair, side, size, floor, and expiry. Loopback timing and fanout remain observable; quote responses are plain signed JSON. Legacy localnet escrow events and OPEN payout-note amounts remain public and are not production settlement authority."}
+        RFQ v3 sends invited makers only pair, side, fixed ladder bucket, and
+        expiry. Exact size and floor stay local until one atomic Take publishes
+        exact per-lock amounts. Quote schedules are signed and verified against
+        on-chain collateral locks. Loopback timing and fanout remain observable;
+        Sepolia and Mainnet execution remain disabled.
       </p>
     </section>
   );

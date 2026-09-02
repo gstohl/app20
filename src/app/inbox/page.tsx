@@ -163,6 +163,10 @@ import {
 import { loadSentMail, saveSentMail } from "@/lib/sent-mail";
 import { createIndexedDbRfqStorage } from "@/app/rfq/rfq-storage";
 import {
+  consumePendingRfqHistoryAutoBackup,
+  RFQ_AUTO_BACKUP_REQUESTED_EVENT,
+} from "@/app/rfq/ui/rfq-auto-backup";
+import {
   exportRfqHistory,
   importRfqHistory,
   isRfqHistoryAutoBackupEnabled,
@@ -301,6 +305,7 @@ export default function InboxPage() {
     number | undefined
   >();
   const [rfqAutoBackupEnabled, setRfqAutoBackupEnabled] = useState(false);
+  const [rfqAutoBackupSignal, setRfqAutoBackupSignal] = useState(0);
 
   const helperAddress = helperForNetwork(providerIndex);
   const escrowAddress = escrowForNetwork(providerIndex);
@@ -332,7 +337,15 @@ export default function InboxPage() {
   const sidebarWasOpenRef = useRef(false);
   const activatedMessageIdRef = useRef<string | null>(null);
   const contactHandoffRef = useRef("");
+  const rfqAutoBackupPostingRef = useRef(false);
   scanIdentityRef.current = scanIdentity;
+
+  useEffect(() => {
+    const notify = () => setRfqAutoBackupSignal((value) => value + 1);
+    window.addEventListener(RFQ_AUTO_BACKUP_REQUESTED_EVENT, notify);
+    return () =>
+      window.removeEventListener(RFQ_AUTO_BACKUP_REQUESTED_EVENT, notify);
+  }, []);
 
   useEffect(() => {
     if (!address || !chainId) return;
@@ -1327,7 +1340,11 @@ export default function InboxPage() {
   async function inboxBlobStore(): Promise<BlobStore> {
     const localnet = providerIndex === constants.LOCALNET_PROVIDER_INDEX;
     try {
-      const env: Record<string, unknown> = { ...import.meta.env };
+      const env: Record<string, unknown> = {
+        VITE_IPFS_RPC_ORIGIN: import.meta.env.VITE_IPFS_RPC_ORIGIN,
+        VITE_IPFS_GATEWAY_ORIGINS:
+          import.meta.env.VITE_IPFS_GATEWAY_ORIGINS,
+      };
       const resolution = resolveBlobStoreConfig({
         localnetConfig: localnet ? await readLocalBackupConfig() : undefined,
         env,
@@ -1485,6 +1502,62 @@ export default function InboxPage() {
       });
     }
   }
+
+  useEffect(() => {
+    if (
+      !address ||
+      !chainId ||
+      !rfqAutoBackupEnabled ||
+      !keypair ||
+      !mailSeed ||
+      !keyFingerprint ||
+      !helperAddress ||
+      !walletAccount ||
+      !selectedWallet ||
+      !isStrk20Capable ||
+      rfqAutoBackupPostingRef.current
+    ) {
+      return;
+    }
+    const pending = consumePendingRfqHistoryAutoBackup(
+      window.localStorage,
+      { account: address, chainId },
+    );
+    if (!pending) return;
+    rfqAutoBackupPostingRef.current = true;
+    void exportRfqHistory(
+      createIndexedDbRfqStorage(),
+      chainId,
+      address,
+    )
+      .then((history) =>
+        postAuthenticatedBackup("rfq-resume", history, history.count),
+      )
+      .catch((error: unknown) => {
+        setActionState("rfq-resume:backup", {
+          pending: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : "The automatic RFQ history export failed.",
+        });
+      })
+      .finally(() => {
+        rfqAutoBackupPostingRef.current = false;
+      });
+  }, [
+    address,
+    chainId,
+    helperAddress,
+    isStrk20Capable,
+    keyFingerprint,
+    keypair,
+    mailSeed,
+    rfqAutoBackupEnabled,
+    rfqAutoBackupSignal,
+    selectedWallet,
+    walletAccount,
+  ]);
 
   function updateRfqAutoBackup(enabled: boolean) {
     if (!address || !chainId) return;

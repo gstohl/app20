@@ -664,7 +664,9 @@ async function makerGet(client, pathname, timeoutMs = 5_000) {
     );
   }
   if (!payload?.result || typeof payload.result !== "object")
-    throw new Error(`${client.solverId}: maker response envelope is malformed.`);
+    throw new Error(
+      `${client.solverId}: maker response envelope is malformed.`,
+    );
   return payload.result;
 }
 
@@ -953,10 +955,7 @@ async function deployEscrow(env, starknet) {
   );
   const lockTicketCasm = starknet.json.parse(
     readFileSync(
-      join(
-        artifactRoot,
-        "app20_mail_LockTicket.compiled_contract_class.json",
-      ),
+      join(artifactRoot, "app20_mail_LockTicket.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -1569,7 +1568,7 @@ async function startApi({
     for (const outcome of lockOutcomes) {
       const records =
         outcome.status === "fulfilled"
-          ? outcome.value.locks ?? outcome.value
+          ? (outcome.value.locks ?? outcome.value)
           : undefined;
       if (!Array.isArray(records)) continue;
       for (const lock of records) {
@@ -2514,8 +2513,9 @@ async function startApi({
                 .filter((plan) => plan.state === "quoted")
                 .map((plan) => plan.quote),
               refusals: completed.makerPlans
-                .filter((plan) =>
-                  plan.state === "refused" || plan.state === "unavailable",
+                .filter(
+                  (plan) =>
+                    plan.state === "refused" || plan.state === "unavailable",
                 )
                 .map((plan) => ({
                   makerId: plan.makerId,
@@ -2929,7 +2929,9 @@ async function startApi({
           .update(canonicalSelectionTranscriptBody(transcriptBody))
           .digest("hex")}`;
         if (computedTranscriptDigest !== transcriptDigest)
-          fail("selection transcript digest does not match its canonical body.");
+          fail(
+            "selection transcript digest does not match its canonical body.",
+          );
         const requestRecord = coordinator.getV3Request(rfqDigest);
         if (
           !requestRecord ||
@@ -2942,7 +2944,9 @@ async function startApi({
               requestRecord.makerPlans.map(({ makerId }) => makerId),
             )
         )
-          fail("selection transcript does not match the durable v3 RFQ principal.");
+          fail(
+            "selection transcript does not match the durable v3 RFQ principal.",
+          );
         for (const plan of requestRecord.makerPlans) {
           const entries = transcript.entries.filter(
             (entry) => entry.makerId === plan.makerId,
@@ -2953,7 +2957,9 @@ async function startApi({
             (plan.state === "quoted" && entries[0].outcome === "refused") ||
             (plan.state !== "quoted" && entries[0].outcome !== "refused")
           )
-            fail("selection transcript changed a durable maker outcome digest.");
+            fail(
+              "selection transcript changed a durable maker outcome digest.",
+            );
         }
         await coordinator.journalV3Transcript(rfqDigest, transcript.digest);
         const acknowledgements = await Promise.all(
@@ -2978,7 +2984,9 @@ async function startApi({
                 (result.reason !== undefined &&
                   typeof result.reason !== "string")
               )
-                throw new Error("maker transcript acknowledgement is malformed");
+                throw new Error(
+                  "maker transcript acknowledgement is malformed",
+                );
               return {
                 makerId: plan.makerId,
                 accepted: true,

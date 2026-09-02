@@ -10,10 +10,7 @@ import {
   digestPrivateRfqV2,
   type PrivateRfqV2,
 } from "./rfq-v2.ts";
-import {
-  assertPriceSchedule,
-  type PriceSchedule,
-} from "./schedule.ts";
+import { assertPriceSchedule, type PriceSchedule } from "./schedule.ts";
 
 export const QUOTE_V3_DOMAIN = "app20/private-intent-quote/v3" as const;
 
@@ -107,11 +104,7 @@ const QUOTE_V3_WIRE_FIELDS = [
 const QUOTE_V3_WIRE_FIELD_SET = new Set<string>(QUOTE_V3_WIRE_FIELDS);
 const SCHEDULE_POINT_FIELDS = new Set(["a", "b"]);
 
-function requireFelt(
-  value: string,
-  label: string,
-  allowZero = false,
-): string {
+function requireFelt(value: string, label: string, allowZero = false): string {
   let felt: string;
   try {
     felt = canonicalizeStarknetFelt(value);
@@ -138,11 +131,7 @@ function requireText(value: string, label: string): string {
   return normalized;
 }
 
-function requireInteger(
-  value: number,
-  label: string,
-  minimum = 0,
-): number {
+function requireInteger(value: number, label: string, minimum = 0): number {
   if (!Number.isSafeInteger(value) || value < minimum) {
     throw new PrivateIntentError(
       `${label} must be a safe integer >= ${minimum}.`,
@@ -186,11 +175,7 @@ function canonicalBody(quote: UnsignedSolverQuoteV3) {
   if (sellToken === buyToken) {
     throw new PrivateIntentError("sellToken and buyToken must differ.");
   }
-  const lockExpiresAt = requireInteger(
-    quote.lockExpiresAt,
-    "lockExpiresAt",
-    1,
-  );
+  const lockExpiresAt = requireInteger(quote.lockExpiresAt, "lockExpiresAt", 1);
   const quotedAt = requireInteger(quote.quotedAt, "quotedAt", 1);
   const quoteExpiresAt = requireInteger(
     quote.quoteExpiresAt,
@@ -237,15 +222,11 @@ function canonicalBody(quote: UnsignedSolverQuoteV3) {
   };
 }
 
-export function canonicalSolverQuoteV3(
-  quote: UnsignedSolverQuoteV3,
-): string {
+export function canonicalSolverQuoteV3(quote: UnsignedSolverQuoteV3): string {
   return JSON.stringify(canonicalBody(quote));
 }
 
-export function encodeSolverQuoteV3(
-  quote: SolverQuoteV3,
-): SolverQuoteV3Wire {
+export function encodeSolverQuoteV3(quote: SolverQuoteV3): SolverQuoteV3Wire {
   const body = canonicalBody(quote);
   if (!isCanonicalQuoteSignature(quote.signature)) {
     throw new PrivateIntentError(
@@ -446,11 +427,7 @@ export async function verifySolverQuoteV3(
     quote.quoteKeyId,
     quote.quotedAt,
   );
-  const keyNow = await input.resolveKey(
-    quote.solverId,
-    quote.quoteKeyId,
-    now,
-  );
+  const keyNow = await input.resolveKey(quote.solverId, quote.quoteKeyId, now);
   if (!sameJwk(keyAtQuote, keyNow)) {
     throw new PrivateIntentError("Quote v3 key changed before verification.");
   }

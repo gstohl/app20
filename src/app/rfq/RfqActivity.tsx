@@ -1,4 +1,5 @@
 "use client";
+import { formatSizeBucketLabel } from "@app20/private-intents";
 import CopyableId, {
   LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY,
   LOCAL_IDENTIFIER_AUTHORITY,
@@ -11,6 +12,21 @@ import RfqRecoveryCard from "./RfqRecoveryCard";
 import { useRfqAuthorityPresentation } from "./ui/use-rfq-authority-presentation";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 import styles from "./rfq.module.css";
+
+function activityBucket(record: RfqLifecycleRecord): string | undefined {
+  if (record.mode !== "v3" || !record.bucket || !record.terms) return undefined;
+  if (record.terms.sellSymbol !== "STRK" && record.terms.sellSymbol !== "USDC") {
+    return `${record.bucket.min}–${record.bucket.max} base units`;
+  }
+  try {
+    return formatSizeBucketLabel(record.terms.sellSymbol, {
+      min: BigInt(record.bucket.min),
+      max: BigInt(record.bucket.max),
+    });
+  } catch {
+    return "invalid reviewed bucket · read-only record";
+  }
+}
 
 function RfqActivityRecord({
   record,
@@ -33,7 +49,7 @@ function RfqActivityRecord({
       aria-labelledby={`activity-${record.rfqId}-title`}
     >
       <h3 id={`activity-${record.rfqId}-title`}>
-        {heading} · {rfqStateLabel(record.state)}
+        {heading} · {rfqStateLabel(record.state, record.mode)}
       </h3>
       {record.terms ? (
         <p className={styles.activityAmount}>
@@ -43,6 +59,21 @@ function RfqActivityRecord({
             "unselected"}{" "}
           base units {record.terms.buySymbol}
         </p>
+      ) : null}
+      {record.mode === "v3" ? (
+        <div className={styles.v3RecordSummary}>
+          <p><strong>RFQ v3 · bucket {activityBucket(record) ?? "unavailable"}</strong></p>
+          {record.fills?.length ? (
+            <ol aria-label="RFQ v3 fills">
+              {record.fills.map((fill) => (
+                <li key={fill.lockId}>
+                  {fill.makerId} · lock <code>{fill.lockId}</code> · {fill.amountA} → {fill.amountB} base units
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          <p>Take hash: <code>{record.takeTransactionHash ?? record.attempts.take?.transactionHash ?? "not submitted"}</code></p>
+        </div>
       ) : null}
       <AuthorityStrip presentation={authority} />
       <p className={styles.activityIds}>

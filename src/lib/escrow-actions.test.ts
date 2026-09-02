@@ -303,40 +303,43 @@ describe("App20Escrow V3 STRK20 action batches", () => {
   it.each([
     [buildEscrowSettleProceedsActions, "0x6", tokenA],
     [buildEscrowReleaseCollateralActions, "0x7", tokenB],
-  ] as const)("spends one LockTicket for operation %s", (builder, variant, payoutToken) => {
-    expect(
-      builder({
-        escrowAddress,
-        recoveryAddress,
-        lockTicketAddress: ticketAddress,
-        lockId: "0x44",
-        payoutToken,
-      }),
-    ).toEqual([
-      {
-        type: "withdraw",
-        token: ticketAddress,
-        amount: "0x1",
-        recipient: escrowAddress,
-      },
-      {
-        type: "transfer",
-        token: payoutToken,
-        amount: "OPEN",
-        recipient: recoveryAddress,
-      },
-      {
-        type: "invoke",
-        contract: escrowAddress,
-        calldata: [
-          variant,
-          "0x44",
-          POOL_ADDRESS_PLACEHOLDER,
-          OPEN_NOTE_ID_PLACEHOLDER,
-        ],
-      },
-    ]);
-  });
+  ] as const)(
+    "spends one LockTicket for operation %s",
+    (builder, variant, payoutToken) => {
+      expect(
+        builder({
+          escrowAddress,
+          recoveryAddress,
+          lockTicketAddress: ticketAddress,
+          lockId: "0x44",
+          payoutToken,
+        }),
+      ).toEqual([
+        {
+          type: "withdraw",
+          token: ticketAddress,
+          amount: "0x1",
+          recipient: escrowAddress,
+        },
+        {
+          type: "transfer",
+          token: payoutToken,
+          amount: "OPEN",
+          recipient: recoveryAddress,
+        },
+        {
+          type: "invoke",
+          contract: escrowAddress,
+          calldata: [
+            variant,
+            "0x44",
+            POOL_ADDRESS_PLACEHOLDER,
+            OPEN_NOTE_ID_PLACEHOLDER,
+          ],
+        },
+      ]);
+    },
+  );
 
   it("rejects malformed schedules, duplicate fills, and overflowing totals", () => {
     expect(() =>

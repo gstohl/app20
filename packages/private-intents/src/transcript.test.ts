@@ -135,9 +135,9 @@ describe("RFQ v3 selection transcripts", () => {
     const { transcript } = await singleTranscript();
     const wire = encodeSelectionTranscript(transcript);
     expect(decodeSelectionTranscript(wire)).toEqual(transcript);
-    expect(() => decodeSelectionTranscript({ ...wire, exactSize: "10" })).toThrow(
-      /unsupported/,
-    );
+    expect(() =>
+      decodeSelectionTranscript({ ...wire, exactSize: "10" }),
+    ).toThrow(/unsupported/);
     expect(() =>
       decodeSelectionTranscript({
         ...wire,

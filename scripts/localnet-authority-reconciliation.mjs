@@ -61,7 +61,9 @@ function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
     ? value.authorityQuarantine
     : value.terminalReconciliation;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata))
-    throw new Error("Maker v3 acknowledgement lacks durable authority metadata.");
+    throw new Error(
+      "Maker v3 acknowledgement lacks durable authority metadata.",
+    );
   for (const [field, expected] of [
     ["attemptId", expectedEffect.attemptId],
     ["authorityDigest", expectedEffect.authorityDigest],
@@ -70,12 +72,17 @@ function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
     if (metadata[field] !== expected)
       throw new Error(`Maker v3 acknowledgement changed authority ${field}.`);
   if (quarantine) {
-    if (value.state !== "quarantined" || metadata.reason !== expectedEffect.reason)
+    if (
+      value.state !== "quarantined" ||
+      metadata.reason !== expectedEffect.reason
+    )
       throw new Error("Maker v3 quarantine acknowledgement is not terminal.");
   } else if (
     !["taken", "expired", "settling", "settled"].includes(value.state)
   ) {
-    throw new Error("Maker v3 terminal acknowledgement has an invalid lock state.");
+    throw new Error(
+      "Maker v3 terminal acknowledgement has an invalid lock state.",
+    );
   }
   return value;
 }
@@ -296,7 +303,9 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
         fills.map(async (fill) => {
           const client = makerClientForId(fill.makerId);
           if (!client)
-            throw new Error("Exact v3 maker is unavailable for terminal reconciliation.");
+            throw new Error(
+              "Exact v3 maker is unavailable for terminal reconciliation.",
+            );
           const target = v3MakerTargetFromAuthorityFill(query, fill);
           const acknowledgement = await requestMaker(
             client,
@@ -331,7 +340,9 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
         fills.map(async (fill) => {
           const client = makerClientForId(fill.makerId);
           if (!client)
-            throw new Error("Exact v3 maker is unavailable for authority quarantine.");
+            throw new Error(
+              "Exact v3 maker is unavailable for authority quarantine.",
+            );
           const target = v3MakerTargetFromAuthorityFill(query, fill);
           const acknowledgement = await requestMaker(
             client,

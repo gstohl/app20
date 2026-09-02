@@ -153,9 +153,9 @@ describe("solver quote v3", () => {
     expect(canonicalSolverQuoteV3({ ...value, lockId: "0x401" })).not.toBe(
       canonical,
     );
-    expect(canonicalSolverQuoteV3({ ...value, schedule: [{ a: 100n, b: 201n }] })).not.toBe(
-      canonical,
-    );
+    expect(
+      canonicalSolverQuoteV3({ ...value, schedule: [{ a: 100n, b: 201n }] }),
+    ).not.toBe(canonical);
   });
 
   it("digests only canonical unsigned JSON, not the signature", async () => {
@@ -186,9 +186,9 @@ describe("solver quote v3", () => {
     expect(() =>
       canonicalSolverQuoteV3({ ...value, quoteExpiresAt: value.quotedAt }),
     ).toThrow(/after quoting/);
-    expect(() =>
-      canonicalSolverQuoteV3({ ...value, schedule: [] }),
-    ).toThrow(/BAD_SCHEDULE/);
+    expect(() => canonicalSolverQuoteV3({ ...value, schedule: [] })).toThrow(
+      /BAD_SCHEDULE/,
+    );
   });
 
   it("round-trips a closed decimal schedule wire shape", async () => {
@@ -246,7 +246,10 @@ describe("solver quote v3", () => {
     ["buy token", { buyToken: "0x301" }],
     ["lock expiry", { lockExpiresAt: NOW + 89 }],
     ["bucket lower bound", { schedule: [{ a: 99n, b: 200n }, SCHEDULE[1]] }],
-    ["bucket upper bound", { schedule: [SCHEDULE[0], { a: 1_001n, b: 2_010n }] }],
+    [
+      "bucket upper bound",
+      { schedule: [SCHEDULE[0], { a: 1_001n, b: 2_010n }] },
+    ],
   ])("rejects an RFQ mismatch in %s", async (_name, mutation) => {
     const { jwk } = await signedFixture();
     await expect(

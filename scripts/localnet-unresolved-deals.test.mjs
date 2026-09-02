@@ -85,7 +85,10 @@ test("projects only account-bound unresolved deal recovery metadata", async () =
   assert.equal(result[0].authority, "server-derived-resume-only");
   assert.equal(result[0].observation.legBAmount, "99");
   const serialized = JSON.stringify(result);
-  assert.doesNotMatch(serialized, /rawInventory|privateKey|secret inventory|secret key/);
+  assert.doesNotMatch(
+    serialized,
+    /rawInventory|privateKey|secret inventory|secret key/,
+  );
 });
 
 test("projects exact v3 take leases without lock secrets and validates any observed take", async () => {

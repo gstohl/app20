@@ -117,7 +117,9 @@ export function canonicalLocalnetAuthorityQuery(input) {
       }),
     };
     if (query.rfqId !== query.dealId)
-      throw new Error("Localnet v3 authority requires RFQ and deal identity equality.");
+      throw new Error(
+        "Localnet v3 authority requires RFQ and deal identity equality.",
+      );
     return Object.freeze(query);
   }
   const outcome = input.outcome;
@@ -258,12 +260,22 @@ function validatePersistedLifecycle(value, query) {
         exact.transactionIndex !== coordinate.transactionIndex ||
         exact.eventIndex >= coordinate.eventIndex
       )
-        throw new Error("Authority journal v3 fill changed its exact take binding.");
+        throw new Error(
+          "Authority journal v3 fill changed its exact take binding.",
+        );
       return exact;
     });
-    if (new Set(fillEvents.map((fill) => fill.eventIndex)).size !== fillEvents.length)
-      throw new Error("Authority journal v3 lifecycle reused a fill coordinate.");
-    return Object.freeze({ ...coordinate, fillEvents: Object.freeze(fillEvents) });
+    if (
+      new Set(fillEvents.map((fill) => fill.eventIndex)).size !==
+      fillEvents.length
+    )
+      throw new Error(
+        "Authority journal v3 lifecycle reused a fill coordinate.",
+      );
+    return Object.freeze({
+      ...coordinate,
+      fillEvents: Object.freeze(fillEvents),
+    });
   });
   return Object.freeze(lifecycle);
 }
@@ -421,7 +433,9 @@ function normalizeObservation(
         !Array.isArray(item.fillEvents) ||
         item.fillEvents.length !== query.expected.fills.length
       )
-        throw new Error(`Reader ${readerId} returned incomplete LockTaken events.`);
+        throw new Error(
+          `Reader ${readerId} returned incomplete LockTaken events.`,
+        );
       fillEvents = item.fillEvents.map((fillEvent, fillIndex) => {
         const fillEventIndex = nonnegativeInteger(
           fillEvent?.eventIndex,
@@ -429,9 +443,14 @@ function normalizeObservation(
         );
         const fillCoordinateKey = `${blockNumber}:${transactionIndex}:${fillEventIndex}`;
         if (coordinates.has(fillCoordinateKey) || fillEventIndex >= eventIndex)
-          throw new Error("LockTaken event coordinate is duplicated or out of order.");
+          throw new Error(
+            "LockTaken event coordinate is duplicated or out of order.",
+          );
         coordinates.add(fillCoordinateKey);
-        const fillDecoded = decodeLocalnetEscrowEvent(fillEvent?.event, artifact);
+        const fillDecoded = decodeLocalnetEscrowEvent(
+          fillEvent?.event,
+          artifact,
+        );
         const expectedFill = query.expected.fills[fillIndex];
         if (
           fillDecoded.stage !== "lockTaken" ||
@@ -440,7 +459,9 @@ function normalizeObservation(
           fillDecoded.amountA !== expectedFill.amountA ||
           fillDecoded.amountB !== expectedFill.amountB
         )
-          throw new Error("Decoded LockTaken does not match its exact expected fill.");
+          throw new Error(
+            "Decoded LockTaken does not match its exact expected fill.",
+          );
         return Object.freeze({
           stage: "lockTaken",
           lockId: fillDecoded.lockId,

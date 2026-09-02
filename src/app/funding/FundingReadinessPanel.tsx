@@ -11,7 +11,19 @@ import {
   type CanonicalPairResolution,
 } from "@/lib/token-registry";
 import { MIN_STRK20_WALLET_API, type Strk20Capability } from "@/lib/strk20";
-import { useMemo, type ReactNode } from "react";
+import {
+  describeNoteMaturity,
+  noteMaturityStatus,
+  readAccountDeposits,
+  type NoteMaturityStatus,
+  type PoolEventsProvider,
+} from "@/lib/note-maturity";
+import {
+  LOCALNET_PROVIDER_INDEX,
+  myFrontendProviders,
+  strk20PoolLocalnet,
+} from "@/utils/constants";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 const FUNDING_ACTIONS = [
   { label: "Shield", specAction: "deposit" },
@@ -41,11 +53,16 @@ export type FundingReadinessModel = Readonly<{
       }>
     | Readonly<{ eligible: false; reason: string }>;
   noteMaturity: Readonly<{
-    exposed: false;
+    exposed: boolean;
     label: string;
     detail: string;
   }>;
 }>;
+
+export type FundingMaturityEstimate =
+  | Readonly<{ kind: "loading" }>
+  | Readonly<{ kind: "ready"; status: NoteMaturityStatus }>
+  | Readonly<{ kind: "error"; message: string }>;
 
 export type FundingReadinessInput = Readonly<{
   isConnected: boolean;
@@ -55,6 +72,7 @@ export type FundingReadinessInput = Readonly<{
   pair: CanonicalPairResolution | null;
   sessionCompatible: boolean;
   sessionReason?: string;
+  maturityEstimate?: FundingMaturityEstimate;
 }>;
 
 function shortAddress(address: string): string {
@@ -75,6 +93,7 @@ export function createFundingReadinessModel({
   pair,
   sessionCompatible,
   sessionReason,
+  maturityEstimate,
 }: FundingReadinessInput): FundingReadinessModel {
   const localnetDemo = network === "localnet";
   const blockers: string[] = [];
@@ -157,6 +176,40 @@ export function createFundingReadinessModel({
       : "No reviewed declaration exposed"
     : "Unavailable until a wallet connects";
 
+  const noteMaturity: FundingReadinessModel["noteMaturity"] =
+    !isConnected || !address
+      ? {
+          exposed: false,
+          label: "Unavailable · no wallet connected",
+          detail:
+            "APP20 cannot derive note age without a connected public account.",
+        }
+      : maturityEstimate?.kind === "ready"
+        ? {
+            exposed: true,
+            label: "Chain-derived estimate",
+            detail: `${describeNoteMaturity(maturityEstimate.status)} This is an estimate from public deposit events; APP20 never reads private balances.`,
+          }
+        : maturityEstimate?.kind === "loading"
+          ? {
+              exposed: true,
+              label: "Chain-derived estimate pending",
+              detail:
+                "Reading public pool deposit events; APP20 never reads private balances.",
+            }
+          : maturityEstimate?.kind === "error"
+            ? {
+                exposed: true,
+                label: "Chain-derived estimate unavailable",
+                detail: `${maturityEstimate.message} APP20 never reads private balances.`,
+              }
+            : {
+                exposed: false,
+                label: "Not exposed by this wallet",
+                detail:
+                  "APP20 did not request a private balance, infer note age, or fabricate maturity evidence.",
+              };
+
   return {
     ready: blockers.length === 0,
     localnetDemo,
@@ -166,14 +219,7 @@ export function createFundingReadinessModel({
     capabilitySummary,
     blockers,
     pair: pairModel,
-    noteMaturity: {
-      exposed: false,
-      label: isConnected
-        ? "Not exposed by this wallet"
-        : "Unavailable · no wallet connected",
-      detail:
-        "APP20 did not request a private balance, infer note age, or fabricate maturity evidence.",
-    },
+    noteMaturity,
   };
 }
 
@@ -313,6 +359,8 @@ export default function FundingReadinessPanel({
   const isConnected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
   const capability = useStoreWallet((state) => state.strk20Capability);
+  const [maturityEstimate, setMaturityEstimate] =
+    useState<FundingMaturityEstimate>();
   const selectedNetwork = networkForProviderIndex(providerIndex);
   const boundNetwork = resolveSessionTokenNetwork({
     selectedNetwork,
@@ -322,6 +370,61 @@ export default function FundingReadinessPanel({
     reason: session.reason,
   });
   const network = boundNetwork.ok ? boundNetwork.network : selectedNetwork;
+
+  useEffect(() => {
+    if (
+      !isConnected ||
+      !address ||
+      network !== "localnet" ||
+      providerIndex !== LOCALNET_PROVIDER_INDEX ||
+      !session.compatible
+    ) {
+      setMaturityEstimate(undefined);
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      setMaturityEstimate((current) =>
+        current?.kind === "ready" ? current : { kind: "loading" },
+      );
+      try {
+        // SAFETY: Starknet's selected localnet provider exposes the exact
+        // getBlockNumber/getEvents subset used for public deposit-event reads.
+        const provider = myFrontendProviders[
+          LOCALNET_PROVIDER_INDEX
+        ] as unknown as PoolEventsProvider;
+        const deposits = await readAccountDeposits({
+          provider,
+          poolAddress: strk20PoolLocalnet,
+          account: address,
+        });
+        const head = await provider.getBlockNumber();
+        if (active) {
+          setMaturityEstimate({
+            kind: "ready",
+            status: noteMaturityStatus(deposits, head),
+          });
+        }
+      } catch (error: unknown) {
+        if (active) {
+          setMaturityEstimate({
+            kind: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "The public deposit-event read failed.",
+          });
+        }
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 10_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [address, isConnected, network, providerIndex, session.compatible]);
+
   const model = useMemo(() => {
     const pair = network ? configuredMarketPair(network) : null;
     return createFundingReadinessModel({
@@ -332,6 +435,7 @@ export default function FundingReadinessPanel({
       pair,
       sessionCompatible: session.compatible,
       sessionReason: session.reason,
+      maturityEstimate,
     });
   }, [
     isConnected,
@@ -340,6 +444,7 @@ export default function FundingReadinessPanel({
     network,
     session.compatible,
     session.reason,
+    maturityEstimate,
   ]);
 
   return (

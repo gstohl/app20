@@ -1,3 +1,4 @@
+import { formatSizeBucketLabel } from "@app20/private-intents";
 import {
   localnetResumeDecision,
   type LocalnetResumeAction,
@@ -7,7 +8,7 @@ import { rfqStateLabel } from "./rfq-state-label";
 import {
   RFQ_RESUME_AUTHORITY_LABEL,
   lifecycleMayForget,
-  type RfqAttemptPhase,
+  type RfqLifecycleAttemptPhase,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
 import { AuthorityStrip } from "./RfqAuthorityStrip";
@@ -19,7 +20,7 @@ import RfqPhaseAction from "./RfqPhaseAction";
 import { useRfqPresentationClock } from "./ui/rfq-presentation-clock";
 import styles from "./rfq.module.css";
 
-const PHASES: readonly RfqAttemptPhase[] = [
+const LEGACY_PHASES: readonly RfqLifecycleAttemptPhase[] = [
   "funding",
   "fill",
   "claim",
@@ -27,12 +28,13 @@ const PHASES: readonly RfqAttemptPhase[] = [
   "reservation-release",
 ];
 
-const PHASE_LABELS: Readonly<Record<RfqAttemptPhase, string>> = {
+const PHASE_LABELS: Readonly<Record<RfqLifecycleAttemptPhase, string>> = {
   funding: "Funding",
   fill: "Maker fill",
   claim: "Claim",
   refund: "Refund",
   "reservation-release": "Reservation release",
+  take: "Atomic Take",
 };
 
 const ATTEMPT_LABELS: Readonly<Record<string, string>> = {
@@ -48,6 +50,21 @@ function age(observedAt: number | undefined, now: number): string {
   if (!observedAt) return "not observed";
   const seconds = Math.max(0, now - observedAt);
   return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
+}
+
+function bucketLabel(record: RfqLifecycleRecord): string | undefined {
+  if (record.mode !== "v3" || !record.bucket || !record.terms) return undefined;
+  if (record.terms.sellSymbol !== "STRK" && record.terms.sellSymbol !== "USDC") {
+    return `${record.bucket.min}–${record.bucket.max} base units`;
+  }
+  try {
+    return formatSizeBucketLabel(record.terms.sellSymbol, {
+      min: BigInt(record.bucket.min),
+      max: BigInt(record.bucket.max),
+    });
+  } catch {
+    return "invalid reviewed bucket · record remains read-only";
+  }
 }
 
 export default function RfqActiveCard({
@@ -72,7 +89,16 @@ export default function RfqActiveCard({
     authority.status === "authoritative"
       ? LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY
       : LOCAL_IDENTIFIER_AUTHORITY;
-  const selected = localnetResumeDecision(record, t);
+  const selectedDecision = localnetResumeDecision(record, t);
+  const selected =
+    record.mode === "v3" && selectedDecision.action === "take"
+      ? Object.freeze({
+          ...selectedDecision,
+          label: "Review atomic Take",
+          reason:
+            "Open a fresh balance-bound final review before any wallet submission.",
+        })
+      : selectedDecision;
   const blocked = actionsDisabled || authority.blocksValueActions;
   const next =
     blocked && selected.action !== "none"
@@ -95,7 +121,7 @@ export default function RfqActiveCard({
             ? `${record.terms.sellSymbol} → ${record.terms.buySymbol}`
             : "Quarantined legacy RFQ"}
         </h3>
-        <strong>{rfqStateLabel(record.state)}</strong>
+        <strong>{rfqStateLabel(record.state, record.mode)}</strong>
       </header>
       {record.terms ? (
         <p className={styles.activeCardAmount}>
@@ -105,6 +131,24 @@ export default function RfqActiveCard({
             "unselected"}{" "}
           base units {record.terms.buySymbol}
         </p>
+      ) : null}
+      {record.mode === "v3" ? (
+        <div className={styles.v3RecordSummary}>
+          <p><strong>RFQ v3 · atomic Take</strong></p>
+          <p>Size bucket: {bucketLabel(record) ?? "unavailable"}</p>
+          {record.fills?.length ? (
+            <ol aria-label="Exact v3 fills">
+              {record.fills.map((fill) => (
+                <li key={fill.lockId}>
+                  {fill.makerId} · lock <code>{fill.lockId}</code> · sell {fill.amountA} · receive {fill.amountB} base units
+                </li>
+              ))}
+            </ol>
+          ) : <p>No exact fills selected yet.</p>}
+          <p>
+            Take transaction: <code>{record.takeTransactionHash ?? record.attempts.take?.transactionHash ?? "not submitted"}</code>
+          </p>
+        </div>
       ) : null}
       <AuthorityStrip presentation={authority} />
       {record.recoverySource === "server-derived" ? (
@@ -138,6 +182,10 @@ export default function RfqActiveCard({
             <dd>
               <CopyableId value={record.rfqId} label="RFQ ID" />
             </dd>
+          </div>
+          <div>
+            <dt>Lifecycle</dt>
+            <dd>{record.mode === "v3" ? "RFQ v3 · collateralized atomic Take" : "Legacy RFQ v2 · read-only recovery remains available"}</dd>
           </div>
           <div>
             <dt>Quote</dt>
@@ -206,7 +254,7 @@ export default function RfqActiveCard({
           </div>
         </dl>
         <ul aria-label="Per-phase attempts">
-          {PHASES.map((phase) => (
+          {(record.mode === "v3" ? (["take"] as const) : LEGACY_PHASES).map((phase) => (
             <li key={phase}>
               {PHASE_LABELS[phase]}:{" "}
               {ATTEMPT_LABELS[record.attempts[phase]?.state ?? "not-started"]}

@@ -4,7 +4,7 @@
 
 The public fail-closed production template is `deployments/sepolia/deployment-manifest.template.json`; it remains `releaseReady: false` with zero canonical addresses/hashes, no audits, and no approvals. Separate [historical Sepolia proof records](evidence/historical-sepolia-proofs/) document one-off App20Mail and legacy escrow/ticket activity and are explicitly ineligible for runtime or production use.
 
-APP20 uses the existing STRK20 privacy pool. A new pool, AMM, order book, LP system, or pool factory is not part of the definitive RFQ goal. APP20-owned production contracts are limited to quote-bound settlement and claim/refund authority; see [`GAPS.md`](GAPS.md).
+APP20 uses the existing STRK20 privacy pool. A new pool, AMM, order book, LP system, or pool factory is not part of the definitive RFQ goal. APP20-owned production contracts are limited to quote-bound settlement and claim/refund authority; see [`GAPS.md`](GAPS.md). RFQ v3 production enablement is out of scope and does not modify that separate frozen production proposal.
 
 ## Contracts APP20 does not deploy
 
@@ -33,14 +33,27 @@ The pre-release contract was renamed to `App20Mail`. This changes its class hash
 ### `App20Escrow`
 
 - **Source:** `cairo/src/escrow.cairo`
-- **Constructor:** pinned STRK20 pool plus `ClaimTicket` class hash.
-- **Role:** localnet development settlement for `Fund → Fill → Claim` or `Fund → Timeout`; accounts for exact token deltas, rejects wrong/short fills, and returns deposits through the pool.
-- **Authority:** Cairo state and pool-applied deposits are value authority in the localnet demonstration.
-- **Public facts:** pair, exact amounts, deadline, lifecycle timing, helper activity, and events are public.
-- **Status:** localnet-only V2 development contract; configured Mainnet and Sepolia addresses are `0x0`; not independently audited; not approved for live deployment. A historical copy was declared/deployed on Sepolia as proof only and is not canonical production App20Escrow.
-- **Rollout decision:** **do not roll this class directly into production.** Production RFQ needs a new immutable quote-bound successor that commits to the winning intent, quote, reservation, directory epoch/key, registry/assets, exact amounts, deadline, and claim-ticket identity.
+- **Constructor:** `(pool, ticket_class_hash, lock_ticket_class_hash)`. The third argument is the additive localnet-v3 constructor change.
+- **Current v3 role:** a maker first invokes `Lock` through the pinned pool and deposits token B collateral equal to the maximum schedule payout. A taker then invokes one atomic `Take` for one to four distinct locks, depositing the exact total token A and receiving the exact evaluated token B total as one OPEN note. After lock expiry, makers independently pull earned token A with `SettleProceeds` and unused token B with `ReleaseCollateral`.
+- **Legacy role:** enum variants `Fund` (0), `Fill` (1), `Claim` (2), and `Timeout` (3) remain ABI-compatible in source and tests. The v3 variants are `Lock` (4), `Take` (5), `SettleProceeds` (6), and `ReleaseCollateral` (7). Localnet product migration targets v3; removal of variants 0–3 is deferred and required as an explicit later compatibility change, never a silent ABI mutation.
+- **Views:** `ensure_lock_ticket`, `get_lock_ticket`, `get_lock`, `get_take`, and `quote_schedule` are additive. Schedule evaluation accepts one to four positive u128 points, requires increasing A/non-decreasing B, and floors interpolation.
+- **State:** the on-chain lock remains `Open`; `remaining_b`, `earned_a`, `proceeds_settled`, and `collateral_released` carry its progress. Maker WAL labels such as `taken`, `expired`, and `settled` are off-chain projections, not Cairo enum variants.
+- **Parameter naming:** in `LockParams`, `token` is token B—the collateral whose escrow balance delta is measured—and `counter_token` is token A. The stored lock and events expose these as `token_b` and `token_a`.
+- **Public call/events:** Take helper calldata carries the `taker_secret` commitment preimage. V3 emits `LockCreated`, `LockTaken`, `DealTaken`, `LockProceedsSettled`, and `LockCollateralReleased`. `LockCreated` publishes the schedule, token pair, RFQ id, expiry, maximum B, and ticket. Each `LockTaken` publishes exact per-lock A/B amounts and remaining B; `DealTaken` publishes exact aggregate A/B totals and fill count.
+- **Authority:** Cairo state and pool-applied deposits are value authority only in the same-devnet localnet demonstration. The local authority validates `get_take` totals against the browser's expected fills; it is not configured-chain production authority.
+- **Status:** localnet-only v3 development contract with retained v1 operations; configured Mainnet and Sepolia addresses are `0x0`; not independently audited; not approved for live deployment. The historical Sepolia proof predates v3 and is not canonical production App20Escrow.
+- **Rollout decision:** **do not roll this class directly into production.** The localnet lock binds RFQ id, taker commitment, pair, schedule, and expiry, but it is still not the canonical quote/directory/registry-bound production contract described by the release gates.
 
-The pre-release contract was renamed to `App20Escrow`, changing its ABI identifiers and class hash. A production successor must still use a new versioned class and deployment rather than silently changing deployed v1/v2 semantics.
+The pre-release contract was renamed to `App20Escrow`, changing its ABI identifiers and class hash. A production successor must use a new versioned class and deployment rather than treating localnet ABI additions as a production upgrade.
+
+### `LockTicket` (localnet v3 only)
+
+- **Source:** `cairo/src/lock_ticket.cairo`
+- **Constructor:** escrow address, pool address, and lock id.
+- **Role:** lock-unique, zero-decimal, supply-two authorization token. `Lock` mints two units into escrow and approves the pool for the two-unit OPEN note. After expiry, each unit can be withdrawn back to escrow and burned to authorize one maker pull: proceeds or unused collateral. If a side is zero, that call reverts and its unused unit remains inert.
+- **Transfer rule:** settlement movements are exactly one unit. The sole two-unit exception is the initial escrow-to-pool transfer that deposits the minted ticket supply.
+- **Authority:** only the pinned escrow mints/burns; only escrow or pool can transfer/approve, and recipients are restricted to escrow or pool.
+- **Status:** localnet-only, unaudited, and not a production `App20Claim` replacement.
 
 ### `ClaimTicket` (historical/localnet; not production `App20Claim`)
 
@@ -50,7 +63,7 @@ The pre-release contract was renamed to `App20Escrow`, changing its ABI identifi
 - **Authority:** only the pinned escrow may mint/burn; only escrow or pool may transfer/approve.
 - **Status:** localnet-only companion to `App20Escrow`; unaudited and never production-eligible. The historical class was declared on Sepolia and pinned by the legacy escrow proof; no standalone ticket instance is claimed.
 - **Sepolia decision (2026-08-26): replace, do not reuse.** The historical class must not be configured, redeployed, or silently reused. The Cairo team must implement canonical production `App20Claim`, independently review/audit it with canonical production `App20Escrow`, and pin its reproduced Sierra/CASM hashes, class hashes, ABI/selectors, and constructor in the public deployment manifest.
-- **Possible rollout:** only as `App20Claim` within a separately reviewed quote-bound App20Escrow deployment; the historical `ClaimTicket` name/class is never a Sepolia candidate.
+- **Possible rollout:** only as `App20Claim` within a separately reviewed quote-bound App20Escrow deployment; the historical `ClaimTicket` name/class is never a Sepolia candidate. V3 itself has no taker Claim/Timeout operation.
 
 ### `MockErc20`
 
@@ -61,7 +74,7 @@ The pre-release contract was renamed to `App20Escrow`, changing its ABI identifi
 
 ## Settlement contracts and separately scoped future ideas
 
-Only the production App20Escrow/App20Claim replacements are part of the definitive narrow RFQ goal. Every other row is a separately scoped future idea, not an RFQ backlog gap, current source promise, or deployment promise.
+Only the production App20Escrow/App20Claim replacements are part of the definitive narrow RFQ goal. Every other row is a separately scoped future idea, not an RFQ backlog gap, current source promise, or deployment promise. The localnet v3 classes do not create a production-v3 commitment.
 
 | Candidate | Why it may be needed | Entry gate | Current status |
 | --- | --- | --- | --- |
@@ -78,7 +91,7 @@ APP20 does not generate these Cairo contracts under the STRK20 integration skill
 
 No step inherits approval from the previous one.
 
-1. **Localnet only:** continue `App20Mail`, historical/localnet `App20Escrow`, `ClaimTicket`, and `MockErc20` testing with ephemeral addresses.
+1. **Localnet only:** continue `App20Mail`, localnet-v3 `App20Escrow`, `LockTicket`, retained legacy `ClaimTicket`, and `MockErc20` testing with ephemeral addresses.
 2. **Optional Mail scoring lane:** after explicit approval, independently review and deploy only `App20Mail` on Mainnet for tiny STRK Mail scoring evidence. RFQ remains disabled.
 3. **Future Sepolia RFQ candidate:** only after a new scope and separate authorization, deploy newly reviewed canonical `App20Escrow` plus `App20Claim`; run two independently administered makers and a bounded soak. The repository ships no execution pipeline, and those artifacts/selectors/class hashes do not exist.
 4. **Tiny Mainnet RFQ evidence:** only after audit acceptance, Sepolia soak, hard caps, recovery drills, configured-chain receipts, and a new explicit Mainnet approval.
@@ -93,7 +106,7 @@ No step inherits approval from the previous one.
 - upgrade posture (prefer immutable versioned deployments and explicit migration);
 - independent review reports and remediation acceptance;
 - event/ABI manifest used by receipt verification;
-- pause/recovery behavior that never strands claim or timeout;
+- pause/recovery behavior that never strands a Take, maker proceeds/collateral settlement, or any retained legacy claim/timeout;
 - bounded testnet evidence and rollback/drain procedure;
 - explicit human approval at the moment of deployment.
 

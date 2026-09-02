@@ -37,11 +37,15 @@ Please report privately, provide enough reproducible detail to investigate safel
 
 ## Known privacy boundary
 
-“Private RFQ” does not mean complete anonymity or fully hidden settlement:
+“Private RFQ” does not mean complete anonymity or hidden settlement:
 
-- every invited maker learns the exact pair, direction, size, floor, and expiry;
-- shield and unshield legs, including amounts and timing, are public and may be correlated;
-- relay metadata such as source, timing, fanout, and bucket size is observable, and the relay may also observe maker quotes unless the return path changes;
-- first-version settlement facts and related public activity may remain observable.
+- An RFQ v3 invitation tells each maker the pair, direction, fixed ladder bucket, RFQ/helper bindings, and expiry. The exact size and floor are absent from the request and remain in the browser during quoting.
+- The same post-selection transcript is forwarded to every invited maker. It contains maker ids, quote/refusal digests, outcomes, ranks, clearing unit price, and each winning `amountA`. Summing winning allocations can reveal the exact size; the floor is not included. Refused makers currently acknowledge but cannot verify against a signed quote lock.
+- Localnet maker HTTP is authenticated loopback traffic, not the production-shaped HPKE path. The coordinator receives account/chain/cohort metadata and bucket requests, then the full transcript and expected exact Take fills/totals. A future relay can observe source, timing, fanout, ciphertext/bucket size, and lifecycle metadata; quote returns remain relay-visible unless separately encrypted.
+- `LockCreated` publicly reveals the RFQ id, pair, expiry, maximum collateral, complete schedule, and ticket. `LockTaken` reveals exact per-lock A/B amounts and remaining collateral. `DealTaken` reveals exact aggregate A/B totals and fill count. The Take helper calldata carries the `takerSecret` commitment preimage. Shield/unshield boundaries, OPEN-note amounts, helper use, and timing are also public and correlatable.
+- Maker-signed mids are indicative fixture data, not price authority. The ten-block maturity display is estimated from public pool deposit events and cannot see notes received through private transfer.
+- Contact/RFQ backups are encrypted in the browser. An IPFS RPC or gateway still learns source network metadata, timing, requested CID, and padded ciphertext size; a pinning service stores the encrypted bytes. The localnet IPFS emulator is loopback-only, in-memory, and loses all blocks on restart.
+- Production blob storage is fail-closed unless reviewed IPFS RPC/gateway origins and matching relay `IPFS_ORIGINS` are configured. The relay adds CSP permission only; it does not proxy or pin blobs. A mailbox-seed compromise permits decryption/authentication of retained backups.
+- Public-network RFQ and value execution remain immutable-off. The current mounted desk still runs legacy v1; lower-layer v3 implementation is not public deployment evidence.
 
 See [`docs/GAPS.md`](docs/GAPS.md) for the engineering gap register and [`docs/APP20_RELEASE_GATES.md`](docs/APP20_RELEASE_GATES.md) for the release conditions that gate any public-network deployment.

@@ -19,7 +19,10 @@ describe("desk market model", () => {
       quotedReceive: 99.7,
     });
     expect(LOCALNET_DESK_SPREAD_BPS).toBe(30);
-    expect(LOCALNET_FIXTURE_SPREAD_RANGE_BPS).toEqual({ minimum: 20, maximum: 30 });
+    expect(LOCALNET_FIXTURE_SPREAD_RANGE_BPS).toEqual({
+      minimum: 20,
+      maximum: 30,
+    });
   });
 
   it("uses a browser-verified maker median as the indicative reference", () => {

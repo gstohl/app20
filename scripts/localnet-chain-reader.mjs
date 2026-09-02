@@ -216,7 +216,10 @@ export function createLocalnetRpcReader(options) {
               );
             return Object.freeze(exact[0]);
           });
-          if (new Set(fillEvents.map(({ eventIndex }) => eventIndex)).size !== fillEvents.length)
+          if (
+            new Set(fillEvents.map(({ eventIndex }) => eventIndex)).size !==
+            fillEvents.length
+          )
             throw new Error("Take transaction reused one LockTaken event.");
         }
         lifecycle.push(

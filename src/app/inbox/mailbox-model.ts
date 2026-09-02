@@ -23,7 +23,8 @@ import type { AliasRecord } from "@/lib/aliases";
 import * as constants from "@/utils/constants";
 
 export type ScanWorkerResponse =
-  { ok: true; decrypted: DecryptedMail[] } | { ok: false; message: string };
+  | { ok: true; decrypted: DecryptedMail[] }
+  | { ok: false; message: string };
 
 export type ActiveScanWorker = {
   worker: Worker;

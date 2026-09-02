@@ -141,10 +141,7 @@ export function decodeMakerMid(value: unknown): MakerIndicativeMidV1 {
       throw new PrivateIntentError(`Maker mid field ${field} is unsupported.`);
     }
   }
-  if (
-    typeof value.midE18 !== "string" ||
-    !DECIMAL_PATTERN.test(value.midE18)
-  ) {
+  if (typeof value.midE18 !== "string" || !DECIMAL_PATTERN.test(value.midE18)) {
     throw new PrivateIntentError(
       "Maker mid wire midE18 must be a canonical decimal string.",
     );
@@ -239,8 +236,7 @@ export function aggregateMids(
     values.length <= 1
       ? 0
       : Number(
-          ((values[values.length - 1]! - values[0]!) * 10_000n) /
-            medianE18,
+          ((values[values.length - 1]! - values[0]!) * 10_000n) / medianE18,
         );
   return Object.freeze({ medianE18, dispersionBps, count: values.length });
 }

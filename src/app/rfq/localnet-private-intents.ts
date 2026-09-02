@@ -148,6 +148,7 @@ export type LocalnetV3Cohort = Readonly<{
 
 export type LocalnetQuoteRefusalV3 = Readonly<{
   makerId: string;
+  code?: string;
   reason: string;
   quoteDigest: string;
 }>;
@@ -662,7 +663,9 @@ export async function requestQuotesV3(input: {
     const refusal = asRecord(candidate);
     exactResponseKeys(
       refusal,
-      ["makerId", "reason", "quoteDigest"],
+      refusal.code === undefined
+        ? ["makerId", "reason", "quoteDigest"]
+        : ["makerId", "code", "reason", "quoteDigest"],
       `quote refusal ${index}`,
     );
     const quoteDigest = asSha256Digest(
@@ -671,6 +674,14 @@ export async function requestQuotesV3(input: {
     );
     return Object.freeze({
       makerId: asString(refusal.makerId, `quote refusal ${index} makerId`),
+      ...(refusal.code === undefined
+        ? {}
+        : {
+            code: asString(
+              refusal.code,
+              `quote refusal ${index} code`,
+            ),
+          }),
       reason: asString(refusal.reason, `quote refusal ${index} reason`),
       quoteDigest,
     });

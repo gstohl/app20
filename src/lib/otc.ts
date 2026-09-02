@@ -61,7 +61,11 @@ export type PaymentRequestPayload = {
 };
 
 export type DealStatus =
-  "offered" | "accepted" | "closed" | "declined" | "expired";
+  | "offered"
+  | "accepted"
+  | "closed"
+  | "declined"
+  | "expired";
 
 export type ValueOperationState =
   | "awaiting-note-maturity"

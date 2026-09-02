@@ -217,26 +217,58 @@ unlinkability.
 
 ## 8. Focus market — private USDC ↔ STRK RFQ
 
-The first market is intentionally narrow. APP20 quotes from pre-positioned
-private inventory, locks the taker note in Cairo escrow, and either fills before
-the deadline or returns the original asset after expiry.
+The first market is intentionally narrow. RFQ v3 keeps the taker's exact size
+and floor in the browser during invitation. Each invited maker receives only
+the pair/direction, one fixed STRK or USDC ladder bucket, RFQ/helper bindings,
+and expiry, then collateralizes a one-to-four-point price schedule on chain
+before returning a signed quote.
 
 ```mermaid
 flowchart LR
-  T[Private taker note] --> Q[APP20 RFQ]
-  Q --> I[Selected maker private inventory]
-  I --> E[Fill-or-refund Cairo escrow]
-  E --> U[Private output note]
-  I -. policy model only, not wired .-> N[Completed maker fills]
-  I -. future separate approval, not wired .-> H[PUBLIC hedge]
+  T[Private taker note: exact A stays local] --> Q[Bucket-only RFQ]
+  Q --> A[Maker A collateral lock + schedule]
+  Q --> B[Maker B collateral lock + schedule]
+  A --> S[Browser verifies get_lock and selects]
+  B --> S
+  S --> X[One atomic Take: up to four locks]
+  X --> U[Aggregate token B OPEN note]
+  X --> P[PUBLIC LockTaken and DealTaken exact totals]
+  A --> M[Maker expiry settlement]
+  B --> M
+  M --> R[Proceeds + unused collateral OPEN notes]
 ```
 
-The localnet browser coverage exercises both STRK→USDC and USDC→STRK with a
-six-decimal USDC fixture, a deterministic test price, local maker-note inventory,
-and fail-closed insufficient-inventory handling. It is not a production price
-feed, deployed market, or yield product.
+Selection evaluates schedules at the local exact amount, prefers the best
+covering single lock, otherwise assembles at most four fills, and then applies
+the browser-only floor. `Take` succeeds for every fill or reverts as a whole;
+there is no v3 taker claim ticket, maker fill wait, or taker timeout/refund.
+After expiry, each maker spends its two-unit `LockTicket` one unit at a time to
+pull earned token A and unused token B.
 
-The current localnet flow is a maker-principal RFQ fixture. Operational netting of completed fills exists as a fail-closed policy model, not a wired execution route. Atomic two-taker crossing is outside the definitive RFQ goal and would require a separate future specification and audit. Bridges and public hedges are possible future operator infrastructure, not current APP20 capabilities.
+The request is size-blind, but settlement is not. `LockCreated` publicly exposes
+tokens, expiry, collateral maximum, and the complete schedule; Take helper
+calldata carries the `takerSecret` commitment preimage; `LockTaken` exposes each
+exact fill; and `DealTaken` exposes exact aggregate A/B totals and fill count. The full fair-loss transcript sent after selection also includes
+winning `amountA` allocations, so invited makers can infer exact size by
+summing them even though the request and transcript have no dedicated
+`exactSellAmount` field.
+
+The localnet service and browser-data layers support STRK→USDC and USDC→STRK
+with a six-decimal USDC fixture and unchanged caps of 50 STRK or 100 USDC per trade. Makers publish
+signed indicative fixture mids (2.00 and 2.01 USDC/STRK); these are not an
+external price feed. CoinGecko remains a separate browser opt-in. Public pool
+deposit events provide only a ten-block note-maturity estimate and cannot see
+notes received by private transfer.
+
+A localnet USDC invoice can hand off to the RFQ data path for STRK→USDC sizing,
+then wait until the Take output note reaches `takeBlock + 10` before Mail sends
+the exact USDC payment. The current `/rfq` presentation still runs the legacy
+v1 flow and does not consume this handoff or submit v3 Take, so this complete
+invoice journey and the v3 desk controls remain unwired.
+
+This is a maker-principal collateralized RFQ, not atomic two-taker crossing.
+Operational netting remains a fail-closed policy model, and public hedges or
+bridges remain separately scoped future operator infrastructure.
 
 ---
 

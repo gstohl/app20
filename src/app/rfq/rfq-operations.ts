@@ -413,11 +413,7 @@ export function normalizeRfqOperationsStatus(
     settled: nonNegativeInteger(locks.settled, "Settled lock count"),
   });
   const transcripts = record(status.transcripts, "RFQ transcript counts");
-  exactKeys(
-    transcripts,
-    ["received", "consistent"],
-    "RFQ transcript counts",
-  );
+  exactKeys(transcripts, ["received", "consistent"], "RFQ transcript counts");
   const normalizedTranscripts = Object.freeze({
     received: nonNegativeInteger(
       transcripts.received,
@@ -462,9 +458,7 @@ export async function verifyRfqOperationsMids(
   },
 ): Promise<RfqOperationsStatus> {
   const mids = status.mids ?? [];
-  await Promise.all(
-    mids.map((mid) => verifyMakerMid(mid, now, verification)),
-  );
+  await Promise.all(mids.map((mid) => verifyMakerMid(mid, now, verification)));
   return Object.freeze({
     ...status,
     mids: Object.freeze(mids),
@@ -528,7 +522,11 @@ export function operationsAvailability(
       claimsAndRefundsEnabled: true,
       asOf: now,
       verifiedMids: Object.freeze([]),
-      midAggregate: Object.freeze({ medianE18: 0n, dispersionBps: 0, count: 0 }),
+      midAggregate: Object.freeze({
+        medianE18: 0n,
+        dispersionBps: 0,
+        count: 0,
+      }),
     });
   if (status.observedAt > now + 5) {
     return Object.freeze({

@@ -103,12 +103,7 @@ test("maker settlement actions spend one LockTicket and select operations 6 and 
         {
           type: "invoke",
           contract: ESCROW,
-          calldata: [
-            operation,
-            "0x7",
-            "${poolAddress}",
-            "${openNoteIds[0]}",
-          ],
+          calldata: [operation, "0x7", "${poolAddress}", "${openNoteIds[0]}"],
         },
       ],
     );

@@ -81,9 +81,7 @@ export function parseLocalnetEscrowLockResult(result) {
   if (!Array.isArray(result) || result.length !== 20) {
     throw new Error("Escrow get_lock result must contain exactly 20 felts.");
   }
-  const statusValue = BigInt(
-    canonicalRpcFelt(result[19], "lock status", true),
-  );
+  const statusValue = BigInt(canonicalRpcFelt(result[19], "lock status", true));
   if (statusValue !== 0n && statusValue !== 1n) {
     throw new Error("Escrow lock status is unsupported.");
   }
@@ -109,9 +107,7 @@ export function parseLocalnetEscrowLockResult(result) {
     ),
   );
   if (statusValue === 1n) assertPriceSchedule(schedule);
-  const expiryValue = BigInt(
-    canonicalRpcFelt(result[4], "lock expiry", true),
-  );
+  const expiryValue = BigInt(canonicalRpcFelt(result[4], "lock expiry", true));
   if (
     expiryValue > BigInt(Number.MAX_SAFE_INTEGER) ||
     (statusValue === 1n && expiryValue === 0n)
@@ -122,21 +118,14 @@ export function parseLocalnetEscrowLockResult(result) {
     tokenA: canonicalRpcFelt(result[0], "lock token A", statusValue === 0n),
     tokenB: canonicalRpcFelt(result[1], "lock token B", statusValue === 0n),
     rfqId: canonicalRpcFelt(result[2], "lock RFQ id", statusValue === 0n),
-    takerCommitment: canonicalRpcFelt(
-      result[3],
-      "lock taker commitment",
-      true,
-    ),
+    takerCommitment: canonicalRpcFelt(result[3], "lock taker commitment", true),
     expiry: Number(expiryValue),
     schedule,
     remainingB: rpcU128(result[14], "lock remaining collateral"),
     earnedA: rpcU128(result[15], "lock earned proceeds"),
     ticket: canonicalRpcFelt(result[16], "lock ticket", statusValue === 0n),
     proceedsSettled: rpcBoolean(result[17], "lock proceeds settlement flag"),
-    collateralReleased: rpcBoolean(
-      result[18],
-      "lock collateral release flag",
-    ),
+    collateralReleased: rpcBoolean(result[18], "lock collateral release flag"),
     status: statusValue === 1n ? "open" : "empty",
   });
 }

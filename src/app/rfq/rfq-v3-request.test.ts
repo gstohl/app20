@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createV3Request,
-  v3RequestMaturityGate,
-} from "./rfq-v3-request";
+import { createV3Request, v3RequestMaturityGate } from "./rfq-v3-request";
 
 const NOW = 1_900_000_000;
 

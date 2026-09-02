@@ -268,8 +268,8 @@ export default function PayPage() {
   const expired = request ? paymentRequestIsExpired(request) : false;
   const wrongNetwork = Boolean(
     request?.chainId &&
-    chainId &&
-    !paymentLinkChainIdsEqual(request.chainId, chainId),
+      chainId &&
+      !paymentLinkChainIdsEqual(request.chainId, chainId),
   );
   const requestedNetwork = request?.chainId
     ? paymentLinkNetworkLabel(request.chainId)

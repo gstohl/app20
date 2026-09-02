@@ -159,7 +159,7 @@ export function consumeInvoiceDeskHandoff(
       payee: value.payee,
       buyToken: value.buyToken,
       targetBuyBaseUnits: value.targetBuyBaseUnits,
-      ...(value.memo !== undefined ? { memo: value.memo } : {}),
+      ...(value.memo === undefined ? {} : { memo: value.memo }),
       returnTo: value.returnTo,
     });
   } catch {

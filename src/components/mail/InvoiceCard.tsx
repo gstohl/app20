@@ -123,8 +123,8 @@ export default function InvoiceCard({
   }
   const networkMismatch = Boolean(
     request.chainId &&
-    connectedChainId &&
-    !paymentLinkChainIdsEqual(request.chainId, connectedChainId),
+      connectedChainId &&
+      !paymentLinkChainIdsEqual(request.chainId, connectedChainId),
   );
   const canPay =
     status === "requested" &&

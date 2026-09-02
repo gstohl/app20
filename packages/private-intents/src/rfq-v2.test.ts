@@ -81,12 +81,12 @@ describe("private RFQ v2", () => {
         }),
       ),
     ).toThrow(/maximum/);
-    expect(() =>
-      assertPrivateRfqV2(rfq({ lockExpiresAt: NOW + 89 })),
-    ).toThrow(/must equal/);
-    expect(() =>
-      assertPrivateRfqV2(rfq({ responseDeadline: NOW })),
-    ).toThrow(/ordered/);
+    expect(() => assertPrivateRfqV2(rfq({ lockExpiresAt: NOW + 89 }))).toThrow(
+      /must equal/,
+    );
+    expect(() => assertPrivateRfqV2(rfq({ responseDeadline: NOW }))).toThrow(
+      /ordered/,
+    );
   });
 
   it("round-trips a closed wire shape with canonical decimal bigints", () => {

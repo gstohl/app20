@@ -522,6 +522,7 @@ describe("localnet private-intent adapter", () => {
               refusals: [
                 {
                   makerId: "maker-b",
+                  code: "inventory",
                   reason: "No inventory in this bucket.",
                   quoteDigest: `0x${"44".repeat(32)}`,
                 },
@@ -545,7 +546,13 @@ describe("localnet private-intent adapter", () => {
           ],
         },
       ],
-      refusals: [{ makerId: "maker-b", reason: "No inventory in this bucket." }],
+      refusals: [
+        {
+          makerId: "maker-b",
+          code: "inventory",
+          reason: "No inventory in this bucket.",
+        },
+      ],
     });
     vi.unstubAllGlobals();
   });

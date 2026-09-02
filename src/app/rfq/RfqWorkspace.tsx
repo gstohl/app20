@@ -63,6 +63,7 @@ import {
 import RfqActiveList from "./RfqActiveList";
 import RfqActivity from "./RfqActivity";
 import RfqEnvironmentBanner from "./RfqEnvironmentBanner";
+import RfqV3ResumeReview from "./RfqV3ResumeReview";
 import SettlementEvidencePanel from "./SettlementEvidencePanel";
 import {
   RFQ_LIFECYCLE_V1_SCHEMA_REVISION,
@@ -75,6 +76,7 @@ import {
   updateRfqPhaseAttempt,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
+import type { RfqFinalReviewSnapshot } from "./rfq-final-review";
 import { createIndexedDbRfqStorage } from "./rfq-storage";
 import { reconcileFundingBeforeBrowserPersistence } from "./localnet-funded-persistence";
 import {
@@ -91,6 +93,12 @@ import { sameMarketRequestFence } from "./rfq-request-fence";
 import { recoverLocalnetPreparingFundingAfterEmptyObservation } from "./localnet-prewallet-recovery";
 import { rebuildServerDerivedRfqRecord } from "./localnet-server-recovery";
 import { useRfqOperations } from "./use-rfq-operations";
+import {
+  executeLocalnetV3Take,
+  verifyLocalnetV3Take,
+  type V3TakeExecutionResult,
+} from "./ui/v3-take-controller";
+import { requestRfqHistoryAutoBackup } from "./ui/rfq-auto-backup";
 import styles from "./rfq.module.css";
 
 const LocalnetPrivateIntentDesk = lazy(
@@ -205,6 +213,11 @@ function sortRecords(
 }
 
 function actionableSettlement(record: RfqLifecycleRecord): boolean {
+  if (record.mode === "v3") {
+    return Boolean(
+      record.settlement && record.state === "submission-unknown",
+    );
+  }
   return (
     Boolean(record.settlement) &&
     ![
@@ -270,6 +283,8 @@ export default function RfqWorkspace() {
   const [loadedScope, setLoadedScope] = useState<string>();
   const [busyRfqId, setBusyRfqId] = useState<string>();
   const [recordError, setRecordError] = useState<string>();
+  const [resumeReviewRecord, setResumeReviewRecord] =
+    useState<RfqLifecycleRecord>();
   const [loadDetail, setLoadDetail] = useState<string>();
   const [reloadToken, setReloadToken] = useState(0);
   const operations = useRfqOperations();
@@ -308,6 +323,7 @@ export default function RfqWorkspace() {
     setRecords([]);
     setLoadedScope(undefined);
     setBusyRfqId(undefined);
+    setResumeReviewRecord(undefined);
     if (!address || !chain) {
       setLoadState("stale/offline");
       return;
@@ -342,24 +358,38 @@ export default function RfqWorkspace() {
             actionableSettlement(row)
           ) {
             try {
-              const observed = await readLocalnetEscrowDeal(
-                row.settlement!.dealId,
-              );
-              row = await reconcileFundingBeforeBrowserPersistence(
-                row,
-                observed,
-                Math.floor(Date.now() / 1_000),
-                {
-                  authorize: (candidate) => storage.authorize(candidate),
-                  convergeServer: (next, status, attemptId) =>
-                    convergeLocalnetPrivateIntent(
-                      localTerms(next),
-                      attemptId,
-                      status,
-                    ),
-                  persistBrowser: (next) => storage.save(next),
-                },
-              );
+              if (row.mode === "v3") {
+                const verification = await verifyLocalnetV3Take({
+                  record: row,
+                  persistence: {
+                    persist: async (next) => {
+                      await storage.save(next);
+                      return next;
+                    },
+                    authorize: (candidate) => storage.authorize(candidate),
+                  },
+                });
+                row = verification.record;
+              } else {
+                const observed = await readLocalnetEscrowDeal(
+                  row.settlement!.dealId,
+                );
+                row = await reconcileFundingBeforeBrowserPersistence(
+                  row,
+                  observed,
+                  Math.floor(Date.now() / 1_000),
+                  {
+                    authorize: (candidate) => storage.authorize(candidate),
+                    convergeServer: (next, status, attemptId) =>
+                      convergeLocalnetPrivateIntent(
+                        localTerms(next),
+                        attemptId,
+                        status,
+                      ),
+                    persistBrowser: (next) => storage.save(next),
+                  },
+                );
+              }
             } catch (error: unknown) {
               const detail =
                 error instanceof Error && error.message.trim()
@@ -547,6 +577,78 @@ export default function RfqWorkspace() {
       },
     );
     return next;
+  }
+
+  async function recordSettledV3Result(result: V3TakeExecutionResult) {
+    replaceRecord(result.record);
+    if (result.kind === "settled") {
+      try {
+        await requestRfqHistoryAutoBackup({
+          chainId: result.record.chainId,
+          account: result.record.account,
+        });
+      } catch (error: unknown) {
+        setRecordError(
+          `Take settled, but optional RFQ history auto-backup could not be queued: ${error instanceof Error ? error.message : "unknown backup failure"}`,
+        );
+      }
+    } else {
+      setRecordError(result.reason);
+    }
+  }
+
+  async function submitReviewedV3Take(
+    reviewedRecord: RfqLifecycleRecord,
+    snapshot: RfqFinalReviewSnapshot,
+  ) {
+    setBusyRfqId(reviewedRecord.rfqId);
+    setRecordError(undefined);
+    try {
+      const now = Math.floor(Date.now() / 1_000);
+      const stored = await createIndexedDbRfqStorage().load(reviewedRecord);
+      const durable = stored
+        ? restoreRfqLifecycle(stored, {
+            chainId: reviewedRecord.chainId,
+            account: reviewedRecord.account,
+            now,
+          })
+        : undefined;
+      const current = authorizeReviewedV3Resume(
+        reviewedRecord,
+        durable,
+        now,
+      );
+      const result = await executeLocalnetV3Take({
+        record: current,
+        initialSnapshot: snapshot,
+        persistence: { persist, authorize },
+      });
+      await recordSettledV3Result(result);
+      setResumeReviewRecord(
+        result.kind === "reverted" ? result.record : undefined,
+      );
+    } catch (error: unknown) {
+      setRecordError(
+        error instanceof Error
+          ? error.message
+          : "The reviewed atomic Take failed.",
+      );
+    } finally {
+      setBusyRfqId(undefined);
+    }
+  }
+
+  async function verifyV3Take(record: RfqLifecycleRecord) {
+    const result = await verifyLocalnetV3Take({
+      record,
+      persistence: { persist, authorize },
+    });
+    replaceRecord(result.record);
+    if (result.kind === "settled") {
+      await recordSettledV3Result(result);
+    } else {
+      setRecordError(result.reason);
+    }
   }
 
   async function verifyFunding(record: RfqLifecycleRecord) {
@@ -907,16 +1009,23 @@ export default function RfqWorkspace() {
       if (
         action === "accept-and-fund" ||
         action === "request-maker-fill" ||
-        action === "retry-maker-fill"
+        action === "retry-maker-fill" ||
+        action === "take"
       ) {
         const gate = gateRfqAction(
           operations,
-          action === "accept-and-fund" ? "fund" : "fill",
+          action === "accept-and-fund"
+            ? "fund"
+            : action === "take"
+              ? "take"
+              : "fill",
           currentRecord.selectedQuote?.solverId,
         );
         if (!gate.allowed) throw new Error(gate.reason);
       }
-      if (action === "verify-funding") await verifyFunding(currentRecord);
+      if (action === "take") setResumeReviewRecord(currentRecord);
+      else if (action === "verify-take") await verifyV3Take(currentRecord);
+      else if (action === "verify-funding") await verifyFunding(currentRecord);
       else if (
         ["verify-deal", "reconcile-fill", "reconcile-outcome"].includes(action)
       )
@@ -951,6 +1060,19 @@ export default function RfqWorkspace() {
     } finally {
       setBusyRfqId(undefined);
     }
+  }
+
+  function authorizeReviewedV3Resume(
+    reviewedRecord: RfqLifecycleRecord,
+    durableRecord: RfqLifecycleRecord | undefined,
+    now: number,
+  ): RfqLifecycleRecord {
+    return authorizeLocalnetResumeCommand(
+      reviewedRecord,
+      durableRecord,
+      "take",
+      now,
+    );
   }
 
   async function removeRecord(record: RfqLifecycleRecord) {
@@ -1068,22 +1190,37 @@ export default function RfqWorkspace() {
       ) : null}
       {view === "active" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="Active RFQs">
-          <RfqWorkspaceActiveBoundary
-            records={activeRecords}
-            providerIndex={providerIndex}
-            address={address}
-            chain={chain}
-            loadedScope={loadedScope}
-            currentScope={currentScope}
-            loadState={loadState}
-            loadDetail={loadDetail}
-            busyRfqId={busyRfqId}
-            onAction={(record, action) => void runRecordAction(record, action)}
-            onRemove={(record) => void removeRecord(record)}
-            onClearAll={() => void clearAllRecords()}
-            onRetryLoad={retryWorkspaceLoad}
-          />
-        </section>
+           <RfqWorkspaceActiveBoundary
+             records={activeRecords}
+             providerIndex={providerIndex}
+             address={address}
+             chain={chain}
+             loadedScope={loadedScope}
+             currentScope={currentScope}
+             loadState={loadState}
+             loadDetail={loadDetail}
+             busyRfqId={busyRfqId}
+             onAction={(record, action) => void runRecordAction(record, action)}
+             onRemove={(record) => void removeRecord(record)}
+             onClearAll={() => void clearAllRecords()}
+             onRetryLoad={retryWorkspaceLoad}
+           />
+           {resumeReviewRecord ? (
+             <RfqV3ResumeReview
+               record={resumeReviewRecord}
+               busy={busyRfqId === resumeReviewRecord.rfqId}
+               operationBlocker={
+                 gateRfqAction(operations, "take").allowed
+                   ? undefined
+                   : gateRfqAction(operations, "take").reason
+               }
+               onAccept={(record, snapshot) =>
+                 void submitReviewedV3Take(record, snapshot)
+               }
+               onClose={() => setResumeReviewRecord(undefined)}
+             />
+           ) : null}
+         </section>
       ) : null}
       {view === "activity" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="RFQ activity">
@@ -1169,18 +1306,20 @@ export default function RfqWorkspace() {
             public and private activity can still be correlated.
           </li>
           <li>
-            <strong>Invited makers learn the exact terms</strong> — pair, side,
-            exact size, floor, and expiry — before they quote.
+            <strong>Invited makers see size-blind terms</strong> — pair, side,
+            one fixed ladder bucket, and expiry. Exact size and floor stay in
+            this browser until Take.
           </li>
           <li>
             <strong>Public in this local devnet demo:</strong> shield and
-            unshield legs, fees, legacy escrow terms, lifecycle timing, and OPEN
-            payout-note amounts. A future approved public-network design would
-            expose its own reviewed public fields.
+            unshield legs, fees, collateral locks, exact per-lock Take amounts,
+            lifecycle timing, and OPEN payout-note amounts. Legacy v2 escrow
+            rows remain recoverable through their existing claim/refund actions.
           </li>
           <li>
             <strong>Visible to services:</strong> request timing and maker
-            fanout. Local quote responses are plain request-scoped signed JSON.
+            fanout. Quote schedules and indicative mids are request-scoped
+            signed data.
           </li>
         </ul>
       </aside>

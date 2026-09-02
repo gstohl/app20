@@ -171,7 +171,12 @@ describe("RFQ v3 fill selection", () => {
   it("reports insufficient depth before considering the floor", () => {
     expect(
       selectFillsV3({
-        quotes: [quote("maker-a", [{ a: 1n, b: 100n }, { a: 4n, b: 400n }])],
+        quotes: [
+          quote("maker-a", [
+            { a: 1n, b: 100n },
+            { a: 4n, b: 400n },
+          ]),
+        ],
         exactSellAmount: 10n,
         floorBuyAmount: 1_000n,
       }),
@@ -189,9 +194,18 @@ describe("RFQ v3 fill selection", () => {
   });
 
   it("is independent of input arrival order on both paths", () => {
-    const a = quote("maker-a", [{ a: 1n, b: 2n }, { a: 6n, b: 12n }]);
-    const b = quote("maker-b", [{ a: 1n, b: 3n }, { a: 6n, b: 18n }]);
-    const c = quote("maker-c", [{ a: 1n, b: 2n }, { a: 5n, b: 10n }]);
+    const a = quote("maker-a", [
+      { a: 1n, b: 2n },
+      { a: 6n, b: 12n },
+    ]);
+    const b = quote("maker-b", [
+      { a: 1n, b: 3n },
+      { a: 6n, b: 18n },
+    ]);
+    const c = quote("maker-c", [
+      { a: 1n, b: 2n },
+      { a: 5n, b: 10n },
+    ]);
     const run = (quotes: readonly SolverQuoteV3[]) => {
       const result = selectFillsV3({
         quotes,

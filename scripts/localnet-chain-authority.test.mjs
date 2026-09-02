@@ -244,12 +244,15 @@ test("v3 authority promotes only one exact DealTaken and one LockTaken per expec
       now: () => 1_700_000_000,
       finalityDepth: 2,
     });
-    const projection = await authority.verify({ query: v3, market: "strk-usdc" });
+    const projection = await authority.verify({
+      query: v3,
+      market: "strk-usdc",
+    });
     assert.equal(projection.status, "authoritative");
     assert.deepEqual(
-      authority.reconciliationEvidence(v3).canonicalLifecycle[0].fillEvents.map(
-        ({ lockId }) => lockId,
-      ),
+      authority
+        .reconciliationEvidence(v3)
+        .canonicalLifecycle[0].fillEvents.map(({ lockId }) => lockId),
       ["0xa", "0xb"],
     );
     const journal = JSON.parse(readFileSync(tmp.path, "utf8"));

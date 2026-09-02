@@ -2029,6 +2029,27 @@
   overflow-wrap: anywhere;
 }
 
+.v3RecordSummary {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--shell-line);
+  padding: 10px;
+  background: var(--shell-inset);
+}
+
+.v3RecordSummary p,
+.v3RecordSummary ol {
+  margin: 0;
+}
+
+.v3RecordSummary ol {
+  padding-left: 20px;
+}
+
+.v3RecordSummary code {
+  overflow-wrap: anywhere;
+}
+
 .activeCardDetails summary,
 .activityRecord summary,
 .quoteComparison summary,
@@ -2146,6 +2167,140 @@
 .makerQuote {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.bucketNotice,
+.maturityEstimate,
+.invoiceTerms,
+.selectionRationale,
+.takeOutcome,
+.takeEvidence {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--shell-line);
+  padding: 12px;
+  background: var(--shell-inset);
+}
+
+.bucketNotice p,
+.maturityEstimate p,
+.invoiceTerms p,
+.selectionRationale p,
+.takeOutcome p,
+.takeEvidence p {
+  margin: 0;
+}
+
+.bucketNotice > strong,
+.maturityEstimate > strong,
+.invoiceTerms > strong,
+.selectionRationale > strong {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.invoiceTerms {
+  margin: 10px 12px 0;
+}
+
+.invoiceTerms h4,
+.takeOutcome h3 {
+  margin: 0;
+}
+
+.invoiceTerms dl,
+.v3QuoteList dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.invoiceTerms dl > div,
+.v3QuoteList dl > div {
+  min-width: 0;
+}
+
+.invoiceTerms dd,
+.v3QuoteList dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.v3QuoteComparison {
+  display: grid;
+  gap: 14px;
+}
+
+.v3QuoteList,
+.v3RefusalList,
+.transcriptAcknowledgements,
+.finalReviewFills {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v3QuoteList > li,
+.v3RefusalList > li,
+.finalReviewFills > li {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--shell-line);
+  padding: 12px;
+  background: var(--shell-bg);
+}
+
+.v3QuoteList > li[data-outcome="selected"] {
+  border-width: 2px;
+}
+
+.v3QuoteList header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.v3QuoteList h4 {
+  margin: 0;
+}
+
+.v3RefusalList span,
+.v3RefusalList code,
+.finalReviewFills span {
+  overflow-wrap: anywhere;
+}
+
+.reviewEntryActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+
+.reviewEntryActions button,
+.takeOutcome button {
+  min-height: 44px;
+}
+
+.takeOutcome,
+.takeEvidence {
+  margin: 10px 12px 0;
+}
+
+.takeEvidence .evidencePanel {
+  margin: 0;
+}
+
+.finalReviewFills strong,
+.finalReviewFills span,
+.finalReviewFills .copyableId {
+  display: block;
 }
 
 .finalReviewHeadline {
@@ -2395,6 +2550,10 @@
 
   .workspaceTitle {
     font-size: 24px;
+  }
+
+  .reviewEntryActions {
+    grid-template-columns: 1fr;
   }
 
   .finalReviewSummary > div {

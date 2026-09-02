@@ -1686,11 +1686,13 @@ test("authority reorg quarantine durably reclaims the terminal market lease", as
   });
   assert.equal(quarantined.state, "authority-quarantined");
   assert.equal(
-    (await coordinator.quarantineAuthority({
-      ...target,
-      authorityRevision: 1,
-      authorityReason: "canonical-membership-lost",
-    })).state,
+    (
+      await coordinator.quarantineAuthority({
+        ...target,
+        authorityRevision: 1,
+        authorityReason: "canonical-membership-lost",
+      })
+    ).state,
     "authority-quarantined",
   );
   const restarted = createLocalnetReservationCoordinator(path);
@@ -1842,8 +1844,14 @@ test("v3 take lease is exact, restart-safe, idempotent, and supports proven abse
       fills: [{ lockId: "0xa02", amountA: "100", amountB: "200" }],
     },
   };
-  assert.equal((await coordinator.prepareTake(target, "take-1")).state, "take-pending");
-  await assert.rejects(coordinator.prepareTake(target, "take-2"), /another exact/i);
+  assert.equal(
+    (await coordinator.prepareTake(target, "take-1")).state,
+    "take-pending",
+  );
+  await assert.rejects(
+    coordinator.prepareTake(target, "take-2"),
+    /another exact/i,
+  );
   await coordinator.markTakeUnknown(
     { ...target, transactionHash: "0xd02" },
     "take-1",
@@ -1859,7 +1867,12 @@ test("v3 take lease is exact, restart-safe, idempotent, and supports proven abse
   const secondPath = journalPath();
   const second = createLocalnetReservationCoordinator(secondPath);
   const secondDigest = `0x${"c1".repeat(32)}`;
-  const secondQuote = { ...quote, rfqDigest: secondDigest, rfqFelt: "0x903", lockId: "0xa03" };
+  const secondQuote = {
+    ...quote,
+    rfqDigest: secondDigest,
+    rfqFelt: "0x903",
+    lockId: "0xa03",
+  };
   await second.beginV3Request({
     rfqDigest: secondDigest,
     intentDigest: `0x${"c2".repeat(32)}`,
@@ -1888,8 +1901,14 @@ test("v3 take lease is exact, restart-safe, idempotent, and supports proven abse
   };
   await second.prepareTake(secondTarget, "reverted-1");
   await second.markTakeAbsent(secondTarget, "reverted-1");
-  assert.equal((await second.prepareTake(secondTarget, "retry-2")).state, "take-pending");
-  await assert.rejects(second.prepareTake(secondTarget, "reverted-1"), /durably closed/i);
+  assert.equal(
+    (await second.prepareTake(secondTarget, "retry-2")).state,
+    "take-pending",
+  );
+  await assert.rejects(
+    second.prepareTake(secondTarget, "reverted-1"),
+    /durably closed/i,
+  );
 });
 
 for (const outcome of ["filled", "expired"]) {

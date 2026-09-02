@@ -93,7 +93,9 @@ describe("RFQ workspace information architecture", () => {
   it("keeps privacy copy honest about what stays observable", () => {
     expect(workspace).toContain("Not published as a public order");
     expect(workspace).toContain("can still be correlated");
-    expect(workspace).toContain("Invited makers learn the exact terms");
+    expect(workspace).toContain("Invited makers see size-blind terms");
+    expect(workspace).toContain("Exact size and floor stay in");
+    expect(workspace).toContain("collateral locks");
     expect(workspace).toMatch(/OPEN\s+payout-note amounts/);
     expect(workspace).not.toMatch(/anonymous|untraceable|unlinkable/i);
   });

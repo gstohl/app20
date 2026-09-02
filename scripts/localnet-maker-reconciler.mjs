@@ -205,7 +205,9 @@ function exactV3Coordinator(value, query, authority) {
         plan.quoteDigest,
     );
     if (owners.length !== 1)
-      throw new Error("V3 coordinator cannot prove one maker owner for a taken lock.");
+      throw new Error(
+        "V3 coordinator cannot prove one maker owner for a taken lock.",
+      );
     return Object.freeze({
       makerId: text(owners[0].makerId, "v3 lock owner makerId"),
       quoteDigest: hex32(owners[0].quoteDigest, "v3 lock owner quote digest"),
@@ -579,7 +581,9 @@ export class LocalnetMakerReconciler {
           )
             return prior;
           if (typeof this.#quarantineV3Authority !== "function")
-            throw new Error("Maker v3 authority quarantine adapter is unavailable.");
+            throw new Error(
+              "Maker v3 authority quarantine adapter is unavailable.",
+            );
           const pending = this.#publish(
             this.#next(
               query,
@@ -618,7 +622,9 @@ export class LocalnetMakerReconciler {
         )
           return prior;
         if (typeof this.#releaseV3Terminal !== "function")
-          throw new Error("Maker v3 terminal reconciliation adapter is unavailable.");
+          throw new Error(
+            "Maker v3 terminal reconciliation adapter is unavailable.",
+          );
         const pending = this.#publish(
           this.#next(
             query,

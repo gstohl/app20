@@ -213,13 +213,20 @@ export function validateV3FinalReview(input: {
         totalA += fill.amountA;
         totalB += fill.amountB;
       }
-      if (!Number.isSafeInteger(fill.lockExpiresAt) || input.now >= fill.lockExpiresAt)
+      if (
+        !Number.isSafeInteger(fill.lockExpiresAt) ||
+        input.now >= fill.lockExpiresAt
+      )
         blockers.push(`Maker ${fill.makerId}'s lock expired.`);
     }
     if (totalA !== input.terms.exactSellAmount)
-      blockers.push("Exact fill sell amounts do not match the reviewed sell total.");
+      blockers.push(
+        "Exact fill sell amounts do not match the reviewed sell total.",
+      );
     if (totalB !== input.terms.totalBuyAmount)
-      blockers.push("Exact fill receive amounts do not match the reviewed receive total.");
+      blockers.push(
+        "Exact fill receive amounts do not match the reviewed receive total.",
+      );
   }
   if (input.terms.totalBuyAmount < input.terms.floorBuyAmount)
     blockers.push("Exact receive is below the local floor.");
@@ -228,7 +235,9 @@ export function validateV3FinalReview(input: {
   if (input.current.shieldedBalance === undefined)
     blockers.push("Fresh shielded balance is unavailable.");
   else if (input.current.shieldedBalance < input.terms.exactSellAmount)
-    blockers.push("Fresh shielded balance does not cover the exact sell amount.");
+    blockers.push(
+      "Fresh shielded balance does not cover the exact sell amount.",
+    );
   return Object.freeze({
     ok: blockers.length === 0,
     blockers: Object.freeze(blockers),
@@ -267,10 +276,7 @@ export async function validateLiveV3FinalReview(input: {
         ) {
           issues.push(`Maker ${fill.makerId}'s lock binding changed.`);
         }
-        if (
-          lock.expiry !== fill.lockExpiresAt ||
-          input.now >= lock.expiry
-        ) {
+        if (lock.expiry !== fill.lockExpiresAt || input.now >= lock.expiry) {
           issues.push(`Maker ${fill.makerId}'s live lock expired.`);
         }
         if (

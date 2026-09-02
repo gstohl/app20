@@ -138,11 +138,7 @@ describe("maker indicative mids", () => {
       }),
     ).rejects.toThrow(/key changed/);
     await expect(
-      verifyMakerMid(
-        { ...signed, signature: SIGNATURE },
-        NOW,
-        verify,
-      ),
+      verifyMakerMid({ ...signed, signature: SIGNATURE }, NOW, verify),
     ).rejects.toThrow(/signature verification failed/);
   });
 

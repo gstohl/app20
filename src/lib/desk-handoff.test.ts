@@ -144,28 +144,71 @@ describe("invoice desk handoff", () => {
   };
 
   it("stores normalized invoice terms and consumes them once for the same scope", async () => {
-    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import("./desk-handoff");
+    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import(
+      "./desk-handoff"
+    );
     const storage = makeStorage();
-    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
-    const consumed = consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 2_000);
+    storeInvoiceDeskHandoff(
+      storage,
+      handoff,
+      { account: ALICE, chainId: CHAIN },
+      1_000,
+    );
+    const consumed = consumeInvoiceDeskHandoff(
+      storage,
+      { account: ALICE, chainId: CHAIN },
+      2_000,
+    );
     expect(consumed).toEqual({
       requestId,
-      payee: "0x0000000000000000000000000000000000000000000000000000000000000b0b",
-      buyToken: "0x0000000000000000000000000000000000000000000000000000000000000005",
+      payee:
+        "0x0000000000000000000000000000000000000000000000000000000000000b0b",
+      buyToken:
+        "0x0000000000000000000000000000000000000000000000000000000000000005",
       targetBuyBaseUnits: "100000000",
       memo: "invoice 7",
       returnTo: "/mail/inbox",
     });
-    expect(consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 2_000)).toBeNull();
+    expect(
+      consumeInvoiceDeskHandoff(
+        storage,
+        { account: ALICE, chainId: CHAIN },
+        2_000,
+      ),
+    ).toBeNull();
   });
 
   it("rejects other scopes, expiry, and malformed terms", async () => {
-    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import("./desk-handoff");
+    const { consumeInvoiceDeskHandoff, storeInvoiceDeskHandoff } = await import(
+      "./desk-handoff"
+    );
     const storage = makeStorage();
-    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
-    expect(consumeInvoiceDeskHandoff(storage, { account: "0xb0b", chainId: CHAIN }, 2_000)).toBeNull();
-    storeInvoiceDeskHandoff(storage, handoff, { account: ALICE, chainId: CHAIN }, 1_000);
-    expect(consumeInvoiceDeskHandoff(storage, { account: ALICE, chainId: CHAIN }, 1_000 + 5 * 60_000 + 1)).toBeNull();
+    storeInvoiceDeskHandoff(
+      storage,
+      handoff,
+      { account: ALICE, chainId: CHAIN },
+      1_000,
+    );
+    expect(
+      consumeInvoiceDeskHandoff(
+        storage,
+        { account: "0xb0b", chainId: CHAIN },
+        2_000,
+      ),
+    ).toBeNull();
+    storeInvoiceDeskHandoff(
+      storage,
+      handoff,
+      { account: ALICE, chainId: CHAIN },
+      1_000,
+    );
+    expect(
+      consumeInvoiceDeskHandoff(
+        storage,
+        { account: ALICE, chainId: CHAIN },
+        1_000 + 5 * 60_000 + 1,
+      ),
+    ).toBeNull();
     for (const bad of [
       { ...handoff, requestId: "0x12" },
       { ...handoff, targetBuyBaseUnits: "0" },
@@ -175,7 +218,14 @@ describe("invoice desk handoff", () => {
       { ...handoff, payee: "not-an-address" },
       { ...handoff, memo: "x".repeat(513) },
     ]) {
-      expect(() => storeInvoiceDeskHandoff(storage, bad, { account: ALICE, chainId: CHAIN }, 1_000)).toThrow();
+      expect(() =>
+        storeInvoiceDeskHandoff(
+          storage,
+          bad,
+          { account: ALICE, chainId: CHAIN },
+          1_000,
+        ),
+      ).toThrow();
     }
   });
 });

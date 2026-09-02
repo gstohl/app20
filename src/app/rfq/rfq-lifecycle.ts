@@ -584,7 +584,14 @@ export function createRfqLifecycleRecord(input: {
   ) {
     throw new Error("Selected RFQ v3 records require exact Take bindings.");
   }
-  if (mode === "v3" && selectedV3State && input.terms && settlement && fills && bucket) {
+  if (
+    mode === "v3" &&
+    selectedV3State &&
+    input.terms &&
+    settlement &&
+    fills &&
+    bucket
+  ) {
     const totalA = fills.reduce((sum, fill) => sum + BigInt(fill.amountA), 0n);
     const totalB = fills.reduce((sum, fill) => sum + BigInt(fill.amountB), 0n);
     if (
@@ -667,9 +674,7 @@ export function transitionRfqLifecycle(
   }
   if (
     record.mode === "v3" &&
-    ["funded", "filled", "claimable", "refundable", "refunded"].includes(
-      state,
-    )
+    ["funded", "filled", "claimable", "refundable", "refunded"].includes(state)
   ) {
     throw new Error(`RFQ v3 cannot enter the legacy ${state} state.`);
   }
@@ -685,8 +690,8 @@ export function transitionRfqLifecycle(
   if (state === "submission-unknown") {
     const attempt =
       record.mode === "v3"
-        ? patch.attempts?.take ?? record.attempts.take
-        : patch.attempts?.funding ?? record.attempts.funding;
+        ? (patch.attempts?.take ?? record.attempts.take)
+        : (patch.attempts?.funding ?? record.attempts.funding);
     if (
       !attempt ||
       !(
@@ -704,8 +709,8 @@ export function transitionRfqLifecycle(
   if (record.state === "submission-unknown" && state === "reviewing") {
     const attempt =
       record.mode === "v3"
-        ? patch.attempts?.take ?? record.attempts.take
-        : patch.attempts?.funding ?? record.attempts.funding;
+        ? (patch.attempts?.take ?? record.attempts.take)
+        : (patch.attempts?.funding ?? record.attempts.funding);
     if (!attempt || attempt.state !== "reverted") {
       throw new Error(
         `Only a proven reverted ${record.mode === "v3" ? "Take" : "funding"} attempt may return to deliberate review.`,
@@ -719,7 +724,9 @@ export function transitionRfqLifecycle(
       attempt.state !== "confirmed" ||
       (!attempt.transactionHash && attempt.walletBoundary !== "entered")
     ) {
-      throw new Error("RFQ v3 settlement requires a confirmed exact Take attempt.");
+      throw new Error(
+        "RFQ v3 settlement requires a confirmed exact Take attempt.",
+      );
     }
   }
   const next = reviseRfqLifecycle(record, {
@@ -814,9 +821,7 @@ export function fundingTicketAttemptTargetFromLifecycle(
   });
 }
 
-export function assertRfqV3LifecycleBindings(
-  record: RfqLifecycleRecord,
-): void {
+export function assertRfqV3LifecycleBindings(record: RfqLifecycleRecord): void {
   if (record.mode !== "v3") {
     if (
       record.bucket ||
@@ -855,8 +860,7 @@ export function assertRfqV3LifecycleBindings(
   if (!selectedState) {
     if (
       record.state !== "draft" &&
-      (!record.requestDigest ||
-        !/^0x[0-9a-f]{64}$/.test(record.requestDigest))
+      (!record.requestDigest || !/^0x[0-9a-f]{64}$/.test(record.requestDigest))
     ) {
       throw new Error("Requested RFQ v3 records require their request digest.");
     }
@@ -1029,7 +1033,10 @@ export function assertRfqLifecycleAttemptTargets(
       continue;
     }
     if (phase === "take") {
-      if (target.operation !== "take" || !takeTargetMatchesRecord(record, target))
+      if (
+        target.operation !== "take" ||
+        !takeTargetMatchesRecord(record, target)
+      )
         throw new Error("Take target contradicts immutable v3 fills.");
       continue;
     }
@@ -1080,10 +1087,7 @@ export function beginRfqPhaseAttempt(
     throw new Error(`${phase} is unavailable for RFQ ${record.mode}.`);
   }
   assertRfqV3LifecycleBindings(record);
-  if (
-    phase === "take" &&
-    (record.restoredFromBackup || !record.takerSecret)
-  ) {
+  if (phase === "take" && (record.restoredFromBackup || !record.takerSecret)) {
     throw new Error(
       "Backup-restored RFQ v3 records are verification-only; start a fresh request.",
     );
@@ -1257,7 +1261,10 @@ function parseTranscriptAcknowledgements(
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
       throw new Error();
     const row = candidate as Record<string, unknown>;
-    if (typeof row.accepted !== "boolean" || typeof row.consistent !== "boolean")
+    if (
+      typeof row.accepted !== "boolean" ||
+      typeof row.consistent !== "boolean"
+    )
       throw new Error();
     return Object.freeze({
       makerId: text(row.makerId, `acknowledgements[${index}].makerId`),
@@ -1421,29 +1428,33 @@ function parseAttemptTarget(value: unknown): RfqLifecycleAttemptTarget {
     });
   }
   if (row.operation === "take") {
-    if (!row.expected || typeof row.expected !== "object" || Array.isArray(row.expected))
+    if (
+      !row.expected ||
+      typeof row.expected !== "object" ||
+      Array.isArray(row.expected)
+    )
       throw new Error();
     const expected = row.expected as Record<string, unknown>;
-    if (!Array.isArray(expected.fills) || expected.fills.length < 1 || expected.fills.length > 4)
+    if (
+      !Array.isArray(expected.fills) ||
+      expected.fills.length < 1 ||
+      expected.fills.length > 4
+    )
       throw new Error();
     const fills = expected.fills.map((candidate, index) => {
-      if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+      if (
+        !candidate ||
+        typeof candidate !== "object" ||
+        Array.isArray(candidate)
+      )
         throw new Error();
       const fill = candidate as Record<string, unknown>;
       return Object.freeze({
         lockId: canonicalLocalRfqId(
           text(fill.lockId, `target fills[${index}].lockId`),
         ),
-        amountA: decimal(
-          fill.amountA,
-          `target fills[${index}].amountA`,
-          true,
-        ),
-        amountB: decimal(
-          fill.amountB,
-          `target fills[${index}].amountB`,
-          true,
-        ),
+        amountA: decimal(fill.amountA, `target fills[${index}].amountA`, true),
+        amountB: decimal(fill.amountB, `target fills[${index}].amountB`, true),
       });
     });
     if (new Set(fills.map(({ lockId }) => lockId)).size !== fills.length)
@@ -1521,10 +1532,7 @@ function parseAttempts(value: unknown): RfqLifecycleRecord["attempts"] {
     "take",
   ];
   const result: Partial<
-    Record<
-      RfqLifecycleAttemptPhase,
-      RfqPhaseAttempt | RfqTakePhaseAttempt
-    >
+    Record<RfqLifecycleAttemptPhase, RfqPhaseAttempt | RfqTakePhaseAttempt>
   > = {};
   for (const phase of phases) {
     const candidate = (value as Record<string, unknown>)[phase];
@@ -1835,7 +1843,9 @@ export function restoreRfqLifecycle(
               text(row.takerCommitment, "takerCommitment"),
             ),
           }),
-      ...(row.takerSecret === undefined || state === "settled" || restoredFromBackup
+      ...(row.takerSecret === undefined ||
+      state === "settled" ||
+      restoredFromBackup
         ? {}
         : {
             takerSecret: canonicalLocalRfqId(
@@ -1851,9 +1861,7 @@ export function restoreRfqLifecycle(
               "takeTransactionHash",
             ),
           }),
-      ...(transcriptAcknowledgements
-        ? { transcriptAcknowledgements }
-        : {}),
+      ...(transcriptAcknowledgements ? { transcriptAcknowledgements } : {}),
       ...(restoredFromBackup ? { restoredFromBackup: true as const } : {}),
       ...(row.reason === undefined
         ? {}
@@ -1962,7 +1970,8 @@ export function restoreRfqLifecycle(
         record.takerCommitment === "0x0" ||
         (record.takerSecret !== undefined &&
           (record.takerSecret === "0x0" ||
-            takerCommitmentFor(record.takerSecret) !== record.takerCommitment)) ||
+            takerCommitmentFor(record.takerSecret) !==
+              record.takerCommitment)) ||
         (record.state !== "settled" &&
           !record.restoredFromBackup &&
           !record.takerSecret) ||
@@ -2166,13 +2175,9 @@ export function confirmRfqV3Take(
       "Observed Take totals contradict the persisted exact v3 fills.",
     );
   }
-  const confirmed = updateRfqPhaseAttempt(
-    record,
-    "take",
-    "confirmed",
-    now,
-    { observation: "Exact Take record observed on local devnet." },
-  );
+  const confirmed = updateRfqPhaseAttempt(record, "take", "confirmed", now, {
+    observation: "Exact Take record observed on local devnet.",
+  });
   return transitionRfqLifecycle(confirmed, "settled", now);
 }
 
@@ -2199,9 +2204,8 @@ export function recordRfqV3TranscriptAcknowledgements(
     throw new Error("Transcript acknowledgements belong to a selected RFQ v3.");
   }
   return reviseRfqLifecycle(record, {
-    transcriptAcknowledgements: parseTranscriptAcknowledgements(
-      acknowledgements,
-    ),
+    transcriptAcknowledgements:
+      parseTranscriptAcknowledgements(acknowledgements),
     updatedAt: timestamp(now, "now"),
   });
 }

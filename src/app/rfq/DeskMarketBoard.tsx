@@ -17,6 +17,7 @@ import {
   type PublicPriceCandle,
   type PublicPriceRange,
 } from "./public-price-history";
+import { useRfqOperations } from "./use-rfq-operations";
 import styles from "./rfq.module.css";
 
 export type DeskMarketBoardProps = Readonly<{
@@ -71,8 +72,20 @@ function errorMessage(error: unknown): string {
     : "Public price data is unavailable.";
 }
 
+function formatMidE18(value: bigint): string {
+  if (value <= 0n) return "—";
+  const whole = value / 10n ** 18n;
+  const fraction = (value % 10n ** 18n)
+    .toString()
+    .padStart(18, "0")
+    .slice(0, 6)
+    .replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
   const model = deskMarketModel(pairId);
+  const operations = useRfqOperations();
   const [range, setRange] = useState<PublicPriceRange>("1");
   const [refreshKey, setRefreshKey] = useState(0);
   const [publicContextEnabled, setPublicContextEnabled] = useState(false);
@@ -199,6 +212,17 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
     : undefined;
   const quoteUnit = pairId === "STRK_USDC" ? "USDC / STRK" : "STRK / USDC";
   const pairLabel = pairId === "STRK_USDC" ? "STRK / USDC" : "USDC / STRK";
+  const aggregate = operations.midAggregate;
+  const makerMid = aggregate?.medianE18
+    ? pairId === "STRK_USDC"
+      ? aggregate.medianE18
+      : 10n ** 36n / aggregate.medianE18
+    : 0n;
+  const newestMid = operations.verifiedMids?.reduce(
+    (latest, mid) => Math.max(latest, mid.observedAt),
+    0,
+  ) ?? 0;
+  const midAge = newestMid ? Math.max(0, operations.asOf - newestMid) : null;
 
   function selectHoveredCandle(event: PointerEvent<SVGSVGElement>) {
     if (!chart) return;
@@ -214,7 +238,32 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
 
   return (
     <div className={styles.marketBoard}>
-      <section className={styles.marketStats} aria-label="Desk market summary">
+      <section className={styles.marketStats} aria-label="Maker mid indicative reference">
+        <div>
+          <span>MAKER MID · INDICATIVE</span>
+          <strong>{formatMidE18(makerMid)}</strong>
+          <small>{quoteUnit} · signed, non-executable reference</small>
+        </div>
+        <div>
+          <span>DISPERSION</span>
+          <strong>{aggregate?.count ? `${aggregate.dispersionBps} BPS` : "—"}</strong>
+          <small>Range across verified maker mids</small>
+        </div>
+        <div>
+          <span>MAKER COUNT</span>
+          <strong>{aggregate?.count ?? 0}</strong>
+          <small>Browser-verified governed signatures</small>
+        </div>
+        <div>
+          <span>FRESHNESS</span>
+          <strong>{midAge === null ? "UNAVAILABLE" : `${midAge}S AGO`}</strong>
+          <small>
+            {operations.mode === "running" ? "Fresh operations window" : `Operations ${operations.mode}`}
+          </small>
+        </div>
+      </section>
+
+      <section className={styles.marketStats} aria-label="Opt-in public market summary">
         <div>
           <span>PUBLIC SPOT</span>
           <strong>
@@ -537,8 +586,11 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
         </article>
         <article>
           <span>SETTLEMENT</span>
-          <strong>Lock → fill → claim</strong>
-          <p>Block expiry follows the separate lock → expiry → refund path.</p>
+          <strong>Collateral lock → atomic Take</strong>
+          <p>
+            One explicit Take receives the OPEN note in the same transaction;
+            v3 has no later taker claim or refund phase.
+          </p>
         </article>
       </section>
     </div>
