@@ -83,7 +83,14 @@ function exactV3Acknowledgement(value, target, expectedEffect, quarantine) {
     )
       throw new Error("Maker v3 quarantine acknowledgement is not terminal.");
   } else if (
-    !["taken", "expired", "settling", "settled"].includes(value.state)
+    ![
+      "taken",
+      "expired",
+      "settling",
+      "reconcile-pending",
+      "settlement-unknown",
+      "settled",
+    ].includes(value.state)
   ) {
     throw new Error(
       "Maker v3 terminal acknowledgement has an invalid lock state.",
@@ -327,7 +334,7 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
               settlementTransactionHash,
             },
           );
-          exactV3Acknowledgement(
+          return exactV3Acknowledgement(
             acknowledgement,
             target,
             { attemptId, authorityDigest, authorityRevision },
@@ -367,7 +374,7 @@ export function createLocalnetAuthorityReconciliationPipeline(options) {
               reason,
             },
           );
-          exactV3Acknowledgement(
+          return exactV3Acknowledgement(
             acknowledgement,
             target,
             { attemptId, authorityDigest, authorityRevision, reason },

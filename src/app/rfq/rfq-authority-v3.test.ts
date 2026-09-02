@@ -1,4 +1,9 @@
+import { fillsDigest } from "@app20/private-intents";
 import { describe, expect, it, vi } from "vitest";
+import {
+  normalizeRfqAuthorityProjection,
+  rfqAuthoritySignalForRecord,
+} from "./rfq-authority";
 import { readLocalnetRfqAuthority } from "./localnet-private-intents";
 import {
   beginRfqPhaseAttempt,
@@ -75,12 +80,40 @@ function settledV3() {
       tokenB: "0x2",
       totalB: 200n,
       fillCount: 1,
+      fillsDigest: fillsDigest([{ lockId: "0x41", amountA: 100n }]),
     },
     NOW + 3,
   );
 }
 
 describe("RFQ v3 authority request", () => {
+  it("rejects missing or substituted authoritative Take evidence", () => {
+    const projection = {
+      source: "localnet-chain-authority",
+      runtimeEpoch: "a".repeat(32),
+      chainId: "0x1",
+      account: "0xabc",
+      rfqId: "0x77",
+      dealId: "0x77",
+      lifecycle: "v3",
+      status: "authoritative",
+      revision: 1,
+      observedAt: NOW + 4,
+      validUntil: NOW + 34,
+    };
+    expect(() => normalizeRfqAuthorityProjection(projection)).toThrow(
+      /lacks Take evidence/i,
+    );
+    const substituted = normalizeRfqAuthorityProjection({
+      ...projection,
+      fillsDigest: "0x123",
+      lockTaken: [{ lockId: "0x41", amountA: "100" }],
+    });
+    expect(() =>
+      rfqAuthoritySignalForRecord(substituted, settledV3(), "a".repeat(32)),
+    ).toThrow(/fill composition/i);
+  });
+
   it("sends one exact Take candidate and its fill projection", async () => {
     let body: Record<string, unknown> | undefined;
     vi.stubGlobal(
@@ -98,6 +131,10 @@ describe("RFQ v3 authority request", () => {
               dealId: "0x77",
               lifecycle: "v3",
               status: "authoritative",
+              fillsDigest: fillsDigest([
+                { lockId: "0x41", amountA: 100n },
+              ]),
+              lockTaken: [{ lockId: "0x41", amountA: "100" }],
               revision: 1,
               observedAt: NOW + 4,
               validUntil: NOW + 34,
@@ -111,6 +148,8 @@ describe("RFQ v3 authority request", () => {
       status: "authoritative",
       lifecycle: "v3",
       dealId: "0x77",
+      fillsDigest: fillsDigest([{ lockId: "0x41", amountA: 100n }]),
+      lockTaken: [{ lockId: "0x41", amountA: "100" }],
     });
     expect(body).toMatchObject({
       lifecycle: "v3",

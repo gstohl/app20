@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { dirname } from "node:path";
+import { fillsDigest as takeFillsDigest } from "../packages/private-intents/src/take-signature.ts";
 import {
   LOCALNET_CHAIN_AUTHORITY_SERVER_SENTINEL,
   assertLocalnetEscrowArtifactIdentity,
@@ -290,7 +291,14 @@ function assertDecodedBinding(decoded, query) {
       decoded.totalA !== query.expected.totalA ||
       decoded.tokenB !== query.expected.tokenB ||
       decoded.totalB !== query.expected.totalB ||
-      decoded.fillCount !== query.expected.fills.length
+      decoded.fillCount !== query.expected.fills.length ||
+      decoded.fillsDigest !==
+        takeFillsDigest(
+          query.expected.fills.map((fill) => ({
+            lockId: fill.lockId,
+            amountA: BigInt(fill.amountA),
+          })),
+        )
     )
       throw new Error("Decoded DealTaken does not match exact v3 take terms.");
     return;
@@ -436,17 +444,23 @@ function normalizeObservation(
         throw new Error(
           `Reader ${readerId} returned incomplete LockTaken events.`,
         );
+      let priorFillEventIndex = -1;
       fillEvents = item.fillEvents.map((fillEvent, fillIndex) => {
         const fillEventIndex = nonnegativeInteger(
           fillEvent?.eventIndex,
           "LockTaken event index",
         );
         const fillCoordinateKey = `${blockNumber}:${transactionIndex}:${fillEventIndex}`;
-        if (coordinates.has(fillCoordinateKey) || fillEventIndex >= eventIndex)
+        if (
+          coordinates.has(fillCoordinateKey) ||
+          fillEventIndex <= priorFillEventIndex ||
+          fillEventIndex >= eventIndex
+        )
           throw new Error(
             "LockTaken event coordinate is duplicated or out of order.",
           );
         coordinates.add(fillCoordinateKey);
+        priorFillEventIndex = fillEventIndex;
         const fillDecoded = decodeLocalnetEscrowEvent(
           fillEvent?.event,
           artifact,
@@ -497,6 +511,25 @@ function normalizeObservation(
 }
 
 function browserProjection(row) {
+  const takeEvidence =
+    row.query.lifecycle === "v3" && row.canonicalLifecycle.length === 1
+      ? {
+          fillsDigest: takeFillsDigest(
+            row.query.expected.fills.map((fill) => ({
+              lockId: fill.lockId,
+              amountA: BigInt(fill.amountA),
+            })),
+          ),
+          lockTaken: Object.freeze(
+            row.query.expected.fills.map((fill) =>
+              Object.freeze({
+                lockId: fill.lockId,
+                amountA: fill.amountA,
+              }),
+            ),
+          ),
+        }
+      : {};
   return Object.freeze({
     source: LOCALNET_CHAIN_AUTHORITY_SOURCE,
     runtimeEpoch: row.runtimeEpoch,
@@ -504,10 +537,12 @@ function browserProjection(row) {
     account: row.account,
     rfqId: row.rfqId,
     dealId: row.dealId,
+    lifecycle: row.query.lifecycle === "v3" ? "v3" : "v2",
     status: row.status,
     revision: row.revision,
     observedAt: row.observedAt,
     validUntil: row.validUntil,
+    ...takeEvidence,
   });
 }
 

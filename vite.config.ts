@@ -77,6 +77,14 @@ export default defineConfig(({ command, mode }) => {
       target: "http://127.0.0.1:5054",
       changeOrigin: false,
       rewrite: (path) => path.replace(/^\/__app20_localnet_ipfs/, ""),
+      configure: (server) => {
+        server.on("proxyReq", (proxyRequest) => {
+          proxyRequest.setHeader(
+            "x-app20-localnet-control",
+            localnetControlToken,
+          );
+        });
+      },
     };
   }
 

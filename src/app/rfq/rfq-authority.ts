@@ -1,7 +1,10 @@
+import { fillsDigest } from "@app20/private-intents";
 import {
   applyRfqAuthoritySignal,
+  canonicalLocalRfqId,
   canonicalRfqAccount,
   canonicalRfqChainId,
+  takeAttemptTargetFromLifecycle,
   type RfqEvidenceAuthority,
   type RfqLifecycleRecord,
 } from "./rfq-lifecycle";
@@ -130,6 +133,11 @@ export type RfqAuthorityProjection = Readonly<{
   revision: number;
   observedAt: number;
   validUntil: number;
+  fillsDigest?: string;
+  lockTaken?: readonly Readonly<{
+    lockId: string;
+    amountA: string;
+  }>[];
 }>;
 
 /**
@@ -160,6 +168,31 @@ function exactInteger(value: unknown, label: string, minimum: number): number {
   return Number(value);
 }
 
+function exactFelt(value: unknown, label: string, allowZero = false): string {
+  const text = exactText(value, label);
+  let parsed: bigint;
+  try {
+    parsed = BigInt(text);
+  } catch {
+    throw new Error(`The authority projection ${label} is invalid.`);
+  }
+  if (
+    parsed < 0n ||
+    parsed >= 1n << 252n ||
+    (!allowZero && parsed === 0n) ||
+    text !== `0x${parsed.toString(16)}`
+  )
+    throw new Error(`The authority projection ${label} is invalid.`);
+  return text;
+}
+
+function exactAmount(value: unknown, label: string): string {
+  const text = exactText(value, label);
+  if (!/^[1-9][0-9]*$/.test(text) || BigInt(text) >= 1n << 128n)
+    throw new Error(`The authority projection ${label} is invalid.`);
+  return text;
+}
+
 /**
  * Parses a server-shaped authority answer. Labels supplied by the caller are
  * discarded; only the enumerated status survives.
@@ -188,6 +221,53 @@ export function normalizeRfqAuthorityProjection(
               "The authority projection lifecycle is not recognized.",
             );
           })();
+  const takeEvidencePresent =
+    row.fillsDigest !== undefined || row.lockTaken !== undefined;
+  let normalizedFillsDigest: string | undefined;
+  let normalizedLockTaken:
+    | readonly Readonly<{ lockId: string; amountA: string }>[]
+    | undefined;
+  if (takeEvidencePresent) {
+    if (
+      lifecycle !== "v3" ||
+      row.fillsDigest === undefined ||
+      !Array.isArray(row.lockTaken) ||
+      row.lockTaken.length < 1 ||
+      row.lockTaken.length > 4
+    )
+      throw new Error("The authority projection Take evidence is incomplete.");
+    normalizedFillsDigest = exactFelt(
+      row.fillsDigest,
+      "fills digest",
+      true,
+    );
+    normalizedLockTaken = Object.freeze(
+      row.lockTaken.map((value, index) => {
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          throw new Error("The authority projection LockTaken row is invalid.");
+        const fill = value as Record<string, unknown>;
+        if (
+          Object.keys(fill).sort().join(",") !== "amountA,lockId"
+        )
+          throw new Error("The authority projection LockTaken schema is invalid.");
+        return Object.freeze({
+          lockId: exactFelt(fill.lockId, `LockTaken ${index} lock id`),
+          amountA: exactAmount(fill.amountA, `LockTaken ${index} amount`),
+        });
+      }),
+    );
+    if (
+      new Set(normalizedLockTaken.map(({ lockId }) => lockId)).size !==
+      normalizedLockTaken.length
+    )
+      throw new Error("The authority projection reused a LockTaken lock id.");
+  }
+  if (
+    lifecycle === "v3" &&
+    status === "authoritative" &&
+    (!normalizedFillsDigest || !normalizedLockTaken)
+  )
+    throw new Error("The authoritative v3 projection lacks Take evidence.");
   const observedAt = exactInteger(row.observedAt, "observation time", 1);
   const validUntil = exactInteger(row.validUntil, "validity deadline", 1);
   if (validUntil <= observedAt)
@@ -206,6 +286,12 @@ export function normalizeRfqAuthorityProjection(
     revision: exactInteger(row.revision, "revision", 1),
     observedAt,
     validUntil,
+    ...(normalizedFillsDigest && normalizedLockTaken
+      ? {
+          fillsDigest: normalizedFillsDigest,
+          lockTaken: normalizedLockTaken,
+        }
+      : {}),
   });
 }
 
@@ -228,6 +314,35 @@ export function rfqAuthoritySignalForRecord(
     throw new Error("The authority projection is bound to another RFQ.");
   if (projection.lifecycle && projection.lifecycle !== record.mode)
     throw new Error("The authority projection is bound to another lifecycle.");
+  if (
+    record.mode === "v3" &&
+    projection.status === "authoritative" &&
+    projection.lifecycle !== "v3"
+  )
+    throw new Error("The authoritative projection omitted its v3 lifecycle.");
+  if (record.mode === "v3" && projection.status === "authoritative") {
+    if (!projection.fillsDigest || !projection.lockTaken)
+      throw new Error("The authoritative v3 projection omitted Take evidence.");
+    const target = takeAttemptTargetFromLifecycle(record);
+    const expectedDigest = fillsDigest(
+      target.expected.fills.map((fill) => ({
+        lockId: fill.lockId,
+        amountA: BigInt(fill.amountA),
+      })),
+    );
+    if (
+      canonicalLocalRfqId(projection.fillsDigest) !== expectedDigest ||
+      projection.lockTaken.length !== target.expected.fills.length ||
+      projection.lockTaken.some(
+        (fill, index) =>
+          fill.lockId !== target.expected.fills[index].lockId ||
+          fill.amountA !== target.expected.fills[index].amountA,
+      )
+    )
+      throw new Error(
+        "The authoritative v3 projection changed the exact fill composition.",
+      );
+  }
   const dealId = record.settlement?.dealId;
   if (!dealId || projection.dealId !== dealId)
     throw new Error("The authority projection is bound to another deal.");

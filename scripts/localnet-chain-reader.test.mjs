@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fillsDigest } from "../packages/private-intents/src/take-signature.ts";
 import {
   LOCALNET_ESCROW_EVENT_ABI_DIGEST,
   LOCALNET_ESCROW_EVENT_SELECTORS,
@@ -210,6 +211,12 @@ test("v3 reader requires one DealTaken plus one distinct LockTaken for every exp
       ],
     },
   };
+  const expectedFillsDigest = fillsDigest(
+    v3.expected.fills.map((fill) => ({
+      lockId: fill.lockId,
+      amountA: BigInt(fill.amountA),
+    })),
+  );
   const rpc = async (method, params) => {
     if (method === "starknet_getClassHashAt") return artifact.escrowClassHash;
     if (
@@ -237,7 +244,14 @@ test("v3 reader requires one DealTaken plus one distinct LockTaken for every exp
           {
             from_address: artifact.escrowAddress,
             keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, v3.dealId],
-            data: ["0x11", "0x64", "0x22", "0xc8", "0x2"],
+            data: [
+              "0x11",
+              "0x64",
+              "0x22",
+              "0xc8",
+              "0x2",
+              expectedFillsDigest,
+            ],
           },
         ],
       };
@@ -269,6 +283,22 @@ test("v3 reader requires one DealTaken plus one distinct LockTaken for every exp
       },
     }).observe(v3),
     /one LockTaken per expected fill/i,
+  );
+  await assert.rejects(
+    createLocalnetRpcReader({
+      id: "v3-order-mutation",
+      artifact,
+      rpc: async (method, params) => {
+        const value = await rpc(method, params);
+        if (method === "starknet_getTransactionReceipt")
+          [value.events[0], value.events[1]] = [
+            value.events[1],
+            value.events[0],
+          ];
+        return value;
+      },
+    }).observe(v3),
+    /out of order/i,
   );
 });
 

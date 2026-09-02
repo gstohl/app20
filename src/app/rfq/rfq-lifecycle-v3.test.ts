@@ -16,6 +16,9 @@ import {
 
 const NOW = 1_900_000_000;
 const DIGEST = `0x${"11".repeat(32)}`;
+const EXACT_FILLS_DIGEST = fillsDigest([
+  { lockId: "0x41", amountA: 100n },
+]);
 
 function reviewing(): RfqLifecycleRecord {
   const record = createRfqLifecycleRecord({
@@ -132,6 +135,7 @@ describe("RFQ lifecycle v3", () => {
         tokenB: "0x2",
         totalB: 200n,
         fillCount: 1,
+        fillsDigest: EXACT_FILLS_DIGEST,
       },
       NOW + 3,
     );
@@ -147,7 +151,7 @@ describe("RFQ lifecycle v3", () => {
 
   it("quarantines a Take whose digest or LockTaken composition changed", () => {
     const unknown = submitted();
-    const exactDigest = fillsDigest([{ lockId: "0x41", amountA: 100n }]);
+    const exactDigest = EXACT_FILLS_DIGEST;
     const observed = {
       tokenA: "0x1",
       totalA: 100n,
@@ -208,6 +212,7 @@ describe("RFQ lifecycle v3", () => {
         tokenB: "0x2",
         totalB: 200n,
         fillCount: 1,
+        fillsDigest: EXACT_FILLS_DIGEST,
       },
       NOW + 3,
     );

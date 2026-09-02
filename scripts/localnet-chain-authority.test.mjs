@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fillsDigest } from "../packages/private-intents/src/take-signature.ts";
 import {
   LOCALNET_ESCROW_EVENT_ABI_DIGEST,
   LOCALNET_ESCROW_EVENT_SELECTORS,
@@ -190,6 +191,12 @@ test("v3 authority promotes only one exact DealTaken and one LockTaken per expec
     }),
     transactions: Object.freeze({ take: "0x201" }),
   });
+  const expectedFillsDigest = fillsDigest(
+    v3.expected.fills.map((fill) => ({
+      lockId: fill.lockId,
+      amountA: BigInt(fill.amountA),
+    })),
+  );
   const v3Observation = () => ({
     runtimeEpoch: epoch,
     chainId: artifact.chainId,
@@ -208,7 +215,14 @@ test("v3 authority promotes only one exact DealTaken and one LockTaken per expec
         event: {
           fromAddress: artifact.escrowAddress,
           keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xddd"],
-          data: ["0x11", "0x64", "0x22", "0xc8", "0x2"],
+          data: [
+            "0x11",
+            "0x64",
+            "0x22",
+            "0xc8",
+            "0x2",
+            expectedFillsDigest,
+          ],
         },
         fillEvents: [
           {
@@ -249,6 +263,11 @@ test("v3 authority promotes only one exact DealTaken and one LockTaken per expec
       market: "strk-usdc",
     });
     assert.equal(projection.status, "authoritative");
+    assert.equal(projection.fillsDigest, expectedFillsDigest);
+    assert.deepEqual(projection.lockTaken, [
+      { lockId: "0xa", amountA: "40" },
+      { lockId: "0xb", amountA: "60" },
+    ]);
     assert.deepEqual(
       authority
         .reconciliationEvidence(v3)
@@ -258,25 +277,48 @@ test("v3 authority promotes only one exact DealTaken and one LockTaken per expec
     const journal = JSON.parse(readFileSync(tmp.path, "utf8"));
     assert.equal(journal.rows[0].query.lifecycle, "v3");
 
-    const invalid = createLocalnetChainAuthority({
-      path: join(tmp.directory, "invalid-v3.json"),
-      artifact,
-      readers: [0, 1].map((index) => ({
-        id: `invalid-v3-reader-${index}`,
-        independence: "same-devnet-fixture",
-        observe: async () => {
-          const value = v3Observation();
+    const mutations = [
+      {
+        name: "amount",
+        apply: (value) => {
           value.lifecycle[0].fillEvents[1].event.data[1] = "0x79";
-          return value;
         },
-      })),
-      now: () => 1_700_000_000,
-      finalityDepth: 2,
-    });
-    assert.equal(
-      (await invalid.verify({ query: v3, market: "strk-usdc" })).status,
-      "disagreement",
-    );
+      },
+      {
+        name: "digest",
+        apply: (value) => {
+          value.lifecycle[0].event.data[5] = "0x123";
+        },
+      },
+      {
+        name: "order",
+        apply: (value) => {
+          value.lifecycle[0].fillEvents[0].eventIndex = 1;
+          value.lifecycle[0].fillEvents[1].eventIndex = 0;
+        },
+      },
+    ];
+    for (const mutation of mutations) {
+      const invalid = createLocalnetChainAuthority({
+        path: join(tmp.directory, `invalid-v3-${mutation.name}.json`),
+        artifact,
+        readers: [0, 1].map((index) => ({
+          id: `invalid-v3-${mutation.name}-reader-${index}`,
+          independence: "same-devnet-fixture",
+          observe: async () => {
+            const value = v3Observation();
+            mutation.apply(value);
+            return value;
+          },
+        })),
+        now: () => 1_700_000_000,
+        finalityDepth: 2,
+      });
+      assert.equal(
+        (await invalid.verify({ query: v3, market: "strk-usdc" })).status,
+        "disagreement",
+      );
+    }
   } finally {
     tmp.cleanup();
   }

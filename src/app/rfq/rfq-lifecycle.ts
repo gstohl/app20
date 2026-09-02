@@ -2227,7 +2227,7 @@ export function confirmRfqV3Take(
     tokenB: string;
     totalB: bigint;
     fillCount: number;
-    fillsDigest?: string;
+    fillsDigest: string;
     lockTaken?: readonly Readonly<{
       lockId: string;
       amountA: bigint | string;
@@ -2297,8 +2297,7 @@ export function confirmRfqV3Take(
     }
   }
   if (
-    (take.fillsDigest !== undefined &&
-      !sameIdentity(take.fillsDigest, expectedFillsDigest)) ||
+    !sameIdentity(take.fillsDigest, expectedFillsDigest) ||
     !lockEvidenceMatches
   ) {
     return quarantineRecord(

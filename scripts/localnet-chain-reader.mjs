@@ -345,10 +345,15 @@ export function createLocalnetRpcReader(options) {
             return Object.freeze(exact[0]);
           });
           if (
-            new Set(fillEvents.map(({ eventIndex }) => eventIndex)).size !==
-            fillEvents.length
+            fillEvents.some(
+              ({ eventIndex }, index) =>
+                eventIndex >= matches[0].eventIndex ||
+                (index > 0 && eventIndex <= fillEvents[index - 1].eventIndex),
+            )
           )
-            throw new Error("Take transaction reused one LockTaken event.");
+            throw new Error(
+              "Take transaction LockTaken events are duplicated or out of order.",
+            );
         }
         lifecycle.push(
           Object.freeze({

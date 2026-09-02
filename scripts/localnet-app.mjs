@@ -1394,7 +1394,7 @@ async function readLocalEscrowTake(dealId, env, escrowAddress, starknet) {
     entrypoint: "get_take",
     calldata: [dealId],
   });
-  if (!Array.isArray(result) || result.length !== 6)
+  if (!Array.isArray(result) || result.length !== 7)
     fail("local escrow returned a malformed v3 take.");
   const values = result.map(BigInt);
   const fillCount = Number(values[4]);
@@ -1413,8 +1413,9 @@ async function readLocalEscrowTake(dealId, env, escrowAddress, starknet) {
     values[1] >= 1n << 128n ||
     values[3] <= 0n ||
     values[3] >= 1n << 128n ||
-    values[5] <= 0n ||
-    values[5] > BigInt(Number.MAX_SAFE_INTEGER)
+    values[5] >= 1n << 252n ||
+    values[6] <= 0n ||
+    values[6] > BigInt(Number.MAX_SAFE_INTEGER)
   )
     fail("local escrow returned invalid nonempty v3 take fields.");
   return Object.freeze({
@@ -1423,7 +1424,8 @@ async function readLocalEscrowTake(dealId, env, escrowAddress, starknet) {
     tokenB: starknet.num.toHex(result[2]),
     totalB: BigInt(result[3]),
     fillCount,
-    takenAt: Number(BigInt(result[5])),
+    fillsDigest: starknet.num.toHex(result[5]),
+    takenAt: Number(BigInt(result[6])),
   });
 }
 
@@ -1578,6 +1580,8 @@ async function startApi({
         else if (
           lock.state === "expired" ||
           lock.state === "settling" ||
+          lock.state === "reconcile-pending" ||
+          lock.state === "settlement-unknown" ||
           (lock.state === "open" &&
             Number.isSafeInteger(lock.expiry) &&
             lock.expiry <= now)
@@ -2531,6 +2535,7 @@ async function startApi({
                     error instanceof Error ? error.message : String(error)
                   }`,
                 );
+                return undefined;
               }
             }),
           );
@@ -3562,11 +3567,14 @@ try {
     extraAccounts: env.extraAccounts,
   });
 
+  const localnetControlToken = randomBytes(32).toString("base64url");
   currentStage = "loopback IPFS emulator startup";
-  console.log("\n==> starting loopback-only in-memory IPFS emulator");
+  console.log("\n==> starting authenticated loopback-only IPFS emulator");
   ipfsServer = createLocalnetIpfsServer({
     host: LOCALNET_IPFS_HOST,
     port: LOCALNET_IPFS_PORT,
+    controlToken: localnetControlToken,
+    expectedOrigin: APP_URL,
   });
   await ipfsServer.listen();
 
@@ -3599,7 +3607,6 @@ try {
   };
 
   currentStage = "local wallet API startup";
-  const localnetControlToken = randomBytes(32).toString("base64url");
   apiServer = await startApi({
     config,
     identities,

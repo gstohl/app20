@@ -4,9 +4,9 @@ export const LOCALNET_CHAIN_AUTHORITY_SERVER_SENTINEL =
   "APP20_LOCALNET_CHAIN_AUTHORITY_SERVER_ONLY_83F0A2";
 
 export const LOCALNET_ESCROW_EVENT_ABI =
-  '{"contract":"App20Escrow","version":3,"events":{"DealFunded":{"keys":["deal_id"],"data":["leg_a_token","leg_a_amount","leg_b_token","leg_b_terms","deadline","ticket"]},"DealFilled":{"keys":["deal_id"],"data":["leg_a_token","leg_a_amount","leg_b_token","leg_b_amount"]},"DealClaimed":{"keys":["deal_id"],"data":["token","amount"]},"DealTimedOut":{"keys":["deal_id"],"data":["token","amount"]},"LockCreated":{"keys":["lock_id","rfq_id"],"data":["token_a","token_b","expiry","max_b","points_len","p0_a","p0_b","p1_a","p1_b","p2_a","p2_b","p3_a","p3_b","ticket"]},"LockTaken":{"keys":["lock_id","deal_id"],"data":["amount_a","amount_b","remaining_b"]},"DealTaken":{"keys":["deal_id"],"data":["token_a","total_a","token_b","total_b","fill_count"]},"LockProceedsSettled":{"keys":["lock_id"],"data":["token","amount"]},"LockCollateralReleased":{"keys":["lock_id"],"data":["token","amount"]}}}';
+  '{"contract":"App20Escrow","version":3,"events":{"DealFunded":{"keys":["deal_id"],"data":["leg_a_token","leg_a_amount","leg_b_token","leg_b_terms","deadline","ticket"]},"DealFilled":{"keys":["deal_id"],"data":["leg_a_token","leg_a_amount","leg_b_token","leg_b_amount"]},"DealClaimed":{"keys":["deal_id"],"data":["token","amount"]},"DealTimedOut":{"keys":["deal_id"],"data":["token","amount"]},"LockCreated":{"keys":["lock_id","rfq_id"],"data":["token_a","token_b","expiry","max_b","points_len","p0_a","p0_b","p1_a","p1_b","p2_a","p2_b","p3_a","p3_b","ticket"]},"LockTaken":{"keys":["lock_id","deal_id"],"data":["amount_a","amount_b","remaining_b"]},"DealTaken":{"keys":["deal_id"],"data":["token_a","total_a","token_b","total_b","fill_count","fills_digest"]},"LockProceedsSettled":{"keys":["lock_id"],"data":["token","amount"]},"LockCollateralReleased":{"keys":["lock_id"],"data":["token","amount"]}}}';
 export const LOCALNET_ESCROW_EVENT_ABI_DIGEST =
-  "sha256:4242d9123812f66579480c166101516e2b2e1fb73974d849a245a014cecbb232";
+  "sha256:eb1d9580a85958f3c6fd874b0a9129a687b0cf83a05c7ed5fb352842b58fe3e2";
 
 export const LOCALNET_ESCROW_EVENT_SELECTORS = Object.freeze({
   fund: "0x255d69d3dc5c105a69d867c4d0dc0abd9569404397c49dede157ca0f8132a57",
@@ -224,7 +224,7 @@ export function decodeLocalnetEscrowEvent(value, artifact) {
     });
   }
   if (stage === "take") {
-    if (data.length !== 5) throw new Error("DealTaken data length is invalid.");
+    if (data.length !== 6) throw new Error("DealTaken data length is invalid.");
     return Object.freeze({
       stage,
       outcome: "settled",
@@ -234,6 +234,7 @@ export function decodeLocalnetEscrowEvent(value, artifact) {
       tokenB: canonicalFelt(data[2], "take token B"),
       totalB: u128(data[3], "take total B"),
       fillCount: boundedU8(data[4], "take fill count", 1, 4),
+      fillsDigest: canonicalFelt(data[5], "take fills digest", true),
     });
   }
   if (data.length !== 2) {

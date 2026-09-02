@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
+  LOCALNET_ESCROW_EVENT_ABI,
   LOCALNET_ESCROW_EVENT_ABI_DIGEST,
   LOCALNET_ESCROW_EVENT_SELECTORS,
   assertLocalnetEscrowArtifactIdentity,
@@ -18,6 +20,13 @@ const base = Object.freeze({
   fromAddress: artifact.escrowAddress,
   keys: [LOCALNET_ESCROW_EVENT_SELECTORS.fund, "0xabc"],
   data: ["0x11", "0x64", "0x22", "0xc8", "0x6553f100", "0x33"],
+});
+
+test("the checked-in event ABI digest matches the exact decoder pin", () => {
+  assert.equal(
+    LOCALNET_ESCROW_EVENT_ABI_DIGEST,
+    `sha256:${createHash("sha256").update(LOCALNET_ESCROW_EVENT_ABI).digest("hex")}`,
+  );
 });
 
 test("fixed localnet decoder binds exact artifact, selector, lengths, terms, and u128 order", () => {
@@ -129,7 +138,7 @@ test("v3 lock and take events decode exact keyed identities, schedules, totals, 
       {
         fromAddress: artifact.escrowAddress,
         keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xabc"],
-        data: ["0x11", "0x64", "0x22", "0xc8", "0x1"],
+        data: ["0x11", "0x64", "0x22", "0xc8", "0x1", "0x123"],
       },
       artifact,
     ),
@@ -142,6 +151,7 @@ test("v3 lock and take events decode exact keyed identities, schedules, totals, 
       tokenB: "0x22",
       totalB: "200",
       fillCount: 1,
+      fillsDigest: "0x123",
     },
   );
   for (const stage of ["lockProceedsSettled", "lockCollateralReleased"]) {
@@ -191,7 +201,7 @@ test("decoder mutations fail closed without callback registration", () => {
       {
         fromAddress: artifact.escrowAddress,
         keys: [LOCALNET_ESCROW_EVENT_SELECTORS.take, "0xabc"],
-        data: ["0x11", "0x64", "0x22", "0xc8", "0x5"],
+        data: ["0x11", "0x64", "0x22", "0xc8", "0x5", "0x123"],
       },
       artifact,
     ),

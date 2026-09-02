@@ -560,7 +560,7 @@ describe("localnet private-intent adapter", () => {
   it("decodes escrow reads and journals every exact Take boundary", async () => {
     const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
     let createdTransactionHash: unknown = "0x61";
-    let takeFillsDigest: unknown;
+    let takeFillsDigest: unknown = "0x123";
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -634,14 +634,13 @@ describe("localnet private-intent adapter", () => {
       totalA: 100n,
       totalB: 200n,
       fillCount: 1,
-    });
-    takeFillsDigest = "0x123";
-    await expect(readEscrowTake("0x77")).resolves.toMatchObject({
       fillsDigest: "0x123",
     });
     takeFillsDigest = "0x0123";
     await expect(readEscrowTake("0x77")).rejects.toThrow(/non-canonical/i);
     takeFillsDigest = undefined;
+    await expect(readEscrowTake("0x77")).rejects.toThrow(/schema/i);
+    takeFillsDigest = "0x123";
     const target = {
       account: "0xabc",
       chainId: "0x1",
