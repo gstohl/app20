@@ -347,13 +347,13 @@ function isExactTicketPersistenceTransition(
   const nextAttempt = replacement.attempts.funding;
   return Boolean(
     priorAttempt &&
-    nextAttempt &&
-    priorAttempt.attemptId === nextAttempt.attemptId &&
-    priorAttempt.target?.operation === "funding-ticket" &&
-    nextAttempt.target?.operation === "funding-ticket" &&
-    sameJson(priorAttempt.target, nextAttempt.target) &&
-    canonicalLocalRfqId(priorAttempt.target.dealId) ===
-      canonicalLocalRfqId(nextSettlement.dealId),
+      nextAttempt &&
+      priorAttempt.attemptId === nextAttempt.attemptId &&
+      priorAttempt.target?.operation === "funding-ticket" &&
+      nextAttempt.target?.operation === "funding-ticket" &&
+      sameJson(priorAttempt.target, nextAttempt.target) &&
+      canonicalLocalRfqId(priorAttempt.target.dealId) ===
+        canonicalLocalRfqId(nextSettlement.dealId),
   );
 }
 

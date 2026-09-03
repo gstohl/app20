@@ -180,13 +180,13 @@ function readJsonFile(path) {
 function isRuntimeLockRecord(value) {
   return Boolean(
     value &&
-    value.schema === "app20/localnet-runtime-lock/v1" &&
-    Number.isSafeInteger(value.pid) &&
-    value.pid > 0 &&
-    typeof value.token === "string" &&
-    /^[0-9a-f]{64}$/.test(value.token) &&
-    typeof value.startedAt === "string" &&
-    value.startedAt,
+      value.schema === "app20/localnet-runtime-lock/v1" &&
+      Number.isSafeInteger(value.pid) &&
+      value.pid > 0 &&
+      typeof value.token === "string" &&
+      /^[0-9a-f]{64}$/.test(value.token) &&
+      typeof value.startedAt === "string" &&
+      value.startedAt,
   );
 }
 

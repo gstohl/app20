@@ -89,12 +89,13 @@ async function prepareFinalReview(page: Page) {
 
   const ticket = page.locator('aside[aria-label="Private RFQ ticket"]');
   const desk = ticket.getByRole("region", { name: "Block RFQ", exact: true });
-  const preflight = desk.getByLabel("Privacy preflight");
-  await preflight
-    .getByRole("checkbox", {
-      name: "I understand the bucket disclosure, observable timing, and public v3 Take amounts.",
-    })
-    .check();
+  const acknowledge = desk.getByRole("button", {
+    name: "Acknowledge and continue",
+  });
+  if (await acknowledge.isVisible()) await acknowledge.click();
+  await expect(desk.getByLabel("Privacy preflight")).toContainText(
+    "BRIEFED ONCE",
+  );
   await desk
     .getByRole("button", { name: "Prepare size-blind cohort review" })
     .click();
@@ -121,7 +122,7 @@ async function expectBefore(earlier: Locator, later: Locator) {
       (element, candidate) =>
         Boolean(
           element.compareDocumentPosition(candidate as Node) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
+            Node.DOCUMENT_POSITION_FOLLOWING,
         ),
       await later.elementHandle(),
     ),
@@ -207,6 +208,52 @@ async function seedAuthorityActivity(
     await storage.createIndexedDbRfqStorage().save(record);
   }, input);
 }
+
+test("RFQ privacy briefing is versioned once and remains reviewable", async ({
+  page,
+}) => {
+  await openLocalnetPage(page, "/rfq#new");
+
+  const dialog = page.getByRole("dialog", {
+    name: "Before your first private RFQ",
+  });
+  await expect(dialog).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Acknowledge and continue" }),
+  ).toBeFocused();
+  await dialog
+    .getByRole("button", { name: "Acknowledge and continue" })
+    .click();
+  await expect(dialog).toBeHidden();
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem("app20:rfq:privacy-briefing")),
+    )
+    .toBe("rfq-v3-observability-briefing:1");
+
+  const preflight = page.getByLabel("Privacy preflight");
+  await expect(preflight).toContainText("BRIEFED ONCE");
+  const freshnessHelp = page.getByRole("button", {
+    name: "About maker-data freshness",
+  });
+  const freshnessTooltip = page.getByRole("tooltip", {
+    name: "Fresh operations window.",
+  });
+  await freshnessHelp.hover();
+  await expect(freshnessTooltip).toBeVisible();
+  await freshnessHelp.focus();
+  await expect(freshnessTooltip).toBeVisible();
+
+  await openLocalnetPage(page, "/rfq#new");
+  await expect(dialog).toBeHidden();
+  await page
+    .getByLabel("Privacy preflight")
+    .getByRole("button", { name: "Review", exact: true })
+    .click();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Close briefing" }).click();
+  await expect(dialog).toBeHidden();
+});
 
 test("RFQ hash navigation is keyboard reachable and lands focus in labelled regions", async ({
   page,

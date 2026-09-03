@@ -17,6 +17,7 @@ import {
   type PublicPriceCandle,
   type PublicPriceRange,
 } from "./public-price-history";
+import RfqInfoTip from "./RfqInfoTip";
 import { useRfqOperations } from "./use-rfq-operations";
 import styles from "./rfq.module.css";
 
@@ -218,10 +219,11 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
       ? aggregate.medianE18
       : 10n ** 36n / aggregate.medianE18
     : 0n;
-  const newestMid = operations.verifiedMids?.reduce(
-    (latest, mid) => Math.max(latest, mid.observedAt),
-    0,
-  ) ?? 0;
+  const newestMid =
+    operations.verifiedMids?.reduce(
+      (latest, mid) => Math.max(latest, mid.observedAt),
+      0,
+    ) ?? 0;
   const midAge = newestMid ? Math.max(0, operations.asOf - newestMid) : null;
 
   function selectHoveredCandle(event: PointerEvent<SVGSVGElement>) {
@@ -238,32 +240,50 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
 
   return (
     <div className={styles.marketBoard}>
-      <section className={styles.marketStats} aria-label="Maker mid indicative reference">
+      <section
+        className={styles.marketStats}
+        aria-label="Maker mid indicative reference"
+      >
         <div>
           <span>MAKER MID · INDICATIVE</span>
           <strong>{formatMidE18(makerMid)}</strong>
-          <small>{quoteUnit} · signed, non-executable reference</small>
+          <small>{quoteUnit}</small>
+          <RfqInfoTip label="About the maker mid">
+            Signed, non-executable reference assembled from verified maker
+            schedules.
+          </RfqInfoTip>
         </div>
         <div>
           <span>DISPERSION</span>
-          <strong>{aggregate?.count ? `${aggregate.dispersionBps} BPS` : "—"}</strong>
-          <small>Range across verified maker mids</small>
+          <strong>
+            {aggregate?.count ? `${aggregate.dispersionBps} BPS` : "—"}
+          </strong>
+          <RfqInfoTip label="About maker dispersion">
+            Range across verified maker mids.
+          </RfqInfoTip>
         </div>
         <div>
           <span>MAKER COUNT</span>
           <strong>{aggregate?.count ?? 0}</strong>
-          <small>Browser-verified governed signatures</small>
+          <RfqInfoTip label="About the maker count">
+            Browser-verified governed signatures.
+          </RfqInfoTip>
         </div>
         <div>
           <span>FRESHNESS</span>
           <strong>{midAge === null ? "UNAVAILABLE" : `${midAge}S AGO`}</strong>
-          <small>
-            {operations.mode === "running" ? "Fresh operations window" : `Operations ${operations.mode}`}
-          </small>
+          <RfqInfoTip label="About maker-data freshness">
+            {operations.mode === "running"
+              ? "Fresh operations window."
+              : `Operations ${operations.mode}.`}
+          </RfqInfoTip>
         </div>
       </section>
 
-      <section className={styles.marketStats} aria-label="Opt-in public market summary">
+      <section
+        className={styles.marketStats}
+        aria-label="Opt-in public market summary"
+      >
         <div>
           <span>PUBLIC SPOT</span>
           <strong>
@@ -293,7 +313,9 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
           >
             {chart ? formatChange(chart.summary.changePercent) : "—"}
           </strong>
-          <small>Public market context</small>
+          <RfqInfoTip label="About the public price change">
+            Public market context only; not an executable RFQ quote.
+          </RfqInfoTip>
         </div>
         <div>
           <span>RANGE LOW / HIGH</span>
@@ -310,7 +332,9 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
             {LOCALNET_FIXTURE_SPREAD_RANGE_BPS.minimum}–
             {LOCALNET_FIXTURE_SPREAD_RANGE_BPS.maximum} BPS
           </strong>
-          <small>Maker A 30 · Maker B 20 · executable only after signing</small>
+          <RfqInfoTip label="About the fixture spread range">
+            Maker A 30 bps · Maker B 20 bps · executable only after signing.
+          </RfqInfoTip>
         </div>
       </section>
 
@@ -505,10 +529,10 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
                       : "Loading public candlesticks…"}
                 </strong>
                 {priceState.kind === "idle" ? (
-                  <p>
+                  <RfqInfoTip label="Privacy details for loading CoinGecko">
                     Opting in contacts CoinGecko directly and discloses your IP
                     address, user agent, request timing, and selected range.
-                  </p>
+                  </RfqInfoTip>
                 ) : null}
                 {priceState.kind === "error" ? (
                   <>
@@ -563,12 +587,11 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
               {model.clientRateLabel} · {LOCALNET_DESK_SPREAD_BPS} bps chart
               example
             </strong>
-            <p>
-              Non-executable example only. Fixture spread range is 20–30 bps;
-              exact executable terms and effective rate require an invited-maker
-              signed response. There is no order book, quote ladder, market
-              depth, or continuous liquidity on this surface.
-            </p>
+            <RfqInfoTip label="About the local fixture policy">
+              Non-executable example only. Exact executable terms and effective
+              rate require an invited-maker signed response. There is no order
+              book, quote ladder, market depth, or continuous liquidity here.
+            </RfqInfoTip>
           </div>
         </aside>
       </div>
@@ -580,17 +603,17 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
         <article>
           <span>INVENTORY</span>
           <strong>Checked at quote time</strong>
-          <p>
+          <RfqInfoTip label="About RFQ inventory">
             A refusal stops here and never silently routes to a public venue.
-          </p>
+          </RfqInfoTip>
         </article>
         <article>
           <span>SETTLEMENT</span>
           <strong>Collateral lock → atomic Take</strong>
-          <p>
-            One explicit Take receives the OPEN note in the same transaction;
-            v3 has no later taker claim or refund phase.
-          </p>
+          <RfqInfoTip label="About RFQ settlement">
+            One explicit Take receives the OPEN note in the same transaction; v3
+            has no later taker claim or refund phase.
+          </RfqInfoTip>
         </article>
       </section>
     </div>

@@ -381,33 +381,37 @@ export function LocalnetDevTools({
           ? "account change is live"
           : "connect Localnet (dev) after choosing an identity"}
       </span>
-      <div className={styles.copies}>
-        {wallet.config.identities.map((identity) => (
+      <details className={styles.runtimeDetails}>
+        <summary>Runtime details</summary>
+        <div className={styles.copies}>
+          <span>Runtime {wallet.config.runtimeEpoch.slice(0, 8)}</span>
+          {wallet.config.identities.map((identity) => (
+            <button
+              key={`copy:${identity.id}`}
+              type="button"
+              onClick={() => void copyAddress(identity)}
+            >
+              {copied === identity.id
+                ? `${identity.label} copied`
+                : `Copy ${identity.label}`}
+            </button>
+          ))}
+          {copied === "error" ? <span>Clipboard denied.</span> : null}
+          <span>Pool {shortAddress(wallet.config.poolAddress)}</span>
+          <span>Mail {shortAddress(wallet.config.helperAddress)}</span>
+          <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
           <button
-            key={`copy:${identity.id}`}
             type="button"
-            onClick={() => void copyAddress(identity)}
+            onClick={() =>
+              void navigator.clipboard.writeText(
+                wallet.config.counterTokenAddress,
+              )
+            }
           >
-            {copied === identity.id
-              ? `${identity.label} copied`
-              : `Copy ${identity.label}`}
+            Copy escrow leg-B
           </button>
-        ))}
-        {copied === "error" ? <span>Clipboard denied.</span> : null}
-        <span>Pool {shortAddress(wallet.config.poolAddress)}</span>
-        <span>Mail {shortAddress(wallet.config.helperAddress)}</span>
-        <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
-        <button
-          type="button"
-          onClick={() =>
-            void navigator.clipboard.writeText(
-              wallet.config.counterTokenAddress,
-            )
-          }
-        >
-          Copy escrow leg-B
-        </button>
-      </div>
+        </div>
+      </details>
     </aside>
   );
 }

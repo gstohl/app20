@@ -144,6 +144,10 @@ async function createBlocks(
 }
 
 async function prepareCohortReview(desk: Locator) {
+  const acknowledge = desk.getByRole("button", {
+    name: "Acknowledge and continue",
+  });
+  if (await acknowledge.isVisible()) await acknowledge.click();
   const preflight = desk.getByLabel("Privacy preflight");
   await expect(preflight).toContainText("Exact size and floor stay local");
   await expect(preflight).toContainText(
@@ -152,7 +156,7 @@ async function prepareCohortReview(desk: Locator) {
   await expect(preflight).toContainText(
     "OPEN payout-note amount, pair, per-lock Take amounts",
   );
-  await preflight.getByRole("checkbox").check();
+  await expect(preflight).toContainText("BRIEFED ONCE");
   const prepare = desk.getByRole("button", {
     name: "Prepare size-blind cohort review",
   });

@@ -264,8 +264,9 @@ export default function InboxPage() {
     [aliases, bookEntries],
   );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
-  const [escrowState, setEscrowState] =
-    useState<EscrowState>(emptyEscrowState());
+  const [escrowState, setEscrowState] = useState<EscrowState>(
+    emptyEscrowState(),
+  );
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});

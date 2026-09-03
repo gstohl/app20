@@ -63,6 +63,7 @@ import {
 import RfqActiveList from "./RfqActiveList";
 import RfqActivity from "./RfqActivity";
 import RfqEnvironmentBanner from "./RfqEnvironmentBanner";
+import RfqInfoTip from "./RfqInfoTip";
 import RfqV3ResumeReview from "./RfqV3ResumeReview";
 import SettlementEvidencePanel from "./SettlementEvidencePanel";
 import {
@@ -214,9 +215,7 @@ function sortRecords(
 
 function actionableSettlement(record: RfqLifecycleRecord): boolean {
   if (record.mode === "v3") {
-    return Boolean(
-      record.settlement && record.state === "submission-unknown",
-    );
+    return Boolean(record.settlement && record.state === "submission-unknown");
   }
   return (
     Boolean(record.settlement) &&
@@ -613,11 +612,7 @@ export default function RfqWorkspace() {
             now,
           })
         : undefined;
-      const current = authorizeReviewedV3Resume(
-        reviewedRecord,
-        durable,
-        now,
-      );
+      const current = authorizeReviewedV3Resume(reviewedRecord, durable, now);
       const result = await executeLocalnetV3Take({
         record: current,
         initialSnapshot: snapshot,
@@ -1159,6 +1154,7 @@ export default function RfqWorkspace() {
         <Link
           to="/rfq"
           hash="new"
+          activeOptions={{ exact: true, includeHash: true }}
           aria-current={view === "new" ? "page" : undefined}
         >
           New
@@ -1166,6 +1162,7 @@ export default function RfqWorkspace() {
         <Link
           to="/rfq"
           hash="active"
+          activeOptions={{ exact: true, includeHash: true }}
           aria-current={view === "active" ? "page" : undefined}
         >
           Active
@@ -1173,6 +1170,7 @@ export default function RfqWorkspace() {
         <Link
           to="/rfq"
           hash="activity"
+          activeOptions={{ exact: true, includeHash: true }}
           aria-current={view === "activity" ? "page" : undefined}
         >
           Activity
@@ -1190,37 +1188,37 @@ export default function RfqWorkspace() {
       ) : null}
       {view === "active" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="Active RFQs">
-           <RfqWorkspaceActiveBoundary
-             records={activeRecords}
-             providerIndex={providerIndex}
-             address={address}
-             chain={chain}
-             loadedScope={loadedScope}
-             currentScope={currentScope}
-             loadState={loadState}
-             loadDetail={loadDetail}
-             busyRfqId={busyRfqId}
-             onAction={(record, action) => void runRecordAction(record, action)}
-             onRemove={(record) => void removeRecord(record)}
-             onClearAll={() => void clearAllRecords()}
-             onRetryLoad={retryWorkspaceLoad}
-           />
-           {resumeReviewRecord ? (
-             <RfqV3ResumeReview
-               record={resumeReviewRecord}
-               busy={busyRfqId === resumeReviewRecord.rfqId}
-               operationBlocker={
-                 gateRfqAction(operations, "take").allowed
-                   ? undefined
-                   : gateRfqAction(operations, "take").reason
-               }
-               onAccept={(record, snapshot) =>
-                 void submitReviewedV3Take(record, snapshot)
-               }
-               onClose={() => setResumeReviewRecord(undefined)}
-             />
-           ) : null}
-         </section>
+          <RfqWorkspaceActiveBoundary
+            records={activeRecords}
+            providerIndex={providerIndex}
+            address={address}
+            chain={chain}
+            loadedScope={loadedScope}
+            currentScope={currentScope}
+            loadState={loadState}
+            loadDetail={loadDetail}
+            busyRfqId={busyRfqId}
+            onAction={(record, action) => void runRecordAction(record, action)}
+            onRemove={(record) => void removeRecord(record)}
+            onClearAll={() => void clearAllRecords()}
+            onRetryLoad={retryWorkspaceLoad}
+          />
+          {resumeReviewRecord ? (
+            <RfqV3ResumeReview
+              record={resumeReviewRecord}
+              busy={busyRfqId === resumeReviewRecord.rfqId}
+              operationBlocker={
+                gateRfqAction(operations, "take").allowed
+                  ? undefined
+                  : gateRfqAction(operations, "take").reason
+              }
+              onAccept={(record, snapshot) =>
+                void submitReviewedV3Take(record, snapshot)
+              }
+              onClose={() => setResumeReviewRecord(undefined)}
+            />
+          ) : null}
+        </section>
       ) : null}
       {view === "activity" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="RFQ activity">
@@ -1284,44 +1282,49 @@ export default function RfqWorkspace() {
               <DeskMarketBoard pairId={pairId} />
             </section>
           </section>
-          <nav aria-label="Separate operations">
+          <nav
+            className={styles.separateOperations}
+            aria-label="Separate operations"
+          >
             <Link to="/funding">Shield / unshield funding</Link>
-            {" · "}
             <Link to="/send">Public send · unavailable</Link>
-            {" · "}
             <Link to="/mail/inbox">Mail · coordination only</Link>
-            {" · "}
             <Link to="/cross-chain-review">Cross-chain dry review</Link>
-            {" · "}
             <Link to="/recovery/privy">Privy recovery</Link>
           </nav>
         </section>
       ) : null}
-      <aside aria-label="Privacy boundaries">
-        <h2>Who can observe what</h2>
-        <ul>
-          <li>
-            <strong>Not published as a public order.</strong> No order book
-            carries this request. That is not the same as being unobservable:
-            public and private activity can still be correlated.
-          </li>
-          <li>
-            <strong>Invited makers see size-blind terms</strong> — pair, side,
-            one fixed ladder bucket, and expiry. Exact size and floor stay in
-            this browser until Take.
-          </li>
-          <li>
-            <strong>Public in this local devnet demo:</strong> shield and
-            unshield legs, fees, collateral locks, exact per-lock Take amounts,
-            lifecycle timing, and OPEN payout-note amounts. Legacy v2 escrow
-            rows remain recoverable through their existing claim/refund actions.
-          </li>
-          <li>
-            <strong>Visible to services:</strong> request timing and maker
-            fanout. Quote schedules and indicative mids are request-scoped
-            signed data.
-          </li>
-        </ul>
+      <aside className={styles.privacyBoundary} aria-label="Privacy boundaries">
+        <strong>Privacy & observability</strong>
+        <span>No public order book · exact terms stay local until Take</span>
+        <RfqInfoTip
+          label="Review privacy and observability details"
+          indicator="Review +"
+        >
+          <span className={styles.privacyBoundaryDetails}>
+            <span>
+              <strong>Not published as a public order.</strong> No order book
+              carries this request.
+              {" Public and private activity can still be correlated."}
+            </span>
+            <span>
+              <strong>Invited makers see size-blind terms.</strong> Pair, side,
+              one fixed ladder bucket, and expiry.
+              {" Exact size and floor stay in this browser until Take."}
+            </span>
+            <span>
+              <strong>Public in this local devnet demo.</strong> Shield and
+              unshield legs, fees, collateral locks, exact per-lock Take
+              amounts, lifecycle timing, and OPEN payout-note amounts. Legacy v2
+              recovery remains available.
+            </span>
+            <span>
+              <strong>Visible to services.</strong> Request timing and maker
+              fanout; quote schedules and indicative mids are request-scoped
+              signed data.
+            </span>
+          </span>
+        </RfqInfoTip>
       </aside>
     </main>
   );

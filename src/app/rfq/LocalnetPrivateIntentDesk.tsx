@@ -61,6 +61,7 @@ import {
   type LocalnetV3Cohort,
 } from "./localnet-private-intents";
 import MakerCohortPanel from "./MakerCohortPanel";
+import RfqInfoTip from "./RfqInfoTip";
 import {
   gateRfqAction,
   localnetEconomicReview,
@@ -120,6 +121,9 @@ export type LocalnetPrivateIntentDeskProps = Readonly<{
   onLifecycleRecord?: (record: RfqLifecycleRecord) => void;
   requestBlockedReason?: string;
 }>;
+
+const RFQ_PRIVACY_BRIEFING_STORAGE_KEY = "app20:rfq:privacy-briefing";
+const RFQ_PRIVACY_BRIEFING_REVISION = "rfq-v3-observability-briefing:1";
 
 type MarketPair = Readonly<{
   id: LocalnetMarketPairId;
@@ -309,7 +313,9 @@ export default function LocalnetPrivateIntentDesk({
   const requestedSurface = surfaceFromHash(hash);
   const [sellAmount, setSellAmount] = useState(pair.defaultSellAmount);
   const [minBuyAmount, setMinBuyAmount] = useState(pair.defaultMinBuyAmount);
-  const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
+  const [privacyBriefingLoaded, setPrivacyBriefingLoaded] = useState(false);
+  const [privacyBriefingAccepted, setPrivacyBriefingAccepted] = useState(false);
+  const [showPrivacyBriefing, setShowPrivacyBriefing] = useState(false);
   const [invitationReview, setInvitationReview] =
     useState<InvitationReview | null>(null);
   const [invitationConfirmed, setInvitationConfirmed] = useState(false);
@@ -331,6 +337,7 @@ export default function LocalnetPrivateIntentDesk({
   const operations = useRfqOperations();
   const requestGate = gateRfqAction(operations, "request");
   const takeGate = gateRfqAction(operations, "take");
+  const privacyBriefingDialogRef = useRef<HTMLDialogElement>(null);
   const quoteComparisonRef = useRef<HTMLElement>(null);
   const finalReviewRef = useRef<HTMLElement>(null);
   const quoteFocusPendingRef = useRef(false);
@@ -408,6 +415,17 @@ export default function LocalnetPrivateIntentDesk({
     }
   }, [exactDraft, pair.sell.symbol]);
 
+  const denominationAlternativeLabel = useMemo(() => {
+    if (exactDraft === null) return null;
+    return [exactDraft / 2n, exactDraft * 2n]
+      .filter((amount) => amount > 0n)
+      .map(
+        (amount) =>
+          `${formatLocalnetTokenAmount(amount, pair.sell)} ${pair.sell.symbol}`,
+      )
+      .join(" or ");
+  }, [exactDraft, pair.sell]);
+
   const privacyPreflight = useMemo(() => {
     if (exactDraft === null) return null;
     const stamp = {
@@ -453,8 +471,45 @@ export default function LocalnetPrivateIntentDesk({
   ]);
   const privacyReady = Boolean(
     privacyPreflight &&
-    canProceedFromPrivacyPreflight(privacyPreflight, privacyConfirmed),
+      canProceedFromPrivacyPreflight(privacyPreflight, privacyBriefingAccepted),
   );
+
+  useEffect(() => {
+    const synchronizeBriefing = () => {
+      let accepted = false;
+      try {
+        accepted =
+          window.localStorage.getItem(RFQ_PRIVACY_BRIEFING_STORAGE_KEY) ===
+          RFQ_PRIVACY_BRIEFING_REVISION;
+      } catch {
+        // Storage denial keeps the briefing current-session only.
+      }
+      setPrivacyBriefingAccepted(accepted);
+      setPrivacyBriefingLoaded(true);
+      setShowPrivacyBriefing(!accepted);
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        event.key === null ||
+        event.key === RFQ_PRIVACY_BRIEFING_STORAGE_KEY
+      ) {
+        synchronizeBriefing();
+      }
+    };
+    synchronizeBriefing();
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  useEffect(() => {
+    const dialog = privacyBriefingDialogRef.current;
+    if (!dialog) return;
+    if (showPrivacyBriefing && !dialog.open) {
+      dialog.showModal();
+    } else if (!showPrivacyBriefing && dialog.open) {
+      dialog.close();
+    }
+  }, [showPrivacyBriefing]);
 
   useEffect(() => {
     const tick = () => setPreflightNow(Math.floor(Date.now() / 1_000));
@@ -665,7 +720,6 @@ export default function LocalnetPrivateIntentDesk({
     setReviewSnapshot(null);
     setReviewSnapshotError(undefined);
     setShowFinalReview(false);
-    setPrivacyConfirmed(false);
     setInvitationReview(null);
     setInvitationConfirmed(false);
     setFlow({ kind: "idle" });
@@ -683,13 +737,26 @@ export default function LocalnetPrivateIntentDesk({
 
   function setSurface(next: DeskSurface) {
     if (quoted || swapOnly || invoice) return;
-    setPrivacyConfirmed(false);
     setInvitationReview(null);
     setInvitationConfirmed(false);
     void navigate({
       to: "/rfq",
       hash: next === "block" ? "desk" : "swap",
     });
+  }
+
+  function acceptPrivacyBriefing() {
+    try {
+      window.localStorage.setItem(
+        RFQ_PRIVACY_BRIEFING_STORAGE_KEY,
+        RFQ_PRIVACY_BRIEFING_REVISION,
+      );
+    } catch {
+      // The current session may proceed, but the next page load asks again.
+    }
+    setPrivacyBriefingAccepted(true);
+    setPrivacyBriefingLoaded(true);
+    setShowPrivacyBriefing(false);
   }
 
   function exactAndFloor(): { exact: bigint; floor: bigint } {
@@ -875,7 +942,7 @@ export default function LocalnetPrivateIntentDesk({
       if (requestBlockedReason) throw new Error(requestBlockedReason);
       if (!privacyReady) {
         throw new Error(
-          "Review the privacy preflight before requesting quotes.",
+          "Complete the one-time privacy briefing before requesting quotes.",
         );
       }
       if (!invitationReview || !invitationConfirmed) {
@@ -1404,6 +1471,66 @@ export default function LocalnetPrivateIntentDesk({
       aria-label={swapOnly ? "Private swap" : undefined}
       aria-labelledby={swapOnly ? undefined : "local-private-intent-title"}
     >
+      <dialog
+        ref={privacyBriefingDialogRef}
+        className={styles.privacyBriefingDialog}
+        aria-labelledby="rfq-privacy-briefing-title"
+        aria-describedby="rfq-privacy-briefing-intro"
+        onCancel={(event) => {
+          if (!privacyBriefingAccepted) event.preventDefault();
+          else setShowPrivacyBriefing(false);
+        }}
+        onClose={() => setShowPrivacyBriefing(false)}
+      >
+        <header>
+          <span>APP20 / ONE-TIME BRIEFING</span>
+          <h3 id="rfq-privacy-briefing-title">Before your first private RFQ</h3>
+        </header>
+        <p id="rfq-privacy-briefing-intro">
+          Review this once in this browser. A material disclosure change bumps
+          the version and shows it again.
+        </p>
+        <ul>
+          <li>
+            <strong>Local draft</strong>
+            Exact size and policy floor stay in this browser until Take.
+          </li>
+          <li>
+            <strong>Maker request</strong>
+            Invited makers receive pair, side, one fixed size bucket, expiry,
+            and request timing—not a public order.
+          </li>
+          <li>
+            <strong>Public settlement</strong>
+            Take reveals collateral activity, exact per-lock amounts, timing,
+            helper activity, and the OPEN payout-note amount on-chain.
+          </li>
+        </ul>
+        <p>
+          Private and public activity may still be correlated. There is no
+          automatic public fallback.
+        </p>
+        <footer>
+          {privacyBriefingAccepted ? (
+            <button
+              type="button"
+              autoFocus
+              onClick={() => setShowPrivacyBriefing(false)}
+            >
+              Close briefing
+            </button>
+          ) : (
+            <button type="button" autoFocus onClick={acceptPrivacyBriefing}>
+              Acknowledge and continue
+            </button>
+          )}
+          <small>
+            Stores only this disclosure revision locally. No wallet signature or
+            transaction is created.
+          </small>
+        </footer>
+      </dialog>
+
       {swapOnly ? null : (
         <header className={styles.privateIntentHeader}>
           <div>
@@ -1459,7 +1586,16 @@ export default function LocalnetPrivateIntentDesk({
       {swapOnly ? null : (
         <>
           <LeakChips venue={venue} />
-          <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
+          {venue === "idle" ? (
+            <div className={styles.deskVenueSummary}>
+              <span>Invited maker inventory · no public route</span>
+              <RfqInfoTip label="About the RFQ venue">
+                {deskVenueCopy(venue)}
+              </RfqInfoTip>
+            </div>
+          ) : (
+            <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
+          )}
         </>
       )}
 
@@ -1625,26 +1761,29 @@ export default function LocalnetPrivateIntentDesk({
           className={styles.bucketNotice}
           aria-label="Size-blind request bucket"
         >
-          <strong>SIZE-BLIND MAKER REQUEST</strong>
+          <strong>MAKERS SEE</strong>
           <p>
             {presentedBucketLabel
-              ? `Reviewed ladder bucket: ${presentedBucketLabel}.`
-              : "Enter a valid ladder amount to see its fixed bucket."}{" "}
-            Makers see only this fixed bucket, never your exact sell amount or
-            local floor.
+              ? `${presentedBucketLabel} bucket`
+              : "Enter an amount to derive its bucket"}
           </p>
+          <RfqInfoTip label="About the size-blind maker request">
+            Makers receive pair, side, this fixed ladder bucket, expiry, and
+            request timing. Your exact sell amount and floor stay local until
+            Take.
+          </RfqInfoTip>
         </aside>
 
         <aside
           className={styles.maturityEstimate}
           aria-label="Note maturity estimate"
         >
-          <strong>CHAIN-DERIVED ESTIMATE</strong>
+          <strong>NOTE MATURITY</strong>
           <p>{maturityLine(maturity, pair.sell.address)}</p>
-          <small>
-            Estimate from public deposit events; APP20 never reads private
-            balances for this maturity line.
-          </small>
+          <RfqInfoTip label="About the note-maturity estimate">
+            Estimated from public deposit events. APP20 never reads private
+            balances for this line.
+          </RfqInfoTip>
         </aside>
 
         {quoted ? null : (
@@ -1653,42 +1792,69 @@ export default function LocalnetPrivateIntentDesk({
               className={styles.privacyPreflight}
               aria-label="Privacy preflight"
             >
-              <strong>PRIVACY PREFLIGHT</strong>
-              <p>
-                Exact size and floor stay local. Invited makers learn pair,
-                side, fixed bucket, expiry, and request timing; Take later makes
-                exact on-chain fill amounts public.
-              </p>
+              <header className={styles.preflightHeader}>
+                <strong>PRIVACY ROUTE</strong>
+                <div className={styles.preflightBriefingControl} role="status">
+                  <span>
+                    {!privacyBriefingLoaded
+                      ? "CHECKING"
+                      : privacyBriefingAccepted
+                        ? "BRIEFED ONCE"
+                        : "REQUIRED"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!privacyBriefingLoaded || working}
+                    onClick={() => setShowPrivacyBriefing(true)}
+                  >
+                    Review
+                  </button>
+                </div>
+              </header>
+              <p>Exact size and floor stay local.</p>
+              <div
+                className={styles.preflightSummary}
+                role="list"
+                aria-label="Privacy boundary summary"
+              >
+                <div role="listitem">
+                  <span>Local</span>
+                  <strong>Exact size + floor</strong>
+                </div>
+                <div role="listitem">
+                  <span>Makers</span>
+                  <strong>Bucket + timing</strong>
+                </div>
+                <div role="listitem">
+                  <span>On-chain Take</span>
+                  <strong>Exact fill amounts</strong>
+                </div>
+              </div>
               {privacyPreflight ? (
-                <ul>
-                  {privacyPreflight.findings.map((finding) => (
-                    <li key={finding.id}>
-                      <strong>{finding.level.toUpperCase()}</strong>{" "}
-                      {finding.message}
-                      <small>
-                        Source: {finding.provenance}; freshness:{" "}
-                        {finding.freshness}
-                      </small>
-                    </li>
-                  ))}
-                </ul>
+                <details className={styles.preflightEvidence}>
+                  <summary>
+                    Review privacy evidence
+                    <strong>{privacyPreflight.findings.length} checks</strong>
+                  </summary>
+                  <ul>
+                    {privacyPreflight.findings.map((finding) => (
+                      <li key={finding.id}>
+                        <strong>{finding.level.toUpperCase()}</strong>{" "}
+                        {finding.topic === "denomination" &&
+                        denominationAlternativeLabel
+                          ? `Optional amount patterns: ${denominationAlternativeLabel}. Changing the amount is always your choice; these suggestions do not establish that activity cannot be correlated.`
+                          : finding.message}
+                        <small>
+                          Source: {finding.provenance}; freshness:{" "}
+                          {finding.freshness}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               ) : (
                 <p role="status">Enter a valid exact sell amount.</p>
               )}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={privacyConfirmed}
-                  disabled={!privacyPreflight || working}
-                  onChange={(event) => {
-                    setPrivacyConfirmed(event.target.checked);
-                    setInvitationReview(null);
-                    setInvitationConfirmed(false);
-                  }}
-                />
-                I understand the bucket disclosure, observable timing, and
-                public v3 Take amounts.
-              </label>
             </aside>
 
             <button
@@ -2024,13 +2190,16 @@ export default function LocalnetPrivateIntentDesk({
         </p>
       )}
 
-      <p className={styles.privateIntentDisclosure}>
-        RFQ v3 sends invited makers only pair, side, fixed ladder bucket, and
-        expiry. Exact size and floor stay local until one atomic Take publishes
-        exact per-lock amounts. Quote schedules are signed and verified against
-        on-chain collateral locks. Loopback timing and fanout remain observable;
-        Sepolia and Mainnet execution remain disabled.
-      </p>
+      <footer className={styles.privateIntentDisclosure}>
+        <span>RFQ v3 · localnet only</span>
+        <RfqInfoTip label="Review RFQ protocol and privacy details">
+          RFQ v3 sends invited makers only pair, side, fixed ladder bucket, and
+          expiry. Exact size and floor stay local until one atomic Take
+          publishes exact per-lock amounts. Quote schedules are signed and
+          verified against on-chain collateral locks. Loopback timing and fanout
+          remain observable; Sepolia and Mainnet execution remain disabled.
+        </RfqInfoTip>
+      </footer>
     </section>
   );
 }

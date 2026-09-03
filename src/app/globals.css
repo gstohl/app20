@@ -825,17 +825,18 @@ a {
 
 @media (max-width: 560px) {
   .app-shell {
-    --app-shell-offset: 148px;
+    --app-shell-offset: 128px;
   }
   .app-shell.has-localnet-banner {
-    --app-shell-offset: 220px;
+    --app-shell-offset: 174px;
   }
   .signal-bar {
-    min-height: 40px;
-    flex-wrap: wrap;
+    min-height: 34px;
+    flex-wrap: nowrap;
+    padding: 6px 10px;
   }
   .signal-bar > span:last-child {
-    display: inline;
+    display: none;
   }
   .lifecycle-strip,
   .evidence-labels {
@@ -867,8 +868,10 @@ a {
   }
   .app-header {
     grid-template-columns: auto minmax(0, 1fr);
+    padding: 4px 8px;
   }
   .app-brand {
+    min-height: 38px;
     font-size: 18px;
   }
   .workflow-phases {

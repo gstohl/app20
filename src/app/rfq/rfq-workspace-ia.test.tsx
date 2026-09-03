@@ -78,6 +78,14 @@ describe("RFQ workspace information architecture", () => {
     expect(workspace).toContain("Private RFQ");
   });
 
+  it("matches hash navigation exactly so only one workspace tab is current", () => {
+    expect(
+      workspace.match(
+        /activeOptions=\{\{ exact: true, includeHash: true \}\}/g,
+      ),
+    ).toHaveLength(3);
+  });
+
   it("moves focus to a labelled region after hash navigation", () => {
     expect(workspace).toContain("viewRegionRef");
     expect(workspace).toContain("viewRegionRef.current?.focus()");
@@ -98,6 +106,29 @@ describe("RFQ workspace information architecture", () => {
     expect(workspace).toContain("collateral locks");
     expect(workspace).toMatch(/OPEN\s+payout-note amounts/);
     expect(workspace).not.toMatch(/anonymous|untraceable|unlinkable/i);
+  });
+
+  it("keeps the global privacy boundary compact and available on demand", () => {
+    expect(workspace).toContain(
+      'label="Review privacy and observability details"',
+    );
+    expect(workspace).toContain('indicator="Review +"');
+    expect(workspace).not.toContain(
+      "<details className={styles.privacyBoundary}",
+    );
+  });
+
+  it("keeps privacy evidence available behind a versioned one-time briefing", () => {
+    const desk = source("src/app/rfq/LocalnetPrivateIntentDesk.tsx");
+    expect(desk).toContain('aria-label="Privacy boundary summary"');
+    expect(desk).toContain("<details className={styles.preflightEvidence}>");
+    expect(desk).not.toContain(
+      "<details className={styles.preflightEvidence} open>",
+    );
+    expect(desk).toContain("RFQ_PRIVACY_BRIEFING_STORAGE_KEY");
+    expect(desk).toContain("RFQ_PRIVACY_BRIEFING_REVISION");
+    expect(desk).toContain("Acknowledge and continue");
+    expect(desk).not.toContain("I understand the bucket disclosure");
   });
 
   it("offers a verify-only retry rather than a resubmission on storage failure", () => {

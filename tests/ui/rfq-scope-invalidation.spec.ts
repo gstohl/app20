@@ -13,12 +13,13 @@ const DISCARD_MESSAGE =
   "The quote response was discarded because the connected wallet account, chain, or provider changed. No quote was added to this context.";
 
 async function prepareQuoteRequest(desk: Locator) {
-  await desk
-    .getByLabel("Privacy preflight")
-    .getByRole("checkbox", {
-      name: "I understand the bucket disclosure, observable timing, and public v3 Take amounts.",
-    })
-    .check();
+  const acknowledge = desk.getByRole("button", {
+    name: "Acknowledge and continue",
+  });
+  if (await acknowledge.isVisible()) await acknowledge.click();
+  await expect(desk.getByLabel("Privacy preflight")).toContainText(
+    "BRIEFED ONCE",
+  );
   await desk
     .getByRole("button", { name: "Prepare size-blind cohort review" })
     .click();

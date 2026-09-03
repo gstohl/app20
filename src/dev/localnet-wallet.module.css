@@ -79,12 +79,58 @@
   white-space: nowrap;
 }
 
+.runtimeDetails {
+  margin-left: auto;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+}
+
+.runtimeDetails summary {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.runtimeDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.runtimeDetails summary::after {
+  margin-left: 8px;
+  color: var(--shell-orange);
+  content: "+";
+}
+
+.runtimeDetails[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+
+.runtimeDetails[open] summary::after {
+  content: "−";
+}
+
+.runtimeDetails[open] summary {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
 .copies {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
-  margin-left: auto;
+  gap: 8px 14px;
+  margin-top: 8px;
+  border-top: 1px solid var(--shell-line);
+  padding-top: 8px;
 }
 
 .copies button {
@@ -106,7 +152,38 @@
     padding: 8px 12px;
   }
 
-  .copies {
+  .runtimeDetails {
     margin-left: 0;
+  }
+
+  .runtimeDetails[open] {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .banner {
+    gap: 6px;
+    padding: 7px 10px;
+  }
+
+  .address,
+  .meta {
+    display: none;
+  }
+
+  .identities button {
+    min-height: 34px;
+    padding: 0 9px;
+  }
+
+  .runtimeDetails {
+    margin-left: auto;
+  }
+
+  .runtimeDetails summary {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 8px;
   }
 }

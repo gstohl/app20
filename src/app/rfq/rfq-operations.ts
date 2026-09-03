@@ -23,10 +23,17 @@ export const LOCALNET_MAX_MAKER_SPREAD_BPS = 50;
 export const LOCALNET_STATUS_MAX_AGE_SECONDS = 30;
 
 export type OperationsMode =
-  "running" | "paused" | "drain-only" | "stale" | "unknown";
+  | "running"
+  | "paused"
+  | "drain-only"
+  | "stale"
+  | "unknown";
 export type CapacityBand = "none" | "small" | "medium" | "large" | "unknown";
 export type MakerInvitationStatus =
-  "not-invited" | "responded" | "refused" | "unavailable";
+  | "not-invited"
+  | "responded"
+  | "refused"
+  | "unavailable";
 
 export type MakerKeyStatus = "valid" | "expired" | "rotated" | "revoked";
 
