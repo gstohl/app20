@@ -36,10 +36,3 @@ export function rfqStateLabel(
 ): string {
   return mode === "v3" ? V3_LABELS[state] : LABELS[state];
 }
-
-export function rfqStateLabelForRecord(input: {
-  state: RfqLifecycleState;
-  mode: "v2" | "v3";
-}): string {
-  return rfqStateLabel(input.state, input.mode);
-}

@@ -140,7 +140,7 @@ export function workspaceScopeIsReady(
   );
 }
 
-export function deriveWorkspaceContextReady(input: {
+function deriveWorkspaceContextReady(input: {
   providerIndex: number;
   address: string | undefined;
   chain: string | undefined;

@@ -16,26 +16,26 @@ export const LOCALNET_ECONOMIC_POLICY_ID =
   "app20/localnet-rfq-economics/fixture-v1" as const;
 export const LOCALNET_APP20_FEE_POLICY_ID =
   "app20/localnet-app20-fee/zero-fixture-v1" as const;
-export const LOCALNET_REFERENCE_POLICY_ID =
+const LOCALNET_REFERENCE_POLICY_ID =
   "app20/localnet-strk-usdc-reference/fixed-2-v1" as const;
 export const LOCALNET_MAX_TOTAL_DEVIATION_BPS = 100;
 export const LOCALNET_MAX_MAKER_SPREAD_BPS = 50;
-export const LOCALNET_STATUS_MAX_AGE_SECONDS = 30;
+const LOCALNET_STATUS_MAX_AGE_SECONDS = 30;
 
-export type OperationsMode =
+type OperationsMode =
   | "running"
   | "paused"
   | "drain-only"
   | "stale"
   | "unknown";
-export type CapacityBand = "none" | "small" | "medium" | "large" | "unknown";
-export type MakerInvitationStatus =
+type CapacityBand = "none" | "small" | "medium" | "large" | "unknown";
+type MakerInvitationStatus =
   | "not-invited"
   | "responded"
   | "refused"
   | "unavailable";
 
-export type MakerKeyStatus = "valid" | "expired" | "rotated" | "revoked";
+type MakerKeyStatus = "valid" | "expired" | "rotated" | "revoked";
 
 export type BrowserSafeMakerStatus = Readonly<{
   makerId: string;
@@ -64,13 +64,13 @@ export type MakerCohortSummary = Readonly<{
 
 export type DirectoryFreshnessState = "fresh" | "expiring" | "expired";
 
-export type RfqLockCounts = Readonly<{
+type RfqLockCounts = Readonly<{
   open: number;
   expiredAwaitingSettlement: number;
   settled: number;
 }>;
 
-export type RfqTranscriptCounts = Readonly<{
+type RfqTranscriptCounts = Readonly<{
   received: number;
   consistent: number;
 }>;
@@ -484,7 +484,7 @@ function eligibleMakerIds(
 }
 
 /** Fingerprint of gating-relevant operations state, excluding the raw clock. */
-export function operationsAvailabilityFingerprint(
+function operationsAvailabilityFingerprint(
   availability: OperationsAvailability,
 ): string {
   return [
@@ -697,11 +697,4 @@ export function localnetEconomicReview(input: {
     perTradeCapBaseUnits,
     fullFillOnly: true,
   });
-}
-
-export function humanTokenUnits(value: bigint, decimals: number): string {
-  const digits = value.toString().padStart(decimals + 1, "0");
-  const whole = digits.slice(0, -decimals) || "0";
-  const fraction = decimals ? digits.slice(-decimals).replace(/0+$/, "") : "";
-  return fraction ? `${whole}.${fraction}` : whole;
 }

@@ -30,7 +30,7 @@ async function tabTo(page: Page, target: Locator, maximumTabs = 40) {
     if (await target.evaluate((element) => element === document.activeElement))
       return;
   }
-  throw new Error(`Keyboard focus did not reach ${await target.toString()}.`);
+  throw new Error(`Keyboard focus did not reach ${target.toString()}.`);
 }
 
 async function expectNamedInteractiveControls(scope: Locator) {
@@ -253,6 +253,36 @@ test("RFQ privacy briefing is versioned once and remains reviewable", async ({
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Close briefing" }).click();
   await expect(dialog).toBeHidden();
+});
+
+test("RFQ and funding share one resolved localnet note-maturity poll", async ({
+  page,
+}) => {
+  await openLocalnetPage(page, "/rfq#new");
+  const acknowledge = page.getByRole("button", {
+    name: "Acknowledge and continue",
+  });
+  if (await acknowledge.isVisible()) await acknowledge.click();
+
+  const rfqMaturity = page.getByLabel("Note maturity estimate");
+  await expect(rfqMaturity).not.toContainText(
+    "Reading public pool deposit events…",
+    { timeout: 60_000 },
+  );
+
+  await page
+    .getByRole("link", { name: "Shield / unshield funding" })
+    .click();
+  await expect(page).toHaveURL(/\/funding$/);
+  const fundingMaturity = page
+    .getByRole("heading", { name: "Note maturity" })
+    .locator("+ p");
+  await expect(fundingMaturity).toContainText("Chain-derived estimate", {
+    timeout: 60_000,
+  });
+  await expect(fundingMaturity).not.toContainText(
+    "Reading public pool deposit events",
+  );
 });
 
 test("RFQ hash navigation is keyboard reachable and lands focus in labelled regions", async ({

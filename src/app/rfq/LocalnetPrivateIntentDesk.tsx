@@ -7,6 +7,10 @@ import {
 } from "@app20/private-intents";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import {
+  useLocalnetNoteMaturity,
+  type LocalnetNoteMaturityState,
+} from "@/app/use-localnet-note-maturity";
 import { feltEquals } from "@/lib/addresses";
 import {
   consumeDeskHandoff,
@@ -31,10 +35,7 @@ import {
 } from "@/lib/token-registry";
 import {
   describeNoteMaturity,
-  noteMaturityStatus,
-  readAccountDeposits,
   type NoteMaturityStatus,
-  type PoolEventsProvider,
 } from "@/lib/note-maturity";
 import { recordInvoiceTakeSettled } from "@/lib/otc";
 import {
@@ -42,8 +43,6 @@ import {
   escrowHelperLocalnet,
   LOCALNET_PROVIDER_INDEX,
   localnetUsdcToken,
-  myFrontendProviders,
-  strk20PoolLocalnet,
 } from "@/utils/constants";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -164,11 +163,6 @@ type FlowState =
     }>
   | Readonly<{ kind: "refused" | "error"; message: string }>;
 
-type MaturityState =
-  | Readonly<{ kind: "idle" | "loading" }>
-  | Readonly<{ kind: "ready"; status: NoteMaturityStatus }>
-  | Readonly<{ kind: "error"; message: string }>;
-
 function marketPairs(): Record<LocalnetMarketPairId, MarketPair> {
   const configured = configuredMarketPair("localnet");
   const strk: LocalnetMarketToken = configured.ok
@@ -258,7 +252,10 @@ function sameCohort(left: LocalnetV3Cohort, right: LocalnetV3Cohort): boolean {
   );
 }
 
-function maturityLine(state: MaturityState, token: string): ReactNode {
+function maturityLine(
+  state: LocalnetNoteMaturityState,
+  token: string,
+): ReactNode {
   if (state.kind !== "ready") {
     return state.kind === "error"
       ? state.message
@@ -327,7 +324,6 @@ export default function LocalnetPrivateIntentDesk({
   const [reviewSnapshotError, setReviewSnapshotError] = useState<string>();
   const [showFinalReview, setShowFinalReview] = useState(false);
   const [flow, setFlow] = useState<FlowState>({ kind: "idle" });
-  const [maturity, setMaturity] = useState<MaturityState>({ kind: "idle" });
   const [waitForMaturity, setWaitForMaturity] = useState(false);
   const [counterparty, setCounterparty] = useState<string | null>(null);
   const [invoice, setInvoice] = useState<InvoiceDeskHandoff | null>(null);
@@ -360,6 +356,10 @@ export default function LocalnetPrivateIntentDesk({
   const localnetReady = Boolean(
     connected && address && chain && providerIndex === LOCALNET_PROVIDER_INDEX,
   );
+  const { maturity, refresh: refreshNoteMaturity } = useLocalnetNoteMaturity({
+    enabled: localnetReady,
+    address,
+  });
   const working = flow.kind === "working" || flow.kind === "waiting";
   const surface: DeskSurface = invoice
     ? "swap"
@@ -637,48 +637,6 @@ export default function LocalnetPrivateIntentDesk({
       setFlow({ kind: "error", message: errorMessage(error) });
     }
   }, [invoice, invoiceEstimateReady, operations.midAggregate, pairs, quoted]);
-
-  useEffect(() => {
-    if (!localnetReady || !address) {
-      setMaturity({ kind: "idle" });
-      return;
-    }
-    let active = true;
-    const refresh = async () => {
-      setMaturity((current) =>
-        current.kind === "ready" ? current : { kind: "loading" },
-      );
-      try {
-        // SAFETY: Starknet's selected localnet provider implements the same
-        // getBlockNumber/getEvents RPC subset required by PoolEventsProvider.
-        const provider = myFrontendProviders[
-          LOCALNET_PROVIDER_INDEX
-        ] as unknown as PoolEventsProvider;
-        const deposits = await readAccountDeposits({
-          provider,
-          poolAddress: strk20PoolLocalnet,
-          account: address,
-        });
-        const head = await provider.getBlockNumber();
-        if (active) {
-          setMaturity({
-            kind: "ready",
-            status: noteMaturityStatus(deposits, head),
-          });
-        }
-      } catch (error: unknown) {
-        if (active) {
-          setMaturity({ kind: "error", message: errorMessage(error) });
-        }
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [address, localnetReady]);
 
   function rfqStorage() {
     return rfqStorageClientRef.current.current();
@@ -1191,19 +1149,14 @@ export default function LocalnetPrivateIntentDesk({
     const poll = async () => {
       try {
         if (!address) throw new Error("The connected account changed.");
-        // SAFETY: Starknet's selected localnet provider implements the same
-        // getBlockNumber/getEvents RPC subset required by PoolEventsProvider.
-        const provider = myFrontendProviders[
-          LOCALNET_PROVIDER_INDEX
-        ] as unknown as PoolEventsProvider;
-        const deposits = await readAccountDeposits({
-          provider,
-          poolAddress: strk20PoolLocalnet,
-          account: address,
-        });
-        const head = await provider.getBlockNumber();
-        const status = noteMaturityStatus(deposits, head);
-        setMaturity({ kind: "ready", status });
+        const nextMaturity = await refreshNoteMaturity();
+        if (nextMaturity.kind === "error") {
+          throw new Error(nextMaturity.message);
+        }
+        if (nextMaturity.kind !== "ready") {
+          throw new Error("The connected account changed.");
+        }
+        const status = nextMaturity.status;
         const gate = v3RequestMaturityGate(status, pair.sell.address);
         if (gate.ready) {
           setWaitForMaturity(false);

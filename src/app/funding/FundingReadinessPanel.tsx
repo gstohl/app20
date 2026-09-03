@@ -1,6 +1,10 @@
 "use client";
 
 import { useActiveStarknetSession } from "@/app/active-session";
+import {
+  useLocalnetNoteMaturity,
+  type LocalnetNoteMaturityState,
+} from "@/app/use-localnet-note-maturity";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import {
@@ -11,19 +15,9 @@ import {
   type CanonicalPairResolution,
 } from "@/lib/token-registry";
 import { MIN_STRK20_WALLET_API, type Strk20Capability } from "@/lib/strk20";
-import {
-  describeNoteMaturity,
-  noteMaturityStatus,
-  readAccountDeposits,
-  type NoteMaturityStatus,
-  type PoolEventsProvider,
-} from "@/lib/note-maturity";
-import {
-  LOCALNET_PROVIDER_INDEX,
-  myFrontendProviders,
-  strk20PoolLocalnet,
-} from "@/utils/constants";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { describeNoteMaturity } from "@/lib/note-maturity";
+import { LOCALNET_PROVIDER_INDEX } from "@/utils/constants";
+import { useMemo, type ReactNode } from "react";
 
 const FUNDING_ACTIONS = [
   { label: "Shield", specAction: "deposit" },
@@ -59,10 +53,10 @@ export type FundingReadinessModel = Readonly<{
   }>;
 }>;
 
-export type FundingMaturityEstimate =
-  | Readonly<{ kind: "loading" }>
-  | Readonly<{ kind: "ready"; status: NoteMaturityStatus }>
-  | Readonly<{ kind: "error"; message: string }>;
+type FundingMaturityEstimate = Exclude<
+  LocalnetNoteMaturityState,
+  Readonly<{ kind: "idle" }>
+>;
 
 export type FundingReadinessInput = Readonly<{
   isConnected: boolean;
@@ -359,8 +353,6 @@ export default function FundingReadinessPanel({
   const isConnected = useStoreWallet((state) => state.isConnected);
   const address = useStoreWallet((state) => state.address);
   const capability = useStoreWallet((state) => state.strk20Capability);
-  const [maturityEstimate, setMaturityEstimate] =
-    useState<FundingMaturityEstimate>();
   const selectedNetwork = networkForProviderIndex(providerIndex);
   const boundNetwork = resolveSessionTokenNetwork({
     selectedNetwork,
@@ -370,60 +362,18 @@ export default function FundingReadinessPanel({
     reason: session.reason,
   });
   const network = boundNetwork.ok ? boundNetwork.network : selectedNetwork;
-
-  useEffect(() => {
-    if (
-      !isConnected ||
-      !address ||
-      network !== "localnet" ||
-      providerIndex !== LOCALNET_PROVIDER_INDEX ||
-      !session.compatible
-    ) {
-      setMaturityEstimate(undefined);
-      return;
-    }
-    let active = true;
-    const refresh = async () => {
-      setMaturityEstimate((current) =>
-        current?.kind === "ready" ? current : { kind: "loading" },
-      );
-      try {
-        // SAFETY: Starknet's selected localnet provider exposes the exact
-        // getBlockNumber/getEvents subset used for public deposit-event reads.
-        const provider = myFrontendProviders[
-          LOCALNET_PROVIDER_INDEX
-        ] as unknown as PoolEventsProvider;
-        const deposits = await readAccountDeposits({
-          provider,
-          poolAddress: strk20PoolLocalnet,
-          account: address,
-        });
-        const head = await provider.getBlockNumber();
-        if (active) {
-          setMaturityEstimate({
-            kind: "ready",
-            status: noteMaturityStatus(deposits, head),
-          });
-        }
-      } catch (error: unknown) {
-        if (active) {
-          setMaturityEstimate({
-            kind: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "The public deposit-event read failed.",
-          });
-        }
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 10_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [address, isConnected, network, providerIndex, session.compatible]);
+  const { maturity } = useLocalnetNoteMaturity({
+    enabled: Boolean(
+      isConnected &&
+        address &&
+        network === "localnet" &&
+        providerIndex === LOCALNET_PROVIDER_INDEX &&
+        session.compatible,
+    ),
+    address,
+  });
+  const maturityEstimate =
+    maturity.kind === "idle" ? undefined : maturity;
 
   const model = useMemo(() => {
     const pair = network ? configuredMarketPair(network) : null;
