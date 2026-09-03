@@ -23,6 +23,7 @@ import PrivyRecoveryPage from "@/app/recovery/privy/page";
 import CrossChainReviewPage from "@/app/cross-chain-review/page";
 import { CANONICAL_ROUTES, legacyRouteRedirect } from "@/app/routes";
 import "@/app/globals.css";
+import "@/app/design-system.css";
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
 

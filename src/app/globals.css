@@ -283,18 +283,13 @@ a {
   --danger: var(--shell-danger);
   --danger-quiet: var(--shell-inset);
   --danger-border: var(--shell-danger);
-  --public: var(--shell-muted);
-  --public-quiet: var(--shell-inset);
-  --public-wash: var(--shell-panel);
-  --deal: var(--shell-orange);
-  --deal-quiet: var(--shell-inset);
-  --deal-wash: var(--shell-panel);
+  /* The record-class colours (the --public and --deal families) are defined
+     in design-system.css, which restores them as their own hues instead of
+     folding them onto --shell-muted and --shell-orange. */
   --page-rule: color-mix(in srgb, var(--shell-line) 20%, transparent);
   --shadow: color-mix(in srgb, var(--shell-bg) 55%, transparent);
   --shadow-soft: color-mix(in srgb, var(--shell-bg) 32%, transparent);
-  --public-shadow: color-mix(in srgb, var(--shell-muted) 20%, transparent);
   --accent-shadow: color-mix(in srgb, var(--shell-orange) 28%, transparent);
-  --overlay: color-mix(in srgb, var(--shell-bg) 72%, transparent);
   --focus-ring: var(--shell-orange);
   --scroll-track: var(--shell-panel);
   --scroll-thumb: var(--shell-muted);
@@ -306,8 +301,6 @@ a {
   --muted: var(--shell-muted);
   --teal: var(--shell-orange);
   --teal-soft: var(--shell-inset);
-  --ribbon: var(--shell-orange);
-  --proof-teal: var(--shell-muted);
   --line: var(--shell-line);
   --bg: var(--shell-bg);
   --card: var(--shell-panel);

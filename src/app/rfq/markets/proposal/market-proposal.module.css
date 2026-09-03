@@ -150,9 +150,9 @@
 
 .formSection {
   display: grid;
-  gap: 16px;
-  border-bottom: 1px solid var(--shell-line);
-  padding: 18px;
+  gap: var(--space-6);
+  border-bottom: var(--line);
+  padding: var(--pad-sheet);
 }
 
 .sectionHeader,
@@ -170,8 +170,8 @@
 
 .sectionHeader h2,
 .reviewHeader h2 {
-  margin: 3px 0 0;
-  font-size: 15px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-base);
   letter-spacing: -0.02em;
 }
 
@@ -181,26 +181,23 @@
   white-space: nowrap;
 }
 
+/* DataGrid. One hairline grid gap over the rule colour draws every divider,
+   so cells carry no borders of their own. */
 .canonicalGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--rule);
   margin: 0;
-  border: 1px solid var(--shell-line);
+  border: var(--line);
+  background: var(--shell-line);
 }
 
 .canonicalGrid > div {
   display: grid;
   min-width: 0;
-  gap: 4px;
-  padding: 10px 11px;
-}
-
-.canonicalGrid > div:nth-child(even) {
-  border-left: 1px solid var(--shell-line);
-}
-
-.canonicalGrid > div:nth-child(n + 3) {
-  border-top: 1px solid var(--shell-line);
+  align-content: start;
+  padding: 7px 9px;
+  background: var(--shell-bg);
 }
 
 .canonicalGrid dt,
@@ -208,27 +205,38 @@
   margin: 0;
 }
 
-.canonicalGrid dt,
 .checksum > span,
 .readinessSection > span {
   color: var(--shell-orange);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: var(--label-xs);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+}
+
+.canonicalGrid dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .canonicalGrid dd {
+  margin-top: var(--space-1);
   overflow-wrap: anywhere;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 11px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
 }
 
 .canonicalGrid small {
+  margin-top: 2px;
   color: var(--shell-muted);
-  font-size: 9px;
-  line-height: 1.4;
+  font-size: var(--label-sm);
+  line-height: 1.35;
 }
 
 .feeFieldset {
