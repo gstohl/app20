@@ -220,7 +220,7 @@
   margin-top: 20px;
   padding: 13px 16px;
   border-color: var(--shell-orange);
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
 }
 
@@ -1335,7 +1335,7 @@
 }
 
 .composeButton {
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
 }
 
@@ -1591,7 +1591,7 @@
 }
 
 .sidebarWalletActions button:first-child {
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
 }
 
@@ -1658,20 +1658,69 @@
   box-shadow: none;
 }
 
-.contactBackupPanel {
+/* Notice: the key requirement stated where the draft form starts, with the
+   full setup panel anchored below it rather than stacked on top of it. */
+.keySetupNotice {
   display: grid;
-  gap: 7px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--shell-line);
-  border-bottom: 1px solid var(--shell-line);
+  gap: var(--space-1);
+  margin: 0 0 var(--space-5);
+  border: var(--frame-accent);
+  padding: 9px 11px;
+  background: var(--accent-wash);
+  color: var(--shell-text);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+
+.keySetupNotice strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-md);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keySetupNotice span {
+  color: var(--shell-muted);
+}
+
+.keySetupNotice a {
+  color: var(--shell-orange);
+  text-decoration: underline;
+}
+
+.keySetupNotice a:hover {
+  color: var(--shell-text);
+}
+
+/* Recovery is a standing explainer, not navigation. It collapses by default so
+   the rail reads as folders and filters, matching .forgetDevice below. */
+.contactBackupPanel {
+  padding: 0;
+  border-top: var(--line);
+  border-bottom: var(--line);
+  background: transparent;
+}
+
+.contactBackupPanel > summary {
+  padding: 8px 12px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-md);
+  font-weight: 700;
+  letter-spacing: var(--track-label);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.contactBackupPanel[open] {
   background: var(--shell-panel);
 }
 
-.contactBackupPanel strong {
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+.contactBackupBody {
+  display: grid;
+  gap: 7px;
+  padding: 0 12px 10px;
 }
 
 .contactBackupPanel p {
@@ -2078,20 +2127,25 @@
   padding: 12px 14px;
 }
 
+/* Shared status slot. "ok" is routine confirmation — an autosave landing is not
+   a hazard, so it stays neutral and lets the accent and danger treatments mean
+   something. "error" is the one severity here, so it uses --shell-danger; the
+   deal colour is a record class (negotiated terms), not a severity. */
 .storageNotice {
   width: 100%;
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-5);
   padding: 8px 10px;
-  border-left: 4px solid var(--shell-orange);
-  background: color-mix(in srgb, var(--shell-orange) 16%, var(--shell-bg));
-  color: var(--shell-text);
-  font-size: 13px;
-  line-height: 1.5;
+  border-left: var(--border-record-width) solid var(--shell-line);
+  background: var(--shell-panel);
+  color: var(--shell-muted);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
 }
 
 .storageNoticeError {
-  border-left-color: var(--shell-deal, #c496ae);
-  background: var(--shell-deal-quiet, #2e2129);
+  border-left-color: var(--shell-danger);
+  background: color-mix(in srgb, var(--shell-danger) 14%, var(--shell-bg));
+  color: var(--shell-text);
 }
 
 .threadPanel,
@@ -2385,7 +2439,7 @@
   margin-top: 12px;
   padding: 9px 12px;
   border: 1px solid var(--shell-orange);
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
   font: inherit;
   font-size: 10px;
@@ -2503,7 +2557,7 @@
   }
 
   .mobileCompose {
-    color: var(--shell-on-accent, #fff);
+    color: var(--on-accent);
     background: var(--shell-orange);
   }
 
@@ -2709,7 +2763,7 @@
 }
 
 .typeFilterNav button[aria-pressed="true"] {
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
 }
 

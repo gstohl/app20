@@ -263,7 +263,7 @@
 }
 
 .sidebarWalletActions button:first-child {
-  color: var(--shell-on-accent, #fff);
+  color: var(--on-accent);
   background: var(--shell-orange);
 }
 

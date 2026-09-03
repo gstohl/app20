@@ -3196,71 +3196,68 @@ export default function InboxPage() {
             ) : null}
           </section>
 
-          <section
-            className={styles.contactBackupPanel}
-            aria-labelledby="contact-backup-title"
-          >
-            <strong id="contact-backup-title">
-              Encrypted mailbox recovery
-            </strong>
-            <p>
-              Post authenticated contact or RFQ-history self-mail. Oversized
-              ciphertext uses a verified CID pointer. The same wallet locates
-              it; the mailbox recovery phrase decrypts it. Wallet alone is not
-              enough. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
-            </p>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              disabled={
-                !keypair ||
-                !mailSeed ||
-                !helperAddress ||
-                actionStates["contacts:backup"]?.pending ||
-                actionStates["rfq-resume:backup"]?.pending
-              }
-              onClick={() => void handleContactBackup()}
-            >
-              {actionStates["contacts:backup"]?.pending
-                ? "Backing up…"
-                : "Back up contacts to Mailbox"}
-            </button>
-            {actionStates["contacts:backup"]?.message ? (
-              <p className={styles.scanMessage} role="status">
-                {actionStates["contacts:backup"].message}
+          <details className={styles.contactBackupPanel}>
+            <summary>Encrypted mailbox recovery</summary>
+            <div className={styles.contactBackupBody}>
+              <p>
+                Post authenticated contact or RFQ-history self-mail. Oversized
+                ciphertext uses a verified CID pointer. The same wallet locates
+                it; the mailbox recovery phrase decrypts it. Wallet alone is not
+                enough. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
               </p>
-            ) : null}
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              disabled={
-                !keypair ||
-                !mailSeed ||
-                !helperAddress ||
-                actionStates["contacts:backup"]?.pending ||
-                actionStates["rfq-resume:backup"]?.pending
-              }
-              onClick={() => void handleRfqHistoryBackup()}
-            >
-              {actionStates["rfq-resume:backup"]?.pending
-                ? "Backing up…"
-                : "Back up RFQ history"}
-            </button>
-            {actionStates["rfq-resume:backup"]?.message ? (
-              <p className={styles.scanMessage} role="status">
-                {actionStates["rfq-resume:backup"].message}
-              </p>
-            ) : null}
-            <label>
-              <input
-                type="checkbox"
-                checked={rfqAutoBackupEnabled}
-                disabled={!address || !chainId}
-                onChange={(event) => updateRfqAutoBackup(event.target.checked)}
-              />{" "}
-              Automatically back up RFQ history after settlement (opt in)
-            </label>
-          </section>
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={
+                  !keypair ||
+                  !mailSeed ||
+                  !helperAddress ||
+                  actionStates["contacts:backup"]?.pending ||
+                  actionStates["rfq-resume:backup"]?.pending
+                }
+                onClick={() => void handleContactBackup()}
+              >
+                {actionStates["contacts:backup"]?.pending
+                  ? "Backing up…"
+                  : "Back up contacts to Mailbox"}
+              </button>
+              {actionStates["contacts:backup"]?.message ? (
+                <p className={styles.scanMessage} role="status">
+                  {actionStates["contacts:backup"].message}
+                </p>
+              ) : null}
+              <button
+                className={styles.secondaryButton}
+                type="button"
+                disabled={
+                  !keypair ||
+                  !mailSeed ||
+                  !helperAddress ||
+                  actionStates["contacts:backup"]?.pending ||
+                  actionStates["rfq-resume:backup"]?.pending
+                }
+                onClick={() => void handleRfqHistoryBackup()}
+              >
+                {actionStates["rfq-resume:backup"]?.pending
+                  ? "Backing up…"
+                  : "Back up RFQ history"}
+              </button>
+              {actionStates["rfq-resume:backup"]?.message ? (
+                <p className={styles.scanMessage} role="status">
+                  {actionStates["rfq-resume:backup"].message}
+                </p>
+              ) : null}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={rfqAutoBackupEnabled}
+                  disabled={!address || !chainId}
+                  onChange={(event) => updateRfqAutoBackup(event.target.checked)}
+                />{" "}
+                Automatically back up RFQ history after settlement (opt in)
+              </label>
+            </div>
+          </details>
 
           <details className={styles.forgetDevice}>
             <summary>Device safety</summary>
@@ -3373,12 +3370,21 @@ export default function InboxPage() {
                 {storageNotice.message}
               </p>
             ) : null}
-            {!keypair && (composerOpen || selectedMessage) ? (
+            {!keypair && selectedMessage && !composerOpen ? (
               <Onboard
                 key={`${providerIndex}:${address}`}
                 helperAddress={helperAddress}
                 onKeyReady={handleKeyReady}
               />
+            ) : null}
+            {!keypair && composerOpen ? (
+              <p className={styles.keySetupNotice}>
+                <strong>No mailbox key on this device</strong>
+                <span>
+                  Write and save the draft now. Sending needs a mailbox key —{" "}
+                  <a href="#mailbox-key-setup">set one up below</a>.
+                </span>
+              </p>
             ) : null}
             {composerOpen && activeDraft ? (
               <Compose
@@ -3468,6 +3474,13 @@ export default function InboxPage() {
                 </div>
               </section>
             )}
+            {!keypair && composerOpen ? (
+              <Onboard
+                key={`${providerIndex}:${address}`}
+                helperAddress={helperAddress}
+                onKeyReady={handleKeyReady}
+              />
+            ) : null}
           </div>
         </section>
       </main>
