@@ -16,7 +16,6 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const walletMode = useWalletMode((state) => state.mode);
   const privyConnected = useWalletMode((state) => state.privyConnected);
   const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
-  const swapActive = pathname.startsWith("/swap");
   const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
   const connected = walletMode === "privy" ? privyConnected : readyConnected;
 
@@ -45,13 +44,6 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           <b>[20]</b>
         </Link>
         <nav className="app-tabs" aria-label="APP20 modules">
-          <Link
-            to="/swap/$tokenA/$tokenB"
-            params={{ tokenA: "strk", tokenB: "usdc" }}
-            aria-current={swapActive ? "page" : undefined}
-          >
-            Pair review
-          </Link>
           <Link to="/rfq" aria-current={rfqActive ? "page" : undefined}>
             RFQ
           </Link>

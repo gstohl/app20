@@ -16,7 +16,6 @@ import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
 import OperationsDashboard from "@/app/rfq/OperationsDashboard";
-import SwapPage from "@/app/swap/page";
 import MarketProposalPage from "@/app/rfq/markets/proposal/page";
 import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
@@ -59,11 +58,6 @@ function ReadyPaymentPage() {
   );
 }
 
-function RoutedSwapPage() {
-  const { tokenA, tokenB } = useParams({ strict: false });
-  return <SwapPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
-}
-
 function RoutedMarketProposalPage() {
   const { tokenA, tokenB } = useParams({ strict: false });
   return <MarketProposalPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
@@ -75,24 +69,6 @@ const homeRoute = createRoute({
   beforeLoad: () => {
     throw redirect({ to: CANONICAL_ROUTES.rfq, replace: true });
   },
-});
-
-const swapIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/swap",
-  beforeLoad: () => {
-    throw redirect({
-      to: "/swap/$tokenA/$tokenB",
-      params: { tokenA: "strk", tokenB: "usdc" },
-      replace: true,
-    });
-  },
-});
-
-const swapRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/swap/$tokenA/$tokenB",
-  component: RoutedSwapPage,
 });
 
 const marketProposalRoute = createRoute({
@@ -200,8 +176,6 @@ const crossChainReviewRoute = createRoute({
 const router = createRouter({
   routeTree: rootRoute.addChildren([
     homeRoute,
-    swapIndexRoute,
-    swapRoute,
     marketProposalRoute,
     legacyPoolCreationRoute,
     rfqRoute,

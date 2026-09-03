@@ -163,12 +163,9 @@ export default function MarketProposalPage({
             {" / "}
             <span>Markets</span>
             {" / "}
-            <Link
-              to="/swap/$tokenA/$tokenB"
-              params={{ tokenA: pair.tokenA.key, tokenB: pair.tokenB.key }}
-            >
-              {pair.tokenA.symbol} / {pair.tokenB.symbol}
-            </Link>
+            <span>
+              {pair.tokenA.symbol} / {pair.tokenB.symbol}
+            </span>
             {" / "}
             <span aria-current="page">Proposal</span>
           </nav>
@@ -179,13 +176,7 @@ export default function MarketProposalPage({
           className={styles.headerActions}
           aria-label="Market proposal navigation"
         >
-          <Link
-            to="/swap/$tokenA/$tokenB"
-            params={{ tokenA: pair.tokenA.key, tokenB: pair.tokenB.key }}
-          >
-            ← Back to pair
-          </Link>
-          <Link to="/rfq">Open RFQ</Link>
+          <Link to="/rfq">← Back to RFQ</Link>
         </nav>
       </header>
 

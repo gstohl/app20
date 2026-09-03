@@ -43,9 +43,7 @@ describe("APP20 canonical routes", () => {
 
   it("keeps first-class destinations canonical", () => {
     expect(CANONICAL_ROUTES.home).toBe("/");
-    expect(CANONICAL_ROUTES.swap).toBe("/swap/strk/usdc");
     expect(legacyRouteTarget(CANONICAL_ROUTES.home)).toBeNull();
-    expect(legacyRouteTarget(CANONICAL_ROUTES.swap)).toBeNull();
     expect(CANONICAL_ROUTES.rfq).toBe("/rfq");
     expect(CANONICAL_ROUTES.rfqOperations).toBe("/rfq/operations");
     expect(CANONICAL_ROUTES.funding).toBe("/funding");
