@@ -421,16 +421,24 @@ export function parseDecimalToBaseUnits(
   return units.toString();
 }
 
+/**
+ * Thousands separators on the integer part only. A desk reads 25,000 STRK at a
+ * glance and has to count the digits of 25000; the fraction is never grouped,
+ * and the separator is a literal comma rather than a locale format so a decimal
+ * point cannot become a group mark on another machine.
+ */
+function groupThousands(whole: string): string {
+  return whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 export function formatBaseUnits(amount: string, decimals: number): string {
   if (!BASE_UNITS_PATTERN.test(amount)) return amount;
   if (!Number.isInteger(decimals) || decimals <= 0)
-    return BigInt(amount).toString();
+    return groupThousands(BigInt(amount).toString());
   const padded = amount.padStart(decimals + 1, "0");
-  const whole = padded.slice(0, -decimals);
+  const whole = groupThousands(BigInt(padded.slice(0, -decimals)).toString());
   const fraction = padded.slice(-decimals).replace(/0+$/, "");
-  return fraction
-    ? `${BigInt(whole).toString()}.${fraction}`
-    : BigInt(whole).toString();
+  return fraction ? `${whole}.${fraction}` : whole;
 }
 
 export function offerIsExpired(

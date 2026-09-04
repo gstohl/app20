@@ -182,12 +182,14 @@
   line-height: 1.6;
 }
 
-/* Prose keeps a measure wherever it appears in the module. */
+/* Prose keeps a measure wherever it appears in the module. Framed and ruled
+   blocks are structure and span their card, so they are not capped here. */
 .copy,
 .finePrint,
 .notice,
-.actionWarning,
-.restoreWarning {
+.authWarning,
+.offerNote,
+.receiptWarning {
   max-width: var(--measure-reading);
 }
 
@@ -732,13 +734,24 @@
 }
 
 .sheetType,
-.sheetMeta,
-.receiptWarning {
+.sheetMeta {
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
+}
+
+/* A full sentence is prose, not a label: it leaves the mono label face that
+   the sheet type and meta line keep. */
+.receiptWarning {
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.receiptWarning strong {
+  color: var(--shell-text);
 }
 
 .sheetType,
@@ -832,9 +845,12 @@
   background: var(--shell-panel);
 }
 
+/* One framed block per card. A hazard note is ranked below the protocol truth
+   in .riskCopy, so it takes a rule rather than a second box inside the box. */
 .actionWarning {
-  padding: 10px 12px;
-  border: 1px solid var(--shell-text);
+  padding: 8px 12px;
+  border: 0;
+  border-left: var(--border-record-width) solid var(--shell-text);
   background: var(--shell-panel);
 }
 

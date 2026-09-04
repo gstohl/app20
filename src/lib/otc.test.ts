@@ -98,6 +98,13 @@ describe("OTC payloads", () => {
     expect(parseDecimalToBaseUnits("0.01", 18)).toBe("10000000000000000");
     expect(parseDecimalToBaseUnits("2.5", 6)).toBe("2500000");
     expect(formatBaseUnits("2500000", 6)).toBe("2.5");
+    // Grouping is display-only and never touches the fraction.
+    expect(formatBaseUnits((25_000n * 10n ** 18n).toString(), 18)).toBe(
+      "25,000",
+    );
+    expect(formatBaseUnits("1234567890123", 6)).toBe("1,234,567.890123");
+    expect(formatBaseUnits("999", 0)).toBe("999");
+    expect(formatBaseUnits("1000", 0)).toBe("1,000");
     expect(() => parseDecimalToBaseUnits("0.0000001", 6)).toThrow(/6 decimal/i);
     expect(isPositiveBaseUnitAmount(((1n << 256n) - 1n).toString())).toBe(true);
     expect(isPositiveBaseUnitAmount((1n << 256n).toString())).toBe(false);

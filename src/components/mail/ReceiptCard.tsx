@@ -1,4 +1,5 @@
 import { formatBaseUnits, type ReceiptPayload } from "@/lib/otc";
+import { shortenFelt } from "./correspondent";
 import styles from "./mail.module.css";
 
 type ReceiptCardProps = {
@@ -45,7 +46,8 @@ export default function ReceiptCard({
       <p className={styles.termsSentence}>
         {locallySubmitted ? "This device submitted" : "A counterparty claims"}{" "}
         the {amount} <bdi>{receipt.transfer.token.symbol}</bdi>{" "}
-        {standalonePayment ? "payment" : "leg"} in transaction {receipt.txHash}.
+        {standalonePayment ? "payment" : "leg"} in transaction{" "}
+        <span title={receipt.txHash}>{shortenFelt(receipt.txHash)}</span>.
       </p>
       <p className={styles.riskCopy}>
         {locallySubmitted
@@ -61,7 +63,8 @@ export default function ReceiptCard({
       </p>
       {standalonePayment ? null : (
         <p className={styles.receiptWarning}>
-          Counterparty claim warning: <strong>{receipt.warning}</strong>
+          Counterparty claim · <strong>one-sided settlement</strong> — the two
+          legs are not swapped in one transaction.
         </p>
       )}
       <code className={styles.fullHash}>{receipt.txHash}</code>
