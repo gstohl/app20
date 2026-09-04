@@ -72,6 +72,8 @@ fn transfer_token(
     recipient: ContractAddress,
     amount: u128,
 ) {
+    // Model the outer account's atomic prepare_funding -> pool transfer/invoke batch.
+    IApp20EscrowDispatcher { contract_address: recipient }.prepare_funding(token_address);
     cheat_caller_address(token_address, sender, CheatSpan::TargetCalls(1));
     assert(token.transfer(recipient, amount.into()), 'transfer failed');
 }
@@ -122,6 +124,7 @@ fn fund(
         EscrowOperation::Fund(
             FundParams {
                 token: token_a_address,
+                amount,
                 counter_token: token_b_address,
                 counter_amount: LEG_B_AMOUNT,
                 deadline: DEADLINE,

@@ -5,6 +5,7 @@ import {
   createTakerAuthorizationKey,
   fillsDigest,
   signTake,
+  takeIdentityCommitment,
   takeMessageHash,
   takerPublicKeyFor,
   verifyTakeSignature,
@@ -22,7 +23,15 @@ type TakeSignatureVector = Readonly<{
   }>[];
   fillsDigest: VectorFelt;
   messageInputs: readonly Readonly<{
-    name: "domain" | "escrowAddress" | "rfqId" | "tokenA" | "tokenB" | "fillsDigest";
+    name:
+      | "domain"
+      | "chainId"
+      | "escrowAddress"
+      | "identityCommitment"
+      | "rfqId"
+      | "tokenA"
+      | "tokenB"
+      | "fillsDigest";
     value: VectorFelt;
   }>[];
   message: VectorFelt;
@@ -54,7 +63,7 @@ function vectorInput(
 
 describe("RFQ v3 Take signatures", () => {
   it("encodes the Cairo short-string domain as one felt", () => {
-    expect(TAKE_DOMAIN).toBe("0x61707032302d74616b652d7633");
+    expect(TAKE_DOMAIN).toBe("0x61707032302d74616b652d7634");
   });
 
   for (const vector of fixture.vectors) {
@@ -63,7 +72,9 @@ describe("RFQ v3 Take signatures", () => {
       expect(takerPublicKeyFor(vector.privateKey.hex)).toBe(vector.publicKey.hex);
       expect(fillsDigest(fills)).toBe(vector.fillsDigest.hex);
       const message = takeMessageHash({
+        chainId: vectorInput(vector, "chainId"),
         escrowAddress: vectorInput(vector, "escrowAddress"),
+        identityCommitment: vectorInput(vector, "identityCommitment"),
         rfqFelt: vectorInput(vector, "rfqId"),
         tokenA: vectorInput(vector, "tokenA"),
         tokenB: vectorInput(vector, "tokenB"),
@@ -92,7 +103,9 @@ describe("RFQ v3 Take signatures", () => {
     expect(first.publicKey).toBe(takerPublicKeyFor(first.signingKey));
     expect(second.signingKey).not.toBe(first.signingKey);
     const message = takeMessageHash({
+      chainId: "0x534e5f5345504f4c4941",
       escrowAddress: "0x5",
+      identityCommitment: "0x99",
       rfqFelt: "0x77",
       tokenA: "0x1",
       tokenB: "0x2",
@@ -107,19 +120,35 @@ describe("RFQ v3 Take signatures", () => {
     ).toBe(false);
   });
 
-  it("binds the escrow, RFQ, token order, and ordered fill transcript", () => {
+  it("uses a different public identity commitment for every RFQ", () => {
+    const identityKey = "0x4567";
+    expect(takeIdentityCommitment(identityKey, "0x77")).not.toBe(
+      takeIdentityCommitment(identityKey, "0x78"),
+    );
+    expect(takeIdentityCommitment(identityKey, "0x77")).toBe(
+      takeIdentityCommitment(identityKey, "0x077"),
+    );
+  });
+
+  it("binds the chain, authenticated identity, escrow, RFQ, token order, and fills", () => {
     const fills = [
       { lockId: "0x41", amountA: 100n },
       { lockId: "0x42", amountA: 150n },
     ];
     const base = {
+      chainId: "0x534e5f5345504f4c4941",
       escrowAddress: "0x5",
+      identityCommitment: "0x99",
       rfqFelt: "0x77",
       tokenA: "0x1",
       tokenB: "0x2",
       fills,
     };
     const message = takeMessageHash(base);
+    expect(takeMessageHash({ ...base, chainId: "0x1" })).not.toBe(message);
+    expect(
+      takeMessageHash({ ...base, identityCommitment: "0x98" }),
+    ).not.toBe(message);
     expect(takeMessageHash({ ...base, escrowAddress: "0x6" })).not.toBe(
       message,
     );

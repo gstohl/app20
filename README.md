@@ -127,9 +127,23 @@ hide v3 escrow facts: `LockCreated` publishes the schedule and collateral
 maximum, `LockTaken` publishes each exact fill, and `DealTaken` publishes exact
 aggregate A/B totals and fill count. The retained wire field `takerCommitment` is the ephemeral taker Stark public
 key. Take calldata exposes its signature and ordered fills, while the private
-signing key remains local and is deleted after a terminal Take. The signature
-cannot bind output-note ownership through the current pool API, leaving a
-copy-sniping race for a relayer or sequencer that obtains a signed Take.
+signing key remains local and is deleted after a terminal Take. The localnet
+protected ComputeAndInvoke path derives a public helper/user identity
+commitment scoped to the RFQ without exposing the pool-private identity key. Take v4 signs the
+native chain ID, escrow, that commitment, RFQ/deal, ordered tokens, and ordered
+fills digest, binding execution to the pool identity that owns the output note.
+The commitment differs across RFQs; activity within one RFQ remains linkable
+through its signature, fills, and events. This
+path is a pinned local client shim, not production-wallet compatibility or
+public-network readiness.
+
+Fund, Fill, Lock, and Take input accounting is measured inside the same outer
+account transaction. A public `prepare_funding(token)` call runs before the
+pool transfer, snapshots the actual transaction hash and escrow balance, and
+is consumed exactly once by an exact-delta check. Old donations cannot
+subsidize an input and excess input fails. The local wallet and maker use the
+shared funding-preflight helper and allow at most one funded escrow operation
+per token in a batch.
 
 ### Invited-maker RFQ v3
 
@@ -196,7 +210,7 @@ stateDiagram-v2
     Open --> Expired: expiry reached
     Taken --> Expired: expiry reached
     Expired --> Settling: fsync side before wallet call
-    Settling --> Settled: all non-zero sides confirmed
+    Settling --> Settled: both ticket units finalized; Cairo Closed
     Settling --> Expired: known revert, refresh chain
     Settling --> SettlementUnknown: submitted result uncertain
     ReconcilePending --> Open: chain proves open
@@ -287,9 +301,16 @@ flowchart TD
 Nothing is authorized for deployment now. The localnet escrow constructor takes
 the pool, `ClaimTicket` class hash, and `LockTicket` class hash. It retains v1
 operations 0–3 and adds `Lock`, `Take`, `SettleProceeds`, and
-`ReleaseCollateral` as 4–7. Legacy operations are slated for explicit later
-removal. This localnet class and `LockTicket` are not production candidates and
-do not modify the separately frozen App20Escrow/App20Claim VNext target. See
+`ReleaseCollateral` as 4–7. Those stable enum discriminants do not imply wire
+compatibility: Fund calldata now includes an explicit amount, the protected
+nonzero Mail and Take paths changed, and Take uses its v4 signed message. Deploy
+the matching helper/contracts and client builders together on a fresh localnet.
+Existing deployed contracts and private notes are not upgraded or migrated by
+these local changes; preserve old runtime/history as evidence. Legacy operations
+are slated for explicit later removal. This localnet class and `LockTicket` are
+not production candidates. This localnet rollout grants no public deployment
+authority and does not modify the separately frozen App20Escrow/App20Claim
+VNext target. See
 [`docs/APP20_CONTRACTS.md`](docs/APP20_CONTRACTS.md).
 
 ### Release ladder
@@ -323,15 +344,15 @@ Detailed diagrams:
 APP20 can hide in-pool transfers and encrypt mail. It cannot promise
 unlinkability.
 
-| Not directly exposed by the stated mechanism              | Public, disclosed, or still correlatable                                                                                                                                                                            |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| In-pool private-transfer ownership and amount             | Shield/unshield legs, timing, and amount correlation                                                                                                                                                                |
-| Exact RFQ size and floor during invitation                | Makers receive pair, direction, fixed bucket, RFQ/helper bindings, and expiry; transcript winner allocations can reveal size after selection                                                                        |
-| Private note ownership in v3 settlement                   | `LockCreated` schedules/collateral and taker public key, exact `LockTaken` fills, `DealTaken` totals/digest, Take signature/ordered fills, OPEN-note amounts, helper use, timing, and output-note copy-sniping risk |
-| Mail and backup plaintext                                 | Chain ciphertext metadata; an IPFS service sees CID, padded ciphertext size, source metadata, and timing                                                                                                            |
-| Device-local contact labels and notes                     | Addresses when publicly used; code running in an unlocked browser profile can read them                                                                                                                             |
-| Direct sender/recipient address fields in `MessagePosted` | Directory registration/lookups, helper access metadata, timing, and small-set inference                                                                                                                             |
-| OHTTP plaintext at the relay                              | Ciphertext metadata at the relay and the plaintext witness at the final prover after decapsulation                                                                                                                  |
+| Not directly exposed by the stated mechanism              | Public, disclosed, or still correlatable                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| In-pool private-transfer ownership and amount             | Shield/unshield legs, timing, and amount correlation                                                                                                                                                                                                                                           |
+| Exact RFQ size and floor during invitation                | Makers receive pair, direction, fixed bucket, RFQ/helper bindings, and expiry; transcript winner allocations can reveal size after selection                                                                                                                                                   |
+| Private note ownership in v3 settlement                   | `LockCreated` schedules/collateral and taker public key, exact `LockTaken` fills, `DealTaken` totals/digest, Take signature/ordered fills, OPEN-note amounts, helper use and timing; the public helper/user identity commitment is RFQ-scoped, while activity within that RFQ remains linkable |
+| Mail and backup plaintext                                 | Chain ciphertext metadata; an IPFS service sees CID, padded ciphertext size, source metadata, and timing                                                                                                                                                                                       |
+| Device-local contact labels and notes                     | Addresses when publicly used; code running in an unlocked browser profile can read them                                                                                                                                                                                                        |
+| Direct sender/recipient address fields in `MessagePosted` | Directory registration/lookups, helper access metadata, timing, and small-set inference                                                                                                                                                                                                        |
+| OHTTP plaintext at the relay                              | Ciphertext metadata at the relay and the plaintext witness at the final prover after decapsulation                                                                                                                                                                                             |
 
 A replaced frontend can still request signatures and read browser-owned keys.
 Ready signatures are not used as encryption keys and the Ready Wallet API path
@@ -422,6 +443,9 @@ npm run build:packages
 npm run typecheck
 npm run typecheck:packages
 npm run test:all
+(cd cairo && scarb fmt --check && scarb build && snforge test)
+npm run pool:setup
+npm run test:e2e:pool
 npm run build
 ```
 
@@ -431,11 +455,11 @@ npm run build
 | `npm run test:packages`           | Workspace packages                                                                                          |
 | `npm run test:ui`                 | Playwright localnet journeys, including scope invalidation, accessibility, and 200% reflow                  |
 | `npm run test:supply-chain`       | Lockfile integrity/source/licence review, SBOM drift, generated font notices, and build-determinism helpers |
-| `npm run test:e2e:pool`           | Real-pool mail harness                                                                                      |
+| `npm run test:e2e:pool`           | Devnet integration proof through the genuine privacy pool (mail, escrow lifecycle, and lock tickets)        |
 | `npm run check:csp`               | Loads built routes under the CSP the Worker actually ships                                                  |
 | `npm run check:build-determinism` | Two isolated production builds, byte-compared                                                               |
 | `npm run sbom:generate`           | Regenerates the deterministic CycloneDX SBOM and deployable font notices                                    |
-| `snforge test`                    | Mail helper contracts, from `cairo/`                                                                        |
+| `snforge test`                    | Cairo mail and escrow unit tests with mocked pool callers, from `cairo/`                                    |
 
 `npm run build` also enforces recorded per-chunk byte budgets, fails if direct
 `eval` enters the initial graph or appears outside the reviewed lazy

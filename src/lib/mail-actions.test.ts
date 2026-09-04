@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WALLET_API } from "@starknet-io/types-js";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { addrSTRK } from "../utils/constants";
 import {
+  type App20Strk20Action,
   buildMemoTransferActions,
   buildOtcAcceptActions,
   computeActionId,
@@ -138,15 +138,44 @@ describe("mail STRK20 actions", () => {
     });
 
     const invoke = actions.at(-1);
-    if (invoke?.type !== "invoke") throw new Error("Expected invoke.");
-    expect(invoke.calldata.at(-1)).toBe(actionId);
+    if (invoke?.type !== "compute_and_invoke")
+      throw new Error("Expected protected compute/invoke.");
+    expect(invoke.compute_calldata).toEqual([
+      addrSTRK,
+      OPEN_NOTE_ID_PLACEHOLDER,
+      "0x11",
+      "0x22",
+      "0x7a",
+      "0x33",
+      "0x44",
+      "0x3",
+      "0x2",
+      "0xabc",
+      "0xdef",
+      actionId,
+    ]);
+    expect(invoke.invoke_calldata).toEqual([
+      addrSTRK,
+      POOL_ADDRESS_PLACEHOLDER,
+      OPEN_NOTE_ID_PLACEHOLDER,
+      "0x11",
+      "0x22",
+      "0x7a",
+      "0x33",
+      "0x44",
+      "0x3",
+      "0x2",
+      "0xabc",
+      "0xdef",
+      actionId,
+    ]);
     expect(computeActionId("payment-attempt", attemptId)).toBe(actionId);
     expect(computeActionId("payment-attempt", `0x${"25".repeat(32)}`)).not.toBe(
       actionId,
     );
   });
 
-  it("builds accept as transfer, helper funding, recovery, and invoke", () => {
+  it("builds accept as transfer, funding, recovery, and protected invoke", () => {
     const offer = {
       dealId: `0x${"11".repeat(32)}`,
       give: {
@@ -173,7 +202,7 @@ describe("mail STRK20 actions", () => {
       "transfer",
       "withdraw",
       "transfer",
-      "invoke",
+      "compute_and_invoke",
     ]);
     expect(actions[0]).toEqual({
       type: "transfer",
@@ -193,9 +222,11 @@ describe("mail STRK20 actions", () => {
       amount: "OPEN",
       recipient: "0xb0b",
     });
-    if (actions[3].type !== "invoke") throw new Error("Expected invoke.");
-    expect(actions[3].calldata[1]).toBe("${poolAddress}");
-    expect(actions[3].calldata[2]).toBe("${openNoteIds[0]}");
+    if (actions[3].type !== "compute_and_invoke")
+      throw new Error("Expected protected compute/invoke.");
+    expect(actions[3].compute_calldata[1]).toBe("${openNoteIds[0]}");
+    expect(actions[3].invoke_calldata[1]).toBe("${poolAddress}");
+    expect(actions[3].invoke_calldata[2]).toBe("${openNoteIds[0]}");
 
     expect(() =>
       buildOtcAcceptActions({
@@ -257,8 +288,8 @@ describe("mail STRK20 actions", () => {
   });
 
   it("submits each mail or accept batch through one wallet call", async () => {
-    const batches: WALLET_API.STRK20_ACTION[][] = [];
-    const invoke = vi.fn(async (actions: WALLET_API.STRK20_ACTION[]) => {
+    const batches: App20Strk20Action[][] = [];
+    const invoke = vi.fn(async (actions: App20Strk20Action[]) => {
       batches.push(actions);
       return { transaction_hash: "0x999" };
     });
@@ -323,7 +354,7 @@ describe("mail STRK20 actions", () => {
       "transfer",
       "withdraw",
       "transfer",
-      "invoke",
+      "compute_and_invoke",
     ]);
     expect(batches[1][2]).toMatchObject({
       amount: "OPEN",

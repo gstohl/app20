@@ -198,6 +198,30 @@ export function reconcileViolations(observed, known) {
   return { unexpected, missing };
 }
 
+export function validateCoinGeckoOptInRequests({
+  beforeDisclosure,
+  beforeOptIn,
+  afterOptIn,
+}) {
+  const failures = [];
+  if (beforeDisclosure !== 0) {
+    failures.push(
+      `CoinGecko was contacted ${beforeDisclosure} time(s) before the public-market disclosure was opened`,
+    );
+  }
+  if (beforeOptIn !== beforeDisclosure) {
+    failures.push(
+      `opening the public-market disclosure contacted CoinGecko (${beforeDisclosure} -> ${beforeOptIn} request(s))`,
+    );
+  }
+  if (afterOptIn <= beforeOptIn) {
+    failures.push(
+      "the explicit CoinGecko opt-in did not make a price-history request",
+    );
+  }
+  return failures;
+}
+
 function safeOutputPath(directory, urlPath) {
   let pathname;
   try {
@@ -308,6 +332,7 @@ async function main() {
     for (const route of routes) {
       const page = await browser.newPage();
       const pageFailures = [];
+      let coinGeckoRequestCount = 0;
       page.on("console", (message) => {
         if (
           message.type() === "error" &&
@@ -331,6 +356,7 @@ async function main() {
       });
       // Keep the reviewed CoinGecko request local and deterministic.
       await page.route("https://api.coingecko.com/**", async (requestRoute) => {
+        coinGeckoRequestCount += 1;
         await requestRoute.fulfill({
           contentType: "application/json",
           body: JSON.stringify([
@@ -353,14 +379,35 @@ async function main() {
       }
 
       if (route === "/rfq") {
+        const requestsBeforeDisclosure = coinGeckoRequestCount;
+        const publicMarketDisclosure = page.locator(
+          'details:has(> summary[aria-label="Public market context"])',
+        );
+        const publicMarketSummary = publicMarketDisclosure.locator(
+          '> summary[aria-label="Public market context"]',
+        );
+        if (!(await publicMarketSummary.isVisible())) {
+          pageFailures.push("public market context disclosure is not visible");
+        } else if (!(await publicMarketDisclosure.getAttribute("open"))) {
+          await publicMarketSummary.click();
+        }
+
         const loadPublicContext = page.getByRole("button", {
           name: "Load CoinGecko context",
         });
         if (await loadPublicContext.isVisible()) {
+          const requestsBeforeOptIn = coinGeckoRequestCount;
           await loadPublicContext.click();
           await page
             .getByRole("img", { name: /candlesticks/i })
             .waitFor({ timeout: 3_000 });
+          pageFailures.push(
+            ...validateCoinGeckoOptInRequests({
+              beforeDisclosure: requestsBeforeDisclosure,
+              beforeOptIn: requestsBeforeOptIn,
+              afterOptIn: coinGeckoRequestCount,
+            }),
+          );
         } else {
           pageFailures.push(
             "opt-in CoinGecko price-history control is not visible",

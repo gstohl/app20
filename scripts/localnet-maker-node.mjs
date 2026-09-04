@@ -4,6 +4,7 @@ import { readFileSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withEscrowFundingPreflight } from "./escrow-funding-preflight.mjs";
 import {
   DurableMakerNode,
   DurableMakerTranscriptJournal,
@@ -256,12 +257,17 @@ async function executeOutside(
   account,
   node,
   prepared,
+  actions,
   onSubmissionAttempt,
   onSubmitted,
 ) {
   await createBlocks(config.rpcUrl);
   const now = Math.floor(Date.now() / 1_000);
-  const callAndProof = toCoreCallAndProof(prepared);
+  const callAndProof = withEscrowFundingPreflight(
+    toCoreCallAndProof(prepared),
+    actions,
+    config.escrowAddress,
+  );
   const outside = await account.getOutsideTransaction(
     {
       caller: account.address,
@@ -354,6 +360,7 @@ async function executeActions(
       account,
       node,
       prepared,
+      actions,
       onSubmissionAttempt,
       onSubmitted,
     );
@@ -910,10 +917,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     const body = await readBody(request);
-    const lockResolution = parseMakerLockResolutionRequest(
-      url.pathname,
-      body,
-    );
+    const lockResolution = parseMakerLockResolutionRequest(url.pathname, body);
     if (lockResolution) {
       jsonResponse(response, 200, {
         lock: await maker.resolveLock(lockResolution, now),

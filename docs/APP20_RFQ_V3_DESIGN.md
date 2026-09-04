@@ -17,11 +17,13 @@
 | 9   | Encrypted IPFS blob store       | Client-side AES-GCM blobs, CIDv1 raw/sha2-256, verified fetch, a loopback in-memory emulator, and production fail-closed origin configuration are implemented.                                                                                   |
 | 10  | Maker-signed indicative mids    | Makers and status/browser operations publish, verify, aggregate, and render signed fixture mids. CoinGecko stays independent and opt-in.                                                                                                         |
 
-**Settlement becomes atomic.** Because the maker's leg is pre-locked, the taker's single `privacy_invoke(Take)` sells leg A and receives leg B in the same transaction. The retained wire field `takerCommitment` is the taker's ephemeral Stark public key. Cairo verifies a signature over escrow, deal, ordered tokens, and mandatory ordered `fillsDigest`; the private `takerSigningKey` is never calldata. Takers no longer receive claim tickets; there is no funded-waiting state, no fill step, no taker timeout/refund for v3 deals. Makers settle their locks after expiry with a supply-two `LockTicket`. Because the current pool helper does not expose output-note ownership to the signed message, a relayer or sequencer that obtains a signed Take can copy it and race with another output note; `TAKE_EXISTS` makes the first accepted Take terminal but does not prevent that theft.
+**Settlement becomes atomic.** Because the maker's leg is pre-locked, the taker's protected ComputeAndInvoke `Take` sells leg A and receives leg B in the same transaction. The retained wire field `takerCommitment` is the taker's ephemeral Stark public key. Cairo derives `H('app20-take-id-v1', private pool identity key, deal id)` without exposing the raw key, then verifies a Take v4 signature over native chain ID, escrow, that identity commitment, deal, ordered tokens, and mandatory ordered `fillsDigest`. Takers no longer receive claim tickets; there is no funded-waiting state, no fill step, no taker timeout/refund for v3 deals. Makers settle their locks after expiry with a supply-two `LockTicket`. The public identity commitment differs across RFQs, while the signature, fills, and events still link activity within the same RFQ. The protected action is a pinned local client shim, not production-wallet compatibility.
 
-The legacy v1 flow (`Fund`/`Fill`/`Claim`/`Timeout`) stays in the contract (ABI is additive, existing storage untouched) and in libraries/tests. V3 is the mounted localnet product flow; legacy lifecycle records keep separate recovery actions.
+The legacy v1 flow (`Fund`/`Fill`/`Claim`/`Timeout`) stays in the contract and retains enum discriminants 0–3, with v3 operations at 4–7. This is not a fully additive wire change: `FundParams` now includes an explicit amount, the protected nonzero Mail and Take call paths changed, and Take uses the v4 signed message. Current clients and helpers must use the matching ABI and builders. V3 is the mounted localnet product flow; legacy lifecycle records keep separate recovery actions.
 
-## 2. Cairo — `App20Escrow` additive ABI
+Deploy the current Mail helper, escrow, tickets, and client/builders together on a fresh localnet. These repository changes do not upgrade or migrate existing deployed contracts or private notes, and old runtime/history must remain preserved as historical evidence. No public-network deployment is authorized.
+
+## 2. Cairo — `App20Escrow` localnet ABI evolution
 
 ### 2.1 New contract `LockTicket` (`cairo/src/lock_ticket.cairo`)
 
@@ -34,7 +36,7 @@ Escrow constructor becomes `constructor(pool, ticket_class_hash, lock_ticket_cla
 ```cairo
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
 pub struct LockParams {
-    pub token: ContractAddress,         // token B (what the maker locks); the escrow measures its balance delta
+    pub token: ContractAddress,         // token B (what the maker locks); exact same-transaction delta
     pub counter_token: ContractAddress, // token A (what the taker sells, what the maker earns)
     pub rfq_id: felt252,                // taker's RFQ felt (== deal_id used in Take)
     pub taker_commitment: felt252,      // taker's ephemeral Stark public-key x-coordinate
@@ -45,7 +47,7 @@ pub struct LockParams {
     pub p2_a: u128, pub p2_b: u128,
     pub p3_a: u128, pub p3_b: u128,
 }
-// Like Fund, `token` is the received token: its balance delta must equal p{len-1}_b (max payout).
+// `token` is received after prepare_funding(token); its new delta must equal p{len-1}_b.
 // Both tokens must be non-zero and distinct (ZERO_TOKEN / SAME_TOKEN).
 
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
@@ -72,7 +74,7 @@ pub enum EscrowOperation {
 }
 
 #[derive(Serde, Copy, Drop, PartialEq, Debug, starknet::Store)]
-pub enum LockStatus { #[default] Empty, Open }
+pub enum LockStatus { #[default] Empty, Open, Closed }
 
 #[derive(Serde, Copy, Drop, PartialEq, Debug, starknet::Store)]
 pub struct Lock {
@@ -96,7 +98,7 @@ pub struct TakeRecord {
 }
 ```
 
-New interface functions: `ensure_lock_ticket(lock_id) -> ContractAddress`, `get_lock_ticket(lock_id)`, `get_lock(lock_id) -> Lock`, `get_take(deal_id) -> TakeRecord`, and `pub fn evaluate_schedule(points_len, p0_a..p3_b, amount_a) -> u128` exposed as a pure library function (also `#[external] view` `quote_schedule(lock_id, amount_a) -> u128` for tooling).
+New interface functions: `ensure_lock_ticket(lock_id) -> ContractAddress`, `get_lock_ticket(lock_id)`, `get_lock(lock_id) -> Lock`, `get_take(deal_id) -> TakeRecord`, and `pub fn evaluate_schedule(points_len, p0_a..p3_b, amount_a) -> u128` exposed as a pure library function (also `#[external] view` `quote_schedule(lock_id, amount_a) -> u128` for tooling). The view quotes only an `Open`, unexpired lock; the pure evaluator remains available for historical calculations.
 
 ### 2.3 Schedule semantics (shared with TypeScript — must be bit-identical)
 
@@ -107,15 +109,17 @@ New interface functions: `ensure_lock_ticket(lock_id) -> ContractAddress`, `get_
 
 ### 2.4 Operation rules
 
-**Lock** (caller = pool): `lock_id ≠ 0`, `locks[lock_id].status == Empty`, tokens non-zero and distinct, `expiry > now`, schedule valid, received B delta `== p_{n-1}_b`; `ensure_lock_ticket` must already have deployed the ticket (or deploy inline via `ensure_lock_ticket_internal`); mint 2 ticket units, approve pool for 2; store `Lock{ remaining_b: received, earned_a: 0, status: Open }`; emit `LockCreated`; return `[OpenNoteDeposit{note_id, token: ticket, amount: 2}]`.
+**Funding preflight** (public account call, before the pool transfer in the same outer transaction): `prepare_funding(token)` snapshots the escrow's actual token balance and native transaction hash. The next funded operation for that token consumes the snapshot exactly once and requires the post-transfer delta to equal its expected input: explicit `FundParams.amount`, legacy Fill terms, Lock schedule maximum, or the Take fill sum. Pre-existing donations are excluded and both short and excess input revert. `scripts/escrow-funding-preflight.mjs` inserts these calls for the local wallet and maker and rejects more than one funded operation per token in one batch.
 
-**Take** (caller = pool): `deal_id ≠ 0`, `takes[deal_id].fill_count == 0` (`TAKE_EXISTS`), `1..=4` fills, distinct lock ids, received A delta `== Σ amount_a` (`SHORT_FILL`/`EXCESS_FILL`), and every lock carries the same non-zero `taker_commitment`. Define `fills_digest = poseidon_hash_span([lock_id_1, amount_a_1, ..., lock_id_n, amount_a_n])` in fill order and `message = poseidon_hash_span([TAKE_DOMAIN, get_contract_address(), deal_id, token, counter_token, fills_digest])`, where `TAKE_DOMAIN` is the Cairo short string `'app20-take-v3'`. Verify `core::ecdsa::check_ecdsa_signature(message, taker_commitment, signature_r, signature_s)` exactly once and revert `BAD_SIGNATURE` on failure. Then require every lock `Open`, `now < expiry`, `lock.rfq_id == deal_id`, `lock.token_a == token`, `lock.token_b == counter_token`, `amount_a` in schedule domain, `b_i = evaluate_schedule(...)`, and `lock.remaining_b ≥ b_i`; update `remaining_b −= b_i`, `earned_a += amount_a`; accounted[A] += received, accounted[B] −= Σ b_i; approve pool for Σ b_i; write `TakeRecord` including `fills_digest`; emit `LockTaken` per fill and `DealTaken` including `fills_digest`; return `[OpenNoteDeposit{note_id, token: counter_token, amount: Σ b_i}]`. Any failure reverts the whole take.
+**Lock** (caller = pool): `lock_id ≠ 0`, `locks[lock_id].status == Empty`, tokens non-zero and distinct, `expiry > now`, schedule valid, prepared B delta `== p_{n-1}_b`; `ensure_lock_ticket` must already have deployed the ticket (or deploy inline via `ensure_lock_ticket_internal`); mint 2 ticket units, approve pool for 2; store `Lock{ remaining_b: received, earned_a: 0, status: Open }`; emit `LockCreated`; return `[OpenNoteDeposit{note_id, token: ticket, amount: 2}]`.
 
-**SettleProceeds** (caller = pool, spends 1 ticket unit exactly like `consume_ticket` but delta 1 of the lock ticket): requires `Open`, `now ≥ expiry`, `!proceeds_settled`, `earned_a > 0`; sets `proceeds_settled`, accounted[A] −= earned_a, approve, emit `LockProceedsSettled`, return `[{note_id, token_a, earned_a}]`.
+**Take** (caller = pool through protected ComputeAndInvoke): `deal_id ≠ 0`, `takes[deal_id].fill_count == 0` (`TAKE_EXISTS`), `1..=4` fills, distinct lock ids, prepared A delta `== Σ amount_a` (`SHORT_FILL`/`EXCESS_FILL`), and every lock carries the same non-zero `taker_commitment`. Define `fills_digest = poseidon_hash_span([lock_id_1, amount_a_1, ..., lock_id_n, amount_a_n])` in fill order, `identity_commitment = poseidon_hash_span([TAKE_IDENTITY_DOMAIN, identity_key, deal_id])`, and `message = poseidon_hash_span([TAKE_DOMAIN, get_tx_info().chain_id, get_contract_address(), identity_commitment, deal_id, token, counter_token, fills_digest])`, where the domains are `'app20-take-v4'` and `'app20-take-id-v1'`. The pool supplies its private contract-specific identity key only to `privacy_compute`, with `deal_id` supplied as compute calldata so the commitment is not a stable cross-RFQ identifier; ordinary `privacy_invoke(Take)` is rejected. Verify `core::ecdsa::check_ecdsa_signature(message, taker_commitment, signature_r, signature_s)` exactly once and revert `BAD_SIGNATURE` on failure. Then require every lock `Open`, `now < expiry`, `lock.rfq_id == deal_id`, `lock.token_a == token`, `lock.token_b == counter_token`, `amount_a` in schedule domain, `b_i = evaluate_schedule(...)`, and `lock.remaining_b ≥ b_i`; update `remaining_b −= b_i`, `earned_a += amount_a`; accounted[A] += received, accounted[B] −= Σ b_i; approve pool for Σ b_i; write `TakeRecord` including `fills_digest`; emit `LockTaken` per fill and `DealTaken` including `fills_digest`; return `[OpenNoteDeposit{note_id, token: counter_token, amount: Σ b_i}]`. Any failure reverts the whole take.
 
-**ReleaseCollateral**: requires `Open`, `now ≥ expiry`, `!collateral_released`, `remaining_b > 0`; sets `collateral_released`, accounted[B] −= remaining_b, approve, emit `LockCollateralReleased`, return `[{note_id, token_b, remaining_b}]`.
+**SettleProceeds** (caller = pool, spends 1 ticket unit exactly like `consume_ticket` but delta 1 of the lock ticket): requires `Open`, `now ≥ expiry`, `!proceeds_settled`; sets `proceeds_settled`, and when `earned_a > 0` updates accounted[A], approves the pool, and returns `[{note_id, token_a, earned_a}]`. A zero side returns no deposit. It emits `LockProceedsSettled` in either case.
 
-If a side has nothing to pay the call reverts (`NOTHING_TO_SETTLE`) and the unit stays in the maker's note; that leftover ticket unit is inert.
+**ReleaseCollateral**: requires `Open`, `now ≥ expiry`, `!collateral_released`; sets `collateral_released`, and when `remaining_b > 0` updates accounted[B], approves the pool, and returns `[{note_id, token_b, remaining_b}]`. A zero side returns no deposit. It emits `LockCollateralReleased` in either case.
+
+Each side consumes its own ticket unit even when its payout is zero. Off-chain builders omit an OPEN output note and pass note id zero for that cleanup call. When both flags are set, the lock transitions to `Closed`; this exhausts both ticket units without forfeiting a nonzero opposite side.
 
 ### 2.5 Events
 
@@ -136,14 +140,14 @@ Legacy events are unchanged. Error constants added: `LOCK_EXISTS`, `LOCK_NOT_OPE
 Lock (maker):    withdraw(tokenB, max_b, escrow); transfer(lockTicket, "OPEN", makerRecovery);
                  invoke(escrow, [0x4, tokenB, tokenA, rfqId, takerCommitment, expiry, len, p0a,p0b,p1a,p1b,p2a,p2b,p3a,p3b, lockId, ${poolAddress}, ${openNoteIds[0]}])
 Take (taker):    withdraw(tokenA, Σamount, escrow); transfer(tokenB, "OPEN", takerRecovery);
-                 invoke(escrow, [0x5, tokenA, tokenB, signatureR, signatureS, fillsLen, (lockId, amountA)*, rfqId, ${poolAddress}, ${openNoteIds[0]}])
+                 compute_and_invoke(escrow, [0x5, tokenA, tokenB, signatureR, signatureS, fillsLen, (lockId, amountA)*, rfqId, ${poolAddress}, ${openNoteIds[0]}])
 SettleProceeds:  withdraw(lockTicket, 0x1, escrow); transfer(tokenA, "OPEN", makerRecovery);
                  invoke(escrow, [0x6, lockId, ${poolAddress}, ${openNoteIds[0]}])
 ReleaseCollateral: withdraw(lockTicket, 0x1, escrow); transfer(tokenB, "OPEN", makerRecovery);
                  invoke(escrow, [0x7, lockId, ${poolAddress}, ${openNoteIds[0]}])
 ```
 
-`TakeParams.fills` is Serde `Array` → `len` followed by `(lock_id, amount_a)` pairs. `u128` values are single felts.
+For a zero-valued settlement side, omit the transfer action and pass literal note id `0x0`; the ticket withdrawal and invoke remain. `TakeParams.fills` is Serde `Array` → `len` followed by `(lock_id, amount_a)` pairs. `u128` values are single felts. The account-call assembler prepends `prepare_funding(token)` before each funded operation's pool call.
 
 ## 3. Protocol (`@app20/private-intents`)
 
@@ -183,7 +187,7 @@ export type PrivateRfqV2 = Readonly<{
 }>;
 ```
 
-No floor field. `canonicalPrivateRfqV2`, `digestPrivateRfqV2`, `assertPrivateRfqV2` mirror v1 conventions (sorted keys, decimal strings); the canonical RFQ v2 shape is unchanged apart from the semantics of `takerCommitment`. `createTakerAuthorizationKey()` uses `@scure/starknet` `utils.randomPrivateKey()` and `getStarkKey(signingKey)` to return `{ signingKey, publicKey }`; the wire `takerCommitment` is `publicKey`. `fillsDigest(fills)` is `poseidonHashMany([lockId1, amountA1, ...])` in fill order. `takeMessageHash({ escrowAddress, rfqFelt, tokenA, tokenB, fills })` is `poseidonHashMany([shortString('app20-take-v3'), escrowAddress, rfqFelt, tokenA, tokenB, fillsDigest])`. `signTake(signingKey, message)` returns felt `{ r, s }`, and `verifyTakeSignature(publicKey, message, r, s)` verifies with `@scure/starknet`.
+No floor field. `canonicalPrivateRfqV2`, `digestPrivateRfqV2`, `assertPrivateRfqV2` mirror v1 conventions (sorted keys, decimal strings); the canonical RFQ v2 shape is unchanged apart from the semantics of `takerCommitment`. `createTakerAuthorizationKey()` uses `@scure/starknet` `utils.randomPrivateKey()` and `getStarkKey(signingKey)` to return `{ signingKey, publicKey }`; the wire `takerCommitment` is `publicKey`. `fillsDigest(fills)` is `poseidonHashMany([lockId1, amountA1, ...])` in fill order. `takeIdentityCommitment(identityKey, rfqFelt)` hashes the identity domain, pool-private key, and RFQ so the commitment differs across deals rather than becoming a stable cross-RFQ identifier. `takeMessageHash({ chainId, escrowAddress, identityCommitment, rfqFelt, tokenA, tokenB, fills })` is `poseidonHashMany([shortString('app20-take-v4'), chainId, escrowAddress, identityCommitment, rfqFelt, tokenA, tokenB, fillsDigest])`. `signTake(signingKey, message)` returns felt `{ r, s }`, and `verifyTakeSignature(publicKey, message, r, s)` verifies with `@scure/starknet`.
 
 The browser lifecycle stores the private scalar only as `takerSigningKey` while the RFQ is active. Terminal records and history backups remove it. A Take that reached the chain and reverted terminates the RFQ as `expired` with reason `take-reverted`; its key/signature must never be reused. Only an attempt proven not submitted before wallet entry may return to review.
 
@@ -284,7 +288,7 @@ export type MakerIndicativeMidV1 = Readonly<{
 
 - New WAL record kind `LockRecordV1 { lockId, rfqDigest, rfqFelt, takerCommitment, tokenA, tokenB, schedule, maxB, expiry, ticket, lockTxHash, state: "locking"|"open"|"taken"|"expired"|"settling"|"reconcile-pending"|"settlement-unknown"|"settled"|"quarantined", priorState?, settlementAttempt?, takenA, takenB, proceedsTxHash?, releaseTxHash?, quoteDigest? }` alongside existing reservation records (same hash-chained WAL).
 - Quote pipeline v3: validate RFQ v2 (ladder bucket, expiry ≤ 90 s TTL), build schedule (localnet: fixed price 2 USDC/STRK ± spread; maker B also tiers: 10 bps better above the bucket midpoint), cap `a_max` by inventory, evaluate economic policy at `a_max`, submit `Lock` through the pool (same custody path as today's fill), wait for the receipt, then sign quote v3 referencing the lock. If the lock tx fails → refuse.
-- Settlement worker: every 5 s scan WAL locks with `expiry ≤ now` and settle (`SettleProceeds` when `earned_a > 0`, `ReleaseCollateral` when `remaining_b > 0`), driven by `get_lock`. RPC/read uncertainty persists as `reconcile-pending`; submitted settlement uncertainty persists the exact attempt as `settlement-unknown`. Both remain active, back off, and require chain evidence before capacity is released. Contradictory or malformed durable evidence is quarantined.
+- Settlement worker: every 5 s scan WAL locks with `expiry ≤ now` and finalize each unset side, including a zero-valued side, driven by `get_lock`. RPC/read uncertainty persists as `reconcile-pending`; submitted settlement uncertainty persists the exact attempt as `settlement-unknown`. Both remain active, back off, and require chain evidence before capacity is released. Contradictory or malformed durable evidence is quarantined.
 - `GET /v1/mids` returns a fresh signed `MakerIndicativeMidV1` (localnet: 2.00 USDC/STRK, maker B 2.01).
 - `POST /v1/transcripts` runs `verifySelectionTranscriptForMaker` when this maker has a signed quote; otherwise it journals an inconsistent “no signed quote” result. `GET /v1/transcripts` lists journaled acknowledgements for the local operations display.
 - `GET /v1/locks` lists lock records (no secrets).
@@ -318,6 +322,7 @@ export type MakerIndicativeMidV1 = Readonly<{
 
 ### 5.2 Mail, invoices, backup, IPFS (`src/lib`, `src/app/inbox`, `src/components/mail`, `workers/relay`)
 
+- Nonzero Mail action IDs compile to the pinned pool's proof-bound `compute_and_invoke` path. Cairo derives an identity/action replay slot without exposing the raw identity key and separately verifies a commitment to the exact encrypted payload; plain `privacy_invoke` remains available only for repeatable zero-ID messages. This is a local shim over pool support, not a claim that the published Wallet API 0.10 action union or production wallets support the variant.
 - `envelope.ts`: new types `backup_snapshot = 0x0d` and `backup_pointer = 0x0e`.
 - `src/lib/backup-snapshot.ts`: `BackupSnapshotV1 { version: 1, kind: "contacts" | "rfq-resume", seq, owner, chainId, helperAddress, mailboxFingerprint, createdAt, payload, digest, mac }` using the same HKDF/HMAC discipline as `contact-backup.ts` (domain `app20/backup/v1`); `contact_snapshot` v1 remains readable.
 - `src/lib/backup-blob.ts`: `sealBackupBlob({ mailboxSeed, owner, chainId, kind, seq, bytes })` → AES-256-GCM (key = HKDF(seed, salt `app20/backup-blob/v1/salt`, info `app20/backup-blob/v1:owner:chainId:kind:seq`), 12-byte nonce, AAD = info), padded to 4096-byte buckets, header `[version=1][kind][seq u32]`; `openBackupBlob`.

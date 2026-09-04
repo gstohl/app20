@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { OutsideExecutionVersion, constants, hash, json, num } from "starknet";
+import { withHelperFundingPreflight } from "../../scripts/escrow-funding-preflight.mjs";
 import {
 	CorePrivateTransfersProver,
 	passphraseViewingKeyProvider,
@@ -118,7 +119,11 @@ function toCoreCallAndProof(prepared) {
  * retain reverted receipts and their hashes for the nullifier assertion.
  */
 async function broadcastPrepared(devnet, env, prepared) {
-	const callAndProof = toCoreCallAndProof(prepared);
+	const callAndProof = withHelperFundingPreflight(
+		toCoreCallAndProof(prepared),
+		prepared.fundingActions,
+		{ mailHelperAddress: prepared.fundingMailHelperAddress },
+	);
 	await createBlocks(devnet.url);
 
 	const nowSeconds = Math.floor(Date.now() / 1_000);
@@ -253,8 +258,10 @@ function makeAlicePrivacy(env) {
 	return { prover, transfers };
 }
 
-async function prepare(prover, actions) {
+async function prepare(prover, actions, mailHelperAddress) {
 	const prepared = await prover.prove(actions);
+	prepared.fundingActions = actions;
+	prepared.fundingMailHelperAddress = mailHelperAddress;
 	assert.equal(
 		prepared.proof.data,
 		undefined,
@@ -430,12 +437,17 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		assert.equal(protectedActions[0].amount, "0x7");
 		assert.equal(protectedActions[0].recipient, helperAddress);
 		assert.equal(protectedActions[1].amount, "OPEN");
+		assert.equal(protectedActions[2].type, "compute_and_invoke");
 		assert.equal(
-			protectedActions[2].calldata[1],
+			protectedActions[2].compute_calldata[1],
+			strk20.OPEN_NOTE_ID_PLACEHOLDER,
+		);
+		assert.equal(
+			protectedActions[2].invoke_calldata[1],
 			strk20.POOL_ADDRESS_PLACEHOLDER,
 		);
 		assert.equal(
-			protectedActions[2].calldata[2],
+			protectedActions[2].invoke_calldata[2],
 			strk20.OPEN_NOTE_ID_PLACEHOLDER,
 		);
 
@@ -452,7 +464,38 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 			"unrelated helper balance transfer",
 		);
 
-		const firstPrepared = await prepare(prover, protectedActions);
+		// Reproduce the old ambient-balance capture: request an OPEN recovery
+		// without withdrawing fresh funds to the helper. The helper now returns
+		// no deposit, so the pool fails closed and the whole message rolls back.
+		const unfundedActions = protectedActions.slice(1);
+		const unfundedPrepared = await prepare(
+			prover,
+			unfundedActions,
+			helperAddress,
+		);
+		const unfundedMail = await broadcastPrepared(
+			devnet,
+			env,
+			unfundedPrepared,
+		);
+		txHashes.unfundedMail = unfundedMail.transactionHash;
+		assert.equal(
+			unfundedMail.receipt.isReverted(),
+			true,
+			"OPEN recovery without fresh helper funding must revert",
+		);
+		assert.equal(
+			await tokenBalance(env.node, env.strk, helperAddress),
+			UNRELATED_HELPER_BALANCE,
+			"unfunded Mail must not capture the helper's ambient balance",
+		);
+		assert.equal(
+			(await messageEvents(env.node, helperAddress)).length,
+			0,
+			"unfunded OPEN failure must roll back the Mail event and replay slot",
+		);
+
+		const firstPrepared = await prepare(prover, protectedActions, helperAddress);
 		const firstMail = await broadcastPrepared(devnet, env, firstPrepared);
 		txHashes.firstMail = firstMail.transactionHash;
 		assert.equal(
@@ -524,7 +567,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		assert.equal(BigInt(recoveryEvent.data[0]), RECOVERY_DUST);
 
 		await createBlocks(devnet.url);
-		const replayPrepared = await prepare(prover, protectedActions);
+		const replayPrepared = await prepare(prover, protectedActions, helperAddress);
 		const replay = await broadcastPrepared(devnet, env, replayPrepared);
 		txHashes.replayedAction = replay.transactionHash;
 		assert.equal(
@@ -536,6 +579,16 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 			revertReason(replay.receipt),
 			/ACTION_ID_USED/,
 			"replay must revert at App20Mail's action-id nullifier",
+		);
+		assert.equal(
+			await tokenBalance(env.node, env.strk, helperAddress),
+			UNRELATED_HELPER_BALANCE,
+			"reverted replay must roll back its helper withdrawal and funding snapshot",
+		);
+		assert.equal(
+			await tokenBalance(env.node, env.strk, env.privacy.address),
+			SHIELD_AMOUNT,
+			"reverted replay must preserve pool custody",
 		);
 		const countAfterReplay = await env.node.callContract({
 			contractAddress: helperAddress,
@@ -560,7 +613,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		const zeroFirst = await broadcastPrepared(
 			devnet,
 			env,
-			await prepare(prover, zeroActions),
+			await prepare(prover, zeroActions, helperAddress),
 		);
 		txHashes.zeroActionFirst = zeroFirst.transactionHash;
 		assert.equal(
@@ -573,7 +626,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		const zeroSecond = await broadcastPrepared(
 			devnet,
 			env,
-			await prepare(prover, zeroActions),
+			await prepare(prover, zeroActions, helperAddress),
 		);
 		txHashes.zeroActionSecond = zeroSecond.transactionHash;
 		assert.equal(

@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type ProxyOptions } from "vite";
+import { loadEnv, type ProxyOptions } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 import { devStarknetRelay } from "./scripts/dev-starknet-relay.mjs";
 import { checkBundleDirectory } from "./scripts/check-bundle-budget.mjs";
 
@@ -89,6 +90,10 @@ export default defineConfig(({ command, mode }) => {
   }
 
   return {
+    // Nested agent worktrees are separate checkouts, not tests for this build.
+    test: {
+      include: configDefaults.include.map((pattern) => `src/${pattern}`),
+    },
     plugins: [
       react(),
       devStarknetRelay(),

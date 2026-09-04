@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { withEscrowFundingPreflight } from "../../scripts/escrow-funding-preflight.mjs";
 import { OutsideExecutionVersion, constants, ec, json, num } from "starknet";
 import {
   CorePrivateTransfersProver,
@@ -26,7 +27,11 @@ const TX_TIMEOUT = 600_000;
 const LOCK_ID = "0x101";
 const RFQ_ID = "0x202";
 const TAKER_SECRET = "0x303";
-const TAKE_DOMAIN = "0x61707032302d74616b652d7633";
+const TAKE_DOMAIN = "0x61707032302d74616b652d7634";
+const TAKE_IDENTITY_DOMAIN = "0x61707032302d74616b652d69642d7631";
+const PRIVACY_IDENTITY_DOMAIN = BigInt(
+  `0x${Buffer.from("IDENTITY_KEY_TAG:V1", "utf8").toString("hex")}`,
+);
 const DEAL_ID = RFQ_ID;
 const COLLATERAL = 200n;
 const TAKEN_A = 50n;
@@ -86,7 +91,9 @@ function toCoreCallAndProof(prepared) {
 }
 
 async function broadcastPrepared(devnet, env, prepared) {
-  const callAndProof = toCoreCallAndProof(prepared);
+  const callAndProof = withEscrowFundingPreflight(
+    toCoreCallAndProof(prepared), prepared.fundingActions, prepared.fundingEscrowAddress,
+  );
   await createBlocks(devnet.url);
   const now = Math.floor(Date.now() / 1_000);
   const outsideTransaction = await env.admin.getOutsideTransaction(
@@ -111,6 +118,40 @@ async function broadcastPrepared(devnet, env, prepared) {
     )}`,
   );
   return response.transaction_hash;
+}
+
+async function broadcastPreparedExpectRevert(devnet, env, prepared, reason) {
+  const callAndProof = withEscrowFundingPreflight(
+    toCoreCallAndProof(prepared),
+    prepared.fundingActions,
+    prepared.fundingEscrowAddress,
+  );
+  await createBlocks(devnet.url);
+  const now = Math.floor(Date.now() / 1_000);
+  const outsideTransaction = await env.admin.getOutsideTransaction(
+    {
+      caller: env.admin.address,
+      execute_after: now - 3_600,
+      execute_before: now + 3_600,
+    },
+    callAndProof.call,
+    OutsideExecutionVersion.V2,
+  );
+  const response = await env.admin.executeFromOutside(outsideTransaction, {
+    proofFacts: callAndProof.proof.proofFacts,
+    proof: callAndProof.proof.data,
+  });
+  const receipt = await env.node.waitForTransaction(response.transaction_hash);
+  assert.equal(receipt.isReverted(), true, "prepared privacy-pool call must revert");
+  assert.match(
+    String(
+      receipt.revert_reason ??
+        receipt.revertReason ??
+        receipt.execution_result?.reason ??
+        JSON.stringify(receipt),
+    ),
+    reason,
+  );
 }
 
 function makePrivacy(env, account, passphrase) {
@@ -147,7 +188,23 @@ function makePrivacy(env, account, passphrase) {
   const coreBuild = prover.transfers.build.bind(prover.transfers);
   prover.transfers.build = (...args) =>
     coreBuild(...args).surplusTo(account.address, false);
-  return { prover, transfers };
+  return {
+    prover,
+    transfers,
+    identityCommitmentFor: async (contractAddress, rfqFelt) => {
+      const identityKey = ec.starkCurve.poseidonHashMany([
+        PRIVACY_IDENTITY_DOMAIN,
+        BigInt(account.address),
+        BigInt(await viewingKeyProvider.getViewingKey()),
+        BigInt(contractAddress),
+      ]);
+      return ec.starkCurve.poseidonHashMany([
+        BigInt(TAKE_IDENTITY_DOMAIN),
+        identityKey,
+        BigInt(rfqFelt),
+      ]);
+    },
+  };
 }
 
 async function prepare(prover, actions) {
@@ -164,7 +221,12 @@ async function prepare(prover, actions) {
     false,
     "wallet placeholders must be resolved before broadcast",
   );
-  return prepared;
+  return {
+    ...prepared,
+    fundingActions: actions,
+    fundingEscrowAddress: actions.find((action) =>
+      action.type === "invoke" || action.type === "compute_and_invoke")?.contract,
+  };
 }
 
 async function shield(devnet, env, account, prover, token, amount, label) {
@@ -216,6 +278,15 @@ function openNote(token, recipient) {
 
 function invoke(escrow, calldata) {
   return { type: "invoke", contract: escrow, calldata };
+}
+
+function authenticatedInvoke(escrow, calldata) {
+  return {
+    type: "compute_and_invoke",
+    contract: escrow,
+    compute_calldata: [RFQ_ID],
+    invoke_calldata: calldata,
+  };
 }
 
 async function notesFor(transfers, devnet, tokens) {
@@ -299,6 +370,15 @@ test("real privacy pool: LockTicket supply two survives take and both maker sett
       TAKEN_A,
       "taker principal shield",
     );
+    await shield(
+      devnet,
+      env,
+      env.alice,
+      maker.prover,
+      env.eth,
+      TAKEN_A,
+      "captured-signature attacker principal shield",
+    );
 
     const expiry = Math.floor(Date.now() / 1_000) + 300;
     const commitment = ec.starkCurve.getStarkKey(TAKER_SECRET);
@@ -344,9 +424,18 @@ test("real privacy pool: LockTicket supply two survives take and both maker sett
       BigInt(LOCK_ID),
       TAKEN_A,
     ]);
+    const nativeChainId = BigInt(await env.node.getChainId());
+    const identityCommitment = await taker.identityCommitmentFor(escrow, RFQ_ID);
+    assert.notEqual(
+      identityCommitment,
+      await taker.identityCommitmentFor(escrow, BigInt(RFQ_ID) + 1n),
+      "one privacy identity must not expose a stable commitment across RFQs",
+    );
     const takeMessage = ec.starkCurve.poseidonHashMany([
       BigInt(TAKE_DOMAIN),
+      nativeChainId,
       BigInt(escrow),
+      identityCommitment,
       BigInt(RFQ_ID),
       BigInt(env.eth),
       BigInt(env.strk),
@@ -356,25 +445,46 @@ test("real privacy pool: LockTicket supply two survives take and both maker sett
       num.toHex(takeMessage),
       TAKER_SECRET,
     );
+    const takeInvokeCalldata = [
+      "0x5",
+      env.eth,
+      env.strk,
+      num.toHex(takeSignature.r),
+      num.toHex(takeSignature.s),
+      "0x1",
+      LOCK_ID,
+      num.toHex(TAKEN_A),
+      DEAL_ID,
+      POOL_ADDRESS,
+      OPEN_NOTE_ID,
+    ];
+    await broadcastPreparedExpectRevert(
+      devnet,
+      env,
+      await prepare(maker.prover, [
+        withdraw(env.eth, TAKEN_A, escrow),
+        openNote(env.strk, env.alice.address),
+        authenticatedInvoke(escrow, takeInvokeCalldata),
+      ]),
+      /BAD_SIGNATURE/,
+    );
+    const takeBeforeAuthorizedWallet = await env.node.callContract({
+      contractAddress: escrow,
+      entrypoint: "get_take",
+      calldata: [DEAL_ID],
+    });
+    assert.equal(
+      BigInt(takeBeforeAuthorizedWallet[4]),
+      0n,
+      "a copied signature from another privacy identity must not record a Take",
+    );
     await broadcastPrepared(
       devnet,
       env,
       await prepare(taker.prover, [
         withdraw(env.eth, TAKEN_A, escrow),
         openNote(env.strk, env.bob.address),
-        invoke(escrow, [
-          "0x5",
-          env.eth,
-          env.strk,
-          num.toHex(takeSignature.r),
-          num.toHex(takeSignature.s),
-          "0x1",
-          LOCK_ID,
-          num.toHex(TAKEN_A),
-          DEAL_ID,
-          POOL_ADDRESS,
-          OPEN_NOTE_ID,
-        ]),
+        authenticatedInvoke(escrow, takeInvokeCalldata),
       ]),
     );
     const take = await env.node.callContract({
@@ -449,6 +559,7 @@ test("real privacy pool: LockTicket supply two survives take and both maker sett
     assert.equal(BigInt(finalLock[15]), TAKEN_A);
     assert.equal(BigInt(finalLock[17]), 1n, "proceeds must be settled");
     assert.equal(BigInt(finalLock[18]), 1n, "collateral must be released");
+    assert.equal(BigInt(finalLock[19]), 2n, "fully settled lock must be closed");
 
     const finalNotes = await notesFor(maker.transfers, devnet, [
       lockTicket,

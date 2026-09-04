@@ -134,7 +134,7 @@ export function parseLocalnetEscrowLockResult(result) {
     throw new Error("Escrow get_lock result must contain exactly 20 felts.");
   }
   const statusValue = BigInt(canonicalRpcFelt(result[19], "lock status", true));
-  if (statusValue !== 0n && statusValue !== 1n) {
+  if (statusValue !== 0n && statusValue !== 1n && statusValue !== 2n) {
     throw new Error("Escrow lock status is unsupported.");
   }
   const pointsLengthValue = BigInt(
@@ -146,7 +146,7 @@ export function parseLocalnetEscrowLockResult(result) {
   const pointsLength = Number(pointsLengthValue);
   if (
     (statusValue === 0n && pointsLength !== 0) ||
-    (statusValue === 1n && pointsLength < 1)
+    (statusValue !== 0n && pointsLength < 1)
   ) {
     throw new Error("Escrow lock schedule length does not match its status.");
   }
@@ -158,13 +158,27 @@ export function parseLocalnetEscrowLockResult(result) {
       }),
     ),
   );
-  if (statusValue === 1n) assertPriceSchedule(schedule);
+  if (statusValue !== 0n) assertPriceSchedule(schedule);
   const expiryValue = BigInt(canonicalRpcFelt(result[4], "lock expiry", true));
   if (
     expiryValue > BigInt(Number.MAX_SAFE_INTEGER) ||
-    (statusValue === 1n && expiryValue === 0n)
+    (statusValue !== 0n && expiryValue === 0n)
   ) {
     throw new Error("Escrow lock expiry is not a safe positive timestamp.");
+  }
+  const proceedsSettled = rpcBoolean(
+    result[17],
+    "lock proceeds settlement flag",
+  );
+  const collateralReleased = rpcBoolean(
+    result[18],
+    "lock collateral release flag",
+  );
+  if (
+    (statusValue === 2n && (!proceedsSettled || !collateralReleased)) ||
+    (statusValue === 1n && proceedsSettled && collateralReleased)
+  ) {
+    throw new Error("Escrow lock status contradicts its settlement flags.");
   }
   return Object.freeze({
     tokenA: canonicalRpcFelt(result[0], "lock token A", statusValue === 0n),
@@ -176,9 +190,10 @@ export function parseLocalnetEscrowLockResult(result) {
     remainingB: rpcU128(result[14], "lock remaining collateral"),
     earnedA: rpcU128(result[15], "lock earned proceeds"),
     ticket: canonicalRpcFelt(result[16], "lock ticket", statusValue === 0n),
-    proceedsSettled: rpcBoolean(result[17], "lock proceeds settlement flag"),
-    collateralReleased: rpcBoolean(result[18], "lock collateral release flag"),
-    status: statusValue === 1n ? "open" : "empty",
+    proceedsSettled,
+    collateralReleased,
+    status:
+      statusValue === 0n ? "empty" : statusValue === 1n ? "open" : "closed",
   });
 }
 
@@ -252,19 +267,30 @@ export function buildLocalnetMakerSettlementActions(
     throw new Error("Maker settlement operation must be 0x6 or 0x7.");
   }
   const escrow = canonicalFelt(escrowAddress, "escrowAddress");
-  return Object.freeze([
+  const expectedPayout = hexAmount(
+    request.expectedPayout,
+    "expected settlement payout",
+    true,
+  );
+  const actions = [
     Object.freeze({
       type: "withdraw",
       token: canonicalFelt(request.ticket, "lock ticket"),
       amount: "0x1",
       recipient: escrow,
     }),
-    Object.freeze({
-      type: "transfer",
-      token: canonicalFelt(request.outputToken, "outputToken"),
-      amount: "OPEN",
-      recipient: canonicalFelt(recoveryAddress, "recoveryAddress"),
-    }),
+  ];
+  if (expectedPayout !== "0x0") {
+    actions.push(
+      Object.freeze({
+        type: "transfer",
+        token: canonicalFelt(request.outputToken, "outputToken"),
+        amount: "OPEN",
+        recipient: canonicalFelt(recoveryAddress, "recoveryAddress"),
+      }),
+    );
+  }
+  actions.push(
     Object.freeze({
       type: "invoke",
       contract: escrow,
@@ -272,10 +298,11 @@ export function buildLocalnetMakerSettlementActions(
         request.operation,
         canonicalFelt(request.lockId, "lockId"),
         "${poolAddress}",
-        "${openNoteIds[0]}",
+        expectedPayout === "0x0" ? "0x0" : "${openNoteIds[0]}",
       ]),
     }),
-  ]);
+  );
+  return Object.freeze(actions);
 }
 
 export function parseLocalnetMakerFillRequest(body) {

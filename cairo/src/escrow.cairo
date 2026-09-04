@@ -4,6 +4,7 @@ use crate::OpenNoteDeposit;
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
 pub struct FundParams {
     pub token: ContractAddress,
+    pub amount: u128,
     pub counter_token: ContractAddress,
     pub counter_amount: u128,
     pub deadline: u64,
@@ -87,6 +88,7 @@ pub enum LockStatus {
     #[default]
     Empty,
     Open,
+    Closed,
 }
 
 #[derive(Serde, Copy, Drop, PartialEq, Debug, starknet::Store)]
@@ -125,7 +127,17 @@ pub struct TakeRecord {
     pub taken_at: u64,
 }
 
-pub const TAKE_DOMAIN: felt252 = 'app20-take-v3';
+/// A pre-transfer balance observed in the very same outer transaction as the pool invocation.
+/// Historical balances (including balances observed while generating a proof) are not sufficient.
+#[derive(Copy, Drop, starknet::Store)]
+pub struct FundingSnapshot {
+    pub transaction_hash: felt252,
+    pub balance: u256,
+    pub prepared: bool,
+}
+
+pub const TAKE_DOMAIN: felt252 = 'app20-take-v4';
+pub const TAKE_IDENTITY_DOMAIN: felt252 = 'app20-take-id-v1';
 
 mod errors {
     pub const BAD_POOL: felt252 = 'BAD_POOL';
@@ -163,6 +175,8 @@ mod errors {
     pub const NOTHING_TO_SETTLE: felt252 = 'NOTHING_TO_SETTLE';
     pub const BAD_LOCK_AMOUNT: felt252 = 'BAD_LOCK_AMOUNT';
     pub const BAD_SIGNATURE: felt252 = 'BAD_SIGNATURE';
+    pub const FUNDING_NOT_PREPARED: felt252 = 'FUNDING_NOT_PREPARED';
+    pub const STALE_FUNDING: felt252 = 'STALE_FUNDING';
 }
 
 fn assert_schedule(
@@ -248,8 +262,20 @@ fn schedule_max_b(points_len: u8, p0_b: u128, p1_b: u128, p2_b: u128, p3_b: u128
 
 #[starknet::interface]
 pub trait IApp20Escrow<TState> {
+    /// The submitting account must call this before the pool call in one atomic multicall.
+    fn prepare_funding(ref self: TState, token: ContractAddress);
     fn privacy_invoke(
         ref self: TState,
+        operation: EscrowOperation,
+        deal_id: felt252,
+        pool_address: ContractAddress,
+        note_id: felt252,
+    ) -> Span<OpenNoteDeposit>;
+    /// Returns a public pseudonym without exposing the pool-private identity key.
+    fn privacy_compute(self: @TState, identity_key: felt252, rfq_id: felt252) -> felt252;
+    fn privacy_invoke_with_computation(
+        ref self: TState,
+        identity_commitment: felt252,
         operation: EscrowOperation,
         deal_id: felt252,
         pool_address: ContractAddress,
@@ -276,15 +302,15 @@ pub mod App20Escrow {
     use starknet::syscalls::deploy_syscall;
     use starknet::{
         ClassHash, ContractAddress, SyscallResultTrait, get_block_timestamp, get_caller_address,
-        get_contract_address,
+        get_contract_address, get_tx_info,
     };
     use crate::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
     use crate::lock_ticket::{ILockTicketDispatcher, ILockTicketDispatcherTrait};
     use crate::{IErc20Dispatcher, IErc20DispatcherTrait};
     use super::{
-        Deal, DealStatus, EscrowOperation, FillParams, FundParams, IApp20Escrow, Lock, LockParams,
-        LockStatus, OpenNoteDeposit, TAKE_DOMAIN, TakeParams, TakeRecord, errors, evaluate_schedule,
-        schedule_max_b,
+        Deal, DealStatus, EscrowOperation, FillParams, FundParams, FundingSnapshot, IApp20Escrow,
+        Lock, LockParams, LockStatus, OpenNoteDeposit, TAKE_DOMAIN, TAKE_IDENTITY_DOMAIN,
+        TakeParams, TakeRecord, errors, evaluate_schedule, schedule_max_b,
     };
 
     #[storage]
@@ -299,6 +325,7 @@ pub mod App20Escrow {
         lock_tickets: Map<felt252, ContractAddress>,
         locks: Map<felt252, Lock>,
         takes: Map<felt252, TakeRecord>,
+        funding_snapshots: Map<ContractAddress, FundingSnapshot>,
     }
 
     #[event]
@@ -428,6 +455,23 @@ pub mod App20Escrow {
 
     #[abi(embed_v0)]
     impl App20EscrowImpl of IApp20Escrow<ContractState> {
+        fn prepare_funding(ref self: ContractState, token: ContractAddress) {
+            assert(token.is_non_zero(), errors::ZERO_TOKEN);
+            let erc20 = IErc20Dispatcher { contract_address: token };
+            let balance = erc20.balance_of(get_contract_address());
+            assert(balance >= self.accounted.entry(token).read(), errors::BALANCE_DEFICIT);
+            self
+                .funding_snapshots
+                .entry(token)
+                .write(
+                    FundingSnapshot {
+                        transaction_hash: get_tx_info().unbox().transaction_hash,
+                        balance,
+                        prepared: true,
+                    },
+                );
+        }
+
         fn privacy_invoke(
             ref self: ContractState,
             operation: EscrowOperation,
@@ -445,12 +489,45 @@ pub mod App20Escrow {
                 EscrowOperation::Claim => claim(ref self, deal_id, note_id, pool),
                 EscrowOperation::Timeout => timeout(ref self, deal_id, note_id, pool),
                 EscrowOperation::Lock(params) => lock(ref self, deal_id, note_id, params, pool),
-                EscrowOperation::Take(params) => take(ref self, deal_id, note_id, params, pool),
+                EscrowOperation::Take(_) => {
+                    assert(false, errors::BAD_SIGNATURE);
+                    array![].span()
+                },
                 EscrowOperation::SettleProceeds => {
                     settle_proceeds(ref self, deal_id, note_id, pool)
                 },
                 EscrowOperation::ReleaseCollateral => {
                     release_collateral(ref self, deal_id, note_id, pool)
+                },
+            }
+        }
+
+        fn privacy_compute(
+            self: @ContractState, identity_key: felt252, rfq_id: felt252,
+        ) -> felt252 {
+            assert(get_caller_address() == self.pool.read(), errors::BAD_POOL);
+            assert(rfq_id != 0, errors::ZERO_DEAL_ID);
+            poseidon_hash_span(array![TAKE_IDENTITY_DOMAIN, identity_key, rfq_id].span())
+        }
+
+        fn privacy_invoke_with_computation(
+            ref self: ContractState,
+            identity_commitment: felt252,
+            operation: EscrowOperation,
+            deal_id: felt252,
+            pool_address: ContractAddress,
+            note_id: felt252,
+        ) -> Span<OpenNoteDeposit> {
+            let _pool_placeholder = pool_address;
+            let pool = self.pool.read();
+            assert(get_caller_address() == pool, errors::BAD_POOL);
+            match operation {
+                EscrowOperation::Take(params) => {
+                    take(ref self, deal_id, note_id, params, pool, identity_commitment)
+                },
+                _ => {
+                    assert(false, errors::BAD_STATE);
+                    array![].span()
                 },
             }
         }
@@ -486,6 +563,7 @@ pub mod App20Escrow {
         fn quote_schedule(self: @ContractState, lock_id: felt252, amount_a: u128) -> u128 {
             let lock = self.locks.entry(lock_id).read();
             assert(lock.status == LockStatus::Open, errors::LOCK_NOT_OPEN);
+            assert(get_block_timestamp() < lock.expiry, errors::LOCK_EXPIRED);
             evaluate_lock_schedule(lock, amount_a)
         }
     }
@@ -520,6 +598,24 @@ pub mod App20Escrow {
         ticket
     }
 
+    fn consume_funding(ref self: ContractState, token: ContractAddress, expected: u256) {
+        let mut snapshot = self.funding_snapshots.entry(token).read();
+        assert(snapshot.prepared, errors::FUNDING_NOT_PREPARED);
+        assert(
+            snapshot.transaction_hash == get_tx_info().unbox().transaction_hash,
+            errors::STALE_FUNDING,
+        );
+        snapshot.prepared = false;
+        self.funding_snapshots.entry(token).write(snapshot);
+        let erc20 = IErc20Dispatcher { contract_address: token };
+        let balance = erc20.balance_of(get_contract_address());
+        assert(balance >= snapshot.balance, errors::BALANCE_DEFICIT);
+        assert(balance >= self.accounted.entry(token).read(), errors::BALANCE_DEFICIT);
+        let received = balance - snapshot.balance;
+        assert(received >= expected, errors::SHORT_FILL);
+        assert(received == expected, errors::EXCESS_FILL);
+    }
+
     fn fund(
         ref self: ContractState,
         deal_id: felt252,
@@ -532,19 +628,16 @@ pub mod App20Escrow {
         assert(params.counter_token.is_non_zero(), errors::ZERO_TOKEN);
         assert(params.token != params.counter_token, errors::SAME_TOKEN);
         assert(params.counter_amount.is_non_zero(), errors::ZERO_AMOUNT);
+        assert(params.amount.is_non_zero(), errors::ZERO_AMOUNT);
         assert(params.deadline > get_block_timestamp(), errors::DEADLINE_NOT_FUTURE);
         assert(self.deals.entry(deal_id).read().status == DealStatus::Empty, errors::DEAL_EXISTS);
 
         let ticket_address = ensure_ticket_internal(ref self, deal_id);
-        let token = IErc20Dispatcher { contract_address: params.token };
-        let balance = token.balance_of(get_contract_address());
         let previous = self.accounted.entry(params.token).read();
-        assert(balance >= previous, errors::BALANCE_DEFICIT);
-        let received_u256 = balance - previous;
-        let received: u128 = received_u256.try_into().expect(errors::AMOUNT_OVERFLOW);
-        assert(received.is_non_zero(), errors::ZERO_AMOUNT);
+        consume_funding(ref self, params.token, params.amount.into());
+        let received = params.amount;
 
-        self.accounted.entry(params.token).write(balance);
+        self.accounted.entry(params.token).write(previous + received.into());
         self
             .deals
             .entry(deal_id)
@@ -593,19 +686,15 @@ pub mod App20Escrow {
 
         let contract_address = get_contract_address();
         let leg_a = IErc20Dispatcher { contract_address: deal.leg_a_token };
-        let leg_b = IErc20Dispatcher { contract_address: deal.leg_b_token };
         let leg_a_balance = leg_a.balance_of(contract_address);
         let leg_a_accounted = self.accounted.entry(deal.leg_a_token).read();
         assert(leg_a_balance >= leg_a_accounted, errors::BALANCE_DEFICIT);
         assert(leg_a_accounted >= deal.leg_a_amount.into(), errors::CONSERVATION_FAILURE);
         let leg_a_after = leg_a_accounted - deal.leg_a_amount.into();
 
-        let leg_b_balance = leg_b.balance_of(contract_address);
         let leg_b_accounted = self.accounted.entry(deal.leg_b_token).read();
-        assert(leg_b_balance >= leg_b_accounted, errors::BALANCE_DEFICIT);
-        let received_u256 = leg_b_balance - leg_b_accounted;
         let expected: u256 = deal.leg_b_terms.into();
-        assert(received_u256 >= expected, errors::SHORT_FILL);
+        consume_funding(ref self, deal.leg_b_token, expected);
 
         self.accounted.entry(deal.leg_a_token).write(leg_a_after);
         self.accounted.entry(deal.leg_b_token).write(leg_b_accounted + expected);
@@ -715,12 +804,8 @@ pub mod App20Escrow {
         );
 
         let ticket_address = ensure_lock_ticket_internal(ref self, lock_id);
-        let token = IErc20Dispatcher { contract_address: params.token };
-        let balance = token.balance_of(get_contract_address());
         let previous = self.accounted.entry(params.token).read();
-        assert(balance >= previous, errors::BALANCE_DEFICIT);
-        let received_u256 = balance - previous;
-        assert(received_u256 >= max_b.into(), errors::BAD_LOCK_AMOUNT);
+        consume_funding(ref self, params.token, max_b.into());
 
         self.accounted.entry(params.token).write(previous + max_b.into());
         self
@@ -812,8 +897,10 @@ pub mod App20Escrow {
         note_id: felt252,
         params: TakeParams,
         pool: ContractAddress,
+        identity_commitment: felt252,
     ) -> Span<OpenNoteDeposit> {
         assert(deal_id.is_non_zero(), errors::ZERO_DEAL_ID);
+        assert(identity_commitment != 0, errors::BAD_SIGNATURE);
         assert(self.takes.entry(deal_id).read().fill_count == 0, errors::TAKE_EXISTS);
         let fill_count = params.fills.len();
         assert(fill_count > 0, errors::NO_FILLS);
@@ -832,12 +919,8 @@ pub mod App20Escrow {
             fills_preimage.append(fill.amount_a.into());
         }
         let fills_digest = poseidon_hash_span(fills_preimage.span());
-        let token_a = IErc20Dispatcher { contract_address: params.token };
-        let balance_a = token_a.balance_of(get_contract_address());
         let accounted_a = self.accounted.entry(params.token).read();
-        assert(balance_a >= accounted_a, errors::BALANCE_DEFICIT);
-        let received_a = balance_a - accounted_a;
-        assert(received_a >= expected_a, errors::SHORT_FILL);
+        consume_funding(ref self, params.token, expected_a);
 
         let mut taker_authorization_key = 0;
         let mut total_b_u256: u256 = 0;
@@ -869,8 +952,9 @@ pub mod App20Escrow {
 
         let message = poseidon_hash_span(
             array![
-                TAKE_DOMAIN, get_contract_address().into(), deal_id, params.token.into(),
-                params.counter_token.into(), fills_digest,
+                TAKE_DOMAIN, get_tx_info().unbox().chain_id, get_contract_address().into(),
+                identity_commitment, deal_id, params.token.into(), params.counter_token.into(),
+                fills_digest,
             ]
                 .span(),
         );
@@ -953,73 +1037,89 @@ pub mod App20Escrow {
         ref self: ContractState, lock_id: felt252, note_id: felt252, pool: ContractAddress,
     ) -> Span<OpenNoteDeposit> {
         let mut existing_lock = self.locks.entry(lock_id).read();
+        assert(!existing_lock.proceeds_settled, errors::ALREADY_SETTLED);
         assert(existing_lock.status == LockStatus::Open, errors::LOCK_NOT_OPEN);
         assert(get_block_timestamp() >= existing_lock.expiry, errors::LOCK_NOT_EXPIRED);
-        assert(!existing_lock.proceeds_settled, errors::ALREADY_SETTLED);
-        assert(existing_lock.earned_a > 0, errors::NOTHING_TO_SETTLE);
         consume_lock_ticket(ref self, existing_lock);
 
-        let token = IErc20Dispatcher { contract_address: existing_lock.token_a };
-        let balance = token.balance_of(get_contract_address());
-        let accounted = self.accounted.entry(existing_lock.token_a).read();
-        assert(balance >= accounted, errors::BALANCE_DEFICIT);
-        assert(accounted >= existing_lock.earned_a.into(), errors::CONSERVATION_FAILURE);
-        self
-            .accounted
-            .entry(existing_lock.token_a)
-            .write(accounted - existing_lock.earned_a.into());
+        if existing_lock.earned_a > 0 {
+            let token = IErc20Dispatcher { contract_address: existing_lock.token_a };
+            let balance = token.balance_of(get_contract_address());
+            let accounted = self.accounted.entry(existing_lock.token_a).read();
+            assert(balance >= accounted, errors::BALANCE_DEFICIT);
+            assert(accounted >= existing_lock.earned_a.into(), errors::CONSERVATION_FAILURE);
+            self
+                .accounted
+                .entry(existing_lock.token_a)
+                .write(accounted - existing_lock.earned_a.into());
+            assert(token.approve(pool, existing_lock.earned_a.into()), errors::APPROVE_FAILED);
+        }
         existing_lock.proceeds_settled = true;
+        if existing_lock.collateral_released {
+            existing_lock.status = LockStatus::Closed;
+        }
         self.locks.entry(lock_id).write(existing_lock);
 
-        assert(token.approve(pool, existing_lock.earned_a.into()), errors::APPROVE_FAILED);
         self
             .emit(
                 LockProceedsSettled {
                     lock_id, token: existing_lock.token_a, amount: existing_lock.earned_a,
                 },
             );
-        array![
-            OpenNoteDeposit {
-                note_id, token: existing_lock.token_a, amount: existing_lock.earned_a,
-            },
-        ]
-            .span()
+        if existing_lock.earned_a == 0 {
+            array![].span()
+        } else {
+            array![
+                OpenNoteDeposit {
+                    note_id, token: existing_lock.token_a, amount: existing_lock.earned_a,
+                },
+            ]
+                .span()
+        }
     }
 
     fn release_collateral(
         ref self: ContractState, lock_id: felt252, note_id: felt252, pool: ContractAddress,
     ) -> Span<OpenNoteDeposit> {
         let mut existing_lock = self.locks.entry(lock_id).read();
+        assert(!existing_lock.collateral_released, errors::ALREADY_SETTLED);
         assert(existing_lock.status == LockStatus::Open, errors::LOCK_NOT_OPEN);
         assert(get_block_timestamp() >= existing_lock.expiry, errors::LOCK_NOT_EXPIRED);
-        assert(!existing_lock.collateral_released, errors::ALREADY_SETTLED);
-        assert(existing_lock.remaining_b > 0, errors::NOTHING_TO_SETTLE);
         consume_lock_ticket(ref self, existing_lock);
 
-        let token = IErc20Dispatcher { contract_address: existing_lock.token_b };
-        let balance = token.balance_of(get_contract_address());
-        let accounted = self.accounted.entry(existing_lock.token_b).read();
-        assert(balance >= accounted, errors::BALANCE_DEFICIT);
-        assert(accounted >= existing_lock.remaining_b.into(), errors::CONSERVATION_FAILURE);
-        self
-            .accounted
-            .entry(existing_lock.token_b)
-            .write(accounted - existing_lock.remaining_b.into());
+        if existing_lock.remaining_b > 0 {
+            let token = IErc20Dispatcher { contract_address: existing_lock.token_b };
+            let balance = token.balance_of(get_contract_address());
+            let accounted = self.accounted.entry(existing_lock.token_b).read();
+            assert(balance >= accounted, errors::BALANCE_DEFICIT);
+            assert(accounted >= existing_lock.remaining_b.into(), errors::CONSERVATION_FAILURE);
+            self
+                .accounted
+                .entry(existing_lock.token_b)
+                .write(accounted - existing_lock.remaining_b.into());
+            assert(token.approve(pool, existing_lock.remaining_b.into()), errors::APPROVE_FAILED);
+        }
         existing_lock.collateral_released = true;
+        if existing_lock.proceeds_settled {
+            existing_lock.status = LockStatus::Closed;
+        }
         self.locks.entry(lock_id).write(existing_lock);
 
-        assert(token.approve(pool, existing_lock.remaining_b.into()), errors::APPROVE_FAILED);
         self
             .emit(
                 LockCollateralReleased {
                     lock_id, token: existing_lock.token_b, amount: existing_lock.remaining_b,
                 },
             );
-        array![
-            OpenNoteDeposit {
-                note_id, token: existing_lock.token_b, amount: existing_lock.remaining_b,
-            },
-        ]
-            .span()
+        if existing_lock.remaining_b == 0 {
+            array![].span()
+        } else {
+            array![
+                OpenNoteDeposit {
+                    note_id, token: existing_lock.token_b, amount: existing_lock.remaining_b,
+                },
+            ]
+                .span()
+        }
     }
 }

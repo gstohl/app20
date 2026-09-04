@@ -367,7 +367,7 @@ export type MakerOnChainLock = Readonly<{
   ticket: string;
   proceedsSettled: boolean;
   collateralReleased: boolean;
-  status: "empty" | "open";
+  status: "empty" | "open" | "closed";
 }>;
 
 export type MakerLockRequest = Readonly<{
@@ -384,6 +384,7 @@ export type MakerLockSettlementRequest = Readonly<{
   lockId: string;
   ticket: string;
   outputToken: string;
+  expectedPayout: bigint;
 }>;
 
 export type MakerTransactionReceipt = Readonly<{
@@ -1987,7 +1988,7 @@ class AuthenticatedLockContradictionError extends MakerNodeError {
   }
 }
 
-function requireOpenChainLock(
+function requireBoundChainLock(
   chain: MakerOnChainLock,
   record: StoredLockRecord,
 ): MakerOnChainLock {
@@ -1999,7 +2000,7 @@ function requireOpenChainLock(
       "Escrow reports that the durable lock is empty.",
     );
   }
-  if (chain.status !== "open") {
+  if (chain.status !== "open" && chain.status !== "closed") {
     throw new MakerNodeError("Escrow returned an invalid lock status.");
   }
   assertPriceSchedule(chain.schedule);
@@ -2016,6 +2017,17 @@ function requireOpenChainLock(
     typeof chain.collateralReleased !== "boolean"
   ) {
     throw new MakerNodeError("Escrow returned malformed settlement flags.");
+  }
+  if (
+    (chain.status === "closed" &&
+      (!chain.proceedsSettled || !chain.collateralReleased)) ||
+    (chain.status === "open" &&
+      chain.proceedsSettled &&
+      chain.collateralReleased)
+  ) {
+    throw new AuthenticatedLockContradictionError(
+      "Escrow lock status contradicts its settlement flags.",
+    );
   }
   const takenB = record.maxB - chain.remainingB;
   if (
@@ -2151,9 +2163,9 @@ function lockStateFromChain(
   chain: MakerOnChainLock,
   now: number,
 ): StoredLockRecord {
-  const open = requireOpenChainLock(chain, record);
-  const proceedsComplete = open.earnedA === 0n || open.proceedsSettled;
-  const collateralComplete = open.remainingB === 0n || open.collateralReleased;
+  const open = requireBoundChainLock(chain, record);
+  const proceedsComplete = open.proceedsSettled;
+  const collateralComplete = open.collateralReleased;
   const state: LockRecordV1State =
     proceedsComplete && collateralComplete
       ? "settled"
@@ -2998,20 +3010,23 @@ export class DurableMakerNode {
     let refreshed = await this.#refreshLock(lockId, now);
     if (refreshed.kind !== "ready" || refreshed.record.expiry > now) return;
 
-    if (refreshed.chain.earnedA > 0n && !refreshed.chain.proceedsSettled) {
+    if (!refreshed.chain.proceedsSettled) {
       refreshed = await this.#submitSettlementAction(
         refreshed.record,
         "proceeds",
+        refreshed.chain.earnedA,
         now,
       );
       if (refreshed.kind !== "ready") return;
     }
 
-    if (
-      refreshed.chain.remainingB > 0n &&
-      !refreshed.chain.collateralReleased
-    ) {
-      await this.#submitSettlementAction(refreshed.record, "release", now);
+    if (!refreshed.chain.collateralReleased) {
+      await this.#submitSettlementAction(
+        refreshed.record,
+        "release",
+        refreshed.chain.remainingB,
+        now,
+      );
     }
   }
 
@@ -3104,7 +3119,7 @@ export class DurableMakerNode {
       ) {
         candidate = canonicalStoredLock({ ...record, ticket: chain.ticket });
       }
-      open = requireOpenChainLock(chain, candidate);
+      open = requireBoundChainLock(chain, candidate);
     } catch (error) {
       if (error instanceof AuthenticatedLockContradictionError) {
         await this.#quarantineLock(
@@ -3161,7 +3176,7 @@ export class DurableMakerNode {
 
     let open: MakerOnChainLock | undefined;
     try {
-      open = requireOpenChainLock(
+      open = requireBoundChainLock(
         await this.#v3Wallet().getLock(record.lockId),
         record,
       );
@@ -3224,6 +3239,7 @@ export class DurableMakerNode {
   async #submitSettlementAction(
     record: StoredLockRecord,
     action: MakerLockSettlementAction,
+    expectedPayout: bigint,
     now: number,
   ): Promise<LockRefreshResult> {
     const pending = await this.#store.lockTransaction((draft) => {
@@ -3255,11 +3271,13 @@ export class DurableMakerNode {
               lockId: record.lockId,
               ticket: record.ticket,
               outputToken: record.tokenA,
+              expectedPayout,
             })
           : await wallet.releaseCollateral({
               lockId: record.lockId,
               ticket: record.ticket,
               outputToken: record.tokenB,
+              expectedPayout,
             });
       const transactionHash = requireFeltText(
         response.transactionHash,
@@ -3360,7 +3378,7 @@ export class DurableMakerNode {
     if (!record || !record.settlementAttempt) return;
     let open: MakerOnChainLock;
     try {
-      open = requireOpenChainLock(
+      open = requireBoundChainLock(
         await this.#v3Wallet().getLock(lockId),
         record,
       );
@@ -4072,7 +4090,7 @@ export class DurableMakerNode {
 
     let chain: MakerOnChainLock;
     try {
-      chain = requireOpenChainLock(
+      chain = requireBoundChainLock(
         await this.#v3Wallet().getLock(target.lockId),
         initial,
       );

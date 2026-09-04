@@ -53,6 +53,7 @@ describe("App20Escrow V2 STRK20 action batches", () => {
         calldata: [
           ESCROW_OPERATION_VARIANT.Fund,
           tokenA,
+          "0x1f4",
           tokenB,
           "0x2bc",
           "0x77359400",
@@ -281,9 +282,10 @@ describe("App20Escrow V3 STRK20 action batches", () => {
         recipient: recoveryAddress,
       },
       {
-        type: "invoke",
+        type: "compute_and_invoke",
         contract: escrowAddress,
-        calldata: [
+        compute_calldata: [dealId],
+        invoke_calldata: [
           "0x5",
           tokenA,
           tokenB,
@@ -315,6 +317,7 @@ describe("App20Escrow V3 STRK20 action batches", () => {
           lockTicketAddress: ticketAddress,
           lockId: "0x44",
           payoutToken,
+          expectedPayout: 1n,
         }),
       ).toEqual([
         {
@@ -342,6 +345,31 @@ describe("App20Escrow V3 STRK20 action batches", () => {
       ]);
     },
   );
+
+  it("finalizes a zero-valued lock side without opening an unfunded note", () => {
+    expect(
+      buildEscrowSettleProceedsActions({
+        escrowAddress,
+        recoveryAddress,
+        lockTicketAddress: ticketAddress,
+        lockId: "0x44",
+        payoutToken: tokenA,
+        expectedPayout: 0n,
+      }),
+    ).toEqual([
+      {
+        type: "withdraw",
+        token: ticketAddress,
+        amount: "0x1",
+        recipient: escrowAddress,
+      },
+      {
+        type: "invoke",
+        contract: escrowAddress,
+        calldata: ["0x6", "0x44", POOL_ADDRESS_PLACEHOLDER, "0x0"],
+      },
+    ]);
+  });
 
   it("rejects malformed schedules, duplicate fills, and overflowing totals", () => {
     expect(() =>

@@ -85,6 +85,7 @@ test("maker settlement actions spend one LockTicket and select operations 6 and 
           lockId: "0x7",
           ticket: "0x9",
           outputToken,
+          expectedPayout: 1n,
         },
         { escrowAddress: ESCROW, recoveryAddress: RECOVERY },
       ),
@@ -109,6 +110,34 @@ test("maker settlement actions spend one LockTicket and select operations 6 and 
       ],
     );
   }
+});
+
+test("zero-valued maker settlement burns its ticket without opening a note", () => {
+  assert.deepEqual(
+    buildLocalnetMakerSettlementActions(
+      {
+        operation: "0x6",
+        lockId: "0x7",
+        ticket: "0x9",
+        outputToken: "0x1",
+        expectedPayout: 0n,
+      },
+      { escrowAddress: ESCROW, recoveryAddress: RECOVERY },
+    ),
+    [
+      {
+        type: "withdraw",
+        token: "0x9",
+        amount: "0x1",
+        recipient: ESCROW,
+      },
+      {
+        type: "invoke",
+        contract: ESCROW,
+        calldata: ["0x6", "0x7", "${poolAddress}", "0x0"],
+      },
+    ],
+  );
 });
 
 test("maker GET helper preserves top-level v3 response contracts and Bearer auth", async () => {
@@ -217,6 +246,21 @@ test("get_lock parser maps all 20 Cairo fields and rejects malformed state", () 
     collateralReleased: false,
     status: "open",
   });
+  assert.equal(
+    parseLocalnetEscrowLockResult(
+      result.map((value, index) =>
+        index === 17 || index === 18 ? "0x1" : index === 19 ? "0x2" : value,
+      ),
+    ).status,
+    "closed",
+  );
+  assert.throws(
+    () =>
+      parseLocalnetEscrowLockResult(
+        result.map((value, index) => (index === 19 ? "0x2" : value)),
+      ),
+    /contradicts/i,
+  );
   assert.throws(
     () => parseLocalnetEscrowLockResult(result.slice(0, 19)),
     /exactly 20 felts/i,

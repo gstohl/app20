@@ -1,7 +1,11 @@
 import type { PriceSchedule } from "@app20/private-intents";
 import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
-import { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER } from "./strk20";
+import {
+  OPEN_NOTE_ID_PLACEHOLDER,
+  POOL_ADDRESS_PLACEHOLDER,
+  type App20Strk20Action,
+} from "./strk20";
 import { STARK_FIELD_PRIME } from "./escrow";
 
 export { OPEN_NOTE_ID_PLACEHOLDER, POOL_ADDRESS_PLACEHOLDER };
@@ -85,6 +89,7 @@ export type EscrowLockPayoutBatchInput = {
   lockTicketAddress: string;
   lockId: string;
   payoutToken: string;
+  expectedPayout: string | bigint;
 };
 
 function assertConfiguredEscrow(address: string): void {
@@ -119,6 +124,19 @@ function boundedHex(value: FeltInput, max: bigint, label: string): string {
 
 function positiveU128(value: string | bigint, label: string): string {
   return boundedHex(value, U128_MAX, label);
+}
+
+function nonnegativeU128(value: string | bigint, label: string): bigint {
+  let parsed: bigint;
+  try {
+    parsed = BigInt(value);
+  } catch {
+    throw new Error(`${label} must be an unsigned integer.`);
+  }
+  if (parsed < 0n || parsed > U128_MAX) {
+    throw new Error(`${label} must be within the u128 range.`);
+  }
+  return parsed;
 }
 
 function assertNonZeroFelt(value: FeltInput, label: string): void {
@@ -190,6 +208,7 @@ export function buildEscrowFundActions({
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT.Fund,
       token,
+      positiveU128(amount, "Funding amount"),
       counterToken,
       positiveU128(counterAmount, "Counter amount"),
       boundedHex(deadline, U64_MAX, "Deadline"),
@@ -353,7 +372,7 @@ export function buildEscrowTakeActions({
   signatureR,
   signatureS,
   fills,
-}: EscrowTakeBatchInput): WALLET_API.STRK20_ACTION[] {
+}: EscrowTakeBatchInput): App20Strk20Action[] {
   assertConfiguredEscrow(escrowAddress);
   assertNonZeroFelt(recoveryAddress, "Recovery address");
   assertDistinctTokens(tokenA, tokenB);
@@ -385,18 +404,23 @@ export function buildEscrowTakeActions({
   return [
     withdraw(tokenA, num.toHex(totalA), escrowAddress),
     openNote(tokenB, recoveryAddress),
-    invoke(escrowAddress, [
-      ESCROW_OPERATION_VARIANT.Take,
-      tokenA,
-      tokenB,
-      felt(signatureR, "Take signature r"),
-      felt(signatureS, "Take signature s"),
-      num.toHex(fills.length),
-      ...flattened,
-      felt(rfqId, "RFQ id"),
-      POOL_ADDRESS_PLACEHOLDER,
-      OPEN_NOTE_ID_PLACEHOLDER,
-    ]),
+    {
+      type: "compute_and_invoke",
+      contract: escrowAddress,
+      compute_calldata: [felt(rfqId, "RFQ id")],
+      invoke_calldata: [
+        ESCROW_OPERATION_VARIANT.Take,
+        tokenA,
+        tokenB,
+        felt(signatureR, "Take signature r"),
+        felt(signatureS, "Take signature s"),
+        num.toHex(fills.length),
+        ...flattened,
+        felt(rfqId, "RFQ id"),
+        POOL_ADDRESS_PLACEHOLDER,
+        OPEN_NOTE_ID_PLACEHOLDER,
+      ],
+    },
   ];
 }
 
@@ -408,22 +432,27 @@ function buildLockPayoutActions(
     lockTicketAddress,
     lockId,
     payoutToken,
+    expectedPayout,
   }: EscrowLockPayoutBatchInput,
 ): WALLET_API.STRK20_ACTION[] {
   assertConfiguredEscrow(escrowAddress);
   assertNonZeroFelt(recoveryAddress, "Recovery address");
   assertNonZeroFelt(lockTicketAddress, "Lock ticket address");
   assertNonZeroFelt(payoutToken, "Payout token");
-  return [
+  const payout = nonnegativeU128(expectedPayout, "Expected lock payout");
+  const actions: WALLET_API.STRK20_ACTION[] = [
     withdraw(lockTicketAddress, "0x1", escrowAddress),
-    openNote(payoutToken, recoveryAddress),
+  ];
+  if (payout > 0n) actions.push(openNote(payoutToken, recoveryAddress));
+  actions.push(
     invoke(escrowAddress, [
       ESCROW_OPERATION_VARIANT[operation],
       felt(lockId, "Lock id"),
       POOL_ADDRESS_PLACEHOLDER,
-      OPEN_NOTE_ID_PLACEHOLDER,
+      payout === 0n ? "0x0" : OPEN_NOTE_ID_PLACEHOLDER,
     ]),
-  ];
+  );
+  return actions;
 }
 
 export function buildEscrowSettleProceedsActions(

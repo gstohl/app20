@@ -3,7 +3,8 @@ use app20_mail::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTra
 use app20_mail::escrow::{
     App20Escrow, EscrowOperation, FillParams, FundParams, IApp20EscrowDispatcher,
     IApp20EscrowDispatcherTrait, IApp20EscrowSafeDispatcher, IApp20EscrowSafeDispatcherTrait,
-    LockParams, LockStatus, TAKE_DOMAIN, TakeFill, TakeParams, evaluate_schedule,
+    LockParams, LockStatus, TAKE_DOMAIN, TAKE_IDENTITY_DOMAIN, TakeFill, TakeParams,
+    evaluate_schedule,
 };
 use app20_mail::lock_ticket::{ILockTicketDispatcher, ILockTicketDispatcherTrait};
 use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
@@ -16,7 +17,7 @@ use snforge_std::{
     cheat_block_timestamp, cheat_caller_address, declare, load, map_entry_address, spy_events,
     store,
 };
-use starknet::{ClassHash, ContractAddress};
+use starknet::{ClassHash, ContractAddress, get_tx_info};
 
 const POOL: felt252 = 0x3000;
 const RFQ: felt252 = 0xA300;
@@ -25,6 +26,7 @@ const SIGNING_KEY: felt252 = 0xC302;
 const OTHER_SIGNING_KEY: felt252 = 0xC303;
 const CREATED_AT: u64 = 10;
 const EXPIRY: u64 = 100;
+const IDENTITY_KEY: felt252 = 0x4567;
 
 fn address(value: felt252) -> ContractAddress {
     value.try_into().unwrap()
@@ -80,6 +82,8 @@ fn transfer_token(
     recipient: ContractAddress,
     amount: u128,
 ) {
+    // The submitting account prepares the balance before the pool moves the current input.
+    IApp20EscrowDispatcher { contract_address: recipient }.prepare_funding(token_address);
     cheat_caller_address(token_address, sender, CheatSpan::TargetCalls(1));
     assert(token.transfer(recipient, amount.into()), 'transfer failed');
 }
@@ -95,7 +99,60 @@ fn invoke(
 ) -> Span<OpenNoteDeposit> {
     cheat_caller_address(escrow_address, pool, CheatSpan::TargetCalls(1));
     cheat_block_timestamp(escrow_address, at, CheatSpan::TargetCalls(1));
-    escrow.privacy_invoke(operation, deal_id, address(0xBAD), note_id)
+    match operation {
+        EscrowOperation::Take(params) => {
+            cheat_caller_address(escrow_address, pool, CheatSpan::TargetCalls(2));
+            let commitment = escrow.privacy_compute(IDENTITY_KEY, deal_id);
+            cheat_block_timestamp(escrow_address, at, CheatSpan::TargetCalls(1));
+            escrow
+                .privacy_invoke_with_computation(
+                    commitment, EscrowOperation::Take(params), deal_id, address(0xBAD), note_id,
+                )
+        },
+        EscrowOperation::Fund(params) => {
+            escrow.privacy_invoke(EscrowOperation::Fund(params), deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::Fill(params) => {
+            escrow.privacy_invoke(EscrowOperation::Fill(params), deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::Claim => {
+            escrow.privacy_invoke(EscrowOperation::Claim, deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::Timeout => {
+            escrow.privacy_invoke(EscrowOperation::Timeout, deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::Lock(params) => {
+            escrow.privacy_invoke(EscrowOperation::Lock(params), deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::SettleProceeds => {
+            escrow.privacy_invoke(EscrowOperation::SettleProceeds, deal_id, address(0xBAD), note_id)
+        },
+        EscrowOperation::ReleaseCollateral => {
+            escrow
+                .privacy_invoke(
+                    EscrowOperation::ReleaseCollateral, deal_id, address(0xBAD), note_id,
+                )
+        },
+    }
+}
+
+fn invoke_take_with_identity(
+    pool: ContractAddress,
+    escrow_address: ContractAddress,
+    escrow: IApp20EscrowDispatcher,
+    at: u64,
+    params: TakeParams,
+    deal_id: felt252,
+    note_id: felt252,
+    identity_key: felt252,
+) -> Span<OpenNoteDeposit> {
+    cheat_caller_address(escrow_address, pool, CheatSpan::TargetCalls(2));
+    let commitment = escrow.privacy_compute(identity_key, deal_id);
+    cheat_block_timestamp(escrow_address, at, CheatSpan::TargetCalls(1));
+    escrow
+        .privacy_invoke_with_computation(
+            commitment, EscrowOperation::Take(params), deal_id, address(0xBAD), note_id,
+        )
 }
 
 fn key_pair(private_key: felt252) -> StarkCurveKeyPair {
@@ -119,10 +176,13 @@ fn take_message(
     token_b: ContractAddress,
     fills_digest: felt252,
 ) -> felt252 {
+    let identity_commitment = poseidon_hash_span(
+        array![TAKE_IDENTITY_DOMAIN, IDENTITY_KEY, rfq_id].span(),
+    );
     poseidon_hash_span(
         array![
-            TAKE_DOMAIN, escrow_address.into(), rfq_id, token_a.into(), token_b.into(),
-            fills_digest,
+            TAKE_DOMAIN, get_tx_info().unbox().chain_id, escrow_address.into(), identity_commitment,
+            rfq_id, token_a.into(), token_b.into(), fills_digest,
         ]
             .span(),
     )
@@ -329,7 +389,10 @@ fn take_signature_vector_matches_typescript_fixture() {
             .public_key == 0x378c6111576cb10b71a66fe66e0d9dce8f2c973f06d52ab8eb05e81a195d512,
         'vector public key',
     );
-    assert(TAKE_DOMAIN == 0x61707032302d74616b652d7633, 'take domain encoding');
+    assert(TAKE_DOMAIN == 0x61707032302d74616b652d7634, 'take domain encoding');
+    assert(
+        TAKE_IDENTITY_DOMAIN == 0x61707032302d74616b652d69642d7631, 'take identity domain encoding',
+    );
 
     let fills = array![
         TakeFill { lock_id: 0xB301, amount_a: 50 }, TakeFill { lock_id: 0xB302, amount_a: 25 },
@@ -343,18 +406,27 @@ fn take_signature_vector_matches_typescript_fixture() {
         address(0x1234), 0xA300, address(0x1111), address(0x2222), fills_digest,
     );
     assert(
-        message == 0x2de03397e068faf4e7dc8e0bee5d80a90cf5e16c1be20ee66567aa5f5548942,
+        message == 0x5e652d921e74fd379c3d37f85c435bcf6015d7acad547986c7d9f2ac2e448c2,
         'vector message',
     );
     let (signature_r, signature_s) = vector_key_pair.sign(message).unwrap();
     assert(
-        signature_r == 0x65d4d259e8280a90a9792f245f9659a38fd3497724555929e72a3c3a35c5225,
+        signature_r == 0x1fdc6a0ecb3fdd28427ee201da90b9e7941ee5ea498a77755b987e7da533394,
         'vector signature r',
     );
     assert(
-        signature_s == 0x52c501d35533886c15a3e77043dad73628405a58440400d1aa938cc572da3b,
+        signature_s == 0x5bb5fb91328e48013410fdc6eb1990feec8e8f222d0f7017fcaf2eee9520c73,
         'vector signature s',
     );
+}
+
+#[test]
+fn take_identity_commitment_is_scoped_to_rfq() {
+    let (pool, escrow_address, escrow, _, _, _, _) = fixture();
+    cheat_caller_address(escrow_address, pool, CheatSpan::TargetCalls(2));
+    let first = escrow.privacy_compute(IDENTITY_KEY, RFQ);
+    let second = escrow.privacy_compute(IDENTITY_KEY, RFQ + 1);
+    assert(first != second, 'identity linked across rfqs');
 }
 
 #[test]
@@ -606,6 +678,18 @@ fn lock_mints_supply_two_and_records_schedule_max_and_event() {
 }
 
 #[test]
+#[should_panic(expected: ('LOCK_EXPIRED',))]
+fn quote_schedule_rejects_expired_open_lock() {
+    let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    cheat_block_timestamp(escrow_address, EXPIRY, CheatSpan::TargetCalls(1));
+    escrow.quote_schedule(LOCK_1, 50);
+}
+
+#[test]
 fn lock_ignores_preexisting_token_b_dust_and_keeps_payout_covered() {
     let dust: u128 = 1;
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
@@ -634,7 +718,7 @@ fn lock_ignores_preexisting_token_b_dust_and_keeps_payout_covered() {
 }
 
 #[test]
-#[should_panic(expected: ('BAD_LOCK_AMOUNT',))]
+#[should_panic(expected: ('SHORT_FILL',))]
 fn lock_rejects_less_than_schedule_max() {
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
         fixture();
@@ -831,6 +915,131 @@ fn take_requires_exact_sum_received() {
         array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
     );
     invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 4);
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_a_different_pool_authenticated_identity() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke_take_with_identity(
+        pool, escrow_address, escrow, 20, params, RFQ, 0xB400, IDENTITY_KEY + 1,
+    );
+}
+
+#[test]
+#[should_panic(expected: ('EXCESS_FILL',))]
+fn take_rejects_excess_input_instead_of_leaving_claimable_surplus() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 51);
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
+    );
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 4);
+}
+
+#[test]
+#[should_panic(expected: ('SHORT_FILL',))]
+fn take_cannot_use_a_preexisting_donation_to_cover_short_input() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 1);
+    // The real input takes a fresh snapshot, so this earlier unit is not funding.
+    transfer_token(token_a_address, token_a, pool, escrow_address, 49);
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
+    );
+    invoke(pool, escrow_address, escrow, 20, EscrowOperation::Take(params), RFQ, 4);
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_rejects_the_unauthenticated_plain_invoke_path() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let params = signed_take_params(
+        key_pair(SIGNING_KEY),
+        escrow_address,
+        RFQ,
+        token_a_address,
+        token_b_address,
+        array![TakeFill { lock_id: LOCK_1, amount_a: 50 }],
+    );
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    cheat_caller_address(escrow_address, pool, CheatSpan::TargetCalls(1));
+    escrow.privacy_invoke(EscrowOperation::Take(params), RFQ, address(0xBAD), 0xB401);
+}
+
+#[test]
+#[should_panic(expected: ('BAD_SIGNATURE',))]
+fn take_signature_rejects_a_different_native_chain_id() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    let fills = array![TakeFill { lock_id: LOCK_1, amount_a: 50 }];
+    let identity_commitment = poseidon_hash_span(
+        array![TAKE_IDENTITY_DOMAIN, IDENTITY_KEY, RFQ].span(),
+    );
+    let wrong_message = poseidon_hash_span(
+        array![
+            TAKE_DOMAIN, 0x1, escrow_address.into(), identity_commitment, RFQ,
+            token_a_address.into(), token_b_address.into(), take_fills_digest(fills.span()),
+        ]
+            .span(),
+    );
+    let (signature_r, signature_s) = key_pair(SIGNING_KEY).sign(wrong_message).unwrap();
+    transfer_token(token_a_address, token_a, pool, escrow_address, 50);
+    invoke(
+        pool,
+        escrow_address,
+        escrow,
+        20,
+        EscrowOperation::Take(
+            TakeParams {
+                token: token_a_address,
+                counter_token: token_b_address,
+                signature_r,
+                signature_s,
+                fills,
+            },
+        ),
+        RFQ,
+        0xB402,
+    );
 }
 
 #[test]
@@ -1416,6 +1625,7 @@ fn settlement_pays_both_sides_and_burns_one_unit_each() {
     let lock = escrow.get_lock(LOCK_1);
     assert(lock.proceeds_settled, 'proceeds flag missing');
     assert(lock.collateral_released, 'collateral flag missing');
+    assert(lock.status == LockStatus::Closed, 'lock not closed');
     assert(token_a.balance_of(escrow_address) == 0, 'token a not conserved');
     assert(token_b.balance_of(escrow_address) == 0, 'token b not conserved');
     spy
@@ -1442,8 +1652,7 @@ fn settlement_pays_both_sides_and_burns_one_unit_each() {
 }
 
 #[test]
-#[should_panic(expected: ('NOTHING_TO_SETTLE',))]
-fn nothing_to_settle_keeps_ticket_and_state() {
+fn zero_proceeds_finalization_consumes_ticket_and_preserves_collateral() {
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
         fixture();
     let ticket_deposit = create_lock(
@@ -1451,7 +1660,29 @@ fn nothing_to_settle_keeps_ticket_and_state() {
     );
     pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
     return_lock_ticket(pool, escrow_address, ticket_deposit.token);
-    invoke(pool, escrow_address, escrow, EXPIRY, EscrowOperation::SettleProceeds, LOCK_1, 0xA3);
+    let deposits = invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::SettleProceeds, LOCK_1, 0,
+    );
+    let lock = escrow.get_lock(LOCK_1);
+    let ticket = ILockTicketDispatcher { contract_address: ticket_deposit.token };
+    assert(deposits.len() == 0, 'zero proceeds returned a note');
+    assert(lock.proceeds_settled, 'zero proceeds not finalized');
+    assert(!lock.collateral_released, 'collateral marked released');
+    assert(lock.remaining_b == 200, 'collateral changed');
+    assert(lock.status == LockStatus::Open, 'lock closed before collateral');
+    assert(ticket.total_supply() == 1, 'cleanup ticket not burned');
+
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let collateral = invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::ReleaseCollateral, LOCK_1, 0xA4,
+    );
+    assert(collateral.len() == 1, 'collateral payout missing');
+    assert((*collateral.at(0)).amount == 200, 'collateral was forfeited');
+    pull_payout(pool, escrow_address, *collateral.at(0));
+    let closed = escrow.get_lock(LOCK_1);
+    assert(closed.status == LockStatus::Closed, 'zero-side lock not closed');
+    assert(closed.collateral_released, 'collateral not released');
+    assert(ticket.total_supply() == 0, 'final ticket not burned');
 }
 
 #[test]
@@ -1543,6 +1774,7 @@ fn legacy_and_v3_operations_conserve_shared_token_balances() {
         EscrowOperation::Fund(
             FundParams {
                 token: token_a_address,
+                amount: 30,
                 counter_token: token_b_address,
                 counter_amount: 40,
                 deadline: 90,
@@ -1616,7 +1848,7 @@ fn legacy_and_v3_operations_conserve_shared_token_balances() {
 
 #[test]
 #[feature("safe_dispatcher")]
-fn nothing_to_settle_revert_preserves_ticket_and_lock() {
+fn zero_proceeds_safe_dispatcher_finalizes_without_a_note() {
     let (pool, escrow_address, escrow, token_a_address, _token_a, token_b_address, token_b) =
         fixture();
     let ticket_deposit = create_lock(
@@ -1631,13 +1863,56 @@ fn nothing_to_settle_revert_preserves_ticket_and_lock() {
     let result = safe_escrow
         .privacy_invoke(EscrowOperation::SettleProceeds, LOCK_1, address(0xBAD), 0xF306);
 
-    assert(result.is_err(), 'settlement unexpectedly passed');
+    assert(result.is_ok(), 'zero settlement failed');
+    assert(result.unwrap().len() == 0, 'zero settlement returned note');
     let lock = escrow.get_lock(LOCK_1);
-    assert(!lock.proceeds_settled, 'empty side marked settled');
+    assert(lock.proceeds_settled, 'empty side not finalized');
     assert(lock.earned_a == 0, 'empty side changed');
     assert(lock.remaining_b == 200, 'collateral changed');
-    assert(ticket.balance_of(escrow_address) == 1, 'ticket unit consumed');
-    assert(ticket.total_supply() == 2, 'ticket supply changed');
+    assert(ticket.balance_of(escrow_address) == 0, 'ticket unit retained');
+    assert(ticket.total_supply() == 1, 'ticket supply not reduced');
+}
+
+#[test]
+fn zero_collateral_finalization_closes_after_paying_proceeds() {
+    let (pool, escrow_address, escrow, token_a_address, token_a, token_b_address, token_b) =
+        fixture();
+    let ticket_deposit = create_lock(
+        pool, escrow_address, escrow, token_a_address, token_b_address, token_b, LOCK_1, RFQ,
+    );
+    pull_lock_ticket_units(pool, escrow_address, ticket_deposit.token);
+    let take = take_one(
+        pool,
+        escrow_address,
+        escrow,
+        token_a_address,
+        token_a,
+        token_b_address,
+        RFQ,
+        LOCK_1,
+        100,
+        SIGNING_KEY,
+    );
+    pull_payout(pool, escrow_address, *take.at(0));
+
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let proceeds = invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::SettleProceeds, LOCK_1, 0xA5,
+    );
+    assert((*proceeds.at(0)).amount == 100, 'proceeds were forfeited');
+    pull_payout(pool, escrow_address, *proceeds.at(0));
+
+    return_lock_ticket(pool, escrow_address, ticket_deposit.token);
+    let cleanup = invoke(
+        pool, escrow_address, escrow, EXPIRY, EscrowOperation::ReleaseCollateral, LOCK_1, 0,
+    );
+    let ticket = ILockTicketDispatcher { contract_address: ticket_deposit.token };
+    let lock = escrow.get_lock(LOCK_1);
+    assert(cleanup.len() == 0, 'zero collateral returned a note');
+    assert(lock.status == LockStatus::Closed, 'zero-collateral lock not closed');
+    assert(lock.proceeds_settled, 'proceeds not settled');
+    assert(lock.collateral_released, 'zero collateral not finalized');
+    assert(ticket.total_supply() == 0, 'cleanup ticket not burned');
 }
 
 #[test]

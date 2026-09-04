@@ -48,6 +48,8 @@ const initial = {
   poolAddress: "0x123",
   shieldedBalance: 20n,
   shieldedMature: true,
+  privacyIdentityCommitment: "0x99",
+  privacyNativeChainId: "0x1",
 };
 
 describe("RFQ final review", () => {
@@ -171,6 +173,8 @@ describe("RFQ v3 final review", () => {
       v3Core,
       "0x5",
       "0x55",
+      "0x1",
+      "0x99",
     ),
   };
 
@@ -183,6 +187,28 @@ describe("RFQ v3 final review", () => {
         now: 150,
       }),
     ).toEqual({ ok: true, blockers: [] });
+  });
+
+  it("blocks a different proof-authenticated privacy identity", () => {
+    const result = validateV3FinalReview({
+      initial,
+      current: { ...initial, privacyIdentityCommitment: "0x98" },
+      terms: v3Terms,
+      now: 150,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.blockers.join(" ")).toMatch(/authorization|identity/i);
+  });
+
+  it("blocks a different native Starknet chain", () => {
+    const result = validateV3FinalReview({
+      initial,
+      current: { ...initial, privacyNativeChainId: "0x2" },
+      terms: v3Terms,
+      now: 150,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.blockers.join(" ")).toMatch(/authorization|identity/i);
   });
 
   it("rereads the selected lock immediately before Take", async () => {

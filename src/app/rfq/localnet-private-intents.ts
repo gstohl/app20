@@ -164,7 +164,7 @@ export type LocalnetQuotesV3Result = Readonly<{
 }>;
 
 export type LocalnetEscrowLock = Readonly<{
-  status: "empty" | "open";
+  status: "empty" | "open" | "closed";
   tokenA: string;
   tokenB: string;
   rfqId: string;
@@ -218,6 +218,64 @@ export type LocalnetTakeTarget = Readonly<{
   }>;
   transactionHash?: string;
 }>;
+
+export async function readLocalnetPrivacyIdentityCommitment(input: {
+  account: string;
+  chainId: string;
+  escrowAddress: string;
+  rfqFelt: string;
+}): Promise<Readonly<{ identityCommitment: string; nativeChainId: string }>> {
+  const requested = {
+    account: canonicalizeStarknetFelt(input.account),
+    chainId: canonicalizeStarknetFelt(input.chainId),
+    escrowAddress: canonicalizeStarknetFelt(input.escrowAddress),
+    rfqFelt: canonicalizeStarknetFelt(input.rfqFelt),
+  };
+  if (Object.values(requested).some((value) => value === "0x0")) {
+    throw new Error("The private identity scope must contain non-zero felts.");
+  }
+  const result = await postLocalnet(
+    "/privacy-identity-commitment",
+    requested,
+  );
+  exactResponseKeys(
+    result,
+    [
+      "account",
+      "chainId",
+      "nativeChainId",
+      "escrowAddress",
+      "rfqFelt",
+      "identityCommitment",
+    ],
+    "privacy identity commitment",
+  );
+  const account = asCanonicalAddress(result.account, "identity account");
+  const chainId = asCanonicalAddress(result.chainId, "identity chainId");
+  const escrowAddress = asCanonicalAddress(
+    result.escrowAddress,
+    "identity escrowAddress",
+  );
+  const rfqFelt = asCanonicalAddress(result.rfqFelt, "identity rfqFelt");
+  if (
+    account !== requested.account ||
+    chainId !== requested.chainId ||
+    escrowAddress !== requested.escrowAddress ||
+    rfqFelt !== requested.rfqFelt
+  ) {
+    throw new Error("The local wallet returned a mismatched private identity scope.");
+  }
+  return Object.freeze({
+    identityCommitment: asCanonicalAddress(
+      result.identityCommitment,
+      "privacy identity commitment",
+    ),
+    nativeChainId: asCanonicalAddress(
+      result.nativeChainId,
+      "privacy native chainId",
+    ),
+  });
+}
 
 export type LocalnetMarketToken = {
   symbol: "STRK" | "USDC";
@@ -531,11 +589,11 @@ function normalizeV3Cohort(value: unknown): LocalnetV3Cohort {
 
 function normalizeSchedule(
   value: unknown,
-  status: "empty" | "open",
+  status: "empty" | "open" | "closed",
 ): PriceSchedule {
   if (
     !Array.isArray(value) ||
-    (status === "open" && (value.length < 1 || value.length > 4)) ||
+    (status !== "empty" && (value.length < 1 || value.length > 4)) ||
     (status === "empty" && value.length !== 0)
   ) {
     throw new Error("The local maker returned an invalid lock schedule.");
@@ -780,7 +838,11 @@ export async function readEscrowLock(
     ],
     "escrow lock",
   );
-  if (lock.status !== "empty" && lock.status !== "open") {
+  if (
+    lock.status !== "empty" &&
+    lock.status !== "open" &&
+    lock.status !== "closed"
+  ) {
     throw new Error("The local maker returned an invalid lock status.");
   }
   if (
@@ -833,6 +895,17 @@ export async function readEscrowLock(
       normalized.collateralReleased)
   ) {
     throw new Error("The local maker returned a contradictory empty lock.");
+  }
+  if (
+    (status === "closed" &&
+      (!normalized.proceedsSettled || !normalized.collateralReleased)) ||
+    (status === "open" &&
+      normalized.proceedsSettled &&
+      normalized.collateralReleased)
+  ) {
+    throw new Error(
+      "The local maker returned lock status that contradicts its settlement flags.",
+    );
   }
   return normalized;
 }

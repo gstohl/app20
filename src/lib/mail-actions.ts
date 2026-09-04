@@ -1,6 +1,6 @@
-import type { WALLET_API } from "@starknet-io/types-js";
 import type { EncryptedMailRecord } from "./mail";
 import {
+  type App20Strk20Action,
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
   APP20_HELPER_FUNDING_BASE_UNITS,
@@ -68,7 +68,7 @@ export function buildMailActions({
   recipientAddress,
   record,
   attachmentAmount,
-}: BuildMailActionsInput): WALLET_API.STRK20_ACTION[] {
+}: BuildMailActionsInput): App20Strk20Action[] {
   if (!isConfiguredMailHelper(helperAddress)) {
     throw new Error("A deployed mail helper is required before sending.");
   }

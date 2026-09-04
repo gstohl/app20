@@ -48,6 +48,8 @@ const terms: RfqFinalReviewV3DisplayTerms = {
     coreTerms,
     "0x5",
     "0x55",
+    "0x1",
+    "0x99",
   ),
 };
 

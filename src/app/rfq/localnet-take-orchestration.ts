@@ -1,6 +1,6 @@
-import type { WALLET_API } from "@starknet-io/types-js";
 import type { ProviderInterface, WalletAccountV6 } from "starknet";
 import {
+  type App20Strk20Action,
   Strk20NotSubmittedError,
   submitActions,
   type SubmitActionsOptions,
@@ -9,7 +9,7 @@ import {
 export type PreparedLocalnetTake<TTarget> = Readonly<{
   account: WalletAccountV6;
   provider: ProviderInterface;
-  actions: WALLET_API.STRK20_ACTION[];
+  actions: App20Strk20Action[];
   target: TTarget;
   attemptId: string;
   policy: () => void;

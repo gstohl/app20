@@ -1370,7 +1370,9 @@ export default function LocalnetPrivateIntentDesk({
       !lifecycleRecord.fills ||
       !lifecycleRecord.requestDigest ||
       !lifecycleRecord.settlement ||
-      !lifecycleRecord.takerCommitment
+      !lifecycleRecord.takerCommitment ||
+      !reviewSnapshot?.privacyIdentityCommitment ||
+      !reviewSnapshot.privacyNativeChainId
     ) {
       return undefined;
     }
@@ -1393,7 +1395,11 @@ export default function LocalnetPrivateIntentDesk({
           }),
         ),
       ),
-      takeAuthorization: takeAuthorizationFromLifecycle(lifecycleRecord),
+      takeAuthorization: takeAuthorizationFromLifecycle(
+        lifecycleRecord,
+        reviewSnapshot.privacyIdentityCommitment,
+        reviewSnapshot.privacyNativeChainId,
+      ),
       feeBps: 0,
       app20FeeAmount: 0n,
       sellSymbol: lifecycleRecord.terms.sellSymbol,
@@ -1402,7 +1408,7 @@ export default function LocalnetPrivateIntentDesk({
       buyDecimals: lifecycleRecord.terms.buyDecimals,
       requestDigest: lifecycleRecord.requestDigest,
     });
-  }, [lifecycleRecord, quoted]);
+  }, [lifecycleRecord, quoted, reviewSnapshot]);
 
   const finalBlockers = useMemo(() => {
     if (!finalTerms)

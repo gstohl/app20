@@ -28,6 +28,7 @@ import {
   readEscrowTake,
   readLocalnetEscrowDeal,
   readLocalnetRfqOperationsStatus,
+  readLocalnetPrivacyIdentityCommitment,
   readLocalnetUnresolvedDealsV3,
   releaseLocalnetRfqReservations,
   requestLocalnetSolverQuotes,
@@ -51,6 +52,47 @@ const USDC_TOKEN: LocalnetMarketToken = {
 };
 
 describe("localnet private-intent adapter", () => {
+  it("reads an exact account, chain, escrow, and RFQ-bound privacy identity commitment", async () => {
+    const fetchMock = vi.fn(async (_input: string, _init?: RequestInit) =>
+      new Response(
+        JSON.stringify({
+          result: {
+            account: "0xabc",
+            chainId: "0x1",
+            nativeChainId: "0x534e5f5345504f4c4941",
+            escrowAddress: "0x5",
+            rfqFelt: "0x77",
+            identityCommitment: "0x99",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      readLocalnetPrivacyIdentityCommitment({
+        account: "0x0abc",
+        chainId: "0x01",
+        escrowAddress: "0x05",
+        rfqFelt: "0x077",
+      }),
+    ).resolves.toEqual({
+      identityCommitment: "0x99",
+      nativeChainId: "0x534e5f5345504f4c4941",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(
+      /\/privacy-identity-commitment$/,
+    );
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body).toMatchObject({
+      account: "0xabc",
+      chainId: "0x1",
+      escrowAddress: "0x5",
+      rfqFelt: "0x77",
+    });
+    vi.unstubAllGlobals();
+  });
+
   it("parses and formats token amounts without assuming 18 decimals", () => {
     expect(parseLocalnetTokenAmount("0.1", STRK_TOKEN)).toBe(10n ** 17n);
     expect(parseLocalnetTokenAmount("0.19", USDC_TOKEN)).toBe(190_000n);
@@ -566,6 +608,7 @@ describe("localnet private-intent adapter", () => {
     const calls: Array<{ path: string; body: Record<string, unknown> }> = [];
     let createdTransactionHash: unknown = "0x61";
     let takeFillsDigest: unknown = "0x123";
+    let lockStatus: "open" | "closed" = "open";
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string, init?: RequestInit) => {
@@ -577,7 +620,7 @@ describe("localnet private-intent adapter", () => {
         const result = path.endsWith("/escrow/lock")
           ? {
               lock: {
-                status: "open",
+                status: lockStatus,
                 tokenA: "0x1",
                 tokenB: "0x2",
                 rfqId: "0x77",
@@ -591,8 +634,8 @@ describe("localnet private-intent adapter", () => {
                 earnedA: "0",
                 ticket: "0x51",
                 createdTransactionHash,
-                proceedsSettled: false,
-                collateralReleased: false,
+                proceedsSettled: lockStatus === "closed",
+                collateralReleased: lockStatus === "closed",
               },
             }
           : path.endsWith("/escrow/take")
@@ -631,6 +674,13 @@ describe("localnet private-intent adapter", () => {
       remainingB: 200n,
       createdTransactionHash: "0x61",
     });
+    lockStatus = "closed";
+    await expect(readEscrowLock("0x41")).resolves.toMatchObject({
+      status: "closed",
+      proceedsSettled: true,
+      collateralReleased: true,
+    });
+    lockStatus = "open";
     createdTransactionHash = null;
     await expect(readEscrowLock("0x41")).resolves.toMatchObject({
       createdTransactionHash: null,

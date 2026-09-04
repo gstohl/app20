@@ -13,6 +13,7 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { withHelperFundingPreflight } from "./escrow-funding-preflight.mjs";
 // Node 24 strips types natively, so the solver shares one canonical-quote
 // implementation with the app instead of keeping a drift-prone copy here.
 import {
@@ -33,6 +34,7 @@ import {
   verifyCanonicalQuote,
   verifyMakerMid,
   digestPrivateSwapIntent,
+  takeIdentityCommitment,
 } from "../packages/private-intents/src/index.ts";
 import { createLocalnetReservationCoordinator } from "./localnet-reservation-coordinator.mjs";
 import {
@@ -1018,6 +1020,13 @@ function makePrivacyRuntime(
     passphrase,
     account.address,
   );
+  const identityKeyFor = async (contractAddress) =>
+    starknet.ec.starkCurve.poseidonHashMany([
+      BigInt(`0x${Buffer.from("IDENTITY_KEY_TAG:V1", "utf8").toString("hex")}`),
+      starknet.num.toBigInt(account.address),
+      starknet.num.toBigInt(await viewingKeyProvider.getViewingKey()),
+      starknet.num.toBigInt(contractAddress),
+    ]);
   const transfers = sdk.createPrivateTransfers({
     account,
     viewingKeyProvider,
@@ -1056,7 +1065,16 @@ function makePrivacyRuntime(
   coreTransfers.build = (...args) =>
     coreBuild(...args).surplusTo(account.address, false);
 
-  return { account, prover, transfers };
+  return {
+    account,
+    prover,
+    transfers,
+    privacyIdentityCommitment: async (contractAddress, rfqFelt) =>
+      takeIdentityCommitment(
+        starknet.num.toHex(await identityKeyFor(contractAddress)),
+        rfqFelt,
+      ),
+  };
 }
 
 function toCoreCallAndProof(prepared) {
@@ -1093,7 +1111,15 @@ function assertActions(value) {
     ) {
       fail("each privacy action must have a type.");
     }
-    if (!["deposit", "withdraw", "transfer", "invoke"].includes(action.type)) {
+    if (
+      ![
+        "deposit",
+        "withdraw",
+        "transfer",
+        "invoke",
+        "compute_and_invoke",
+      ].includes(action.type)
+    ) {
       fail(`unsupported localnet privacy action: ${String(action.type)}.`);
     }
     const allowed = {
@@ -1101,6 +1127,12 @@ function assertActions(value) {
       withdraw: ["type", "token", "amount", "recipient"],
       transfer: ["type", "token", "amount", "recipient"],
       invoke: ["type", "contract", "calldata"],
+      compute_and_invoke: [
+        "type",
+        "contract",
+        "compute_calldata",
+        "invoke_calldata",
+      ],
     }[action.type];
     const unexpected = Object.keys(action).filter(
       (key) => !allowed.includes(key),
@@ -1260,7 +1292,7 @@ function assertLocalIntentPair(body, env, starknet) {
   };
 }
 
-async function executePrivacyActions(identity, actions, label, env, starknet) {
+async function executePrivacyActions(identity, actions, label, env, starknet, escrowAddress, mailHelperAddress) {
   return serializeOperation(label, identity.id, async () => {
     await approveDeposits(identity, actions, env, starknet);
     const prepared = await identity.prover.prove(actions);
@@ -1279,7 +1311,11 @@ async function executePrivacyActions(identity, actions, label, env, starknet) {
     ) {
       fail("vendored client left an unresolved wallet placeholder.");
     }
-    const receipt = await devnet.executeOutside(toCoreCallAndProof(prepared));
+    const receipt = await devnet.executeOutside(
+      withHelperFundingPreflight(toCoreCallAndProof(prepared), actions, {
+        escrowAddress, mailHelperAddress,
+      }),
+    );
     const transactionHash = receipt.transaction_hash;
     if (!transactionHash)
       fail("outside execution returned no transaction hash.");
@@ -1319,7 +1355,7 @@ async function readLocalEscrowLock(lockId, env, escrowAddress, starknet) {
   const values = result.map(BigInt);
   const pointsLen = Number(values[5]);
   const statusValue = Number(values[19]);
-  if (![0, 1].includes(statusValue) || pointsLen < 0 || pointsLen > 4)
+  if (![0, 1, 2].includes(statusValue) || pointsLen < 0 || pointsLen > 4)
     fail("local escrow returned an invalid v3 lock status or schedule length.");
   if (statusValue === 0) {
     if (values.some((value) => value !== 0n))
@@ -1360,8 +1396,14 @@ async function readLocalEscrowLock(lockId, env, escrowAddress, starknet) {
       fail("local escrow returned an invalid v3 price schedule.");
     schedule.push({ a: a.toString(), b: b.toString() });
   }
+  const proceedsSettled = values[17] === 1n;
+  const collateralReleased = values[18] === 1n;
+  if (statusValue === 2 && (!proceedsSettled || !collateralReleased))
+    fail("local escrow returned a contradictory closed v3 lock.");
+  if (statusValue === 1 && proceedsSettled && collateralReleased)
+    fail("local escrow returned a contradictory open v3 lock.");
   return Object.freeze({
-    status: statusValue === 0 ? "empty" : "open",
+    status: statusValue === 0 ? "empty" : statusValue === 1 ? "open" : "closed",
     tokenA: starknet.num.toHex(result[0]),
     tokenB: starknet.num.toHex(result[1]),
     rfqId: starknet.num.toHex(result[2]),
@@ -1371,8 +1413,8 @@ async function readLocalEscrowLock(lockId, env, escrowAddress, starknet) {
     remainingB: values[14].toString(),
     earnedA: values[15].toString(),
     ticket: starknet.num.toHex(result[16]),
-    proceedsSettled: values[17] === 1n,
-    collateralReleased: values[18] === 1n,
+    proceedsSettled,
+    collateralReleased,
   });
 }
 
@@ -1481,7 +1523,7 @@ async function startApi({
   config,
   identities,
   env,
-  helperAddress: _helperAddress,
+  helperAddress,
   escrowAddress,
   escrowClassHash,
   starknet,
@@ -3328,6 +3370,47 @@ async function startApi({
         return;
       }
 
+      if (url.pathname === "/privacy-identity-commitment") {
+        const account = feltInput(body.account, "account", starknet);
+        const chainId = feltInput(body.chainId, "chainId", starknet);
+        const escrowAddress = feltInput(
+          body.escrowAddress,
+          "escrowAddress",
+          starknet,
+        );
+        const rfqFelt = feltInput(body.rfqFelt, "rfqFelt", starknet);
+        const identity = Object.values(identities).find(
+          (candidate) =>
+            starknet.num.toBigInt(candidate.account.address) ===
+            starknet.num.toBigInt(account),
+        );
+        if (!identity) fail("privacy identity account is not a local wallet identity.");
+        if (
+          starknet.num.toBigInt(chainId) !== starknet.num.toBigInt(config.chainId)
+        ) {
+          fail("privacy identity chain does not match the localnet runtime.");
+        }
+        if (
+          starknet.num.toBigInt(escrowAddress) !==
+          starknet.num.toBigInt(config.escrowAddress)
+        ) {
+          fail("privacy identity target is not the deployed escrow.");
+        }
+        const identityCommitment =
+          await identity.privacyIdentityCommitment(escrowAddress, rfqFelt);
+        const nativeChainId = starknet.num.toHex(await env.node.getChainId());
+        jsonResponse(response, 200, {
+          result: {
+            account,
+            chainId,
+            nativeChainId,
+            escrowAddress,
+            rfqFelt,
+            identityCommitment,
+          },
+        });
+        return;
+      }
       const identity = normalizeIdentity(body.identity, identities);
       if (url.pathname === "/invoke") {
         const calls = assertCalls(body.calls);
@@ -3355,6 +3438,8 @@ async function startApi({
           "compile, mock-prove, and submit privacy actions",
           env,
           starknet,
+          config.escrowAddress,
+          helperAddress,
         );
         jsonResponse(response, 200, { result });
         return;

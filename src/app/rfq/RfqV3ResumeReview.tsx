@@ -13,6 +13,8 @@ import { useRfqPresentationClock } from "./ui/rfq-presentation-clock";
 
 function displayTerms(
   record: RfqLifecycleRecord,
+  identityCommitment: string,
+  nativeChainId: string,
 ): RfqFinalReviewV3DisplayTerms {
   if (
     record.mode !== "v3" ||
@@ -42,7 +44,11 @@ function displayTerms(
         }),
       ),
     ),
-    takeAuthorization: takeAuthorizationFromLifecycle(record),
+    takeAuthorization: takeAuthorizationFromLifecycle(
+      record,
+      identityCommitment,
+      nativeChainId,
+    ),
     feeBps: 0,
     app20FeeAmount: 0n,
     sellSymbol: record.terms.sellSymbol,
@@ -73,7 +79,17 @@ export default function RfqV3ResumeReview({
   const [snapshotError, setSnapshotError] = useState<string>();
   const focusRef = useRef<HTMLElement>(null);
   const now = useRfqPresentationClock();
-  const terms = useMemo(() => displayTerms(record), [record]);
+  const terms = useMemo(
+    () =>
+      snapshot?.privacyIdentityCommitment && snapshot.privacyNativeChainId
+        ? displayTerms(
+            record,
+            snapshot.privacyIdentityCommitment,
+            snapshot.privacyNativeChainId,
+          )
+        : undefined,
+    [record, snapshot],
+  );
 
   useEffect(() => {
     let active = true;
@@ -100,7 +116,7 @@ export default function RfqV3ResumeReview({
 
   const blockers = useMemo(() => {
     const items = operationBlocker ? [operationBlocker] : [];
-    if (!snapshot) {
+    if (!snapshot || !terms) {
       items.push(snapshotError ?? "Reading a fresh private sell balance…");
       return Object.freeze(items);
     }
@@ -114,6 +130,14 @@ export default function RfqV3ResumeReview({
       }).blockers,
     ]);
   }, [now, operationBlocker, snapshot, snapshotError, terms]);
+
+  if (!terms) {
+    return (
+      <section ref={focusRef} tabIndex={-1} aria-live="polite">
+        {snapshotError ?? "Binding the final review to your private wallet identity…"}
+      </section>
+    );
+  }
 
   return (
     <RfqFinalReview

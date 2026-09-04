@@ -1,6 +1,6 @@
 {
   "$schema": "app20/rfq-v3-take-signature-vectors/v1",
-  "description": "Cross-language Stark-curve authorization vector for Take. Hash arrays are in wire order and use poseidon_hash_span/poseidonHashMany; the domain is the Cairo short string 'app20-take-v3'.",
+  "description": "Cross-language Stark-curve authorization vector for Take. Hash arrays are in wire order and use poseidon_hash_span/poseidonHashMany; the domain is the Cairo short string 'app20-take-v4'.",
   "vectors": [
     {
       "name": "two-fill-take",
@@ -60,8 +60,15 @@
         {
           "name": "domain",
           "value": {
-            "hex": "0x61707032302d74616b652d7633",
-            "decimal": "7719929721682471441701716981299"
+            "hex": "0x61707032302d74616b652d7634",
+            "decimal": "7719929721682471441701716981300"
+          }
+        },
+        {
+          "name": "chainId",
+          "value": {
+            "hex": "0x534e5f5345504f4c4941",
+            "decimal": "393402133025997798000961"
           }
         },
         {
@@ -69,6 +76,13 @@
           "value": {
             "hex": "0x1234",
             "decimal": "4660"
+          }
+        },
+        {
+          "name": "identityCommitment",
+          "value": {
+            "hex": "0x7e41cf638231418124866c1352689cbf8a86991b37d3ed78b04ab64b0ecd792",
+            "decimal": "3569230957808845388777081840595943690880349462452825579135436380127359719314"
           }
         },
         {
@@ -101,17 +115,17 @@
         }
       ],
       "message": {
-        "hex": "0x2de03397e068faf4e7dc8e0bee5d80a90cf5e16c1be20ee66567aa5f5548942",
-        "decimal": "1296888000775382396823893240875865188816214155723524475797572423999450024258"
+        "hex": "0x5e652d921e74fd379c3d37f85c435bcf6015d7acad547986c7d9f2ac2e448c2",
+        "decimal": "2668510864894685724397501542999426183606554060932940372130576762248095877314"
       },
       "signature": {
         "r": {
-          "hex": "0x65d4d259e8280a90a9792f245f9659a38fd3497724555929e72a3c3a35c5225",
-          "decimal": "2878726317203745361781046825710110401723882878807558466893062206406702944805"
+            "hex": "0x1fdc6a0ecb3fdd28427ee201da90b9e7941ee5ea498a77755b987e7da533394",
+            "decimal": "900696040268073938966814776597812360167839309864750763080655577567846413204"
         },
         "s": {
-          "hex": "0x52c501d35533886c15a3e77043dad73628405a58440400d1aa938cc572da3b",
-          "decimal": "146241152558035247327555098183699811146457895581263857837917035550716647995"
+            "hex": "0x5bb5fb91328e48013410fdc6eb1990feec8e8f222d0f7017fcaf2eee9520c73",
+            "decimal": "2592625299540724111017887877641117435107998995881077780303683525365900381299"
         }
       }
     }

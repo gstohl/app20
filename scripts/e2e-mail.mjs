@@ -17,7 +17,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const RPC_URL = process.env.APP20_DEVNET_RPC ?? "http://127.0.0.1:5050/rpc";
 const STRK =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
-const DUST = 1_000_000_000_000_000n; // 0.001 STRK
+const AMBIENT_DONATION = 1_000_000_000_000_000n; // 0.001 STRK
+const RECOVERY_AMOUNT = 7n;
 const NOTE_ID = "0x515";
 const TX_DETAILS = { tip: 0n };
 
@@ -225,14 +226,19 @@ async function main() {
     {
       contractAddress: STRK,
       entrypoint: "transfer",
-      calldata: [helperAddress, num.toHex(DUST), "0x0"],
+      calldata: [helperAddress, num.toHex(AMBIENT_DONATION), "0x0"],
     },
     TX_DETAILS,
   );
   await wait(provider, dustTransfer.transaction_hash);
   check(
-    (await callU256(provider, STRK, "balance_of", [helperAddress])) === DUST,
+    (await callU256(provider, STRK, "balance_of", [helperAddress])) ===
+      AMBIENT_DONATION,
     "Helper did not receive the 0.001 STRK dust case.",
+  );
+  check(
+    (await callU256(provider, STRK, "allowance", [helperAddress, pool.address])) === 0n,
+    "Ambient donation unexpectedly created a pool allowance.",
   );
 
   const privacyCalldata = [
@@ -249,11 +255,23 @@ async function main() {
     "0x0",
   ];
   const posted = await pool.execute(
-    {
-      contractAddress: helperAddress,
-      entrypoint: "privacy_invoke",
-      calldata: privacyCalldata,
-    },
+    [
+      {
+        contractAddress: helperAddress,
+        entrypoint: "prepare_funding",
+        calldata: [STRK],
+      },
+      {
+        contractAddress: STRK,
+        entrypoint: "transfer",
+        calldata: [helperAddress, num.toHex(RECOVERY_AMOUNT), "0x0"],
+      },
+      {
+        contractAddress: helperAddress,
+        entrypoint: "privacy_invoke",
+        calldata: privacyCalldata,
+      },
+    ],
     TX_DETAILS,
   );
   await wait(provider, posted.transaction_hash);
@@ -262,7 +280,10 @@ async function main() {
     helperAddress,
     pool.address,
   ]);
-  check(allowance === DUST, "Helper did not approve the mock pool for all dust.");
+  check(
+    allowance === RECOVERY_AMOUNT,
+    "Helper did not approve the exact Mail recovery amount.",
+  );
 
   const invokeSelector = hash.getSelectorFromName("privacy_invoke");
   const trace = await provider.getTransactionTrace(posted.transaction_hash);
@@ -273,7 +294,7 @@ async function main() {
   check(BigInt(echo[0]) === 1n, "Open-note return span has the wrong length.");
   check(feltEqual(echo[1], NOTE_ID), "Open-note return has the wrong note id.");
   check(feltEqual(echo[2], STRK), "Open-note return has the wrong token.");
-  check(BigInt(echo[3]) === DUST, "Open-note return has the wrong amount.");
+  check(BigInt(echo[3]) === RECOVERY_AMOUNT, "Open-note return has the wrong amount.");
 
   const eventSelector = hash.getSelectorFromName("MessagePosted");
   const events = [];
@@ -319,14 +340,15 @@ async function main() {
     {
       contractAddress: STRK,
       entrypoint: "transfer_from",
-      calldata: [helperAddress, pool.address, num.toHex(DUST), "0x0"],
+      calldata: [helperAddress, pool.address, num.toHex(RECOVERY_AMOUNT), "0x0"],
     },
     TX_DETAILS,
   );
   await wait(provider, cleanup.transaction_hash);
   check(
-    (await callU256(provider, STRK, "balance_of", [helperAddress])) === 0n,
-    "Mock pool did not pull the echoed dust back from the helper.",
+    (await callU256(provider, STRK, "balance_of", [helperAddress])) ===
+      AMBIENT_DONATION,
+    "Mock pool captured the helper's pre-existing donation.",
   );
 
   const count = await provider.callContract({
@@ -341,7 +363,7 @@ async function main() {
   console.log(`  MessagePosted tx: ${posted.transaction_hash}`);
   console.log("  decrypted: hello from APP20");
   console.log("  wrong-key messages: 0");
-  console.log("  dust echo: 0.001 STRK approved, returned, and pulled back");
+  console.log("  recovery: exact 7 base units approved and pulled; ambient donation preserved");
 }
 
 main().catch((error) => {

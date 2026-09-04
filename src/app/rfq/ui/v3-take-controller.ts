@@ -26,6 +26,7 @@ import {
   markLocalnetTakeUnknown,
   observeLocalnetTake,
   prepareLocalnetTake,
+  readLocalnetPrivacyIdentityCommitment,
   readEscrowTake,
   readLocalnetRfqOperationsStatus,
 } from "../localnet-private-intents";
@@ -87,7 +88,11 @@ function errorMessage(error: unknown): string {
     : "The RFQ v3 Take failed.";
 }
 
-function v3ReviewTerms(record: RfqLifecycleRecord): RfqFinalReviewV3Terms {
+function v3ReviewTerms(
+  record: RfqLifecycleRecord,
+  identityCommitment: string,
+  nativeChainId: string,
+): RfqFinalReviewV3Terms {
   if (
     record.mode !== "v3" ||
     !record.terms ||
@@ -117,7 +122,11 @@ function v3ReviewTerms(record: RfqLifecycleRecord): RfqFinalReviewV3Terms {
         }),
       ),
     ),
-    takeAuthorization: takeAuthorizationFromLifecycle(record),
+    takeAuthorization: takeAuthorizationFromLifecycle(
+      record,
+      identityCommitment,
+      nativeChainId,
+    ),
     feeBps: 0,
     app20FeeAmount: 0n,
   });
@@ -126,6 +135,8 @@ function v3ReviewTerms(record: RfqLifecycleRecord): RfqFinalReviewV3Terms {
 export function buildSignedV3TakeActions(
   record: RfqLifecycleRecord,
   recoveryAddress: string,
+  identityCommitment: string,
+  nativeChainId: string,
 ) {
   if (
     record.mode !== "v3" ||
@@ -137,7 +148,11 @@ export function buildSignedV3TakeActions(
   ) {
     throw new Error("The exact Take bindings are unavailable.");
   }
-  const authorization = takeAuthorizationFromLifecycle(record);
+  const authorization = takeAuthorizationFromLifecycle(
+    record,
+    identityCommitment,
+    nativeChainId,
+  );
   const signature = signTake(record.takerSigningKey, authorization.message);
   if (
     !verifyTakeSignature(
@@ -199,13 +214,23 @@ export async function readV3FinalReviewSnapshot(
       "Reconnect the LOCAL wallet account and chain bound to this RFQ.",
     );
   }
-  const raw = await started.account.strk20Balances([record.terms.sellAddress]);
+  const [raw, privacyIdentity] = await Promise.all([
+    started.account.strk20Balances([record.terms.sellAddress]),
+    readLocalnetPrivacyIdentityCommitment({
+      account: started.address,
+      chainId: started.chainId,
+      escrowAddress: record.settlement?.escrowAddress ?? "",
+      rfqFelt: record.rfqId,
+    }),
+  ]);
   return Object.freeze({
     account: started.address,
     chainId: started.chainId,
     walletRail: "ready",
     observedAt: Math.floor(Date.now() / 1_000),
     shieldedBalance: readStrk20PrivateBalance(raw, record.terms.sellAddress),
+    privacyIdentityCommitment: privacyIdentity.identityCommitment,
+    privacyNativeChainId: privacyIdentity.nativeChainId,
   });
 }
 
@@ -242,7 +267,17 @@ export async function executeLocalnetV3Take(input: {
   }
   const provider = myFrontendProviders[LOCALNET_PROVIDER_INDEX];
   const currentSnapshot = await readV3FinalReviewSnapshot(current);
-  const reviewedTerms = v3ReviewTerms(current);
+  if (
+    !currentSnapshot.privacyIdentityCommitment ||
+    !currentSnapshot.privacyNativeChainId
+  ) {
+    throw new Error("The authenticated private Take identity is unavailable.");
+  }
+  const reviewedTerms = v3ReviewTerms(
+    current,
+    currentSnapshot.privacyIdentityCommitment,
+    currentSnapshot.privacyNativeChainId,
+  );
   const reviewedAuthorization = reviewedTerms.takeAuthorization!;
   const review = await validateLiveV3FinalReview({
     initial: input.initialSnapshot ?? currentSnapshot,
@@ -275,7 +310,12 @@ export async function executeLocalnetV3Take(input: {
   try {
     const submitted = await runLocalnetTakeOrchestration({
       prepareBeforeLease: async () => {
-        const signed = buildSignedV3TakeActions(current, started.address);
+        const signed = buildSignedV3TakeActions(
+          current,
+          started.address,
+          currentSnapshot.privacyIdentityCommitment!,
+          currentSnapshot.privacyNativeChainId!,
+        );
         const { authorization } = signed;
         if (
           authorization.message !== reviewedAuthorization.message ||
@@ -294,7 +334,11 @@ export async function executeLocalnetV3Take(input: {
           attemptId,
           policy: () => {
             assertReadyExecutionUnchanged(started, "private-swap");
-            const liveAuthorization = takeAuthorizationFromLifecycle(current);
+            const liveAuthorization = takeAuthorizationFromLifecycle(
+              current,
+              currentSnapshot.privacyIdentityCommitment!,
+              currentSnapshot.privacyNativeChainId!,
+            );
             if (
               liveAuthorization.message !== authorization.message ||
               liveAuthorization.publicKey !== authorization.publicKey ||

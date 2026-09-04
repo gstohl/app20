@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   loadProductionSecurityHeaders,
   reconcileViolations,
+  validateCoinGeckoOptInRequests,
   validateKnownViolations,
 } from "./verify-production-csp.mjs";
 
@@ -110,4 +111,30 @@ test("violation reconciliation rejects new violations and stale records", () => 
     unexpected: [unexpected],
     missing: [{ ...knownViolation, observedCount: 0 }],
   });
+});
+
+test("CoinGecko remains idle until the explicit public-context opt-in", () => {
+  assert.deepEqual(
+    validateCoinGeckoOptInRequests({
+      beforeDisclosure: 0,
+      beforeOptIn: 0,
+      afterOptIn: 1,
+    }),
+    [],
+  );
+});
+
+test("CoinGecko request checks reject eager and missing public-context loads", () => {
+  assert.deepEqual(
+    validateCoinGeckoOptInRequests({
+      beforeDisclosure: 1,
+      beforeOptIn: 2,
+      afterOptIn: 2,
+    }),
+    [
+      "CoinGecko was contacted 1 time(s) before the public-market disclosure was opened",
+      "opening the public-market disclosure contacted CoinGecko (1 -> 2 request(s))",
+      "the explicit CoinGecko opt-in did not make a price-history request",
+    ],
+  );
 });

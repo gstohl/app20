@@ -13,6 +13,21 @@ export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
 /** Reviewed amount atomically withdrawn to App20Mail and returned to the OPEN note. */
 export const APP20_HELPER_FUNDING_BASE_UNITS = 7n;
 
+/**
+ * Local shim for the pool's proof-bound compute/invoke action. Wallet API 0.10
+ * has not added this variant to its published TypeScript union yet.
+ */
+export type Strk20ComputeAndInvokeAction = {
+  type: "compute_and_invoke";
+  contract: string;
+  compute_calldata: WALLET_API.STRK20_CALLDATA_ITEM[];
+  invoke_calldata: WALLET_API.STRK20_CALLDATA_ITEM[];
+};
+
+export type App20Strk20Action =
+  | WALLET_API.STRK20_ACTION
+  | Strk20ComputeAndInvokeAction;
+
 export type MailInvokeBatchInput = {
   helperAddress: string;
   recoveryAddress: string;
@@ -20,7 +35,7 @@ export type MailInvokeBatchInput = {
   tokenAddress?: string;
   /** Explicit private withdrawal that funds the helper's recovery OPEN note. */
   helperFundingAmount: string | bigint;
-  /** Non-zero makes the helper reject a replay of this exact action on-chain. */
+  /** Non-zero enables identity-bound replay protection for this exact payload. */
   actionId?: string;
 };
 
@@ -68,24 +83,37 @@ function buildMailInvokeAction({
   record,
   tokenAddress = addrSTRK,
   actionId = "0x0",
-}: MailInvokeBatchInput): WALLET_API.STRK20_INVOKE_ACTION {
+}: MailInvokeBatchInput):
+  | WALLET_API.STRK20_INVOKE_ACTION
+  | Strk20ComputeAndInvokeAction {
   assertConfiguredHelper(helperAddress);
+  const payloadCalldata: WALLET_API.STRK20_CALLDATA_ITEM[] = [
+    tokenAddress,
+    OPEN_NOTE_ID_PLACEHOLDER,
+    record.ephemeralPub[0],
+    record.ephemeralPub[1],
+    num.toHex(record.viewTag),
+    record.nonce[0],
+    record.nonce[1],
+    num.toHex(record.ciphertextFelts.length),
+    ...record.ciphertextFelts,
+    actionId,
+  ];
+  const invokeCalldata: WALLET_API.STRK20_CALLDATA_ITEM[] = [
+    payloadCalldata[0],
+    POOL_ADDRESS_PLACEHOLDER,
+    ...payloadCalldata.slice(1),
+  ];
+
+  if (BigInt(actionId) === 0n) {
+    return { type: "invoke", contract: helperAddress, calldata: invokeCalldata };
+  }
+
   return {
-    type: "invoke",
+    type: "compute_and_invoke",
     contract: helperAddress,
-    calldata: [
-      tokenAddress,
-      POOL_ADDRESS_PLACEHOLDER,
-      OPEN_NOTE_ID_PLACEHOLDER,
-      record.ephemeralPub[0],
-      record.ephemeralPub[1],
-      num.toHex(record.viewTag),
-      record.nonce[0],
-      record.nonce[1],
-      num.toHex(record.ciphertextFelts.length),
-      ...record.ciphertextFelts,
-      actionId,
-    ],
+    compute_calldata: payloadCalldata,
+    invoke_calldata: invokeCalldata,
   };
 }
 
@@ -112,7 +140,7 @@ function buildRecoveryOpenNoteAction(
 /** Message-only envelopes fund the helper, then create the recovery OPEN note. */
 export function buildMailInvokeActions(
   input: MailInvokeBatchInput,
-): WALLET_API.STRK20_ACTION[] {
+): App20Strk20Action[] {
   const token = input.tokenAddress ?? addrSTRK;
   return [
     buildHelperFundingAction(
@@ -125,12 +153,12 @@ export function buildMailInvokeActions(
   ];
 }
 
-/** Builds private transfer, helper funding, recovery OPEN note, then invoke. */
+/** Builds private transfer, helper funding, recovery OPEN note, then Mail invoke. */
 export function buildMemoTransferActions({
   recipient,
   amount,
   ...mail
-}: MemoTransferBatchInput): WALLET_API.STRK20_ACTION[] {
+}: MemoTransferBatchInput): App20Strk20Action[] {
   const token = mail.tokenAddress ?? addrSTRK;
   return [
     {
@@ -153,7 +181,7 @@ export function buildMemoTransferActions({
 export function buildOtcAcceptActions({
   offer,
   ...mail
-}: OtcAcceptBatchInput): WALLET_API.STRK20_ACTION[] {
+}: OtcAcceptBatchInput): App20Strk20Action[] {
   assertSettlesStrk(offer);
   return buildMemoTransferActions({
     ...mail,
@@ -566,7 +594,7 @@ export function transactionHashFromError(error: unknown): string | undefined {
 export async function submitActions(
   account: WalletAccountV6,
   provider: ProviderInterface,
-  actions: WALLET_API.STRK20_ACTION[],
+  actions: App20Strk20Action[],
   options: SubmitActionsOptions,
 ): Promise<{ transactionHash: string; receipt: unknown }> {
   try {
@@ -592,7 +620,11 @@ export async function submitActions(
   }
   let submitted: { transaction_hash: string };
   try {
-    submitted = await account.strk20InvokeTransaction(actions);
+    // Remove this cast when the published Wallet API union includes the
+    // proof-bound compute_and_invoke action already supported by the pool.
+    submitted = await account.strk20InvokeTransaction(
+      actions as WALLET_API.STRK20_ACTION[],
+    );
   } catch (error: unknown) {
     const deterministicReason = deterministicPreSubmissionReason(error);
     if (deterministicReason) {

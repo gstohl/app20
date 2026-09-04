@@ -9,9 +9,14 @@ import {
 } from "@scure/starknet";
 import { PrivateIntentError } from "./index.ts";
 
-export const TAKE_V3_DOMAIN = "app20-take-v3" as const;
+export const TAKE_V4_DOMAIN = "app20-take-v4" as const;
+export const TAKE_IDENTITY_V1_DOMAIN = "app20-take-id-v1" as const;
 export const TAKE_DOMAIN = `0x${Array.from(
-  new TextEncoder().encode(TAKE_V3_DOMAIN),
+  new TextEncoder().encode(TAKE_V4_DOMAIN),
+  (byte) => byte.toString(16).padStart(2, "0"),
+).join("")}` as const;
+export const TAKE_IDENTITY_DOMAIN = `0x${Array.from(
+  new TextEncoder().encode(TAKE_IDENTITY_V1_DOMAIN),
   (byte) => byte.toString(16).padStart(2, "0"),
 ).join("")}` as const;
 
@@ -23,7 +28,9 @@ export type TakeSignatureFill = Readonly<{
 }>;
 
 export type TakeMessageInput = Readonly<{
+  chainId: string;
   escrowAddress: string;
+  identityCommitment: string;
   rfqFelt: string;
   tokenA: string;
   tokenB: string;
@@ -89,8 +96,27 @@ export function fillsDigest(fills: readonly TakeSignatureFill[]): string {
   );
 }
 
+/** Public, contract- and RFQ-specific pseudonym derived from the pool-private identity key. */
+export function takeIdentityCommitment(
+  identityKey: string,
+  rfqFelt: string,
+): string {
+  return hex(
+    poseidonHashMany([
+      BigInt(TAKE_IDENTITY_DOMAIN),
+      BigInt(felt(identityKey, "identityKey")),
+      BigInt(felt(rfqFelt, "rfqFelt")),
+    ]),
+  );
+}
+
 export function takeMessageHash(input: TakeMessageInput): string {
+  const chainId = felt(input.chainId, "chainId");
   const escrowAddress = felt(input.escrowAddress, "escrowAddress");
+  const identityCommitment = felt(
+    input.identityCommitment,
+    "identityCommitment",
+  );
   const rfqFelt = felt(input.rfqFelt, "rfqFelt");
   const tokenA = felt(input.tokenA, "tokenA");
   const tokenB = felt(input.tokenB, "tokenB");
@@ -101,7 +127,9 @@ export function takeMessageHash(input: TakeMessageInput): string {
   return hex(
     poseidonHashMany([
       BigInt(TAKE_DOMAIN),
+      BigInt(chainId),
       BigInt(escrowAddress),
+      BigInt(identityCommitment),
       BigInt(rfqFelt),
       BigInt(tokenA),
       BigInt(tokenB),

@@ -62,7 +62,7 @@ function reviewing() {
 describe("RFQ v3 signed Take actions", () => {
   it("signs the exact persisted fill order and places r/s before the fill span", () => {
     const record = reviewing();
-    const signed = buildSignedV3TakeActions(record, "0xabc");
+    const signed = buildSignedV3TakeActions(record, "0xabc", "0x99", "0x1");
     expect(
       verifyTakeSignature(
         record.takerCommitment!,
@@ -72,9 +72,11 @@ describe("RFQ v3 signed Take actions", () => {
       ),
     ).toBe(true);
     const invoke = signed.actions[2];
-    expect(invoke?.type).toBe("invoke");
-    if (!invoke || invoke.type !== "invoke") throw new Error("missing invoke");
-    expect(invoke.calldata).toEqual([
+    expect(invoke?.type).toBe("compute_and_invoke");
+    if (!invoke || invoke.type !== "compute_and_invoke")
+      throw new Error("missing authenticated invoke");
+    expect(invoke.compute_calldata).toEqual(["0x77"]);
+    expect(invoke.invoke_calldata).toEqual([
       "0x5",
       "0x1",
       "0x2",
@@ -102,13 +104,17 @@ describe("RFQ v3 signed Take actions", () => {
       { reason: "lock-expired" },
     );
     expect(terminal).not.toHaveProperty("takerSigningKey");
-    expect(() => buildSignedV3TakeActions(terminal, "0xabc")).toThrow(
+    expect(() =>
+      buildSignedV3TakeActions(terminal, "0xabc", "0x99", "0x1"),
+    ).toThrow(
       /bindings are unavailable/i,
     );
     expect(() =>
       buildSignedV3TakeActions(
         { ...terminal, takerSigningKey: "0x66" },
         "0xabc",
+        "0x99",
+        "0x1",
       ),
     ).toThrow(/bindings are unavailable/i);
   });

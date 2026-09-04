@@ -190,7 +190,11 @@ function fixture(
       const current = locks.get(request.lockId)!;
       locks.set(
         request.lockId,
-        Object.freeze({ ...current, proceedsSettled: true }),
+        Object.freeze({
+          ...current,
+          proceedsSettled: true,
+          status: current.collateralReleased ? "closed" : "open",
+        }),
       );
       receipts.set("0xa1", "SUCCEEDED");
       return { transactionHash: "0xa1" };
@@ -201,7 +205,11 @@ function fixture(
       const current = locks.get(request.lockId)!;
       locks.set(
         request.lockId,
-        Object.freeze({ ...current, collateralReleased: true }),
+        Object.freeze({
+          ...current,
+          collateralReleased: true,
+          status: current.proceedsSettled ? "closed" : "open",
+        }),
       );
       receipts.set("0xa2", "SUCCEEDED");
       return { transactionHash: "0xa2" };
@@ -610,6 +618,19 @@ describe("RFQ v3 settlement, mids, and transcripts", () => {
         settleProceeds: async () => {
           submissions += 1;
           throw new Error("must not resubmit an unknown settlement");
+        },
+        releaseCollateral: async (request) => {
+          expect(request.expectedPayout).toBe(0n);
+          context.locks.set(
+            request.lockId,
+            Object.freeze({
+              ...context.locks.get(request.lockId)!,
+              collateralReleased: true,
+              status: "closed",
+            }),
+          );
+          context.receipts.set("0xa2", "SUCCEEDED");
+          return { transactionHash: "0xa2" };
         },
       },
     });

@@ -28,6 +28,8 @@ export type RfqFinalReviewSnapshot = Readonly<{
   walletConfirmedGasBaseUnits?: bigint;
   shieldedBalance?: bigint;
   shieldedMature?: boolean;
+  privacyIdentityCommitment?: string;
+  privacyNativeChainId?: string;
 }>;
 
 export type RfqFinalReviewTerms = Readonly<{
@@ -160,7 +162,9 @@ export type RfqFinalReviewV3Fill = Readonly<{
 }>;
 
 export type RfqFinalReviewV3TakeAuthorization = Readonly<{
+  chainId: string;
   escrowAddress: string;
+  identityCommitment: string;
   publicKey: string;
   message: string;
 }>;
@@ -186,12 +190,18 @@ export function takeAuthorizationForV3Review(
   >,
   escrowAddress: string,
   publicKey: string,
+  chainId: string,
+  identityCommitment: string,
 ): RfqFinalReviewV3TakeAuthorization {
   return Object.freeze({
+    chainId: canonicalizeStarknetFelt(chainId),
     escrowAddress,
+    identityCommitment: canonicalizeStarknetFelt(identityCommitment),
     publicKey,
     message: takeMessageHash({
+      chainId,
       escrowAddress,
+      identityCommitment,
       rfqFelt: terms.rfqId,
       tokenA: terms.sellAddress,
       tokenB: terms.buyAddress,
@@ -205,6 +215,8 @@ export function takeAuthorizationForV3Review(
 
 export function takeAuthorizationFromLifecycle(
   record: RfqLifecycleRecord,
+  identityCommitment: string,
+  nativeChainId: string,
 ): RfqFinalReviewV3TakeAuthorization {
   if (
     record.mode !== "v3" ||
@@ -230,6 +242,8 @@ export function takeAuthorizationFromLifecycle(
     },
     record.settlement.escrowAddress,
     record.takerCommitment,
+    nativeChainId,
+    identityCommitment,
   );
 }
 
@@ -301,10 +315,24 @@ export function validateV3FinalReview(input: {
       input.terms,
       input.terms.takeAuthorization.escrowAddress,
       input.terms.takeAuthorization.publicKey,
+      input.current.privacyNativeChainId ?? "0x0",
+      input.current.privacyIdentityCommitment ?? "0x0",
     );
     if (
       canonicalizeStarknetFelt(input.terms.takeAuthorization.publicKey) ===
         "0x0" ||
+      !input.initial.privacyIdentityCommitment ||
+      !input.current.privacyIdentityCommitment ||
+      !input.initial.privacyNativeChainId ||
+      !input.current.privacyNativeChainId ||
+      canonicalizeStarknetFelt(input.initial.privacyNativeChainId) !==
+        canonicalizeStarknetFelt(input.current.privacyNativeChainId) ||
+      canonicalizeStarknetFelt(input.terms.takeAuthorization.chainId) !==
+        canonicalizeStarknetFelt(input.current.privacyNativeChainId) ||
+      canonicalizeStarknetFelt(input.initial.privacyIdentityCommitment) !==
+        canonicalizeStarknetFelt(input.current.privacyIdentityCommitment) ||
+      canonicalizeStarknetFelt(input.terms.takeAuthorization.identityCommitment) !==
+        canonicalizeStarknetFelt(input.current.privacyIdentityCommitment) ||
       BigInt(authorization.message) !==
         BigInt(input.terms.takeAuthorization.message)
     ) {
