@@ -456,6 +456,8 @@ test("authority and copy controls expose unambiguous text rather than colour-onl
   });
   await page.reload();
   await connectLocalnetWallet(page);
+  // A cancelled record is terminal: it lives under the All scope.
+  await page.getByRole("button", { name: /^All/ }).click();
 
   const authority = page
     .getByRole("article", { name: "STRK → USDC · Cancelled" })
