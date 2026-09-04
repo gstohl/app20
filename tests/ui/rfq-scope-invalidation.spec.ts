@@ -21,11 +21,11 @@ async function prepareQuoteRequest(desk: Locator) {
     "BRIEFED ONCE",
   );
   await desk
-    .getByRole("button", { name: "Prepare size-blind cohort review" })
+    .getByRole("button", { name: "Review what makers will see" })
     .click();
   await desk.getByLabel("Maker cohort review").getByRole("checkbox").check();
   await expect(
-    desk.getByRole("button", { name: "Request collateralized quotes" }),
+    desk.getByRole("button", { name: "Request quotes" }),
   ).toBeEnabled();
 }
 
@@ -102,9 +102,7 @@ test("an Alice quote request is discarded after switching to Bob", async ({
   const release = await delayQuoteResponse(page);
   const quoteRequest = page.waitForRequest("**/private-intents/quotes");
   try {
-    await desk
-      .getByRole("button", { name: "Request collateralized quotes" })
-      .click();
+    await desk.getByRole("button", { name: "Request quotes" }).click();
     await quoteRequest;
 
     await page.locator('[data-localnet-identity="bob"]').click();
@@ -138,9 +136,7 @@ test("a LOCAL quote request is discarded after disconnecting and selecting Sepol
   const release = await delayQuoteResponse(page);
   const quoteRequest = page.waitForRequest("**/private-intents/quotes");
   try {
-    await desk
-      .getByRole("button", { name: "Request collateralized quotes" })
-      .click();
+    await desk.getByRole("button", { name: "Request quotes" }).click();
     await quoteRequest;
 
     await page.getByRole("button", { name: "Disconnect wallet" }).click();

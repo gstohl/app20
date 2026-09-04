@@ -171,7 +171,7 @@ async function prepareCohortReview(desk: Locator) {
   );
   await expect(preflight).toContainText("BRIEFED ONCE");
   const prepare = desk.getByRole("button", {
-    name: "Prepare size-blind cohort review",
+    name: "Review what makers will see",
   });
   await expect(prepare).toBeEnabled();
   await prepare.click();
@@ -194,9 +194,7 @@ async function requestCollateralizedQuotes(page: Page, desk: Locator) {
       candidate.url().endsWith("/private-intents/quotes"),
     { timeout: 180_000 },
   );
-  await desk
-    .getByRole("button", { name: "Request collateralized quotes" })
-    .click();
+  await desk.getByRole("button", { name: "Request quotes" }).click();
   const outgoing = await posted;
   const comparison = desk.getByRole("region", {
     name: /Compare all makers/,
@@ -991,6 +989,9 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
   );
 
   await secondPage.getByRole("link", { name: "Records", exact: true }).click();
+  await secondPage
+    .getByText("What this browser stores", { exact: true })
+    .click();
   await expect(
     secondPage.getByText(
       /Restoring and reconciling never automatically resubmits fund, fill, claim, or refund/,

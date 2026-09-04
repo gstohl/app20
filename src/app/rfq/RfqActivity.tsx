@@ -167,9 +167,15 @@ export default function RfqActivity({
           <RfqActivityRecord key={row.rfqId} record={row} onRemove={onRemove} />
         ))
       ) : loadState === "ready" ? (
-        <p>No saved RFQ history for this wallet and chain yet.</p>
+        <p className={styles.recordsEmpty}>
+          No RFQ history for this wallet and chain yet.{" "}
+          <a href="#new">Start a request</a>
+        </p>
       ) : null}
-      <p>{RFQ_STORAGE_DISCLOSURE}</p>
+      <details className={styles.storageDisclosure}>
+        <summary>What this browser stores</summary>
+        <p>{RFQ_STORAGE_DISCLOSURE}</p>
+      </details>
       {records.length && records.every(lifecycleMayForget) && onClearAll ? (
         <button type="button" onClick={onClearAll}>
           Forget all terminal browser history for this wallet and chain

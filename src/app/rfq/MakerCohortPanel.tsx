@@ -102,7 +102,10 @@ export default function MakerCohortPanel({
     ? directoryFreshnessState(directory, now)
     : "unavailable";
   return (
-    <section className={styles.cohortPanel} aria-labelledby="maker-cohort-title">
+    <section
+      className={styles.cohortPanel}
+      aria-labelledby="maker-cohort-title"
+    >
       <h3 id="maker-cohort-title">Invited-maker cohort</h3>
       <p>
         Governed makers {summary.governed} · invited {summary.invited} ·
@@ -172,6 +175,24 @@ export default function MakerCohortPanel({
                 {maker.makerId}
                 {selected ? <span> · Selected</span> : null}
               </h4>
+              <p className={styles.makerVerdict}>
+                <strong>
+                  {eligible
+                    ? selected
+                      ? "Eligible · selected"
+                      : "Eligible"
+                    : "Excluded"}
+                </strong>{" "}
+                ·{" "}
+                {eligible
+                  ? maker.rationale
+                  : exclusionReason(maker, {
+                      keyEligible,
+                      freshness,
+                      quoted: Boolean(quote),
+                      quoting: quotes.length > 0,
+                    })}
+              </p>
               <p className={styles.makerQuote}>
                 {quote &&
                 sellDecimals !== undefined &&
@@ -191,51 +212,33 @@ export default function MakerCohortPanel({
                   "No eligible signed quote"
                 )}
               </p>
-              <dl>
-                <div>
-                  <dt>Key ID</dt>
-                  <dd>
-                    <code>{maker.keyId}</code>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Key status</dt>
-                  <dd>
-                    <strong>{keyPresentation(maker, now)}</strong> · valid
-                    through{" "}
-                    {new Date(maker.keyValidUntil * 1_000).toISOString()}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Invitation</dt>
-                  <dd>{maker.invitationStatus}</dd>
-                </div>
-                <div>
-                  <dt>Capacity band</dt>
-                  <dd>{maker.capacityBand} · raw inventory not exposed</dd>
-                </div>
-                <div>
-                  <dt>Eligibility</dt>
-                  <dd>
-                    <strong>
-                      {eligible
-                        ? selected
-                          ? "Eligible · selected"
-                          : "Eligible"
-                        : "Excluded"}
-                    </strong>{" "}
-                    ·{" "}
-                    {eligible
-                      ? maker.rationale
-                      : exclusionReason(maker, {
-                          keyEligible,
-                          freshness,
-                          quoted: Boolean(quote),
-                          quoting: quotes.length > 0,
-                        })}
-                  </dd>
-                </div>
-              </dl>
+              <details className={styles.makerFacts}>
+                <summary>Key, invitation and capacity</summary>
+                <dl>
+                  <div>
+                    <dt>Key ID</dt>
+                    <dd>
+                      <code>{maker.keyId}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Key status</dt>
+                    <dd>
+                      <strong>{keyPresentation(maker, now)}</strong> · valid
+                      through{" "}
+                      {new Date(maker.keyValidUntil * 1_000).toISOString()}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Invitation</dt>
+                    <dd>{maker.invitationStatus}</dd>
+                  </div>
+                  <div>
+                    <dt>Capacity band</dt>
+                    <dd>{maker.capacityBand} · raw inventory not exposed</dd>
+                  </div>
+                </dl>
+              </details>
             </li>
           );
         })}

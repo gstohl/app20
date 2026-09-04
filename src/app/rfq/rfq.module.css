@@ -187,6 +187,57 @@
   line-height: 1.55;
 }
 
+.recordsEmpty a {
+  color: var(--shell-orange);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Storage caveats are reference, not the page: one closed line under the
+   records, opened by whoever needs the policy. */
+.storageDisclosure {
+  max-width: var(--measure-reading);
+  border-top: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+}
+
+.storageDisclosure > summary {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+
+.storageDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.storageDisclosure > summary::after {
+  color: var(--shell-orange);
+  content: "+";
+  font-size: 14px;
+  line-height: 1;
+}
+
+.storageDisclosure[open] > summary::after {
+  content: "−";
+}
+
+.storageDisclosure > p {
+  margin: 0 0 10px;
+  line-height: 1.55;
+}
+
 .activeCard {
   display: grid;
   gap: 10px;
@@ -1602,22 +1653,22 @@
   background: var(--shell-bg);
 }
 
+/* Sits in the flow at the top of the ticket. Nothing behind it goes inert and
+   nothing is covered, so the wallet picker and the rest of the desk stay
+   reachable while it is up. */
 .privacyBriefingDialog {
-  width: min(540px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
-  margin: auto;
-  overflow: auto;
-  border: 1px solid var(--shell-orange);
+  position: static;
+  width: auto;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-bottom: 1px solid var(--shell-orange);
   padding: 0;
   color: var(--shell-text);
   background: var(--shell-bg);
-  box-shadow: 10px 10px 0 rgb(0 0 0 / 45%);
   font-family: var(--font-reading), sans-serif;
-}
-
-.privacyBriefingDialog::backdrop {
-  background: rgb(5 6 6 / 82%);
-  backdrop-filter: blur(2px);
 }
 
 .privacyBriefingDialog > header {
@@ -3071,6 +3122,74 @@
 .makerQuote {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.makerVerdict {
+  margin: 0;
+  color: var(--shell-muted);
+  line-height: 1.45;
+}
+
+.makerVerdict strong {
+  color: var(--shell-text);
+}
+
+/* Key and capacity facts are evidence, not the decision: closed by default. */
+.makerFacts > summary {
+  list-style: none;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.makerFacts > summary::-webkit-details-marker {
+  display: none;
+}
+
+.makerFacts > summary::before {
+  color: var(--shell-orange);
+  content: "+ ";
+}
+
+.makerFacts[open] > summary::before {
+  content: "− ";
+}
+
+.makerFacts > dl {
+  margin-top: 8px;
+}
+
+/* Outranks the form's generic label and span rules: this is a sentence the
+   user agrees to, not a field caption. */
+.privateIntentForm .cohortConsent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--shell-line);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.privateIntentForm .cohortConsent > span {
+  color: var(--shell-text);
+  font-family: var(--font-reading), sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.cohortConsent input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 1px 0 0;
+  accent-color: var(--shell-orange);
 }
 
 .bucketNotice,

@@ -56,16 +56,19 @@ export default function RfqActiveList({
           />
         ))
       ) : loadState === "ready" ? (
-        <p>
-          No active RFQ for this wallet and chain. Start one from{" "}
-          <strong>New</strong>.
+        <p className={styles.recordsEmpty}>
+          Nothing in flight for this wallet and chain.{" "}
+          <a href="#new">Start a request</a>
         </p>
       ) : null}
-      <p>{RFQ_STORAGE_DISCLOSURE}</p>
-      <p>
-        Restoring and reconciling never automatically resubmits fund, fill,
-        claim, or refund.
-      </p>
+      <details className={styles.storageDisclosure}>
+        <summary>What this browser stores</summary>
+        <p>{RFQ_STORAGE_DISCLOSURE}</p>
+        <p>
+          Restoring and reconciling never automatically resubmits fund, fill,
+          claim, or refund.
+        </p>
+      </details>
       {records.length && records.every(lifecycleMayForget) && onClearAll ? (
         <button type="button" onClick={onClearAll}>
           Forget all terminal browser history for this wallet and chain

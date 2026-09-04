@@ -184,7 +184,7 @@ describe("activity records", () => {
       const markup = renderToStaticMarkup(
         <RfqActivity records={[]} loadState={loadState} onRetryLoad={() => undefined} />,
       );
-      expect(markup).not.toContain("No saved RFQ history");
+      expect(markup).not.toContain("No RFQ history for this wallet");
     }
     expect(
       renderToStaticMarkup(<RfqActivity records={[]} loadState="loading" />),

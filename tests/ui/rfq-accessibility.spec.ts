@@ -97,12 +97,10 @@ async function prepareFinalReview(page: Page) {
     "BRIEFED ONCE",
   );
   await desk
-    .getByRole("button", { name: "Prepare size-blind cohort review" })
+    .getByRole("button", { name: "Review what makers will see" })
     .click();
   await desk.getByLabel("Maker cohort review").getByRole("checkbox").check();
-  await desk
-    .getByRole("button", { name: "Request collateralized quotes" })
-    .click();
+  await desk.getByRole("button", { name: "Request quotes" }).click();
 
   const comparison = desk.getByRole("region", { name: /Compare all makers/ });
   await expect(comparison).toBeFocused({ timeout: 60_000 });

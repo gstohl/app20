@@ -471,7 +471,7 @@ export default function LocalnetPrivateIntentDesk({
   ]);
   const privacyReady = Boolean(
     privacyPreflight &&
-      canProceedFromPrivacyPreflight(privacyPreflight, privacyBriefingAccepted),
+    canProceedFromPrivacyPreflight(privacyPreflight, privacyBriefingAccepted),
   );
 
   useEffect(() => {
@@ -501,15 +501,22 @@ export default function LocalnetPrivateIntentDesk({
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  /* The briefing opens in the flow of the ticket, not as a modal: a modal made
+     the whole page inert, wallet picker and navigation included, for anyone
+     who had only passed through the route. The ticket's own actions stay
+     disabled until it is acknowledged, which is the gate that matters. The
+     first showing also waits for a connected wallet, since nothing can be
+     sent before one; a later review of an accepted briefing opens on request. */
+  const briefingCanOpen = connected || privacyBriefingAccepted;
   useEffect(() => {
     const dialog = privacyBriefingDialogRef.current;
     if (!dialog) return;
-    if (showPrivacyBriefing && !dialog.open) {
-      dialog.showModal();
+    if (showPrivacyBriefing && briefingCanOpen && !dialog.open) {
+      dialog.show();
     } else if (!showPrivacyBriefing && dialog.open) {
       dialog.close();
     }
-  }, [showPrivacyBriefing]);
+  }, [showPrivacyBriefing, briefingCanOpen]);
 
   useEffect(() => {
     const tick = () => setPreflightNow(Math.floor(Date.now() / 1_000));
@@ -1538,7 +1545,6 @@ export default function LocalnetPrivateIntentDesk({
 
       {swapOnly ? null : (
         <>
-          <LeakChips venue={venue} />
           {venue === "idle" ? (
             <div className={styles.deskVenueSummary}>
               <span>Invited maker inventory · no public route</span>
@@ -1547,7 +1553,10 @@ export default function LocalnetPrivateIntentDesk({
               </RfqInfoTip>
             </div>
           ) : (
-            <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
+            <>
+              <LeakChips venue={venue} />
+              <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
+            </>
           )}
         </>
       )}
@@ -1821,7 +1830,7 @@ export default function LocalnetPrivateIntentDesk({
                 (Boolean(invoice) && !invoiceEstimateReady)
               }
             >
-              Prepare size-blind cohort review
+              Review what makers will see
             </button>
 
             {invitationReview && operations.status ? (
@@ -1873,7 +1882,7 @@ export default function LocalnetPrivateIntentDesk({
                     </dd>
                   </div>
                 </dl>
-                <label>
+                <label className={styles.cohortConsent}>
                   <input
                     type="checkbox"
                     checked={invitationConfirmed}
@@ -1882,8 +1891,10 @@ export default function LocalnetPrivateIntentDesk({
                       setInvitationConfirmed(event.target.checked)
                     }
                   />
-                  Invite every named fixture maker with only the reviewed size
-                  bucket.
+                  <span>
+                    Invite every named fixture maker with only the reviewed size
+                    bucket.
+                  </span>
                 </label>
                 <MakerCohortPanel
                   makers={operations.status.makers}
@@ -1911,9 +1922,7 @@ export default function LocalnetPrivateIntentDesk({
                 (Boolean(invoice) && !invoiceEstimateReady)
               }
             >
-              {flow.kind === "working"
-                ? "Requesting…"
-                : "Request collateralized quotes"}
+              {flow.kind === "working" ? "Requesting…" : "Request quotes"}
             </button>
             {waitForMaturity ? (
               <button
