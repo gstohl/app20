@@ -37,6 +37,34 @@ function keyPresentation(maker: BrowserSafeMakerStatus, now: number): string {
   return "Valid";
 }
 
+/**
+ * Why a maker is excluded. The maker's own rationale explains their answer,
+ * which is not the binding reason when the panel excludes everyone — pairing
+ * "Excluded" with "Signed a verified quote for this exact request" reads as a
+ * contradiction rather than as a stale directory.
+ */
+function exclusionReason(
+  maker: BrowserSafeMakerStatus,
+  context: {
+    keyEligible: boolean;
+    freshness: ReturnType<typeof directoryFreshnessState> | "unavailable";
+    quoted: boolean;
+    quoting: boolean;
+  },
+): string {
+  if (!maker.eligible) return maker.rationale;
+  if (!context.keyEligible) {
+    return "Maker key is not valid for this request.";
+  }
+  if (context.freshness !== "fresh") {
+    return "Maker directory is not fresh, so no maker is eligible.";
+  }
+  if (context.quoting && !context.quoted) {
+    return "No signed quote for this request.";
+  }
+  return maker.rationale;
+}
+
 export default function MakerCohortPanel({
   makers,
   directory,
@@ -74,14 +102,14 @@ export default function MakerCohortPanel({
     ? directoryFreshnessState(directory, now)
     : "unavailable";
   return (
-    <section aria-labelledby="maker-cohort-title">
+    <section className={styles.cohortPanel} aria-labelledby="maker-cohort-title">
       <h3 id="maker-cohort-title">Invited-maker cohort</h3>
       <p>
         Governed makers {summary.governed} · invited {summary.invited} ·
         responded {summary.responded} · refused {summary.refused} · unavailable{" "}
         {summary.unavailable}.
       </p>
-      <dl>
+      <dl className={styles.cohortFacts}>
         <div>
           <dt>Maker-directory epoch</dt>
           <dd>{directory?.epoch ?? "Unavailable"}</dd>
@@ -196,7 +224,15 @@ export default function MakerCohortPanel({
                           : "Eligible"
                         : "Excluded"}
                     </strong>{" "}
-                    · {maker.rationale}
+                    ·{" "}
+                    {eligible
+                      ? maker.rationale
+                      : exclusionReason(maker, {
+                          keyEligible,
+                          freshness,
+                          quoted: Boolean(quote),
+                          quoting: quotes.length > 0,
+                        })}
                   </dd>
                 </div>
               </dl>

@@ -9,15 +9,8 @@ import {
 } from "./rfq-final-review";
 import CopyableId from "./CopyableId";
 import RfqCountdown from "./RfqCountdown";
+import { humanUnits } from "./human-units";
 import styles from "./rfq.module.css";
-
-function humanUnits(value: bigint, decimals: number): string {
-  if (decimals === 0) return value.toString();
-  const digits = value.toString().padStart(decimals + 1, "0");
-  const whole = digits.slice(0, -decimals) || "0";
-  const fraction = decimals ? digits.slice(-decimals).replace(/0+$/, "") : "";
-  return fraction ? `${whole}.${fraction}` : whole;
-}
 
 export type RfqFinalReviewV3DisplayTerms = RfqFinalReviewV3Terms &
   Readonly<{

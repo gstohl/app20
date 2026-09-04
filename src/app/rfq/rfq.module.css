@@ -45,6 +45,34 @@
   background: var(--shell-bg);
 }
 
+/* An odd final row left the grid's own rule colour showing as an empty
+   painted cell beside the last fact. */
+.operationsDashboard dl > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
+.operationsDashboard dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.operationsDashboard dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.operationsDashboard > header p,
+.operationsDashboard > p,
+.operationsDashboard section > p {
+  max-width: var(--measure-reading);
+  line-height: 1.55;
+}
+
 .operationsDashboard code,
 .operationsDashboard td {
   overflow-wrap: anywhere;
@@ -2090,7 +2118,7 @@
 }
 
 .finalReview dd {
-  font-family: var(--font-sans-ui), sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   font-size: 14px;
 }
 
@@ -2626,13 +2654,31 @@
 .activityRecord summary,
 .quoteComparison summary,
 .finalReviewDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
   min-height: 44px;
   padding: 12px 0;
   font-family: var(--font-mono-ui), monospace;
   font-size: 11px;
   letter-spacing: 0.06em;
+  list-style: none;
   text-transform: uppercase;
+}
+
+.finalReviewDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.finalReviewDetails summary::after {
+  color: var(--shell-orange);
+  content: "+";
+  font-size: 15px;
+}
+
+.finalReviewDetails[open] summary::after {
+  content: "\2212";
 }
 
 .activityRecord {
@@ -2689,6 +2735,57 @@
   margin: 12px 16px;
   padding: 14px;
   background: var(--shell-panel);
+}
+
+.cohortPanel {
+  display: grid;
+  gap: 10px;
+}
+
+.cohortPanel > h3 {
+  margin: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.cohortPanel > p {
+  max-width: var(--measure-reading);
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cohortFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--shell-line);
+}
+
+.cohortFacts > div {
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--shell-bg);
+}
+
+.cohortFacts dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.cohortFacts dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .makerCohort {
@@ -2941,6 +3038,50 @@
   gap: 10px;
 }
 
+.finalReviewSummary dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.9;
+  text-transform: uppercase;
+}
+
+.finalReviewSummary dd {
+  max-width: var(--measure-reading);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* The privacy list is prose and was running the full width of the sheet. */
+.finalReview h4 {
+  margin: 6px 0 0;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+}
+
+.finalReview > ul {
+  display: grid;
+  gap: 6px;
+  max-width: var(--measure-reading);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.finalReview > ul li {
+  padding-left: 12px;
+  border-left: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .finalReviewWarning {
   margin: 0;
   color: var(--shell-orange);
@@ -2968,8 +3109,31 @@
 
 .finalReviewAccept {
   border: 1px solid var(--shell-orange);
+  color: var(--on-accent);
+  background: var(--shell-orange);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.finalReviewAccept:hover:not(:disabled) {
   color: var(--shell-orange);
+  background: transparent;
+}
+
+.finalReviewDecline {
+  border: 1px solid var(--shell-line);
+  color: var(--shell-text);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.finalReviewDecline:hover:not(:disabled) {
+  border-color: var(--shell-text);
 }
 
 .finalReviewAccept:disabled,
@@ -3393,8 +3557,9 @@
     min-height: 40px;
     flex: 1;
     justify-content: center;
-    padding: 0 6px;
-    font-size: 8px;
+    padding: 0 4px;
+    font-size: 9px;
+    letter-spacing: 0.06em;
   }
 
   .viewHeading {
