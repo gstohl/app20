@@ -85,10 +85,29 @@
   content: "·";
 }
 
-.activeRecords {
+.activeRecords,
+.activityView {
   display: grid;
   gap: 12px;
   padding: 16px;
+}
+
+.activeRecords > h2,
+.activityView > h2 {
+  margin: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* Storage and reconciliation prose ran the full window width. */
+.activeRecords > p,
+.activityView > p {
+  max-width: var(--measure-reading);
+  margin: 0;
+  color: var(--shell-muted);
+  line-height: 1.55;
 }
 
 .activeCard {
@@ -176,9 +195,9 @@
   background: transparent;
   cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.09em;
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -2402,9 +2421,10 @@
 .viewHeading {
   margin: 0;
   padding: 14px 16px 12px;
-  font-family: var(--font-reading), Georgia, serif;
-  font-size: 20px;
-  font-weight: 400;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .page > section:focus-visible,
@@ -2541,9 +2561,10 @@
 
 .activityRecord h3 {
   margin: 0;
-  font-family: var(--font-reading), Georgia, serif;
-  font-size: 20px;
-  font-weight: 400;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .activityIds {

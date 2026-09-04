@@ -16,7 +16,11 @@ export default function OperationsDashboard() {
   const status = availability.status;
   return <main className={styles.page}>
     <nav className={styles.deskSubnav} aria-label="RFQ operations navigation">
-      <Link to="/rfq">RFQ workspace</Link>
+      {/* Without exact matching the router marks /rfq current on
+          /rfq/operations too, so both chips read as the open page. */}
+      <Link to="/rfq" activeOptions={{ exact: true }}>
+        RFQ workspace
+      </Link>
       <Link to="/rfq/operations" aria-current="page">Operations</Link>
     </nav>
     <section className={styles.operationsDashboard} aria-labelledby="operations-title">

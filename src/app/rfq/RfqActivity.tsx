@@ -133,6 +133,7 @@ export default function RfqActivity({
 }) {
   return (
     <section
+      className={styles.activityView}
       aria-labelledby="rfq-activity"
       aria-busy={loadState === "loading" || undefined}
     >
