@@ -43,10 +43,7 @@ import EscrowCard from "./EscrowCard";
 import InvoiceCard from "./InvoiceCard";
 import OfferCard from "./OfferCard";
 import ReceiptCard from "./ReceiptCard";
-import {
-  replyAddressForConversation,
-  replyAddressForMessage,
-} from "@/lib/mail-correspondents";
+import { replyAddressForConversation } from "@/lib/mail-correspondents";
 import type { MailAssignment } from "@/lib/mail-assignments";
 import {
   conversationFieldsFromPayload,
@@ -314,84 +311,82 @@ export function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   );
 }
 
-function ConversationControls({
-  message,
+/**
+ * What belongs to the conversation rather than to one envelope: naming its
+ * sender, and the reason a reply cannot prefill a recipient. Both used to
+ * render once per record, so a five-record thread carried five naming forms.
+ */
+function ConversationNaming({
+  messages,
   selfAddress,
-  proof,
-  conversationAddress,
-  onReply,
+  responseAddress,
+  canReply,
   onAssign,
+}: {
+  messages: LocalMailMessage[];
+  selfAddress: string;
+  responseAddress?: string;
+  canReply: boolean;
+  onAssign?: ThreadProps["onAssign"];
+}) {
+  const target = messages.find((message) => message.direction !== "outgoing");
+  const assigned = target?.assignedAddress;
+  const [assignInput, setAssignInput] = useState(assigned ?? "");
+  if (!target || !onAssign) return null;
+  return (
+    <div className={styles.conversationActions}>
+      {canReply && !responseAddress ? (
+        <p className={styles.conversationActionsNote}>
+          A reply cannot prefill a recipient: the sender is sealed and this
+          conversation has no device-local recipient or name yet. Name the
+          sender below, or supply the address in the draft.
+        </p>
+      ) : null}
+      <details className={styles.assignDisclosure}>
+        <summary>Name this sender on this device</summary>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (assignInput.trim()) onAssign(target.id, assignInput);
+          }}
+        >
+          <AddressBookField
+            selfAddress={selfAddress ?? ""}
+            inputAriaLabel="Name this sender"
+            label="Name this sender"
+            value={assignInput}
+            onChange={setAssignInput}
+            placeholder="0x… or saved label"
+            hint="Applies to every record in this conversation on this device. A saved counterparty shows its label; the name is never authentication."
+          />
+          <button type="submit">Save name</button>
+        </form>
+      </details>
+    </div>
+  );
+}
+
+/** What belongs to one record: how it identifies itself, and its own claim. */
+function RecordControls({
+  message,
+  proof,
   onProve,
 }: {
   message: LocalMailMessage;
-  selfAddress: string;
   proof?: SenderProof;
-  conversationAddress?: string;
-  onReply?: ThreadProps["onReply"];
-  onAssign?: ThreadProps["onAssign"];
   onProve?: ThreadProps["onProve"];
 }) {
   const fields = conversationFieldsFromPayload(
     message.envelope.type,
     message.envelope.type === "unsupported" ? null : message.envelope.payload,
   );
-  const conversationId = conversationKeyForMessage(message);
-  const claimed = replyAddressForMessage(message, selfAddress);
   const assigned = message.assignedAddress;
-  const responseAddress = claimed ?? assigned ?? conversationAddress;
-  const canContinue = Boolean(onReply);
-  const [assignInput, setAssignInput] = useState(assigned ?? "");
+  if (!proof && !fields.conversationId && !(assigned && onProve)) return null;
   return (
     <div className={styles.replyRow}>
       {proof ? <p>{senderProofLabel(proof)}</p> : null}
       {fields.conversationId ? (
         <span>Conversation tag {fields.conversationId.slice(0, 18)}…</span>
-      ) : null}
-      {canContinue ? (
-        <button
-          type="button"
-          onClick={() =>
-            onReply?.({
-              address: responseAddress,
-              conversationId,
-              inReplyTo: fields.documentId ?? message.documentId ?? "",
-            })
-          }
-        >
-          Continue conversation
-        </button>
-      ) : null}
-      {canContinue && !responseAddress ? (
-        <p>
-          Recipient cannot be prefilled because the sender is sealed and this
-          conversation has no single device-local recipient or local sender
-          assignment. Supply the counterparty address in the draft.
-        </p>
-      ) : null}
-      {/* Naming a sealed sender is a deliberate, occasional act. As an open
-          form it put an address book, a label and a submit button above every
-          letter in the thread. */}
-      {message.direction !== "outgoing" && onAssign ? (
-        <details className={styles.assignDisclosure}>
-          <summary>Name this sender on this device</summary>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (assignInput.trim()) onAssign(message.id, assignInput);
-            }}
-          >
-            <AddressBookField
-              selfAddress={selfAddress ?? ""}
-              inputAriaLabel="Name this sender"
-              label="Name this sender"
-              value={assignInput}
-              onChange={setAssignInput}
-              placeholder="0x… or saved label"
-              hint="Applies to every record in this conversation on this device. A saved counterparty shows its label; the name is never authentication."
-            />
-            <button type="submit">Save name</button>
-          </form>
-        </details>
       ) : null}
       {assigned && onProve ? (
         <button type="button" onClick={() => onProve(message.id, assigned)}>
@@ -790,10 +785,15 @@ export default function Thread({
             <p className={styles.threadHeadDetail}>{headDetail}</p>
           ) : null}
         </div>
-        <span className={styles.sheetClip} aria-hidden="true">
-          CLIP / 01
-        </span>
       </div>
+
+      <ConversationNaming
+        messages={messages}
+        selfAddress={selfAddress}
+        responseAddress={conversationAddress}
+        canReply={Boolean(onReply)}
+        onAssign={onAssign}
+      />
 
       {messages.length ? (
         <ol className={styles.threadList}>
@@ -841,13 +841,9 @@ export default function Thread({
                       : "This unverified legacy request was imported from a URL fragment for local review. It is not a MessagePosted event, cannot authenticate the requester, and opening or importing it did not submit a payment."}
                   </p>
                 ) : null}
-                <ConversationControls
+                <RecordControls
                   message={message}
-                  selfAddress={selfAddress}
                   proof={proofs[message.id]}
-                  conversationAddress={conversationAddress}
-                  onReply={onReply}
-                  onAssign={onAssign}
                   onProve={onProve}
                 />
                 {renderEnvelope(message)}

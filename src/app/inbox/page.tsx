@@ -3083,6 +3083,11 @@ export default function InboxPage() {
   }
 
   const walletGateShown = storageNotice?.action === "connect-wallet";
+  /* What is actually blocking this mailbox, answered once. The welcome sheet,
+     the rail's empty state and the scan panel used to give three different
+     instructions for the same state. */
+  const mailboxGate: "wallet" | "key" | null =
+    !address || !chainId ? "wallet" : keypair ? null : "key";
 
   function replyToOpenConversation() {
     if (!selectedMessage) return;
@@ -3265,11 +3270,13 @@ export default function InboxPage() {
               events={scanProgress.events}
               phase={scanMessage}
             />
-            {keypair ? null : (
+            {mailboxGate ? (
               <p className={styles.scanMessage}>
-                Set up a mailbox key before checking for mail.
+                {mailboxGate === "wallet"
+                  ? "Connect a wallet before checking for mail."
+                  : "Set up a mailbox key before checking for mail."}
               </p>
-            )}
+            ) : null}
             {scanCursorDescription ? (
               <p className={styles.scanMessage}>{scanCursorDescription}</p>
             ) : null}
@@ -3402,6 +3409,7 @@ export default function InboxPage() {
             filterLabel={filterLabel}
             search={mailboxSearch}
             onSearchChange={setMailboxSearch}
+            gate={mailboxGate}
             onSelect={selectMessage}
           />
         )}

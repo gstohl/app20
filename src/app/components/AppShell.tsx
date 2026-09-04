@@ -18,6 +18,16 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
   const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
   const connected = walletMode === "privy" ? privyConnected : readyConnected;
+  const payActive = pathname === "/pay";
+  const moduleName = mailActive
+    ? "MAILBOX"
+    : payActive
+      ? "PAY"
+      : pathname === "/contacts"
+        ? "COUNTERPARTIES"
+        : rfqActive
+          ? "RFQ WORKSPACE"
+          : "APP20";
 
   return (
     <div
@@ -31,12 +41,11 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           className={`signal-dot ${connected ? "is-live" : ""}`}
           aria-hidden="true"
         />
-        {/* The bar carries live session state. The sentence that used to sit
-            beside it never changed, on any route, in any state — and each view
-            states its own boundary where that boundary applies. */}
+        {/* Live session state for the module you are actually in. It used to
+            name the RFQ workspace on every route, Mailbox included. */}
         {connected
-          ? "WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED"
-          : "APP20 RFQ WORKSPACE"}
+          ? `${moduleName} · WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED`
+          : `${moduleName} · NO WALLET CONNECTED`}
       </div>
       <header className="app-header">
         <Link
@@ -60,15 +69,11 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           >
             Counterparties
           </Link>
-        </nav>
-        <div className="app-utilities">
-          <Link
-            className="request-link"
-            to="/pay"
-            aria-current={pathname === "/pay" ? "page" : undefined}
-          >
+          <Link to="/pay" aria-current={payActive ? "page" : undefined}>
             Pay
           </Link>
+        </nav>
+        <div className="app-utilities">
           <SessionControl />
         </div>
       </header>

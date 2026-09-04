@@ -1294,8 +1294,8 @@ export default function RfqWorkspace() {
                   <h3>Private RFQ unavailable</h3>
                   <p>
                     {providerIndex === 2
-                      ? "Sepolia RFQ is disabled. Production contracts, governed maker directory, custody, chain verifier, operators, funding, audit, and rollout evidence are unavailable."
-                      : "Mainnet RFQ is disabled. No maker request was sent and there is no automatic public fallback."}
+                      ? "Production contracts, a governed maker directory, custody, the chain verifier, operators, funding, audit and rollout evidence are not in place on this rail, so no maker request can be sent."
+                      : "No maker request was sent, and there is no automatic public fallback."}
                   </p>
                 </section>
               )}
@@ -1326,7 +1326,6 @@ export default function RfqWorkspace() {
             <span>Elsewhere</span>
             <Link to="/rfq/operations">RFQ operations status</Link>
             <Link to="/funding">Shield / unshield funding</Link>
-            <Link to="/send">Public send · unavailable</Link>
             <Link to="/mail/inbox">Mail · coordination only</Link>
             <Link to="/cross-chain-review">Cross-chain dry review</Link>
             <Link to="/recovery/privy">Privy recovery</Link>

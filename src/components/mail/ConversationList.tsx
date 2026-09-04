@@ -226,6 +226,8 @@ type ConversationListProps = {
   filterLabel: string;
   search?: string;
   onSearchChange?: (value: string) => void;
+  /** What is blocking this mailbox, so the rail answers what the page answers. */
+  gate?: "wallet" | "key" | null;
   onSelect: (messageId: string) => void;
 };
 
@@ -266,6 +268,7 @@ function ConversationList({
   filterLabel,
   search = "",
   onSearchChange,
+  gate = null,
   onSelect,
 }: ConversationListProps) {
   const rows = messages.map((message) => ({
@@ -287,7 +290,7 @@ function ConversationList({
         <span className={styles.messageTotal}>{visible.length}</span>
       </header>
 
-      {onSearchChange ? (
+      {onSearchChange && messages.length ? (
         <div className={styles.railSearch}>
           <input
             type="search"
@@ -299,13 +302,15 @@ function ConversationList({
         </div>
       ) : null}
 
-      <div className={styles.railPrivacyNote}>
-        <strong>Local browser index—not encrypted at rest</strong>
-        <span>
-          Opened state and search stay on this device. Sealed rows carry no
-          public sender.
-        </span>
-      </div>
+      {messages.length ? (
+        <div className={styles.railPrivacyNote}>
+          <strong>Local browser index—not encrypted at rest</strong>
+          <span>
+            Opened state and search stay on this device. Sealed rows carry no
+            public sender.
+          </span>
+        </div>
+      ) : null}
 
       {visible.length ? (
         <ol className={styles.conversationList}>
@@ -371,6 +376,17 @@ function ConversationList({
               <span>
                 Search reads only what this device has already decrypted. Check
                 for new mail to widen it.
+              </span>
+            </>
+          ) : gate ? (
+            <>
+              <strong>
+                {gate === "wallet" ? "Wallet required" : "Mailbox key required"}
+              </strong>
+              <span>
+                {gate === "wallet"
+                  ? "This mailbox is keyed to a wallet. Connect one to open it."
+                  : "Set up a mailbox key to open and decrypt records."}
               </span>
             </>
           ) : (
