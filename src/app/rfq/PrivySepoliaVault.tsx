@@ -882,7 +882,7 @@ function PrivySepoliaVaultContent() {
               />
             </label>
             <AddressBookField
-              className={`${styles.field} ${styles.recipientField}`}
+              className={styles.field}
               rowClassName={styles.bookRow}
               hintClassName={styles.bookHint}
               errorClassName={styles.bookErrorText}
