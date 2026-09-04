@@ -18,7 +18,16 @@ import CopyableId, {
 } from "./CopyableId";
 import RfqPhaseAction from "./RfqPhaseAction";
 import { useRfqPresentationClock } from "./ui/rfq-presentation-clock";
+import { humanUnits } from "./human-units";
 import styles from "./rfq.module.css";
+
+function safeBigInt(value: string): bigint | undefined {
+  try {
+    return BigInt(value);
+  } catch {
+    return undefined;
+  }
+}
 
 const LEGACY_PHASES: readonly RfqLifecycleAttemptPhase[] = [
   "funding",
@@ -110,6 +119,10 @@ export default function RfqActiveCard({
             : "Actions are disabled until records reload successfully for the current account, chain, and LOCAL provider.",
         })
       : selected;
+  const receivedRaw =
+    record.selectedQuote?.buyAmount ?? record.terms?.buyAmount;
+  const receivedAmount =
+    receivedRaw === undefined ? undefined : safeBigInt(receivedRaw);
   return (
     <article
       className={styles.activeCard}
@@ -124,13 +137,24 @@ export default function RfqActiveCard({
         <strong>{rfqStateLabel(record.state, record.mode)}</strong>
       </header>
       {record.terms ? (
-        <p className={styles.activeCardAmount}>
-          {record.terms.sellAmount} base units {record.terms.sellSymbol} →{" "}
-          {record.selectedQuote?.buyAmount ??
-            record.terms.buyAmount ??
-            "unselected"}{" "}
-          base units {record.terms.buySymbol}
-        </p>
+        <div className={styles.recordAmounts}>
+          {/* A 23-digit integer is the exact record, not something a person
+              can read at a glance; it stays, one rank below the human units. */}
+          <p className={styles.recordAmountHuman}>
+            {humanUnits(
+              BigInt(record.terms.sellAmount),
+              record.terms.sellDecimals,
+            )}{" "}
+            {record.terms.sellSymbol} →{" "}
+            {receivedAmount === undefined
+              ? "unselected"
+              : `${humanUnits(receivedAmount, record.terms.buyDecimals)} ${record.terms.buySymbol}`}
+          </p>
+          <p className={styles.activeCardAmount}>
+            exactly {record.terms.sellAmount} →{" "}
+            {receivedAmount?.toString() ?? "unselected"} base units
+          </p>
+        </div>
       ) : null}
       {record.mode === "v3" ? (
         <div className={styles.v3RecordSummary}>

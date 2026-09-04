@@ -146,13 +146,53 @@
   background: var(--shell-panel);
 }
 
-.activeCard header,
-.phaseAction {
+.activeCard header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.phaseAction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The action of an in-flight record fell back to the browser's grey button,
+   and its reason sat at the far end of a 1000px row away from it. */
+.phaseAction button {
+  min-height: 40px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 14px;
+  color: var(--shell-orange);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.phaseAction button:hover:not(:disabled) {
+  color: var(--on-accent);
+  background: var(--shell-orange);
+}
+
+.phaseAction button:disabled {
+  border-color: var(--shell-line);
+  color: var(--shell-muted);
+  cursor: not-allowed;
+}
+
+.phaseAction small {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: var(--measure-reading);
+  color: var(--shell-muted);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .activeCard dl {
@@ -2621,11 +2661,27 @@
   background: transparent;
 }
 
+.recordAmounts {
+  display: grid;
+  gap: 3px;
+}
+
+/* What the trade is, at a glance; the exact integer sits one rank below. */
+.recordAmountHuman {
+  margin: 0;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
 .activeCardAmount,
 .activityAmount {
   margin: 0;
+  color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 12px;
+  font-size: 10px;
   overflow-wrap: anywhere;
 }
 
@@ -2667,16 +2723,25 @@
   text-transform: uppercase;
 }
 
+.activeCardDetails summary::-webkit-details-marker,
+.activityRecord summary::-webkit-details-marker,
+.quoteComparison summary::-webkit-details-marker,
 .finalReviewDetails summary::-webkit-details-marker {
   display: none;
 }
 
+.activeCardDetails summary::after,
+.activityRecord summary::after,
+.quoteComparison summary::after,
 .finalReviewDetails summary::after {
   color: var(--shell-orange);
   content: "+";
   font-size: 15px;
 }
 
+.activeCardDetails[open] summary::after,
+.activityRecord details[open] summary::after,
+.quoteComparison[open] summary::after,
 .finalReviewDetails[open] summary::after {
   content: "\2212";
 }

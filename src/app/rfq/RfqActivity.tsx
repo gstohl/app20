@@ -11,7 +11,19 @@ import { AuthorityStrip } from "./RfqAuthorityStrip";
 import RfqRecoveryCard from "./RfqRecoveryCard";
 import { useRfqAuthorityPresentation } from "./ui/use-rfq-authority-presentation";
 import type { WorkspaceLoadState } from "./workspace-load-state";
+import { humanUnits } from "./human-units";
 import styles from "./rfq.module.css";
+
+/** The received leg in human units, or why there is not one yet. */
+function receivedLabel(record: RfqLifecycleRecord): string {
+  const raw = record.selectedQuote?.buyAmount ?? record.terms?.buyAmount;
+  if (!record.terms || raw === undefined) return "unselected";
+  try {
+    return `${humanUnits(BigInt(raw), record.terms.buyDecimals)} ${record.terms.buySymbol}`;
+  } catch {
+    return "unselected";
+  }
+}
 
 function activityBucket(record: RfqLifecycleRecord): string | undefined {
   if (record.mode !== "v3" || !record.bucket || !record.terms) return undefined;
@@ -52,12 +64,9 @@ function RfqActivityRecord({
         {heading} · {rfqStateLabel(record.state, record.mode)}
       </h3>
       {record.terms ? (
-        <p className={styles.activityAmount}>
-          {record.terms.sellAmount} base units {record.terms.sellSymbol} →{" "}
-          {record.selectedQuote?.buyAmount ??
-            record.terms.buyAmount ??
-            "unselected"}{" "}
-          base units {record.terms.buySymbol}
+        <p className={styles.recordAmountHuman}>
+          {humanUnits(BigInt(record.terms.sellAmount), record.terms.sellDecimals)}{" "}
+          {record.terms.sellSymbol} → {receivedLabel(record)}
         </p>
       ) : null}
       {record.mode === "v3" ? (
