@@ -93,6 +93,9 @@ describe("RFQ workspace information architecture", () => {
     // Existing bookmarks still resolve.
     expect(workspace).toContain('value === "active"');
     expect(workspace).toContain('value === "activity"');
+    expect(workspace).toContain(
+      'hash.replace(/^#/, "") === "activity" ? "all" : "in-flight"',
+    );
   });
 
   it("moves focus to a labelled region after hash navigation", () => {

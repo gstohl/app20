@@ -200,6 +200,12 @@ export function RfqWorkspaceActiveBoundary(props: {
   );
 }
 
+/* #activity was the history tab: someone arriving on it expects every record,
+   not only the ones still in flight. */
+function initialRecordScope(hash: string): RecordScope {
+  return hash.replace(/^#/, "") === "activity" ? "all" : "in-flight";
+}
+
 function viewFromHash(hash: string): View {
   const value = hash.replace(/^#/, "");
   /* #active and #activity were two tabs over one set of records; existing
@@ -282,7 +288,9 @@ export default function RfqWorkspace() {
   const view = viewFromHash(hash);
   /* In-flight first, because a record you can still act on is why you opened
      this view; the whole history is one control away. */
-  const [recordScope, setRecordScope] = useState<RecordScope>("in-flight");
+  const [recordScope, setRecordScope] = useState<RecordScope>(() =>
+    initialRecordScope(hash),
+  );
   const [pairId, setPairId] = useState<LocalnetMarketPairId>(requestedPair);
   const [records, setRecords] = useState<RfqLifecycleRecord[]>([]);
   const [loadState, setLoadState] = useState<WorkspaceLoadState>("loading");

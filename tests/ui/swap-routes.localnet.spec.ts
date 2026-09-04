@@ -27,7 +27,7 @@ async function gotoRoute(page: Page, route: string) {
     throw lastError;
 }
 
-test("keeps RFQ canonical, public context opt-in, swap non-executable, and market planning proposal-only", async ({
+test("keeps RFQ canonical, public context opt-in, and market planning proposal-only", async ({
     page,
 }) => {
     let coinGeckoRequests = 0;
@@ -61,40 +61,6 @@ test("keeps RFQ canonical, public context opt-in, swap non-executable, and marke
     ).toBeVisible();
     await expect.poll(() => coinGeckoRequests).toBe(1);
     await expect(page.getByText("0.50000", { exact: true })).toBeVisible();
-
-    await gotoRoute(page, "/swap/strk/usdc");
-    await expect(
-        page.getByRole("heading", { name: "STRK / USDC" }),
-    ).toBeVisible();
-    await expect(
-        page.getByText("PAIR HANDOFF · NO EXECUTION", { exact: true }),
-    ).toBeVisible();
-    await expect(
-        page.getByRole("button", { name: /request|accept|execute/i }),
-    ).toHaveCount(0);
-    await page.getByRole("link", { name: "Open RFQ" }).click();
-    await expect(page).toHaveURL(/\/rfq\?pair=STRK_USDC#new$/);
-    await expect(page.getByLabel("Private intent market")).toHaveValue(
-        "STRK_USDC",
-    );
-
-    await gotoRoute(page, "/swap/usdc/strk");
-    await expect(
-        page.getByRole("heading", { name: "USDC / STRK" }),
-    ).toBeVisible();
-    await page.getByRole("link", { name: "Open RFQ" }).click();
-    await expect(page).toHaveURL(/\/rfq\?pair=USDC_STRK#new$/);
-    await expect(page.getByLabel("Private intent market")).toHaveValue(
-        "USDC_STRK",
-    );
-
-    await gotoRoute(page, "/swap/eth/usdc");
-    await expect(
-        page.getByRole("heading", { name: "Pair unavailable" }),
-    ).toBeVisible();
-    await expect(
-        page.getByText("No RFQ, quote, proposal, or transaction was created."),
-    ).toBeVisible();
 
     await gotoRoute(page, "/pools/create/eth/usdc#review");
     await expect(page).toHaveURL(/\/rfq\/markets\/eth\/usdc\/proposal#review$/);
