@@ -113,6 +113,55 @@
   content: "·";
 }
 
+/* One set of records, one view, an explicit scope — instead of two tabs whose
+   difference was a filter. */
+.recordScope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 16px 16px 0;
+}
+
+.recordScope button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--shell-line);
+  padding: 0 12px;
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.recordScope button[aria-pressed="true"] {
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.recordScope button strong {
+  font-size: 10px;
+}
+
+/* The scope control is the visible label for the list under it, so the list's
+   own heading stays for screen readers and stops repeating it on screen. */
+.recordScope + .activeRecords > h2,
+.recordScope + .activityView > h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .activeRecords,
 .activityView {
   display: grid;
@@ -616,15 +665,65 @@
   color: var(--shell-danger, #e5484d);
 }
 
+/* The ticket is the view: it is what a person came here to fill in. */
 .privateWorkspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 420px);
+  grid-template-columns: minmax(0, 1fr);
   max-width: 1600px;
-  min-height: 620px;
   gap: 16px;
   margin: 0 auto;
   padding: 0 16px 16px;
   background: var(--shell-bg);
+}
+
+.marketDisclosure {
+  max-width: 1600px;
+  margin: 0 auto 16px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.marketDisclosure > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  color: var(--shell-text);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.marketDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.marketDisclosure > summary::after {
+  color: var(--shell-orange);
+  content: "+";
+  font-size: 15px;
+}
+
+.marketDisclosure[open] > summary {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.marketDisclosure[open] > summary::after {
+  content: "\2212";
+}
+
+.marketDisclosureHint {
+  margin-left: auto;
+  margin-right: 10px;
+  color: var(--shell-muted);
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .publicMarketWorkspace {
@@ -648,8 +747,7 @@
   min-width: 0;
   align-self: start;
   flex-direction: column;
-  order: 1;
-  border: 1px solid var(--shell-line);
+  border: 0;
   background: var(--shell-bg);
 }
 
@@ -1303,8 +1401,11 @@
   align-self: start;
   align-items: flex-start;
   justify-content: stretch;
-  order: 2;
   background: var(--shell-bg);
+}
+
+.tradeTicket > * {
+  width: 100%;
 }
 
 .fundingDetails {

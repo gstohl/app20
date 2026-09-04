@@ -110,7 +110,8 @@ import RfqRecoveryCard from "./RfqRecoveryCard";
 import { refreshLiveRfqAuthority } from "./rfq-authority";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 
-type View = "new" | "active" | "activity" | "compatibility";
+type View = "new" | "records" | "compatibility";
+type RecordScope = "in-flight" | "all";
 
 export function rfqWorkspaceScopeKey(
   providerIndex: number,
@@ -133,10 +134,10 @@ export function workspaceScopeIsReady(
 ): boolean {
   return Boolean(
     currentScope &&
-      loadedScope === currentScope &&
-      (loadState === "ready" ||
-        loadState === "quarantined" ||
-        loadState === "local-deal-read-failed"),
+    loadedScope === currentScope &&
+    (loadState === "ready" ||
+      loadState === "quarantined" ||
+      loadState === "local-deal-read-failed"),
   );
 }
 
@@ -151,20 +152,20 @@ function deriveWorkspaceContextReady(input: {
 }): boolean {
   return Boolean(
     input.providerIndex === LOCALNET_PROVIDER_INDEX &&
-      input.address &&
-      input.chain &&
-      workspaceScopeIsReady(
-        input.loadedScope,
-        input.currentScope,
-        input.loadState,
-      ) &&
-      input.records.every((record) =>
-        recoveryContextMatches(record, {
-          account: input.address!,
-          chainId: input.chain!,
-          providerIndex: input.providerIndex,
-        }),
-      ),
+    input.address &&
+    input.chain &&
+    workspaceScopeIsReady(
+      input.loadedScope,
+      input.currentScope,
+      input.loadState,
+    ) &&
+    input.records.every((record) =>
+      recoveryContextMatches(record, {
+        account: input.address!,
+        chainId: input.chain!,
+        providerIndex: input.providerIndex,
+      }),
+    ),
   );
 }
 
@@ -201,8 +202,11 @@ export function RfqWorkspaceActiveBoundary(props: {
 
 function viewFromHash(hash: string): View {
   const value = hash.replace(/^#/, "");
-  if (value === "active") return "active";
-  if (value === "activity") return "activity";
+  /* #active and #activity were two tabs over one set of records; existing
+     bookmarks land on the single Records view. */
+  if (value === "records" || value === "active" || value === "activity") {
+    return "records";
+  }
   if (value === "intents") return "compatibility";
   return "new";
 }
@@ -276,6 +280,9 @@ export default function RfqWorkspace() {
   const address = useStoreWallet((state) => state.address);
   const chain = useStoreWallet((state) => state.chain);
   const view = viewFromHash(hash);
+  /* In-flight first, because a record you can still act on is why you opened
+     this view; the whole history is one control away. */
+  const [recordScope, setRecordScope] = useState<RecordScope>("in-flight");
   const [pairId, setPairId] = useState<LocalnetMarketPairId>(requestedPair);
   const [records, setRecords] = useState<RfqLifecycleRecord[]>([]);
   const [loadState, setLoadState] = useState<WorkspaceLoadState>("loading");
@@ -1161,21 +1168,12 @@ export default function RfqWorkspace() {
         </Link>
         <Link
           to="/rfq"
-          hash="active"
+          hash="records"
           activeOptions={{ exact: true, includeHash: true }}
-          aria-current={view === "active" ? "page" : undefined}
+          aria-current={view === "records" ? "page" : undefined}
         >
-          Active
+          Records
         </Link>
-        <Link
-          to="/rfq"
-          hash="activity"
-          activeOptions={{ exact: true, includeHash: true }}
-          aria-current={view === "activity" ? "page" : undefined}
-        >
-          Activity
-        </Link>
-        <Link to="/rfq/operations">Operations</Link>
       </nav>
       {recordError ? <p role="alert">{recordError}</p> : null}
       {view === "compatibility" ? (
@@ -1186,23 +1184,55 @@ export default function RfqWorkspace() {
           <Link to="/cross-chain-review">Open dry cross-chain review</Link>
         </section>
       ) : null}
-      {view === "active" ? (
-        <section ref={viewRegionRef} tabIndex={-1} aria-label="Active RFQs">
-          <RfqWorkspaceActiveBoundary
-            records={activeRecords}
-            providerIndex={providerIndex}
-            address={address}
-            chain={chain}
-            loadedScope={loadedScope}
-            currentScope={currentScope}
-            loadState={loadState}
-            loadDetail={loadDetail}
-            busyRfqId={busyRfqId}
-            onAction={(record, action) => void runRecordAction(record, action)}
-            onRemove={(record) => void removeRecord(record)}
-            onClearAll={() => void clearAllRecords()}
-            onRetryLoad={retryWorkspaceLoad}
-          />
+      {view === "records" ? (
+        <section ref={viewRegionRef} tabIndex={-1} aria-label="RFQ records">
+          <nav className={styles.recordScope} aria-label="Record scope">
+            <button
+              type="button"
+              aria-pressed={recordScope === "in-flight"}
+              onClick={() => setRecordScope("in-flight")}
+            >
+              In flight <strong>{activeRecords.length}</strong>
+            </button>
+            <button
+              type="button"
+              aria-pressed={recordScope === "all"}
+              onClick={() => setRecordScope("all")}
+            >
+              All <strong>{records.length}</strong>
+            </button>
+          </nav>
+          {recordScope === "in-flight" ? (
+            <RfqWorkspaceActiveBoundary
+              records={activeRecords}
+              providerIndex={providerIndex}
+              address={address}
+              chain={chain}
+              loadedScope={loadedScope}
+              currentScope={currentScope}
+              loadState={loadState}
+              loadDetail={loadDetail}
+              busyRfqId={busyRfqId}
+              onAction={(record, action) =>
+                void runRecordAction(record, action)
+              }
+              onRemove={(record) => void removeRecord(record)}
+              onClearAll={() => void clearAllRecords()}
+              onRetryLoad={retryWorkspaceLoad}
+            />
+          ) : (
+            <>
+              <RfqActivity
+                records={records}
+                loadState={loadState}
+                loadDetail={loadDetail}
+                onRemove={(record) => void removeRecord(record)}
+                onClearAll={() => void clearAllRecords()}
+                onRetryLoad={retryWorkspaceLoad}
+              />
+              <SettlementEvidencePanel records={records} />
+            </>
+          )}
           {resumeReviewRecord ? (
             <RfqV3ResumeReview
               record={resumeReviewRecord}
@@ -1218,19 +1248,6 @@ export default function RfqWorkspace() {
               onClose={() => setResumeReviewRecord(undefined)}
             />
           ) : null}
-        </section>
-      ) : null}
-      {view === "activity" ? (
-        <section ref={viewRegionRef} tabIndex={-1} aria-label="RFQ activity">
-          <RfqActivity
-            records={records}
-            loadState={loadState}
-            loadDetail={loadDetail}
-            onRemove={(record) => void removeRecord(record)}
-            onClearAll={() => void clearAllRecords()}
-            onRetryLoad={retryWorkspaceLoad}
-          />
-          <SettlementEvidencePanel records={records} />
         </section>
       ) : null}
       {view === "new" ? (
@@ -1283,18 +1300,31 @@ export default function RfqWorkspace() {
                 </section>
               )}
             </aside>
+          </section>
+          {/* Public context is a reference, not a quote: the board's own labels
+              say non-executable, it needs an opt-in that discloses your IP, and
+              it used to occupy the top half of the page above the ticket. It
+              opens when someone asks for it. */}
+          <details className={styles.marketDisclosure}>
+            <summary aria-label="Public market context">
+              <span>Public market context</span>
+              <span className={styles.marketDisclosureHint}>
+                NON-EXECUTABLE
+              </span>
+            </summary>
             <section
               className={styles.marketWorkspace}
               aria-label="Public market context"
             >
               <DeskMarketBoard pairId={pairId} />
             </section>
-          </section>
+          </details>
           <nav
             className={styles.separateOperations}
             aria-label="Separate operations"
           >
             <span>Elsewhere</span>
+            <Link to="/rfq/operations">RFQ operations status</Link>
             <Link to="/funding">Shield / unshield funding</Link>
             <Link to="/send">Public send · unavailable</Link>
             <Link to="/mail/inbox">Mail · coordination only</Link>

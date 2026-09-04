@@ -83,7 +83,16 @@ describe("RFQ workspace information architecture", () => {
       workspace.match(
         /activeOptions=\{\{ exact: true, includeHash: true \}\}/g,
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+  });
+
+  it("keeps one records view with a scope instead of two tabs over one set", () => {
+    expect(workspace).toContain('aria-label="Record scope"');
+    expect(workspace).toContain('hash="records"');
+    expect(workspace).not.toContain('hash="activity"');
+    // Existing bookmarks still resolve.
+    expect(workspace).toContain('value === "active"');
+    expect(workspace).toContain('value === "activity"');
   });
 
   it("moves focus to a labelled region after hash navigation", () => {
@@ -91,8 +100,7 @@ describe("RFQ workspace information architecture", () => {
     expect(workspace).toContain("viewRegionRef.current?.focus()");
     for (const label of [
       'aria-label="New RFQ request"',
-      'aria-label="Active RFQs"',
-      'aria-label="RFQ activity"',
+      'aria-label="RFQ records"',
     ]) {
       expect(workspace).toContain(label);
     }
