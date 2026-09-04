@@ -8,6 +8,7 @@ import type { LocalMailMessage } from "./Thread";
 import ConversationList, {
   conversationCorrespondent,
   mailboxMatchesFilter,
+  messageMatchesSearch,
 } from "./ConversationList";
 
 const strk = { symbol: "STRK", address: addrSTRK, decimals: 18 };
@@ -169,5 +170,34 @@ describe("conversation list accessibility", () => {
     expect(markup).toContain("Wallet + mailbox recovery phrase required");
     expect(markup).toContain("This mailbox");
     expect(markup).not.toContain("Unsupported decrypted record");
+  });
+});
+
+describe("device-local search", () => {
+  const message = compositeMessage("incoming");
+  const correspondent = conversationCorrespondent(message, [], "0xb0b");
+
+  it("matches an empty query so an unsearched rail shows everything", () => {
+    expect(messageMatchesSearch(message, correspondent, "   ")).toBe(true);
+  });
+
+  it("matches decrypted body text, the record type and the index", () => {
+    expect(messageMatchesSearch(message, correspondent, "settlement")).toBe(
+      true,
+    );
+    expect(messageMatchesSearch(message, correspondent, "document")).toBe(true);
+    expect(messageMatchesSearch(message, correspondent, message.index)).toBe(
+      true,
+    );
+  });
+
+  it("matches the correspondent, including a claimed address", () => {
+    expect(messageMatchesSearch(message, correspondent, "0xa11ce")).toBe(true);
+  });
+
+  it("does not match text that is absent from the decrypted record", () => {
+    expect(messageMatchesSearch(message, correspondent, "zzz-not-here")).toBe(
+      false,
+    );
   });
 });

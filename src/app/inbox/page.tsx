@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import { loadReadMessageIds, saveReadMessageIds } from "@/lib/mail-read-state";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
 import ConversationList from "@/components/mail/ConversationList";
@@ -292,6 +293,19 @@ export default function InboxPage() {
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [mailboxSearch, setMailboxSearch] = useState("");
+
+  /* Read state belongs to this device and this account: it is loaded when the
+     account is known and written back as records are opened, so a reload no
+     longer marks a whole mailbox unread. */
+  useEffect(() => {
+    setReadMessageIds(
+      chainId && address
+        ? loadReadMessageIds(window.localStorage, chainId, address)
+        : new Set(),
+    );
+  }, [address, chainId]);
+
   const [mailFolder, setMailFolder] = useState<MailFolder>("inbox");
   const [mailboxFilter, setMailboxFilter] = useState<MailboxFilter>("all");
   const [drafts, setDrafts] = useState<CompositeDraft[]>([]);
@@ -544,7 +558,6 @@ export default function InboxPage() {
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setSelectedMessageId(null);
     activatedMessageIdRef.current = null;
-    setReadMessageIds(new Set());
     setComposerOpen(false);
     setMobileDetailOpen(false);
     setSidebarOpen(false);
@@ -823,11 +836,21 @@ export default function InboxPage() {
         if (current.has(messageId)) return current;
         const next = new Set(current);
         next.add(messageId);
+        if (chainId && address) {
+          saveReadMessageIds(window.localStorage, chainId, address, next);
+        }
         return next;
       });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [composerOpen, messageActivation, mobileDetailOpen, selectedMessageId]);
+  }, [
+    address,
+    chainId,
+    composerOpen,
+    messageActivation,
+    mobileDetailOpen,
+    selectedMessageId,
+  ]);
 
   function setActionState(key: string, state: ThreadActionState) {
     setActionStates((current) => ({ ...current, [key]: state }));
@@ -3056,6 +3079,7 @@ export default function InboxPage() {
   }
 
   function selectFolder(nextFolder: MailFolder) {
+    setMailboxSearch("");
     setMailFolder(nextFolder);
     setSidebarOpen(false);
     setMobileDetailOpen(false);
@@ -3069,6 +3093,7 @@ export default function InboxPage() {
   }
 
   function selectTypeFilter(nextFilter: MailboxFilter) {
+    setMailboxSearch("");
     setMailboxFilter(nextFilter);
     setSidebarOpen(false);
     setMobileDetailOpen(false);
@@ -3354,6 +3379,8 @@ export default function InboxPage() {
             selfAddress={address}
             folderLabel={folderLabel}
             filterLabel={filterLabel}
+            search={mailboxSearch}
+            onSearchChange={setMailboxSearch}
             onSelect={selectMessage}
           />
         )}

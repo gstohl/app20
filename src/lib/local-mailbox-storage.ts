@@ -1,6 +1,7 @@
 import { ALIAS_STORAGE_PREFIX } from "./aliases";
 import { DRAFT_STORAGE_PREFIX } from "./drafts";
 import { ESCROW_STORAGE_PREFIX } from "./escrow";
+import { MAIL_READ_STATE_STORAGE_PREFIX } from "./mail-read-state";
 import { MAIL_SCAN_CURSOR_PREFIX } from "./mail-scan";
 import { OTC_STORAGE_PREFIX } from "./otc";
 import { MAIL_ASSIGNMENT_STORAGE_PREFIX } from "./mail-assignments";
@@ -17,6 +18,7 @@ export const LOCAL_MAILBOX_STORAGE_PREFIXES = [
   ESCROW_STORAGE_PREFIX,
   MAIL_SCAN_CURSOR_PREFIX,
   MAIL_ASSIGNMENT_STORAGE_PREFIX,
+  MAIL_READ_STATE_STORAGE_PREFIX,
 ] as const;
 
 type MutableStorage = Pick<Storage, "key" | "length" | "removeItem">;

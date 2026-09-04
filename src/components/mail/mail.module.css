@@ -2086,6 +2086,35 @@
   font-weight: 700;
 }
 
+/* Search is the rail's own control: it filters what this device decrypted. */
+.railSearch {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.railSearch input {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--shell-line);
+  border-radius: 0;
+  padding: 0 9px;
+  color: var(--shell-text);
+  background: var(--shell-bg);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 11px;
+}
+
+.railSearch input::placeholder {
+  color: var(--shell-muted);
+  letter-spacing: 0.04em;
+}
+
+.railSearch input:focus-visible {
+  border-color: var(--shell-orange);
+  outline: none;
+}
+
 .railPrivacyNote {
   display: flex;
   flex-direction: column;

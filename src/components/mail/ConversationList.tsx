@@ -224,8 +224,37 @@ type ConversationListProps = {
   selfAddress: string;
   folderLabel: string;
   filterLabel: string;
+  search?: string;
+  onSearchChange?: (value: string) => void;
   onSelect: (messageId: string) => void;
 };
+
+/**
+ * Searching happens here, over what this device already decrypted: the
+ * correspondent, the preview, the record type and the record index. Nothing
+ * about a query leaves the browser, and sealed rows stay searchable by the
+ * plaintext only this device holds.
+ */
+export function messageMatchesSearch(
+  message: LocalMailMessage,
+  correspondent: ConversationCorrespondent,
+  query: string,
+): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const haystack = [
+    correspondent.primary,
+    correspondent.detail ?? "",
+    correspondent.fullAddress ?? "",
+    envelopeLabel(message),
+    messagePreview(message),
+    message.index,
+    ...(message.recipients ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(needle);
+}
 
 function ConversationList({
   messages,
@@ -235,8 +264,19 @@ function ConversationList({
   selfAddress,
   folderLabel,
   filterLabel,
+  search = "",
+  onSearchChange,
   onSelect,
 }: ConversationListProps) {
+  const rows = messages.map((message) => ({
+    message,
+    correspondent: conversationCorrespondent(message, aliases, selfAddress),
+  }));
+  const visible = search.trim()
+    ? rows.filter((row) =>
+        messageMatchesSearch(row.message, row.correspondent, search),
+      )
+    : rows;
   return (
     <section className={styles.conversationRail} aria-label="Message list">
       <header className={styles.railHeading}>
@@ -244,25 +284,33 @@ function ConversationList({
           <p className={styles.kicker}>{filterLabel.toUpperCase()}</p>
           <h1>{folderLabel}</h1>
         </div>
-        <span className={styles.messageTotal}>{messages.length}</span>
+        <span className={styles.messageTotal}>{visible.length}</span>
       </header>
+
+      {onSearchChange ? (
+        <div className={styles.railSearch}>
+          <input
+            type="search"
+            value={search}
+            placeholder="Search opened mail"
+            aria-label="Search opened mail"
+            onChange={(event) => onSearchChange(event.target.value)}
+          />
+        </div>
+      ) : null}
 
       <div className={styles.railPrivacyNote}>
         <strong>Local browser index—not encrypted at rest</strong>
         <span>
-          “Unread/opened” is session-only. Sealed rows carry no public sender.
+          Opened state and search stay on this device. Sealed rows carry no
+          public sender.
         </span>
       </div>
 
-      {messages.length ? (
+      {visible.length ? (
         <ol className={styles.conversationList}>
-          {messages.map((message) => {
+          {visible.map(({ message, correspondent }) => {
             const selected = selectedMessageId === message.id;
-            const correspondent = conversationCorrespondent(
-              message,
-              aliases,
-              selfAddress,
-            );
             const unread =
               message.direction !== "outgoing" &&
               !readMessageIds.has(message.id);
@@ -315,20 +363,32 @@ function ConversationList({
       ) : (
         <div className={styles.railEmptyState}>
           <span className={styles.emptyEnvelope} aria-hidden="true">
-            ✉
+            {search.trim() ? "⌕" : "✉"}
           </span>
-          <strong>
-            {filterLabel === "All" || filterLabel === "All types"
-              ? "Nothing here yet"
-              : `No ${filterLabel.toLowerCase()} yet`}
-          </strong>
-          <span>
-            {folderLabel === "Sent"
-              ? "Sent copies live only on this device. Write a message to create one."
-              : folderLabel === "Inbox"
-                ? "Check for new mail, or write a message."
-                : "Choose another mailbox, or write a message."}
-          </span>
+          {search.trim() ? (
+            <>
+              <strong>No opened record matches</strong>
+              <span>
+                Search reads only what this device has already decrypted. Check
+                for new mail to widen it.
+              </span>
+            </>
+          ) : (
+            <>
+              <strong>
+                {filterLabel === "All" || filterLabel === "All types"
+                  ? "Nothing here yet"
+                  : `No ${filterLabel.toLowerCase()} yet`}
+              </strong>
+              <span>
+                {folderLabel === "Sent"
+                  ? "Sent copies live only on this device. Write a message to create one."
+                  : folderLabel === "Inbox"
+                    ? "Check for new mail, or write a message."
+                    : "Choose another mailbox, or write a message."}
+              </span>
+            </>
+          )}
         </div>
       )}
     </section>
