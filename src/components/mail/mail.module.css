@@ -2145,7 +2145,8 @@
   margin-top: auto;
 }
 
-.typeBadge {
+.typeBadge,
+.provenanceBadge {
   padding: 3px 5px;
   border: 1px solid var(--shell-line);
   color: var(--shell-muted);
@@ -2155,6 +2156,12 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* Where a record came from, next to what it is — not in the read-state slot. */
+.provenanceBadge {
+  border-style: dashed;
+  font-family: var(--font-mono-ui), monospace;
 }
 
 .unreadIndicator,
@@ -2347,6 +2354,14 @@
 
 .threadPanel .threadList {
   margin-top: 10px;
+  gap: 22px;
+}
+
+/* Each record is one unit: without a boundary, a message's "sealed on this
+   device" footer read as a heading for the message below it. */
+.threadPanel .message + .message {
+  padding-top: 22px;
+  border-top: 1px solid var(--shell-line);
 }
 
 .threadPanel .message {

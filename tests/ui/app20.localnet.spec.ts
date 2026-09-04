@@ -596,9 +596,8 @@ test("all APP20 localnet journeys", async ({
     await expect(
       page.getByText("1 recipient · posted", { exact: false }),
     ).toBeVisible();
-    await expect(messageRow(page, compositeBody)).toContainText(
-      "POSTED ON-CHAIN",
-    );
+    // Provenance moved next to the type badge; read state is incoming-only.
+    await expect(messageRow(page, compositeBody)).toContainText("Sent");
     await screenshot(page, "08-composite-in-sent", testInfo);
   });
 

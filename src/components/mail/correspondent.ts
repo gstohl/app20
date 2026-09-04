@@ -75,25 +75,17 @@ export function conversationCorrespondent(
       detail: "Encrypted self-backup · verify before restore",
     };
   }
-  if (message.envelope.type === "text") {
-    return {
-      primary:
-        message.direction === "outgoing"
-          ? "Private recipient"
-          : "Sealed sender",
-      detail:
-        message.direction === "outgoing"
-          ? "Device-local Sent copy · recipient was not stored"
-          : "Sealed letter · no public sender",
-    };
-  }
   if (message.direction === "outgoing") {
     return {
       primary: "Private recipient",
       detail: "Device-local Sent copy · recipient was not stored",
     };
   }
-  return { primary: "Sealed counterparty" };
+  /* One name for one fact. "Sealed sender" and "Sealed counterparty" differed
+     only by envelope type, which says nothing about who sent the record: no
+     incoming record carries a public sender, whatever it contains. The name
+     already says that, so it carries no caption restating it. */
+  return { primary: "Sealed sender" };
 }
 
 /**

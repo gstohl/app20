@@ -21,6 +21,7 @@ import {
 } from "@/lib/escrow";
 import {
   conversationCorrespondent,
+  correspondentHeadline,
   type ConversationCorrespondent,
 } from "./correspondent";
 import {
@@ -96,6 +97,17 @@ function envelopeLabel(message: LocalMailMessage): string {
   }
 }
 
+/* The row already carries a type badge, so the preview line spends itself on
+   the terms instead of repeating the word underneath it. */
+const UNREADABLE_PAYLOAD = "Payload could not be read";
+
+function amount(value: {
+  token: { symbol: string; decimals: number };
+  amount: string;
+}): string {
+  return `${formatBaseUnits(value.amount, value.token.decimals)} ${value.token.symbol}`;
+}
+
 function messagePreview(message: LocalMailMessage): string {
   const payload =
     message.envelope.type === "unsupported" ? null : message.envelope.payload;
@@ -107,45 +119,43 @@ function messagePreview(message: LocalMailMessage): string {
     case "offer": {
       const offer = parseOfferPayload(payload);
       return offer
-        ? `Offer ${formatBaseUnits(offer.give.amount, offer.give.token.decimals)} ${offer.give.token.symbol}`
-        : "Deal offer";
+        ? `${amount(offer.give)} for ${amount(offer.want)}`
+        : UNREADABLE_PAYLOAD;
     }
     case "accept": {
       const accept = parseAcceptPayload(payload);
       return accept
-        ? `Settlement memo · ${formatBaseUnits(accept.transfer.amount, accept.transfer.token.decimals)} ${accept.transfer.token.symbol}`
-        : "Settlement memo";
+        ? `${amount(accept.transfer)} to settle`
+        : UNREADABLE_PAYLOAD;
     }
     case "decline":
-      return parseDeclinePayload(payload)?.reason || "Deal declined";
+      return parseDeclinePayload(payload)?.reason || "No reason given";
     case "receipt":
       return parseReceiptPayload(payload)
-        ? "Transfer receipt claim"
-        : "Receipt";
+        ? "Claims a transfer landed"
+        : UNREADABLE_PAYLOAD;
     case "payment_request": {
       const request = parsePaymentRequestPayload(payload);
-      return request
-        ? `Invoice · ${formatBaseUnits(request.amount, request.token.decimals)} ${request.token.symbol}`
-        : "Invoice";
+      return request ? `${amount(request)} requested` : UNREADABLE_PAYLOAD;
     }
     case "escrow_fund": {
       const fund = parseEscrowFundPayload(payload);
       return fund
-        ? `Escrow deal · ${formatBaseUnits(fund.legA.amount, fund.legA.token.decimals)} ${fund.legA.token.symbol}`
-        : "Escrow deal";
+        ? `${amount(fund.legA)} against ${amount(fund.legB)}`
+        : UNREADABLE_PAYLOAD;
     }
     case "escrow_fill":
       return parseEscrowFillPayload(payload)
-        ? "Escrow fill notice"
-        : "Escrow update";
+        ? "Counterparty filled the deal"
+        : UNREADABLE_PAYLOAD;
     case "escrow_claim":
       return parseEscrowClaimPayload(payload)
-        ? "Escrow claim notice"
-        : "Escrow update";
+        ? "Counterparty claimed the escrow"
+        : UNREADABLE_PAYLOAD;
     case "escrow_timeout":
       return parseEscrowTimeoutPayload(payload)
-        ? "Escrow timeout notice"
-        : "Escrow update";
+        ? "Escrow timed out and was refunded"
+        : UNREADABLE_PAYLOAD;
     case "contact_snapshot":
       return "Wallet + mailbox recovery phrase required";
     case "backup_snapshot":
@@ -273,7 +283,7 @@ function ConversationList({
                   <span className={styles.conversationTopline}>
                     <span className={styles.correspondentIdentity}>
                       <strong title={correspondent.fullAddress}>
-                        <bdi>{correspondent.primary}</bdi>
+                        <bdi>{correspondentHeadline(correspondent)}</bdi>
                       </strong>
                       {correspondent.detail ? (
                         <small>{correspondent.detail}</small>
@@ -284,19 +294,18 @@ function ConversationList({
                   <span className={styles.conversationPreview}>{preview}</span>
                   <span className={styles.conversationMeta}>
                     <em className={styles.typeBadge}>{kind}</em>
-                    <span
-                      className={
-                        unread ? styles.unreadIndicator : styles.readIndicator
-                      }
-                    >
-                      {message.direction === "outgoing"
-                        ? "POSTED ON-CHAIN"
-                        : unread
-                          ? "● UNREAD"
-                          : message.envelope.type === "unsupported"
-                            ? "UNSUPPORTED"
-                            : "OPENED"}
-                    </span>
+                    {message.direction === "outgoing" ? (
+                      <em className={styles.provenanceBadge}>Sent</em>
+                    ) : null}
+                    {message.direction === "outgoing" ? null : (
+                      <span
+                        className={
+                          unread ? styles.unreadIndicator : styles.readIndicator
+                        }
+                      >
+                        {unread ? "● UNREAD" : "OPENED"}
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>
