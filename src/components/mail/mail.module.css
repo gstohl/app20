@@ -876,6 +876,12 @@
   margin-top: 0;
 }
 
+.sheetActions .ignoreAction {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-inline: 18px;
+}
+
 .chainDisclosure {
   margin-top: 14px;
   border: 1px solid var(--shell-public, #8cafb7);

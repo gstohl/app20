@@ -453,8 +453,10 @@ export default function InvoiceCard({
               Pay privately with STRK
             </button>
           ) : null}
+          {/* Dismissing is not this card's main action: with nothing payable
+              here it used to stretch across the row and read like one. */}
           <button
-            className={styles.secondaryButton}
+            className={`${styles.secondaryButton} ${styles.ignoreAction}`}
             type="button"
             onClick={() => setIgnored(true)}
             disabled={busy}
