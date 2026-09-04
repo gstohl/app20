@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
+import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import Compose, { type SentEnvelope } from "@/components/mail/Compose";
 import ConversationList from "@/components/mail/ConversationList";
 import DraftList from "@/components/mail/DraftList";
@@ -298,6 +299,9 @@ export default function InboxPage() {
   const [storageNotice, setStorageNotice] = useState<{
     kind: "ok" | "error";
     message: string;
+    /* A gate that names a missing wallet has to offer the wallet, or the
+       notice is a dead end: the only connect control lives in the app header. */
+    action?: "connect-wallet";
   } | null>(null);
   const [assignments, setAssignments] = useState<
     Record<string, MailAssignment>
@@ -2930,7 +2934,8 @@ export default function InboxPage() {
       setStorageNotice({
         kind: "error",
         message:
-          "Connect a wallet before creating a draft so it is saved under the correct mailbox.",
+          "Mail is keyed to a wallet: connect one so the draft is saved under the correct mailbox.",
+        action: "connect-wallet",
       });
       setSidebarOpen(true);
       return;
@@ -2957,7 +2962,8 @@ export default function InboxPage() {
       setStorageNotice({
         kind: "error",
         message:
-          "Connect a wallet before creating a draft so it is saved under the correct mailbox.",
+          "Mail is keyed to a wallet: connect one so the draft is saved under the correct mailbox.",
+        action: "connect-wallet",
       });
       setSidebarOpen(true);
       return;
@@ -3020,6 +3026,8 @@ export default function InboxPage() {
     }
     setStorageNotice({ kind: "error", message: proofMessage });
   }
+
+  const walletGateShown = storageNotice?.action === "connect-wallet";
 
   function closeDetail() {
     if (composerOpen && activeDraft && isBlankDraft(activeDraft)) {
@@ -3367,7 +3375,7 @@ export default function InboxPage() {
 
           <div ref={readingScrollRef} className={styles.readingScroll}>
             {storageNotice ? (
-              <p
+              <div
                 className={`${styles.storageNotice} ${
                   storageNotice.kind === "error"
                     ? styles.storageNoticeError
@@ -3375,8 +3383,13 @@ export default function InboxPage() {
                 }`}
                 role={storageNotice.kind === "error" ? "alert" : "status"}
               >
-                {storageNotice.message}
-              </p>
+                <span>{storageNotice.message}</span>
+                {storageNotice.action === "connect-wallet" ? (
+                  <span className={styles.connectAction}>
+                    <SelectWallet />
+                  </span>
+                ) : null}
+              </div>
             ) : null}
             {!keypair && selectedMessage && !composerOpen ? (
               <Onboard
@@ -3468,17 +3481,34 @@ export default function InboxPage() {
                     Encrypted messages. Private value.
                   </h1>
                   <p className={styles.welcomeCopy}>
-                    {keypair
-                      ? "Check for mail or compose a letter."
-                      : "Composing sets up your mailbox key when needed."}
+                    {walletGateShown
+                      ? "Composing sets up your mailbox key when needed."
+                      : !address || !chainId
+                        ? "Mail is keyed to a wallet: connect one to read this mailbox or write a letter. Your mailbox key is set up here when it is first needed."
+                        : keypair
+                          ? "Check for mail or compose a letter."
+                          : "Composing sets up your mailbox key when needed."}
                   </p>
-                  <button
-                    className={styles.welcomeCompose}
-                    type="button"
-                    onClick={openComposer}
-                  >
-                    Compose encrypted mail
-                  </button>
+                  {/* The CTA has to be the step that is actually available:
+                      offering compose to a disconnected desk only produced a
+                      notice pointing at a control in the app header. The gate
+                      notice carries the same control, so only one of the two
+                      asks for the wallet at a time. */}
+                  {walletGateShown ? null : !address || !chainId ? (
+                    <div
+                      className={`${styles.welcomeConnect} ${styles.connectAction}`}
+                    >
+                      <SelectWallet />
+                    </div>
+                  ) : (
+                    <button
+                      className={styles.welcomeCompose}
+                      type="button"
+                      onClick={openComposer}
+                    >
+                      Compose encrypted mail
+                    </button>
+                  )}
                 </div>
               </section>
             )}

@@ -2246,6 +2246,49 @@
   color: var(--shell-text);
 }
 
+/* A notice that names a missing wallet carries the wallet control itself. */
+.storageNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.connectAction {
+  display: inline-flex;
+  flex: none;
+}
+
+/* SelectWallet ships the app's legacy rounded CTA; on the desk it has to be
+   the same square orange control as every other primary action here. */
+.connectAction button {
+  width: auto;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--shell-orange);
+  border-radius: 0;
+  color: var(--on-accent);
+  background: var(--shell-orange);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.connectAction button:hover {
+  color: var(--shell-bg);
+  background: var(--shell-text);
+  border-color: var(--shell-text);
+  filter: none;
+}
+
+.welcomeConnect {
+  margin-top: 12px;
+}
+
 .threadPanel,
 .composerSheet,
 .welcomeState {
