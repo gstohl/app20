@@ -671,10 +671,8 @@
 }
 
 .scanActions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: grid;
+  gap: 5px;
 }
 
 .scanActions .secondaryButton {
@@ -1346,6 +1344,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  padding-inline: 12px;
 }
 
 .composeButton,
@@ -1405,7 +1404,7 @@
 }
 
 .mailboxNav > .sidebarLabel {
-  margin: 0 8px 5px;
+  margin: 0 12px 5px;
 }
 
 .mailboxNav button {
@@ -1413,7 +1412,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 6px 10px;
+  padding: 6px 12px;
   border: 0;
   color: var(--shell-text);
   background: transparent;
@@ -1684,6 +1683,17 @@
   background: var(--shell-public-wash, #121a1c);
 }
 
+/* The section heading matches FOLDERS and SHOW instead of inventing a third
+   heading style two rows below them. */
+.sidebarScan .scanHeading strong {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .sidebarScan .scanProgress,
 .sidebarScan .envelopeProgress {
   border: 0;
@@ -1804,7 +1814,10 @@
   display: flex;
   min-height: var(--hit-min);
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
   padding: 0 12px;
+  list-style: none;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: var(--label-md);
@@ -1812,6 +1825,25 @@
   letter-spacing: var(--track-label);
   text-transform: uppercase;
   cursor: pointer;
+}
+
+.contactBackupPanel > summary::-webkit-details-marker,
+.forgetDevice > summary::-webkit-details-marker {
+  display: none;
+}
+
+.contactBackupPanel > summary::after,
+.forgetDevice > summary::after {
+  color: var(--shell-orange);
+  content: "+";
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.contactBackupPanel[open] > summary::after,
+.forgetDevice[open] > summary::after {
+  content: "\2212";
 }
 
 .contactBackupPanel[open] {
@@ -1898,7 +1930,6 @@
 
 .scanActions {
   display: grid;
-  grid-template-columns: 1fr auto;
   gap: 5px;
   margin-top: 10px;
 }
@@ -1906,8 +1937,9 @@
 .scanActions button,
 .scanButton,
 .scanOlderButton {
+  width: 100%;
   padding: 7px 8px;
-  border: 0;
+  border: 1px solid transparent;
   color: var(--shell-public, #8cafb7);
   background: var(--shell-bg);
   font: inherit;
@@ -1919,6 +1951,15 @@
 .scanActions button:first-child {
   color: var(--shell-bg);
   background: var(--shell-public, #8cafb7);
+}
+
+.scanActions button:last-child {
+  border-color: var(--shell-line);
+  background: transparent;
+}
+
+.scanActions button:hover:not(:disabled) {
+  border-color: var(--shell-public, #8cafb7);
 }
 
 .scanActions button:disabled {
@@ -2892,41 +2933,53 @@
 
 /* Real-mail folders and secondary type labels. */
 .typeFilterNav {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-  padding-top: 12px;
-  border-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .typeFilterNav > .sidebarLabel {
-  grid-column: 1 / -1;
-  margin: 0 4px 2px;
+  margin: 0 12px 5px;
 }
 
 .typeFilterNav button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
-  padding: 6px 7px;
+  padding: 6px 12px;
   border: 0;
-  color: var(--shell-muted);
-  background: var(--shell-panel);
+  color: var(--shell-text);
+  background: transparent;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
   cursor: pointer;
 }
 
-.typeFilterNav button[aria-pressed="true"] {
-  color: var(--on-accent);
-  background: var(--shell-orange);
+.typeFilterNav button:hover {
+  background: var(--shell-panel);
 }
 
-.typeFilterNav button strong {
+.typeFilterNav button[aria-pressed="true"] {
+  color: var(--shell-orange);
+  background: var(--shell-panel);
+  font-weight: 800;
+}
+
+.typeFilterNav button strong,
+.mailboxNav button strong {
+  display: grid;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 5px;
+  place-items: center;
+  border: 0;
+  background: var(--shell-bg);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .attachmentTray {
