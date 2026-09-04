@@ -345,7 +345,7 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
   await expect(
     page.getByRole("heading", { name: "Private RFQ", level: 1 }),
   ).toHaveCount(1);
-  for (const name of ["New", "Active", "Activity"]) {
+  for (const name of ["New", "Records"]) {
     await expect(
       page.getByRole("link", { name, exact: true }),
     ).toHaveAccessibleName(name);
