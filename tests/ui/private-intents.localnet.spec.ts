@@ -655,7 +655,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await ensureMailboxKey(page, "bob");
   await scanRecent(page);
   const paymentMemoRow = page.getByRole("button", {
-    name: /Settlement memo · 0\.1 USDC/,
+    name: /Memo\. 0\.1 USDC to settle/,
   });
   await expect(paymentMemoRow).toBeVisible({ timeout: 60_000 });
   await paymentMemoRow.click();
