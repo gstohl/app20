@@ -3380,9 +3380,6 @@ export default function InboxPage() {
             >
               GitHub ↗
             </a>
-            <span>
-              Ciphertext is public on-chain. Device encryption is optional.
-            </span>
           </footer>
         </aside>
 

@@ -346,9 +346,7 @@ function ConversationControls({
       {proof ? <p>{senderProofLabel(proof)}</p> : null}
       {fields.conversationId ? (
         <span>Conversation tag {fields.conversationId.slice(0, 18)}…</span>
-      ) : (
-        <span>No conversation tag — a reply starts one.</span>
-      )}
+      ) : null}
       {canContinue ? (
         <button
           type="button"
@@ -869,15 +867,16 @@ export default function Thread({
                   </aside>
                 ) : null}
                 {paymentLink ? null : <ChainRecordPanel message={message} />}
-                <span className={styles.localLabel}>
-                  {paymentLink
-                    ? "decoded from this tab's URL fragment"
-                    : message.threadProvenance === "device_sent_and_on_chain"
-                      ? "device-local Sent copy matched to decrypted on-chain evidence"
-                      : message.direction === "outgoing"
-                        ? "sealed on this device"
-                        : "decrypted on this device"}
-                </span>
+                {/* Only the two provenances a reader cannot infer from the
+                    pane's own head are worth a line under every record. */}
+                {paymentLink ||
+                message.threadProvenance === "device_sent_and_on_chain" ? (
+                  <span className={styles.localLabel}>
+                    {paymentLink
+                      ? "decoded from this tab's URL fragment"
+                      : "device-local Sent copy matched to decrypted on-chain evidence"}
+                  </span>
+                ) : null}
               </li>
             );
           })}

@@ -31,8 +31,12 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           className={`signal-dot ${connected ? "is-live" : ""}`}
           aria-hidden="true"
         />
-        {connected ? "WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED" : "APP20 RFQ WORKSPACE"}
-        <span>MAIL / PAY / FUNDING ARE SEPARATE · PUBLIC BOUNDARIES REMAIN CORRELATABLE</span>
+        {/* The bar carries live session state. The sentence that used to sit
+            beside it never changed, on any route, in any state — and each view
+            states its own boundary where that boundary applies. */}
+        {connected
+          ? "WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED"
+          : "APP20 RFQ WORKSPACE"}
       </div>
       <header className="app-header">
         <Link
