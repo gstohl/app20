@@ -560,7 +560,19 @@
 }
 
 .publicMarketWorkspace {
+  min-height: 0;
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* With no ticket to place beside the board, the reason the ticket is missing
+   leads the view instead of trailing it at a third of the width. */
+.publicMarketWorkspace .tradeTicket {
+  width: 100%;
+  order: 0;
+}
+
+.publicMarketWorkspace .tradeTicket > section {
+  width: 100%;
 }
 
 .marketWorkspace {
@@ -643,9 +655,9 @@
 .depthWithheld span,
 .marketSignals span {
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
 }
 
@@ -672,8 +684,8 @@
 
 .marketStats small {
   color: var(--shell-muted);
-  font-size: 8px;
-  line-height: 1.25;
+  font-size: 9px;
+  line-height: 1.3;
 }
 
 .infoTip {
@@ -698,7 +710,7 @@
   place-items: center;
   border: 1px solid var(--shell-line);
   padding: 0;
-  color: var(--shell-orange);
+  color: var(--shell-muted);
   background: var(--shell-bg);
   cursor: help;
   font-family: var(--font-mono-ui), monospace;
@@ -710,6 +722,7 @@
 .infoTipButton:hover,
 .infoTipButton:focus-visible {
   border-color: var(--shell-orange);
+  color: var(--shell-orange);
 }
 
 .infoTipButton:focus-visible {
@@ -821,9 +834,35 @@
   background: transparent;
   cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
+}
+
+/* The opt-in stands beside the range group instead of inside it. */
+.chartControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.publicContextToggle {
+  min-height: 28px;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.publicContextToggle:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
 }
 
 .priceRangeTabs button + button {
@@ -866,7 +905,7 @@
 }
 
 .chartFrame {
-  min-height: 320px;
+  min-height: 200px;
   padding: 8px 10px 0;
   background: var(--shell-bg);
 }
@@ -967,7 +1006,7 @@
 
 .chartStatus {
   display: grid;
-  min-height: 300px;
+  min-height: 180px;
   place-content: center;
   justify-items: center;
   gap: 8px;
@@ -988,17 +1027,22 @@
 }
 
 .chartStatus > button {
-  min-height: 28px;
+  min-height: 34px;
   border: 1px solid var(--shell-orange);
-  padding: 0 12px;
+  padding: 0 14px;
   color: var(--shell-orange);
   background: transparent;
   cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.chartStatus > button:hover {
+  color: var(--on-accent);
+  background: var(--shell-orange);
 }
 
 .chartFooter {
@@ -2493,20 +2537,60 @@
 
 .recoveryCard h3 {
   margin: 0;
-  font-family: var(--font-reading), Georgia, serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   font-size: 18px;
-  font-weight: 400;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .recoveryCard p {
+  max-width: var(--measure-reading);
   margin: 0;
   font-size: 14px;
+  line-height: 1.55;
 }
 
 .recoveryCard button {
   justify-self: start;
   min-height: 44px;
   padding: 0 18px;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.recoveryCard button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+}
+
+.recoveryConnect {
+  justify-self: start;
+}
+
+.recoveryConnect > button {
+  width: auto;
+  margin: 0;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--shell-orange);
+  border-radius: 0;
+  color: var(--on-accent);
+  background: var(--shell-orange);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.recoveryConnect > button:hover {
+  color: var(--shell-orange);
+  background: transparent;
 }
 
 .activeCardAmount,
@@ -2894,14 +2978,55 @@
   opacity: 0.55;
 }
 
+.unavailableNotice {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--shell-line);
+  padding: 14px;
+  background: var(--shell-panel);
+}
+
+.unavailableNotice h3 {
+  margin: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.unavailableNotice p {
+  max-width: var(--measure-reading);
+  margin: 0;
+  color: var(--shell-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .separateOperations {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin: 0 16px;
   border: 1px solid var(--shell-line);
   padding: 12px;
   background: var(--shell-panel);
+}
+
+/* This row is navigation, and read as a strip of status chips. */
+.separateOperations > span {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.separateOperations a::after {
+  margin-left: 7px;
+  color: var(--shell-orange);
+  content: "→";
 }
 
 .separateOperations a {

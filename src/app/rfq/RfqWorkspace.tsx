@@ -1236,11 +1236,16 @@ export default function RfqWorkspace() {
       {view === "new" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="New RFQ request">
           <h2 className={styles.viewHeading}>New request</h2>
-          <RfqRecoveryCard
-            loadState={loadState}
-            detail={loadDetail}
-            onRetry={retryWorkspaceLoad}
-          />
+          {/* On a rail that cannot execute an RFQ at all, asking for the wallet
+              bound to saved records promises something connecting cannot
+              deliver. The environment's own notice below is the answer. */}
+          {executable ? (
+            <RfqRecoveryCard
+              loadState={loadState}
+              detail={loadDetail}
+              onRetry={retryWorkspaceLoad}
+            />
+          ) : null}
           <section
             className={`${styles.privateWorkspace} ${
               executable ? "" : styles.publicMarketWorkspace
@@ -1265,7 +1270,10 @@ export default function RfqWorkspace() {
                   />
                 </Suspense>
               ) : (
-                <section aria-label="Private RFQ unavailable">
+                <section
+                  className={styles.unavailableNotice}
+                  aria-label="Private RFQ unavailable"
+                >
                   <h3>Private RFQ unavailable</h3>
                   <p>
                     {providerIndex === 2
@@ -1286,6 +1294,7 @@ export default function RfqWorkspace() {
             className={styles.separateOperations}
             aria-label="Separate operations"
           >
+            <span>Elsewhere</span>
             <Link to="/funding">Shield / unshield funding</Link>
             <Link to="/send">Public send · unavailable</Link>
             <Link to="/mail/inbox">Mail · coordination only</Link>

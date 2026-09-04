@@ -1,3 +1,5 @@
+import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
+import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import styles from "./rfq.module.css";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 
@@ -54,8 +56,12 @@ export default function RfqRecoveryCard({
   busy?: boolean;
   onRetry?: () => void;
 }) {
+  const address = useStoreWallet((state) => state.address);
   const recovery = RECOVERY[loadState];
   if (!recovery) return null;
+  /* Offline with no wallet at all, the honest control is the wallet itself:
+     "Review wallet connection" only re-read storage that cannot answer yet. */
+  const askForWallet = loadState === "stale/offline" && !address;
   return (
     <section
       className={styles.recoveryCard}
@@ -71,7 +77,11 @@ export default function RfqRecoveryCard({
           <small>Reported: {detail}</small>
         </p>
       ) : null}
-      {recovery.retryLabel && onRetry ? (
+      {askForWallet ? (
+        <div className={styles.recoveryConnect}>
+          <SelectWallet />
+        </div>
+      ) : recovery.retryLabel && onRetry ? (
         <button type="button" disabled={busy} onClick={onRetry}>
           {busy ? "Checking…" : recovery.retryLabel}
         </button>

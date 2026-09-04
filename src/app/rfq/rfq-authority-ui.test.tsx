@@ -303,7 +303,10 @@ describe("storage recovery", () => {
     const markup = renderToStaticMarkup(
       <RfqRecoveryCard loadState="stale/offline" onRetry={() => undefined} />,
     );
-    expect(markup).toContain("Review wallet connection");
+    // With no wallet at all, the card offers the wallet rather than a retry
+    // that re-reads storage which cannot answer yet.
+    expect(markup).toContain("Connect a wallet");
+    expect(markup).toContain("Saved RFQs are tied to one account");
   });
 
   it("stays silent when records loaded normally", () => {

@@ -289,13 +289,14 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
           <strong>
             {chart
               ? formatPrice(chart.summary.latest)
-              : priceState.kind === "error"
-                ? "—"
-                : priceState.kind === "idle"
-                  ? "OPT IN"
-                  : "LOADING"}
+              : priceState.kind === "loading"
+                ? "LOADING"
+                : "—"}
           </strong>
-          <small>{quoteUnit} · CoinGecko</small>
+          <small>
+            {quoteUnit} · CoinGecko
+            {chart || priceState.kind !== "idle" ? "" : " · not loaded"}
+          </small>
         </div>
         <div>
           <span>
@@ -348,29 +349,31 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
               <span>PUBLIC OHLC · COINGECKO</span>
               <h3 id="price-chart-title">{pairLabel} candlesticks</h3>
             </div>
-            <div
-              className={styles.priceRangeTabs}
-              aria-label="Price chart range"
-            >
-              <button
-                type="button"
-                aria-pressed={publicContextEnabled}
-                onClick={() => setPublicContextEnabled((value) => !value)}
-              >
-                {publicContextEnabled
-                  ? "Disable third-party data"
-                  : "Load CoinGecko context"}
-              </button>
-              {PUBLIC_PRICE_RANGES.map((item) => (
+            <div className={styles.chartControls}>
+              {publicContextEnabled ? (
                 <button
                   type="button"
-                  key={item.value}
-                  aria-pressed={range === item.value}
-                  onClick={() => setRange(item.value)}
+                  className={styles.publicContextToggle}
+                  onClick={() => setPublicContextEnabled(false)}
                 >
-                  {item.label}
+                  Disable third-party data
                 </button>
-              ))}
+              ) : null}
+              <div
+                className={styles.priceRangeTabs}
+                aria-label="Price chart range"
+              >
+                {PUBLIC_PRICE_RANGES.map((item) => (
+                  <button
+                    type="button"
+                    key={item.value}
+                    aria-pressed={range === item.value}
+                    onClick={() => setRange(item.value)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </header>
 
@@ -529,10 +532,19 @@ export default function DeskMarketBoard({ pairId }: DeskMarketBoardProps) {
                       : "Loading public candlesticks…"}
                 </strong>
                 {priceState.kind === "idle" ? (
-                  <RfqInfoTip label="Privacy details for loading CoinGecko">
-                    Opting in contacts CoinGecko directly and discloses your IP
-                    address, user agent, request timing, and selected range.
-                  </RfqInfoTip>
+                  <>
+                    <p>
+                      Opting in contacts CoinGecko directly and discloses your
+                      IP address, user agent, request timing, and selected
+                      range.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setPublicContextEnabled(true)}
+                    >
+                      Load CoinGecko context
+                    </button>
+                  </>
                 ) : null}
                 {priceState.kind === "error" ? (
                   <>
