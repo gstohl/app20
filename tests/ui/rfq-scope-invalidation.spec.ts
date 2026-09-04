@@ -119,8 +119,9 @@ test("an Alice quote request is discarded after switching to Bob", async ({
     page.getByRole("alert").filter({ hasText: DISCARD_MESSAGE }),
   ).toBeVisible();
   await expect(page.getByLabel("Selected private maker quote")).toHaveCount(0);
-  await page.getByRole("link", { name: "Activity", exact: true }).click();
-  await expect(page.getByLabel("RFQ activity").locator("article")).toHaveCount(
+  await page.getByRole("link", { name: "Records", exact: true }).click();
+  await page.getByRole("button", { name: /^All/ }).click();
+  await expect(page.getByLabel("RFQ records").locator("article")).toHaveCount(
     0,
   );
   await expectNoPersistedCompletion(page, config);

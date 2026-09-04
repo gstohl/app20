@@ -122,7 +122,7 @@ async function expectBefore(earlier: Locator, later: Locator) {
       (element, candidate) =>
         Boolean(
           element.compareDocumentPosition(candidate as Node) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
+          Node.DOCUMENT_POSITION_FOLLOWING,
         ),
       await later.elementHandle(),
     ),
@@ -288,30 +288,25 @@ test("RFQ hash navigation is keyboard reachable and lands focus in labelled regi
 }) => {
   await page.goto("/rfq#new");
   const newLink = page.getByRole("link", { name: "New", exact: true });
-  const activeLink = page.getByRole("link", { name: "Active", exact: true });
-  const activityLink = page.getByRole("link", {
-    name: "Activity",
-    exact: true,
-  });
+  const recordsLink = page.getByRole("link", { name: "Records", exact: true });
 
   await tabTo(page, newLink);
   await expectVisibleFocus(newLink);
   await page.keyboard.press("Tab");
-  await expectVisibleFocus(activeLink);
-  await page.keyboard.press("Tab");
-  await expectVisibleFocus(activityLink);
+  await expectVisibleFocus(recordsLink);
 
-  await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/rfq#active$/);
-  await expectVisibleFocus(page.getByRole("region", { name: "Active RFQs" }));
+  await expect(page).toHaveURL(/\/rfq#records$/);
+  await expectVisibleFocus(page.getByRole("region", { name: "RFQ records" }));
 
-  await page.keyboard.press("Shift+Tab");
-  await page.keyboard.press("Shift+Tab");
-  await expectVisibleFocus(activityLink);
+  // The scope control inside the view is keyboard reachable and exclusive.
+  const inFlight = page.getByRole("button", { name: /^In flight/ });
+  const all = page.getByRole("button", { name: /^All/ });
+  await expect(inFlight).toHaveAttribute("aria-pressed", "true");
+  await all.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expectVisibleFocus(page.getByRole("region", { name: "RFQ activity" }));
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+  await expect(inFlight).toHaveAttribute("aria-pressed", "false");
 });
 
 test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierarchy remain usable", async ({
@@ -421,11 +416,12 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
   const comparison = ticket.getByRole("region", {
     name: /Compare all makers/,
   });
-  const publicMarket = page.getByRole("region", {
-    name: "Public market context",
+  // The public board collapses under the ticket; its summary is the visible
+  // landmark. Public send is no longer linked from a rail where it cannot run.
+  const publicMarket = page.locator("summary", {
+    hasText: "Public market context",
   });
   const funding = page.getByRole("link", { name: "Shield / unshield funding" });
-  const send = page.getByRole("link", { name: "Public send" });
   const crossChain = page.getByRole("link", { name: "Cross-chain dry review" });
   const recovery = page.getByRole("link", { name: "Privy recovery" });
 
@@ -433,13 +429,7 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
     await page.setViewportSize({ width, height: 900 });
     await expectNoHorizontalOverflow(page);
     for (const primary of [environment, ticket, comparison, review]) {
-      for (const secondary of [
-        publicMarket,
-        funding,
-        send,
-        crossChain,
-        recovery,
-      ]) {
+      for (const secondary of [publicMarket, funding, crossChain, recovery]) {
         await expectBefore(primary, secondary);
       }
     }

@@ -17,38 +17,24 @@ test("M11 keeps /rfq canonical, preserves legacy hashes, and restores keyboard-s
     page.getByRole("status", { name: "RFQ environment" }),
   ).toContainText("No automatic public fallback");
 
-  const activeLink = page.getByRole("link", { name: "Active", exact: true });
-  await activeLink.focus();
+  const recordsLink = page.getByRole("link", { name: "Records", exact: true });
+  await recordsLink.focus();
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/rfq#active$/);
-  await expect(page.getByRole("region", { name: "Active RFQs" })).toBeFocused();
+  await expect(page).toHaveURL(/\/rfq#records$/);
+  await expect(page.getByRole("region", { name: "RFQ records" })).toBeFocused();
 
   await page.reload();
-  await expect(page).toHaveURL(/\/rfq#active$/);
-  await expect(page.getByRole("region", { name: "Active RFQs" })).toBeVisible();
+  await expect(page).toHaveURL(/\/rfq#records$/);
+  await expect(page.getByRole("region", { name: "RFQ records" })).toBeVisible();
 
-  const activityLink = page.getByRole("link", {
-    name: "Activity",
-    exact: true,
-  });
-  await activityLink.focus();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expect(
-    page.getByRole("region", { name: "RFQ activity" }),
-  ).toBeFocused();
-
-  await page.reload();
-  await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expect(
-    page.getByRole("region", { name: "RFQ activity" }),
-  ).toBeVisible();
-
-  await page.goto("/vault#activity");
-  await expect(page).toHaveURL(/\/rfq#activity$/);
-  await expect(
-    page.getByRole("region", { name: "RFQ activity" }),
-  ).toBeVisible();
+  // The two tabs this view replaced remain valid bookmarks.
+  for (const legacy of ["/rfq#active", "/rfq#activity", "/vault#activity"]) {
+    await page.goto(legacy);
+    await expect(page).toHaveURL(/\/rfq#(active|activity)$/);
+    await expect(
+      page.getByRole("region", { name: "RFQ records" }),
+    ).toBeVisible();
+  }
 });
 
 test("M11 prioritizes the local RFQ ticket on mobile and keeps proposal migration non-executable", async ({
@@ -59,7 +45,7 @@ test("M11 prioritizes the local RFQ ticket on mobile and keeps proposal migratio
 
   const environment = page.getByRole("status", { name: "RFQ environment" });
   const ticket = page.locator('aside[aria-label="Private RFQ ticket"]');
-  const market = page.getByRole("region", { name: "Public market context" });
+  const market = page.locator("summary", { hasText: "Public market context" });
   await expect(environment).toContainText("LOCALNET DEMO");
   await expect(ticket).toBeVisible();
   await expect(market).toBeVisible();

@@ -49,6 +49,8 @@ test("keeps RFQ canonical, public context opt-in, swap non-executable, and marke
     await expect(
         page.getByText("LOCALNET DEMO", { exact: true }),
     ).toBeVisible();
+    // Public context is collapsed under the ticket until someone asks for it.
+    await page.getByText("Public market context", { exact: true }).click();
     await expect(
         page.getByRole("heading", { name: "Not an RFQ quote" }),
     ).toBeVisible();

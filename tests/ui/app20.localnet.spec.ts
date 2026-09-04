@@ -131,6 +131,18 @@ async function restoreRegisteredKey(page: Page, backup: string) {
   }
 }
 
+/** The recovery panel is a closed disclosure in the mailbox rail. */
+async function openMailboxRecovery(page: Page) {
+  await page
+    .locator("details", {
+      has: page.getByText("Encrypted mailbox recovery", { exact: true }),
+    })
+    .first()
+    .evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+    });
+}
+
 async function loadExistingKey(page: Page) {
   const button = page.getByRole("button", {
     name: "Load device key & register",
@@ -410,6 +422,7 @@ test("all APP20 localnet journeys", async ({
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await page.getByRole("link", { name: "Mailbox", exact: true }).click();
     await loadExistingKey(page);
+    await openMailboxRecovery(page);
 
     const backupContacts = page.getByRole("button", {
       name: "Back up contacts to Mailbox",

@@ -1591,10 +1591,12 @@
   color: var(--shell-text);
 }
 
+/* The ticket is the view now, not a side rail: it sits under the view heading
+   at a form's width instead of floating centred in a 1400px pane. */
 .privateIntentDesk {
   width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
+  max-width: 560px;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--shell-line);
   background: var(--shell-bg);

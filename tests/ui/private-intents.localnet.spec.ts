@@ -81,6 +81,7 @@ async function ensureMailboxKey(page: Page, identity: LocalnetIdentityId) {
       .click();
   }
   await expect(scanButton).toBeEnabled({ timeout: 60_000 });
+  await openMailboxRecovery(page);
   await expect(
     page.getByRole("button", { name: "Back up RFQ history" }),
   ).toBeEnabled({ timeout: 60_000 });
@@ -95,6 +96,18 @@ async function ensureMailboxKey(page: Page, identity: LocalnetIdentityId) {
     const close = page.getByRole("button", { name: "Close", exact: true });
     if ((await close.count()) > 0) await close.click();
   }
+}
+
+/** The recovery panel is a closed disclosure in the mailbox rail. */
+async function openMailboxRecovery(page: Page) {
+  await page
+    .locator("details", {
+      has: page.getByText("Encrypted mailbox recovery", { exact: true }),
+    })
+    .first()
+    .evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+    });
 }
 
 async function scanRecent(page: Page) {
@@ -454,6 +467,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
       ipfsWrites.push(outgoing.url());
     }
   });
+  await openMailboxRecovery(page);
   const backUpRfqHistory = page.getByRole("button", {
     name: "Back up RFQ history",
   });
@@ -976,7 +990,7 @@ test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, an
     /stale lifecycle snapshot|exact predecessor/i,
   );
 
-  await secondPage.getByRole("link", { name: "Active", exact: true }).click();
+  await secondPage.getByRole("link", { name: "Records", exact: true }).click();
   await expect(
     secondPage.getByText(
       /Restoring and reconciling never automatically resubmits fund, fill, claim, or refund/,
