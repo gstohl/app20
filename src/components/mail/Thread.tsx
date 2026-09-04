@@ -375,7 +375,7 @@ function ConversationControls({
           letter in the thread. */}
       {message.direction !== "outgoing" && onAssign ? (
         <details className={styles.assignDisclosure}>
-          <summary>Assign a sender on this device</summary>
+          <summary>Name this sender on this device</summary>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -384,13 +384,14 @@ function ConversationControls({
           >
             <AddressBookField
               selfAddress={selfAddress ?? ""}
-              inputAriaLabel="Assign on this device"
-              label="Assign on this device"
+              inputAriaLabel="Name this sender"
+              label="Name this sender"
               value={assignInput}
               onChange={setAssignInput}
               placeholder="0x… or saved label"
+              hint="Applies to every record in this conversation on this device. A saved counterparty shows its label; the name is never authentication."
             />
-            <button type="submit">Save local assignment</button>
+            <button type="submit">Save name</button>
           </form>
         </details>
       ) : null}
@@ -689,8 +690,8 @@ export default function Thread({
           status={deal?.chainStatus}
           termsVerified={Boolean(
             deal?.chainDeal &&
-              deal.chainDeal.status !== "empty" &&
-              contractDealMatchesFund(deal.chainDeal, fund),
+            deal.chainDeal.status !== "empty" &&
+            contractDealMatchesFund(deal.chainDeal, fund),
           )}
           ownDeal={ownDeal}
           busy={action?.pending}

@@ -81,10 +81,19 @@ export function conversationCorrespondent(
       detail: "Device-local Sent copy · recipient was not stored",
     };
   }
-  /* One name for one fact. "Sealed sender" and "Sealed counterparty" differed
-     only by envelope type, which says nothing about who sent the record: no
-     incoming record carries a public sender, whatever it contains. The name
-     already says that, so it carries no caption restating it. */
+  /* A sealed record whose sender you named once on this device is shown by
+     that name everywhere, with the caveat attached: naming is a local label,
+     never authentication. Without a name it stays sealed, and one name covers
+     one fact — "Sealed sender" and "Sealed counterparty" differed only by
+     envelope type, which says nothing about who sent a record. */
+  if (message.assignedAddress) {
+    const alias = findAliasByAddress(aliases, message.assignedAddress)?.label;
+    return {
+      primary: alias ?? message.assignedAddress,
+      detail: "Named on this device · not authenticated",
+      fullAddress: message.assignedAddress,
+    };
+  }
   return { primary: "Sealed sender" };
 }
 

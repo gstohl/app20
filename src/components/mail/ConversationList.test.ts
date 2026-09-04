@@ -201,3 +201,43 @@ describe("device-local search", () => {
     );
   });
 });
+
+describe("naming a sealed sender", () => {
+  it("shows the name everywhere once a record carries an assignment", () => {
+    const message = compositeMessage("incoming");
+    message.envelope = decodeEnvelope(encodeEnvelope("text", { body: "hi" }));
+    message.assignedAddress = "0xb0b";
+    const named = conversationCorrespondent(message, [], "0xa11ce");
+    expect(named.primary).toBe("0xb0b");
+    expect(named.detail).toMatch(/not authenticated/i);
+    expect(named.fullAddress).toBe("0xb0b");
+
+    const labelled = conversationCorrespondent(
+      message,
+      [{ address: "0xb0b", label: "Bob", addedAt: 1 }],
+      "0xa11ce",
+    );
+    expect(labelled.primary).toBe("Bob");
+  });
+
+  it("stays sealed when nothing has been named", () => {
+    const message = compositeMessage("incoming");
+    message.envelope = decodeEnvelope(encodeEnvelope("text", { body: "hi" }));
+    expect(conversationCorrespondent(message, [], "0xa11ce").primary).toBe(
+      "Sealed sender",
+    );
+  });
+
+  it("makes a named counterparty searchable by name and address", () => {
+    const message = compositeMessage("incoming");
+    message.envelope = decodeEnvelope(encodeEnvelope("text", { body: "hi" }));
+    message.assignedAddress = "0xb0b";
+    const named = conversationCorrespondent(
+      message,
+      [{ address: "0xb0b", label: "Bob", addedAt: 1 }],
+      "0xa11ce",
+    );
+    expect(messageMatchesSearch(message, named, "bob")).toBe(true);
+    expect(messageMatchesSearch(message, named, "0xb0b")).toBe(true);
+  });
+});

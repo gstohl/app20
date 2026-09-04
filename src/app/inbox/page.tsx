@@ -758,11 +758,35 @@ export default function InboxPage() {
       mailboxFilter === "all"
         ? drafts
         : drafts.filter((draft) => draftMatchesFilter(draft, mailboxFilter));
-    const allAnnotatedMessages = visibleMessages.map((message) => ({
-      ...message,
-      assignedAddress: assignments[message.id]?.address,
-      localConversationId: assignments[message.id]?.conversationId,
-    }));
+    /* Naming a counterparty is about a conversation, not one envelope: an
+       assignment made on any record carries to every record that shares its
+       conversation, including ones decrypted later. */
+    const assignedByConversation = new Map<string, string>();
+    for (const message of visibleMessages) {
+      const assigned = assignments[message.id]?.address;
+      if (!assigned) continue;
+      const conversation = conversationKeyForMessage({
+        ...message,
+        localConversationId: assignments[message.id]?.conversationId,
+      });
+      if (!assignedByConversation.has(conversation)) {
+        assignedByConversation.set(conversation, assigned);
+      }
+    }
+    const allAnnotatedMessages = visibleMessages.map((message) => {
+      const localConversationId = assignments[message.id]?.conversationId;
+      const conversation = conversationKeyForMessage({
+        ...message,
+        localConversationId,
+      });
+      return {
+        ...message,
+        assignedAddress:
+          assignments[message.id]?.address ??
+          assignedByConversation.get(conversation),
+        localConversationId,
+      };
+    });
     const visibleIds = new Set(filteredMessages.map((message) => message.id));
     const annotatedMessages = allAnnotatedMessages.filter((message) =>
       visibleIds.has(message.id),
@@ -3025,7 +3049,7 @@ export default function InboxPage() {
       setStorageNotice({
         kind: "ok",
         message:
-          "Assigned on this device only. That is a local label, not a proof.",
+          "Named on this device. Every record in this conversation now shows that name, which is a local label and not a proof.",
       });
     } catch (error: unknown) {
       setStorageNotice({
