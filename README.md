@@ -15,11 +15,15 @@ viewing key to APP20; the optional Privy browser-owned SDK derives/holds its
 viewing key on the user's device. Mailbox keys also stay on-device. The STRK20
 pool is reached through the existing Starknet privacy paths.
 Dry cross-chain review and payment links remain secondary tools,
-not separate claims in the judged trading flow. APP20 uses the existing STRK20
+not part of the RFQ settlement path. APP20 uses the existing STRK20
 privacy pool; deploying or letting users create a new dark pool, AMM, order
 book, or liquidity pool is an explicit non-goal.
 
 Repository: [github.com/gstohl/app20](https://github.com/gstohl/app20)
+
+Start with [development setup](#develop), the [localnet demo](#localnet), or
+[checks](#checks). Read [privacy](#privacy) and [contract rollout](#contract-rollout)
+before interpreting the demo as production evidence.
 
 `wrangler.jsonc` names `app20.gstohl.com` as the intended public host, but this
 repository contains no successful deployment evidence. Do not infer that the
@@ -27,15 +31,15 @@ origin is live. This is not a Mainnet value-moving release.
 
 ## Product
 
-| Rank | Feature             | Route                                                                               | Status                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---- | ------------------- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Private RFQ         | `/rfq`                                                                              | The localnet v3 desk solicits two fixture makers by fixed size bucket. Each maker confirms an on-chain collateral lock and schedule before signing; the browser verifies locks, selects one to four atomic Take fills, applies the local floor, delivers the fair-loss transcript, verifies same-devnet chain evidence, and renders maturity/mids. Legacy lifecycle recovery remains additive. No production maker network is deployed |
-| 2    | Mailbox             | `/mail/inbox`                                                                       | Localnet on-chain ciphertext for letters, OTC/payment records, pay-any-token invoice handoff/completion primitives, and authenticated self-addressed contact/RFQ backups. Oversized backups use client-encrypted CIDv1 IPFS blobs. Mail is evidence/resume transport, never settlement authority                                                                                                                                       |
-| 3    | Counterparties      | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Mail deep links. Optional recovery needs the same wallet plus the mailbox recovery phrase; legacy contact snapshots remain readable                                                                                                                                                                                                                                                     |
-| 4    | Separate operations | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay`               | Funding readiness, an explicitly unavailable public-send page, dry cross-chain review, Privy recovery, and unsigned payment links. Each is its own route behind a shared `Not RFQ settlement authority` boundary. No public send, live 1Click submission, or TEE execution is implemented                                                                                                                                              |
-| —    | Read-only surfaces  | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Browser-safe operations status, proposal-only market planning, and a non-executable pair handoff. None can deploy, fund, or settle                                                                                                                                                                                                                                                                                                     |
+| Surface         | Route                                                                               | Current scope                                                                                                            |
+| --------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Private RFQ     | `/rfq`                                                                              | Two localnet fixture makers, collateralized quotes, browser selection, and atomic Take. No production maker network.     |
+| Mailbox         | `/mail/inbox`                                                                       | Encrypted correspondence, payment handoffs, and self-backups. Evidence and recovery transport, not settlement authority. |
+| Counterparties  | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Mail handoffs and optional encrypted backup.                              |
+| Separate tools  | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay`               | Funding readiness, unavailable public send, dry cross-chain review, Privy recovery, and unsigned payment links.          |
+| Read-only views | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Operations status, proposal-only market planning, and non-executable pair handoffs.                                      |
 
-`/pay` is a Mail helper, not a fifth product. It only creates an unsigned
+`/pay` is a Mail helper, not a separate settlement product. It only creates an unsigned
 payment-request link. Nothing is sent until the payer confirms in Mail.
 
 ### RFQ, Mailbox, and Counterparties
@@ -125,25 +129,31 @@ flowchart LR
 The pool can hide private-transfer ownership and counterparties. It does not
 hide v3 escrow facts: `LockCreated` publishes the schedule and collateral
 maximum, `LockTaken` publishes each exact fill, and `DealTaken` publishes exact
-aggregate A/B totals and fill count. The retained wire field `takerCommitment` is the ephemeral taker Stark public
-key. Take calldata exposes its signature and ordered fills, while the private
-signing key remains local and is deleted after a terminal Take. The localnet
-protected ComputeAndInvoke path derives a public helper/user identity
-commitment scoped to the RFQ without exposing the pool-private identity key. Take v4 signs the
-native chain ID, escrow, that commitment, RFQ/deal, ordered tokens, and ordered
-fills digest, binding execution to the pool identity that owns the output note.
-The commitment differs across RFQs; activity within one RFQ remains linkable
-through its signature, fills, and events. This
-path is a pinned local client shim, not production-wallet compatibility or
-public-network readiness.
+aggregate A/B totals and fill count. The retained wire field `takerCommitment`
+is the ephemeral taker Stark public key. Take calldata exposes its signature and
+ordered fills; the private signing key stays local and is deleted after a
+terminal Take.
+
+The protected ComputeAndInvoke path derives an RFQ-scoped identity commitment
+without exposing the pool-private identity key. Take v4 signs the native chain
+ID, escrow, commitment, RFQ/deal, ordered tokens, and ordered fills digest.
+A different private identity cannot reuse a captured signature. Commitments
+differ across RFQs, but signatures, fills, and events remain linkable within
+one RFQ. This is a pinned local client shim, not production-wallet compatibility
+or public-network readiness.
 
 Fund, Fill, Lock, and Take input accounting is measured inside the same outer
 account transaction. A public `prepare_funding(token)` call runs before the
 pool transfer, snapshots the actual transaction hash and escrow balance, and
 is consumed exactly once by an exact-delta check. Old donations cannot
 subsidize an input and excess input fails. The local wallet and maker use the
-shared funding-preflight helper and allow at most one funded escrow operation
-per token in a batch.
+shared funding-preflight helper and allow at most one funded operation per
+helper/token pair in a batch.
+
+Mail uses the same transaction-local preparation for its fixed seven-base-unit
+recovery deposit. Without a current snapshot, Mail is message-only and cannot
+recover pre-existing donations. Nonzero Mail action IDs use proof-bound,
+identity-scoped replay protection; zero IDs intentionally remain repeatable.
 
 ### Invited-maker RFQ v3
 
@@ -222,6 +232,11 @@ stateDiagram-v2
     SettlementUnknown --> Quarantined: contradictory/malformed evidence
     Quarantined --> ManualReview
 ```
+
+After expiry, each lock's two ticket units are finalized independently. A
+zero-payout side still burns its unit without creating an OPEN note. Once both
+sides are finalized, Cairo records `Closed`; expired or closed locks cannot
+supply executable quotes.
 
 Each maker stores lock and legacy reservation records in one PID-locked,
 hash-chain WAL. Unknown collateral is never counted as spare inventory.
@@ -366,16 +381,21 @@ amounts, assets, destinations, and timing remain correlatable.
 
 ## Develop
 
-Requires Node.js 24+. From the repository root:
+Requires Node.js 24+ and npm; CI pins Node.js 24.12.0. From the repository root:
 
 ```bash
-npm ci --ignore-scripts
+npm ci
 npm run build:packages
-cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`.
+Open the URL printed by Vite (normally `http://localhost:5173`). This starts
+the frontend only, not a privacy pool or localnet execution.
+
+Optional Privy/IPFS configuration is documented in [`.env.example`](.env.example).
+If needed, copy it to `.env.local` without overwriting an existing configuration,
+then replace the placeholder values. The localnet launcher generates its own
+`.env.localnet.local`; do not copy localnet values into a production build.
 
 Every `VITE_*` value is public. Do not put RPC credentials, Privy App Secret,
 prover or discovery origins, OHTTP session secrets, or partner keys in browser
@@ -387,19 +407,29 @@ OHTTP names.
 
 ### Localnet
 
+After installing the root dependencies above, run:
+
 ```bash
 npm run pool:setup
 npm run dev:localnet
-npm run localnet:stop
 ```
 
-This deploys the real Cairo pool, six-decimal local USDC, `App20Escrow` with
-both ticket class hashes, two maker processes, and a loopback-only in-memory
+Setup requires Git, curl, and tar. It installs the pinned pool source,
+SDK/client dependencies, Scarb toolchains, and devnet under ignored `vendor/`
+and `pool-harness/node_modules/` directories. It does not install root
+dependencies or Starknet Foundry's `snforge`.
+
+Keep the launcher running and open its printed URL. To stop it later, run
+`npm run localnet:stop` in another terminal.
+
+The launcher deploys the real Cairo pool, six-decimal local USDC, `App20Escrow`
+with both ticket class hashes, two maker processes, and a loopback-only in-memory
 IPFS emulator. RFQ v3 services support both USDC↔STRK directions: fixed ladder
 buckets, confirmed collateral schedules, signed quotes/mids, fair-loss
 transcripts, one-to-four-fill atomic Take, and automatic maker proceeds and
-collateral pulls after expiry. Prices, accounts, keys, and proof bytes are
-localnet fixtures.
+collateral pulls after expiry. Prices, accounts, and keys are localnet fixtures.
+The pool uses simulated proofs; these tests do not establish production proof
+verification.
 
 The mounted desk exercises the localnet v3 request, maturity, single/split
 selection, transcript, atomic Take, chain verification, invoice handoff, and
@@ -438,16 +468,43 @@ Adversarial review and current release verdict:
 
 ## Checks
 
+After `npm ci`, run the application and package checks:
+
 ```bash
 npm run build:packages
-npm run typecheck
-npm run typecheck:packages
 npm run test:all
+npm run build
+```
+
+`build` includes application and workspace typechecks. `test:all` does **not**
+run Cairo tests, real-pool integration, or browser journeys.
+
+For contracts, install **Scarb 2.18.0** and **Starknet Foundry 0.63.0**
+(`snforge`) on your PATH, matching [CI](.github/workflows/ci.yml):
+
+```bash
 (cd cairo && scarb fmt --check && scarb build && snforge test)
 npm run pool:setup
 npm run test:e2e:pool
-npm run build
 ```
+
+Pool setup keeps the upstream pool's Scarb 2.17.0 separate from APP20's Scarb
+2.18.0. Do not use the pool compiler for APP20 unit tests. CI runs Cairo and
+real-pool checks as separate jobs.
+
+Browser checks require Playwright Chromium:
+
+```bash
+npx playwright install chromium
+npm run check:csp
+```
+
+Run `check:csp` after a successful production build. `npm run test:ui` stops
+any existing managed localnet and starts a fresh one. To keep a caller-managed
+server running, use
+`APP20_TEST_BASE_URL=http://127.0.0.1:5173 npm run test:ui`.
+The journeys still submit localnet transactions; do not use runtime state you
+need to preserve.
 
 | Command                           | Scope                                                                                                       |
 | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -455,7 +512,7 @@ npm run build
 | `npm run test:packages`           | Workspace packages                                                                                          |
 | `npm run test:ui`                 | Playwright localnet journeys, including scope invalidation, accessibility, and 200% reflow                  |
 | `npm run test:supply-chain`       | Lockfile integrity/source/licence review, SBOM drift, generated font notices, and build-determinism helpers |
-| `npm run test:e2e:pool`           | Devnet integration proof through the genuine privacy pool (mail, escrow lifecycle, and lock tickets)        |
+| `npm run test:e2e:pool`           | Simulated-proof devnet tests: pool transfers, Mail replay/funding isolation, and Lock/Take/settlement       |
 | `npm run check:csp`               | Loads built routes under the CSP the Worker actually ships                                                  |
 | `npm run check:build-determinism` | Two isolated production builds, byte-compared                                                               |
 | `npm run sbom:generate`           | Regenerates the deterministic CycloneDX SBOM and deployable font notices                                    |
@@ -499,10 +556,12 @@ gate.
 The Worker runs first and replaces asset security headers, so
 `workers/relay/src/headers.ts` is the single source of the shipped
 Content-Security-Policy; a static `_headers` file would never reach a browser.
-That policy omits `'unsafe-eval'`. CoinGecko is the only third-party origin in
-the default policy and the browser reaches it only after explicit market-data
-opt-in. Optional `IPFS_ORIGINS` may add reviewed HTTPS origins to `connect-src`
-for encrypted backup upload/fetch; invalid origins fail closed and an unset
+That policy omits `'unsafe-eval'`. The configured policy permits reviewed
+Privy authentication/API origins and CoinGecko for public market data.
+Expanding the RFQ's “Public market context” panel does not contact CoinGecko;
+data loads only after the separate explicit opt-in. Optional `IPFS_ORIGINS` may
+add reviewed HTTPS origins to `connect-src` for encrypted backup upload/fetch;
+invalid origins fail closed and an unset
 value leaves the prior CSP unchanged. IPFS RPC/gateway requests go directly
 from the browser, so those operators can observe source metadata, timing, CID,
 and padded ciphertext size. `npm run check:csp` loads the configured built-route
