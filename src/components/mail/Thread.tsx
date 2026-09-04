@@ -370,23 +370,29 @@ function ConversationControls({
           assignment. Supply the counterparty address in the draft.
         </p>
       ) : null}
+      {/* Naming a sealed sender is a deliberate, occasional act. As an open
+          form it put an address book, a label and a submit button above every
+          letter in the thread. */}
       {message.direction !== "outgoing" && onAssign ? (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (assignInput.trim()) onAssign(message.id, assignInput);
-          }}
-        >
-          <AddressBookField
-            selfAddress={selfAddress ?? ""}
-            inputAriaLabel="Assign on this device"
-            label="Assign on this device"
-            value={assignInput}
-            onChange={setAssignInput}
-            placeholder="0x… or saved label"
-          />
-          <button type="submit">Save local assignment</button>
-        </form>
+        <details className={styles.assignDisclosure}>
+          <summary>Assign a sender on this device</summary>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (assignInput.trim()) onAssign(message.id, assignInput);
+            }}
+          >
+            <AddressBookField
+              selfAddress={selfAddress ?? ""}
+              inputAriaLabel="Assign on this device"
+              label="Assign on this device"
+              value={assignInput}
+              onChange={setAssignInput}
+              placeholder="0x… or saved label"
+            />
+            <button type="submit">Save local assignment</button>
+          </form>
+        </details>
       ) : null}
       {assigned && onProve ? (
         <button type="button" onClick={() => onProve(message.id, assigned)}>

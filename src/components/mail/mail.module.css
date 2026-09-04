@@ -3383,11 +3383,64 @@
   line-height: 1.45;
 }
 
+/* The record's own line: what conversation it belongs to, and the one action
+   that continues it. Everything longer wraps onto its own row. */
 .replyRow {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   min-width: 0;
-  gap: 6px;
-  margin: 10px 0 12px;
+  gap: 8px 12px;
+  margin: 8px 0 12px;
+}
+
+.replyRow > p,
+.replyRow > details,
+.replyRow > form {
+  flex-basis: 100%;
+}
+
+.assignDisclosure {
+  border: 1px solid var(--shell-line);
+  background: var(--shell-bg);
+}
+
+.assignDisclosure > summary {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 11px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  list-style: none;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.assignDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.assignDisclosure > summary::after {
+  color: var(--shell-orange);
+  content: "+";
+  font-size: 15px;
+}
+
+.assignDisclosure[open] > summary {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.assignDisclosure[open] > summary::after {
+  content: "\2212";
+}
+
+.assignDisclosure > form {
+  padding: 11px;
 }
 
 .replyRow button {
