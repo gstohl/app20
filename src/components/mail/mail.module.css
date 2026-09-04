@@ -649,6 +649,27 @@
   gap: 20px;
 }
 
+/* The head names the counterparty, so it has to survive an address as a title. */
+.threadHeading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.threadHeadDetail {
+  margin-top: 3px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
 .scanActions {
   display: flex;
   justify-content: flex-end;
@@ -2249,16 +2270,6 @@
 
 .threadPanel .messageSheet {
   box-shadow: none;
-}
-
-.recipientDisclosure {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border: var(--frame-public);
-  color: var(--shell-muted);
-  background: var(--shell-public-quiet);
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .sheetClip {

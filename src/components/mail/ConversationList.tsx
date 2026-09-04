@@ -1,8 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { feltEquals } from "@/lib/addresses";
-import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
+import type { AliasRecord } from "@/lib/aliases";
 import { parseBackupPointer } from "@/lib/backup-blob";
 import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
 import { parseCompositePayload } from "@/lib/composite";
@@ -20,7 +19,10 @@ import {
   parseEscrowFundPayload,
   parseEscrowTimeoutPayload,
 } from "@/lib/escrow";
-import { formatDeviceSentRecipients } from "@/lib/mail-correspondents";
+import {
+  conversationCorrespondent,
+  type ConversationCorrespondent,
+} from "./correspondent";
 import {
   mailMessageDateTime,
   mailboxMatchesFilter,
@@ -30,8 +32,8 @@ import {
 import type { LocalMailMessage } from "./Thread";
 import styles from "./mail.module.css";
 
-export type { MailboxFilter };
-export { mailboxMatchesFilter };
+export type { MailboxFilter, ConversationCorrespondent };
+export { mailboxMatchesFilter, conversationCorrespondent };
 
 function backupKind(
   message: LocalMailMessage,
@@ -92,91 +94,6 @@ function envelopeLabel(message: LocalMailMessage): string {
     default:
       return "Unsupported";
   }
-}
-
-export type ConversationCorrespondent = {
-  primary: string;
-  detail?: string;
-  fullAddress?: string;
-};
-
-export function conversationCorrespondent(
-  message: LocalMailMessage,
-  aliases: AliasRecord[],
-  selfAddress: string,
-): ConversationCorrespondent {
-  const payload =
-    message.envelope.type === "unsupported" ? null : message.envelope.payload;
-  const address = (() => {
-    switch (message.envelope.type) {
-      case "offer":
-        return parseOfferPayload(payload)?.offerer;
-      case "payment_request":
-        return parsePaymentRequestPayload(payload)?.requester;
-      case "escrow_fund":
-        return parseEscrowFundPayload(payload)?.maker;
-      case "composite": {
-        const composite = parseCompositePayload(payload);
-        for (const attachment of composite?.attachments ?? []) {
-          if (attachment.type === "offer") return attachment.payload.offerer;
-          if (attachment.type === "payment_request") {
-            return attachment.payload.requester;
-          }
-          if (attachment.type === "escrow_fund")
-            return attachment.payload.maker;
-        }
-        return undefined;
-      }
-      default:
-        return undefined;
-    }
-  })();
-
-  if (address && (!selfAddress || !feltEquals(address, selfAddress))) {
-    const alias = findAliasByAddress(aliases, address)?.label;
-    return {
-      primary: `Claimed address: ${address}`,
-      detail: alias
-        ? `Unauthenticated payload claim · local alias “${alias}”`
-        : "Unauthenticated payload claim · verify out-of-band",
-      fullAddress: address,
-    };
-  }
-  if (
-    message.direction === "outgoing" &&
-    (message.recipients?.length ?? 0) > 0
-  ) {
-    return formatDeviceSentRecipients(message.recipients ?? [], aliases);
-  }
-  if (
-    message.envelope.type === "contact_snapshot" ||
-    message.envelope.type === "backup_snapshot" ||
-    message.envelope.type === "backup_pointer"
-  ) {
-    return {
-      primary: "This mailbox",
-      detail: "Encrypted self-backup · verify before restore",
-    };
-  }
-  if (message.envelope.type === "text") {
-    return {
-      primary:
-        message.direction === "outgoing"
-          ? "Private recipient"
-          : "Sealed sender",
-      detail:
-        message.direction === "outgoing"
-          ? "Device-local Sent copy · recipient was not stored"
-          : "Sealed letter · no public sender",
-    };
-  }
-  if (message.direction === "outgoing") {
-    return {
-      primary: "Private recipient",
-      detail: "Device-local Sent copy · recipient was not stored",
-    };
-  }
-  return { primary: "Sealed counterparty" };
 }
 
 function messagePreview(message: LocalMailMessage): string {
@@ -323,9 +240,7 @@ function ConversationList({
       <div className={styles.railPrivacyNote}>
         <strong>Local browser index—not encrypted at rest</strong>
         <span>
-          “Unread/opened” is session-only and changes only after you activate a
-          message while its reading pane is visible. Unsigned letters cannot
-          reveal a sender address, so Mail labels them “Sealed sender.”
+          “Unread/opened” is session-only. Sealed rows carry no public sender.
         </span>
       </div>
 

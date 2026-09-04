@@ -613,9 +613,8 @@ test("all APP20 localnet journeys", async ({
     await messageRow(page, compositeBody).click();
     await expect(threadBody(page, compositeBody)).toBeVisible();
     await expect(messageRow(page, compositeBody)).toContainText("OPENED");
-    await expect(
-      page.getByRole("heading", { name: "Correspondence" }),
-    ).toBeFocused();
+    // The thread head now names the counterparty, so it is addressed by id.
+    await expect(page.locator("#thread-title")).toBeFocused();
     await expect(
       page.getByText("PRIVATE PAYMENT MEMO", { exact: true }),
     ).toBeVisible();

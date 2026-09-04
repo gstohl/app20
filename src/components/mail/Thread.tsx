@@ -53,6 +53,10 @@ import {
   conversationKeyForMessage,
 } from "@/lib/mail-thread";
 import { senderProofLabel, type SenderProof } from "@/lib/sender-proof";
+import {
+  conversationCorrespondent,
+  correspondentHeadline,
+} from "./correspondent";
 import styles from "./mail.module.css";
 
 export type LocalMailMessage = {
@@ -343,10 +347,7 @@ function ConversationControls({
       {fields.conversationId ? (
         <span>Conversation tag {fields.conversationId.slice(0, 18)}…</span>
       ) : (
-        <span>
-          This letter has no conversation tag. A reply can start one locally and
-          in the next ciphertext.
-        </span>
+        <span>No conversation tag — a reply starts one.</span>
       )}
       {canContinue ? (
         <button
@@ -426,6 +427,21 @@ export default function Thread({
   const conversationAddress =
     replyAddressForConversation(messages, selfAddress) ?? undefined;
 
+  /* The head names what is open. "Correspondence" was a constant, so the pane
+     never said which record you were reading; the rail's identity is reused
+     verbatim so both panes call the same counterparty the same thing. */
+  const head = messages.length
+    ? conversationCorrespondent(messages[0], aliases, selfAddress)
+    : null;
+  const headDetail = head
+    ? [
+        head.detail,
+        `${messages.length} record${messages.length === 1 ? "" : "s"}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
   useEffect(() => {
     if (!messages.length || focusVersion === 0) return;
     const frame = requestAnimationFrame(() => headingRef.current?.focus());
@@ -440,8 +456,6 @@ export default function Thread({
     if (envelope.type === "composite") {
       const composite = parseCompositePayload(envelope.payload);
       if (!composite) return <UnsupportedMessage />;
-      const recipientCount =
-        message.recipientCount ?? publicRecipientCount(message.record);
       function renderAttachment(
         attachment: CompositeAttachment,
         attachmentIndex: number,
@@ -490,11 +504,6 @@ export default function Thread({
               {composite.attachments.length === 1 ? "" : "s"}
             </span>
           </div>
-          <p className={styles.recipientDisclosure}>
-            {recipientCount} recipient{recipientCount === 1 ? "" : "s"}; the
-            count is public ciphertext metadata while identities are absent from
-            MessagePosted.
-          </p>
           {composite.body ? (
             <p className={styles.letterBody}>{composite.body}</p>
           ) : (
@@ -508,23 +517,16 @@ export default function Thread({
     }
 
     if (envelope.type === "text") {
-      const recipientCount =
-        message.recipientCount ?? publicRecipientCount(message.record);
+      /* Recipient count and the sealed-identity caveat are not repeated here:
+         the message meta row above carries the count, and "What the chain sees"
+         below states the absence once, where the public record is shown. */
       return (
         <article className={styles.messageSheet} aria-labelledby={headingId}>
           <div className={styles.sheetHeading}>
             <h3 id={headingId} className={styles.sheetType}>
               {envelope.version === 0 ? "LEGACY LETTER" : "PRIVATE LETTER"}
             </h3>
-            <span className={styles.proofStamp}>
-              {recipientCount} recipient{recipientCount === 1 ? "" : "s"} ·
-              count public
-            </span>
           </div>
-          <p className={styles.recipientDisclosure}>
-            Recipient identities are sealed and absent from MessagePosted. The
-            count above is public ciphertext-format metadata.
-          </p>
           <p className={styles.letterBody}>{message.plaintext}</p>
         </article>
       );
@@ -768,13 +770,20 @@ export default function Thread({
   }
 
   return (
-    <section className={styles.threadPanel} aria-labelledby="thread-title">
+    <section className={styles.threadPanel} aria-label="Correspondence">
       <div className={styles.threadHeading}>
         <div>
-          <p className={styles.kicker}>LOCAL PLAINTEXT / CARBON COPY</p>
-          <h2 ref={headingRef} id="thread-title" tabIndex={-1}>
-            Correspondence
+          <h2
+            ref={headingRef}
+            id="thread-title"
+            tabIndex={-1}
+            title={head?.fullAddress}
+          >
+            {head ? correspondentHeadline(head) : "Correspondence"}
           </h2>
+          {headDetail ? (
+            <p className={styles.threadHeadDetail}>{headDetail}</p>
+          ) : null}
         </div>
         <span className={styles.sheetClip} aria-hidden="true">
           CLIP / 01
