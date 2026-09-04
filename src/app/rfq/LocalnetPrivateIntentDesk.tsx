@@ -1430,8 +1430,8 @@ export default function LocalnetPrivateIntentDesk({
         aria-labelledby="rfq-privacy-briefing-title"
         aria-describedby="rfq-privacy-briefing-intro"
         onCancel={(event) => {
-          if (!privacyBriefingAccepted) event.preventDefault();
-          else setShowPrivacyBriefing(false);
+          if (privacyBriefingAccepted) setShowPrivacyBriefing(false);
+          else event.preventDefault();
         }}
         onClose={() => setShowPrivacyBriefing(false)}
       >
@@ -1749,11 +1749,11 @@ export default function LocalnetPrivateIntentDesk({
                 <strong>PRIVACY ROUTE</strong>
                 <div className={styles.preflightBriefingControl} role="status">
                   <span>
-                    {!privacyBriefingLoaded
-                      ? "CHECKING"
-                      : privacyBriefingAccepted
+                    {privacyBriefingLoaded
+                      ? privacyBriefingAccepted
                         ? "BRIEFED ONCE"
-                        : "REQUIRED"}
+                        : "REQUIRED"
+                      : "CHECKING"}
                   </span>
                   <button
                     type="button"

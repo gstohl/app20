@@ -270,9 +270,7 @@ test("RFQ and funding share one resolved localnet note-maturity poll", async ({
     { timeout: 60_000 },
   );
 
-  await page
-    .getByRole("link", { name: "Shield / unshield funding" })
-    .click();
+  await page.getByRole("link", { name: "Shield / unshield funding" }).click();
   await expect(page).toHaveURL(/\/funding$/);
   const fundingMaturity = page
     .getByRole("heading", { name: "Note maturity" })

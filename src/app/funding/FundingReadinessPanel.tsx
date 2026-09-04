@@ -372,8 +372,7 @@ export default function FundingReadinessPanel({
     ),
     address,
   });
-  const maturityEstimate =
-    maturity.kind === "idle" ? undefined : maturity;
+  const maturityEstimate = maturity.kind === "idle" ? undefined : maturity;
 
   const model = useMemo(() => {
     const pair = network ? configuredMarketPair(network) : null;

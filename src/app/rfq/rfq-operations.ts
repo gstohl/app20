@@ -22,12 +22,7 @@ export const LOCALNET_MAX_TOTAL_DEVIATION_BPS = 100;
 export const LOCALNET_MAX_MAKER_SPREAD_BPS = 50;
 const LOCALNET_STATUS_MAX_AGE_SECONDS = 30;
 
-type OperationsMode =
-  | "running"
-  | "paused"
-  | "drain-only"
-  | "stale"
-  | "unknown";
+type OperationsMode = "running" | "paused" | "drain-only" | "stale" | "unknown";
 type CapacityBand = "none" | "small" | "medium" | "large" | "unknown";
 type MakerInvitationStatus =
   | "not-invited"
