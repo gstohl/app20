@@ -466,36 +466,60 @@
 
 /* Connect controls */
 .connectPill {
- font-family: var(--font-body), sans-serif;
- font-weight: 600;
- font-size: 14px;
- color: var(--pink-text);
- background: var(--pink-soft);
- border: none;
- border-radius: 999px;
- padding: 9px 18px;
+ display: inline-flex;
+ align-items: center;
+ min-height: 44px;
+ font-family: var(--font-mono-ui), monospace;
+ font-weight: 800;
+ font-size: 11px;
+ letter-spacing: 0.08em;
+ text-transform: uppercase;
+ color: var(--on-accent);
+ background: var(--shell-orange, var(--pink));
+ border: 1px solid var(--shell-orange, var(--pink));
+ border-radius: 0;
+ padding: 0 16px;
  cursor: pointer;
- transition: background 140ms;
+ transition:
+  background 140ms,
+  color 140ms;
 }
 .connectPill:hover {
- background: var(--pink-soft-2);
+ color: var(--shell-orange, var(--pink));
+ background: transparent;
 }
 .connectPill:disabled {
  opacity: 0.6;
  cursor: wait;
 }
+
+/* Phones: keep the solid accent, lose the width it does not need. */
+@media (max-width: 560px) {
+ .connectPill {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+ }
+ .addrPill {
+  min-height: 38px;
+  font-size: 11px;
+  padding: 0 6px 0 10px;
+ }
+}
 .addrPill {
  display: inline-flex;
  align-items: center;
  gap: 9px;
+ min-height: 44px;
  font-family: var(--font-mono-ui), monospace;
- font-size: 13px;
+ font-size: 12px;
  font-weight: 700;
  color: var(--ink);
- background: var(--surface-raised);
+ background: transparent;
  border: 1px solid var(--line);
- border-radius: 999px;
- padding: 7px 7px 7px 13px;
+ border-radius: 0;
+ padding: 0 9px 0 13px;
  cursor: pointer;
 }
 .addrDot {
@@ -505,13 +529,15 @@
  background: var(--green);
 }
 .addrDisconnect {
- font-family: var(--font-body), sans-serif;
- font-size: 12px;
- font-weight: 600;
+ font-family: var(--font-mono-ui), monospace;
+ font-size: 10px;
+ font-weight: 700;
+ letter-spacing: 0.06em;
+ text-transform: uppercase;
  color: var(--muted);
  background: var(--inset);
- border-radius: 999px;
- padding: 4px 10px;
+ border-radius: 0;
+ padding: 5px 8px;
 }
 
 .errorText {

@@ -86,9 +86,13 @@
   opacity: 0.6;
 }
 
+/* Which network is current is state, and the header already has one way of
+   marking current: the tab's inset accent rule. A solid accent block here also
+   sat flush against the connect button and read as one control. */
 .networkToggle .networkActive {
-  color: var(--shell-bg);
-  background: var(--shell-orange);
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  box-shadow: inset 0 -2px var(--shell-orange);
 }
 
 .networkToggle span[role="status"] {
