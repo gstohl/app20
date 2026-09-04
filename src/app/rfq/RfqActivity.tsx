@@ -175,6 +175,10 @@ export default function RfqActivity({
       <details className={styles.storageDisclosure}>
         <summary>What this browser stores</summary>
         <p>{RFQ_STORAGE_DISCLOSURE}</p>
+        <p>
+          Restoring and reconciling never automatically resubmits fund, fill,
+          claim, or refund.
+        </p>
       </details>
       {records.length && records.every(lifecycleMayForget) && onClearAll ? (
         <button type="button" onClick={onClearAll}>
