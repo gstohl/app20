@@ -190,6 +190,20 @@ export function createBlankDraft(at = Date.now()): CompositeDraft {
   };
 }
 
+/**
+ * A draft nobody has typed into yet. Opening the composer reuses one of these
+ * rather than minting another, and closing the composer on one discards it, so
+ * abandoned compose clicks cannot accumulate as identical "Blank document"
+ * rows in the Drafts list.
+ */
+export function isBlankDraft(draft: CompositeDraft): boolean {
+  return (
+    draft.recipient.trim() === "" &&
+    draft.body.trim() === "" &&
+    draft.attachments.length === 0
+  );
+}
+
 export function createDraftAttachment(
   type: "payment",
 ): Extract<DraftAttachment, { type: "payment" }>;

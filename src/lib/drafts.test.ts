@@ -3,6 +3,7 @@ import {
   createBlankDraft,
   createDraftAttachment,
   deleteDraft,
+  isBlankDraft,
   loadDrafts,
   saveDraft,
 } from "./drafts";
@@ -97,5 +98,28 @@ describe("device-private drafts", () => {
       JSON.stringify([{ version: 1, id: "not-a-draft" }]),
     );
     expect(loadDrafts(storage, "SN_SEPOLIA", "0xa11ce")).toEqual([]);
+  });
+});
+
+describe("blank drafts", () => {
+  it("treats an untouched draft as blank", () => {
+    expect(isBlankDraft(createBlankDraft())).toBe(true);
+  });
+
+  it("treats whitespace-only edits as still blank", () => {
+    const draft = { ...createBlankDraft(), recipient: "  ", body: "\n  " };
+    expect(isBlankDraft(draft)).toBe(true);
+  });
+
+  it("stops being blank once a recipient, body, or attachment exists", () => {
+    const base = createBlankDraft();
+    expect(isBlankDraft({ ...base, recipient: "0xa11ce" })).toBe(false);
+    expect(isBlankDraft({ ...base, body: "Terms as discussed." })).toBe(false);
+    expect(
+      isBlankDraft({
+        ...base,
+        attachments: [createDraftAttachment("payment")],
+      }),
+    ).toBe(false);
   });
 });

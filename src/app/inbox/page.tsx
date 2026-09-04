@@ -28,6 +28,7 @@ import {
 } from "@/lib/desk-handoff";
 import {
   createBlankDraft,
+  isBlankDraft,
   deleteDraft,
   loadDrafts,
   saveDraft,
@@ -264,9 +265,8 @@ export default function InboxPage() {
     [aliases, bookEntries],
   );
   const [otcState, setOtcState] = useState<OtcState>(emptyOtcState());
-  const [escrowState, setEscrowState] = useState<EscrowState>(
-    emptyEscrowState(),
-  );
+  const [escrowState, setEscrowState] =
+    useState<EscrowState>(emptyEscrowState());
   const [actionStates, setActionStates] = useState<
     Record<string, ThreadActionState>
   >({});
@@ -2935,8 +2935,11 @@ export default function InboxPage() {
       setSidebarOpen(true);
       return;
     }
-    const draft = createBlankDraft();
-    persistDraft(draft);
+    // Compose on an untouched draft reopens it instead of leaving another
+    // identical blank row behind.
+    const existingBlank = drafts.find(isBlankDraft);
+    const draft = existingBlank ?? createBlankDraft();
+    if (!existingBlank) persistDraft(draft);
     setMailFolder("drafts");
     setMailboxFilter("all");
     setSelectedDraftId(draft.id);
@@ -3019,6 +3022,9 @@ export default function InboxPage() {
   }
 
   function closeDetail() {
+    if (composerOpen && activeDraft && isBlankDraft(activeDraft)) {
+      removeDraft(activeDraft.id, false);
+    }
     setComposerOpen(false);
     setMobileDetailOpen(false);
   }
@@ -3252,7 +3258,9 @@ export default function InboxPage() {
                   type="checkbox"
                   checked={rfqAutoBackupEnabled}
                   disabled={!address || !chainId}
-                  onChange={(event) => updateRfqAutoBackup(event.target.checked)}
+                  onChange={(event) =>
+                    updateRfqAutoBackup(event.target.checked)
+                  }
                 />{" "}
                 Automatically back up RFQ history after settlement (opt in)
               </label>

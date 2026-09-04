@@ -1776,8 +1776,12 @@
   background: transparent;
 }
 
-.contactBackupPanel > summary {
-  padding: 8px 12px;
+.contactBackupPanel > summary,
+.forgetDevice > summary {
+  display: flex;
+  min-height: var(--hit-min);
+  align-items: center;
+  padding: 0 12px;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: var(--label-md);
@@ -1821,12 +1825,11 @@
 }
 
 .forgetDevice summary {
-  padding: 8px 12px;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: var(--label-md);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -2463,11 +2466,11 @@
 
 .welcomeCopy {
   width: 100%;
-  max-width: none;
+  max-width: var(--measure-reading);
   margin-top: 8px;
   color: var(--shell-muted);
   font-family: var(--font-reading), Georgia, serif;
-  font-size: 14px;
+  font-size: var(--reading-sm);
   line-height: 1.7;
 }
 
