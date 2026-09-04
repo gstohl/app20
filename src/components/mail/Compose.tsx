@@ -400,8 +400,7 @@ export default function Compose({
 
   function updateDraft(
     update:
-      | Partial<CompositeDraft>
-      | ((current: CompositeDraft) => CompositeDraft),
+      Partial<CompositeDraft> | ((current: CompositeDraft) => CompositeDraft),
   ) {
     const current = draftRef.current;
     const next =
@@ -779,8 +778,7 @@ export default function Compose({
     }
 
     let escrowReservation:
-      | { dealId: string; transactionHash?: string }
-      | undefined;
+      { dealId: string; transactionHash?: string } | undefined;
     let fundConfirmedHash: string | undefined;
     let documentSubmittedHash: string | undefined;
     const transactionHashes: string[] = [];
@@ -1180,11 +1178,11 @@ export default function Compose({
 
       <div className={styles.disclosureGrid}>
         <p>
-          <strong>Stored locally—not encrypted at rest</strong>
+          <strong>Stored locally</strong>
           Draft, body, recipient identities, aliases, Sent copies, and
           attachment terms stay as readable browser storage until cleared.
         </p>
-        <p>
+        <p data-tone="public">
           <strong>Public</strong>
           Recipient count, ciphertext size, helper and pool activity, and
           timing. Shield and unshield legs are public.

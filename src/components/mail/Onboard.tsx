@@ -370,6 +370,17 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     }
   }
 
+  // Setup is already a three-beat sequence in state; this only makes the
+  // sequence visible. Registration is one action, so "Register" is current
+  // while it is in flight and complete once a backup phrase exists.
+  const activeStep = backupPhrase ? 2 : setup.kind === "pending" ? 1 : 0;
+  const stepState = (index: number) =>
+    index < activeStep
+      ? "complete"
+      : index === activeStep
+        ? "current"
+        : "upcoming";
+
   return (
     <section
       id="mailbox-key-setup"
@@ -383,21 +394,22 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           Set up a mailbox key
         </h2>
       </div>
+      {vault.kind === "passphrase" ? null : (
+        <ol className={styles.setupSteps} aria-label="Mailbox setup progress">
+          <li data-state={stepState(0)}>
+            <span aria-hidden="true">1</span>Device
+          </li>
+          <li data-state={stepState(1)}>
+            <span aria-hidden="true">2</span>Register
+          </li>
+          <li data-state={stepState(2)}>
+            <span aria-hidden="true">3</span>Backup
+          </li>
+        </ol>
+      )}
       <p className={styles.copy}>
         Registration is a normal public Starknet transaction. It links this
         wallet address to a public mailbox key in the on-chain directory.
-      </p>
-      <p className={styles.finePrint}>
-        <strong>You choose the device risk.</strong> Default stores the raw
-        32-byte mailbox seed in this browser profile. Anyone with this profile
-        can read your Mail correspondence and create payment requests that
-        display as verified from you. Optional passphrase wrap encrypts that
-        seed at rest; Mail then cannot open the mailbox or use its signing key
-        until you unlock this session. A wallet signature cannot be the wrap key
-        — Ready signatures are not a stable secret. The eight-group backup is
-        still the only recovery if you forget the passphrase or clear this
-        profile, and APP20 currently cannot revoke the Mail key if that backup
-        is compromised.
       </p>
       {helperAddress ? null : (
         <p className={styles.notice}>
@@ -444,10 +456,16 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               Encrypt this mailbox on this browser (optional)
             </span>
             <small>
-              Off: faster demo, seed stored in the clear. On: scrypt + AES-GCM
-              wrap. Mail never stores the passphrase.
+              {wrapExisting
+                ? "scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its signing key until you unlock this session, and never stores the passphrase. A wallet signature cannot be the wrap key — Ready signatures are not a stable secret."
+                : "The raw 32-byte mailbox seed is stored in the clear in this browser profile. Anyone with this profile can read your Mail correspondence and create payment requests that display as verified from you."}
             </small>
           </label>
+          <p className={styles.finePrint}>
+            Either way, the eight-group backup in step 3 is the only recovery if
+            you clear this profile or forget the passphrase, and APP20 currently
+            cannot revoke the Mail key if that backup is compromised.
+          </p>
           {wrapExisting ? (
             <>
               <label className={styles.field}>

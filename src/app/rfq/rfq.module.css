@@ -605,8 +605,9 @@
   position: relative;
   display: grid;
   min-width: 0;
-  gap: 3px;
-  padding: 8px 32px 8px 10px;
+  align-content: center;
+  gap: 2px;
+  padding: 6px 30px 6px 10px;
 }
 
 .marketStats > div + div {
@@ -642,9 +643,10 @@
   overflow: hidden;
   color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
-  font-size: clamp(15px, 1.5vw, 20px);
+  font-size: clamp(14px, 1.25vw, 18px);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2382,13 +2384,19 @@
   font-size: 11px;
 }
 
+/* The route already names itself: the header tab is aria-current, and the
+   signal bar reads APP20 RFQ WORKSPACE. A 36px serif restatement cost 64px of
+   the fold, so the heading stays for the accessibility tree and the outline
+   (exactly one h1, first on the page) and leaves the layout alone. */
 .workspaceTitle {
-  margin: 0;
-  padding: 14px 16px 10px;
-  font-family: var(--font-reading), Georgia, serif;
-  font-size: clamp(26px, 3vw, 36px);
-  font-weight: 400;
-  line-height: 1.1;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .viewHeading {

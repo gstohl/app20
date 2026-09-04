@@ -161,35 +161,41 @@ export default function AddressBookField({
   return (
     <div className={fieldClassName} data-address-book-field="">
       {label ? <span>{label}</span> : null}
-      <div className={bookRowClassName} data-book-row="">
-        <select
-          aria-label={`Saved addresses for ${inputAriaLabel}`}
-          value=""
-          onChange={(event) => {
-            const entry = entries.find(
-              (item) => item.label === event.target.value,
-            );
-            if (!entry) return;
-            if (!multiline) {
-              onChange(entry.address);
-              return;
-            }
-            const lines = value
-              .split("\n")
-              .map((line) => line.trim())
-              .filter(Boolean);
-            if (!lines.includes(entry.address)) lines.push(entry.address);
-            onChange(lines.join("\n"));
-          }}
-          disabled={disabled || !scope || entries.length === 0 || busy}
-        >
-          <option value="">Book…</option>
-          {entries.map((entry) => (
-            <option key={entry.label} value={entry.label}>
-              {entry.label} · {shortAddress(entry.address)}
-            </option>
-          ))}
-        </select>
+      <div
+        className={bookRowClassName}
+        data-book-row=""
+        data-book-empty={entries.length === 0 ? "" : undefined}
+      >
+        {entries.length === 0 ? null : (
+          <select
+            aria-label={`Saved addresses for ${inputAriaLabel}`}
+            value=""
+            onChange={(event) => {
+              const entry = entries.find(
+                (item) => item.label === event.target.value,
+              );
+              if (!entry) return;
+              if (!multiline) {
+                onChange(entry.address);
+                return;
+              }
+              const lines = value
+                .split("\n")
+                .map((line) => line.trim())
+                .filter(Boolean);
+              if (!lines.includes(entry.address)) lines.push(entry.address);
+              onChange(lines.join("\n"));
+            }}
+            disabled={disabled || !scope || entries.length === 0 || busy}
+          >
+            <option value="">Book…</option>
+            {entries.map((entry) => (
+              <option key={entry.label} value={entry.label}>
+                {entry.label} · {shortAddress(entry.address)}
+              </option>
+            ))}
+          </select>
+        )}
         {multiline ? (
           <textarea
             ref={inputRef as Ref<HTMLTextAreaElement>}
@@ -274,9 +280,7 @@ export default function AddressBookField({
           {bookError}
         </small>
       ) : (
-        <small className={resolvedHintClassName}>
-          {hintSlot ?? hint}
-        </small>
+        <small className={resolvedHintClassName}>{hintSlot ?? hint}</small>
       )}
     </div>
   );

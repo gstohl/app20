@@ -19,6 +19,12 @@
  gap: 6px;
 }
 
+/* An empty book renders no picker, so the field takes the row instead of
+   sitting behind a disabled 90px control. */
+.row[data-book-empty] {
+ grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .saveRow {
  display: grid;
  grid-template-columns: minmax(0, 1fr) auto auto;
