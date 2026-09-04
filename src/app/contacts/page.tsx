@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useActiveStarknetSession } from "@/app/active-session";
 import { storeDeskHandoff } from "@/lib/desk-handoff";
 import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
@@ -243,8 +244,12 @@ function AddressBookPanel({
           <div className={styles.bookEmptyBlock}>
             <strong>Wallet required</strong>
             <p className={styles.bookEmpty}>
-              Connect a wallet to open this account's encrypted book.
+              The book is encrypted under the connected account, so it opens
+              only once a wallet is connected.
             </p>
+            <span className={styles.connectAction}>
+              <SelectWallet />
+            </span>
           </div>
         )}
       </div>

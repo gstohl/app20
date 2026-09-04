@@ -1354,9 +1354,9 @@
 .bookField > span {
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
 }
 
 .bookEmptyBlock {
@@ -1370,6 +1370,28 @@
 
 .bookEmptyBlock strong {
   font-size: 13px;
+}
+
+.bookEmptyBlock .connectAction > button {
+  margin-top: 4px;
+  min-height: 40px;
+  width: auto;
+  border: 1px solid var(--shell-orange);
+  border-radius: 0;
+  padding: 0 16px;
+  color: var(--on-accent);
+  background: var(--shell-orange);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.bookEmptyBlock .connectAction > button:hover {
+  color: var(--shell-orange);
+  background: transparent;
 }
 
 .bookEmptyBlock .bookEmpty {
@@ -2478,13 +2500,57 @@
   color: var(--shell-live);
 }
 
-.disclosure {
+/* Counterparties imported .masthead, .mastheadCopy and .eyebrow from this
+   module, and none of them existed: the page title, its eyebrow and its
+   intro rendered unstyled and ran from the window edge. */
+.masthead {
+  padding: 16px 16px 4px;
+}
+
+.mastheadCopy {
+  display: grid;
+  gap: 8px;
+  max-width: 780px;
+}
+
+.mastheadCopy h1 {
   margin: 0;
-  padding: 8px 14px;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: clamp(26px, 3vw, 38px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+  text-wrap: pretty;
+}
+
+.mastheadCopy > span {
+  display: block;
+  max-width: var(--measure-copy);
+  color: var(--shell-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Fine print reads at the page's text column, not at a body measure that
+   turns 11px into a fourteen-line ribbon. */
+.disclosure {
+  max-width: 780px;
+  margin: 0;
+  padding: 12px 16px 16px;
   color: var(--shell-muted);
   background: var(--shell-bg);
-  font-size: 10px;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.6;
 }
 
 .privyFallback {
