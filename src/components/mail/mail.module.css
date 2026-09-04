@@ -2427,9 +2427,32 @@
 }
 
 .letterInput {
+  max-width: var(--measure-reading);
   font-family: var(--font-reading), Georgia, serif !important;
   font-size: 15px !important;
   line-height: 1.7 !important;
+}
+
+/* The recipient list and every hint under it read at the same width as the
+   letter: the reading pane caps the body at one measure, and the composer
+   used the full 880px pane. */
+.composeFieldset .field,
+.fieldHint {
+  max-width: var(--measure-reading);
+}
+
+/* An address is an identifier, not prose: it gets the width it needs so a
+   recipient list stays one address per line. */
+.composeFieldset .field[data-address-book-field] {
+  max-width: 42rem;
+}
+
+/* A three-sentence hint is prose, not a label: mono at 9px is for identifiers. */
+.fieldHint {
+  color: var(--shell-muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
 }
 
 .paymentAttachment {
@@ -2928,15 +2951,18 @@
 }
 
 .attachmentTray > header > span,
-.attachmentTray > p,
 .attachmentHeading .fieldBadge {
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: 10px;
 }
 
+/* Sentences take the body face; mono is for labels, numbers and identifiers. */
 .attachmentTray > p {
+  max-width: var(--measure-reading);
   margin-top: 7px;
+  color: var(--shell-muted);
+  font-size: 11px;
   line-height: 1.5;
 }
 
@@ -3060,11 +3086,23 @@
   letter-spacing: 0.08em;
 }
 
+.composeFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--shell-line);
+}
+
 .deleteDraftButton {
-  width: 100%;
-  padding: 9px;
+  width: auto;
+  padding: 7px 10px;
   color: var(--shell-danger);
   background: transparent;
+}
+
+.deleteDraftButton:hover {
+  border-color: var(--shell-danger);
 }
 
 .stepProgress {

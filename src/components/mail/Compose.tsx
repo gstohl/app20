@@ -1212,12 +1212,11 @@ export default function Compose({
             }
             rows={hasAnyAttachment ? 2 : 3}
             required
+            hintClassName={styles.fieldHint}
             hint={
               <>
                 {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
-                Recipient count is public; identities are absent from
-                MessagePosted. Attachments are bilateral; body-only delivery can
-                be multi-recipient.
+                Attachments are bilateral; a body-only letter can go to several.
               </>
             }
           />
@@ -1267,8 +1266,8 @@ export default function Compose({
               })}
             </div>
             <p>
-              This is one document, not a mode picker. Add any combination; text
-              and existing attachments are never cleared.
+              Everything you add goes into this one document. Adding an
+              attachment never clears your text or the others.
             </p>
           </section>
 
@@ -1477,21 +1476,25 @@ export default function Compose({
           >
             {sendButtonLabel}
           </button>
-          <button
-            className={styles.deleteDraftButton}
-            type="button"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Delete this device-private draft? It has never been uploaded and cannot be restored.",
-                )
-              ) {
-                onDeleteDraft(draft.id);
-              }
-            }}
-          >
-            Delete draft…
-          </button>
+          {/* Discarding the draft is not a second way to send it: it leaves the
+              primary action's block and sits at its own weight. */}
+          <div className={styles.composeFooter}>
+            <button
+              className={styles.deleteDraftButton}
+              type="button"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Delete this device-private draft? It has never been uploaded and cannot be restored.",
+                  )
+                ) {
+                  onDeleteDraft(draft.id);
+                }
+              }}
+            >
+              Delete draft…
+            </button>
+          </div>
         </fieldset>
       </form>
 
