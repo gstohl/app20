@@ -2385,7 +2385,7 @@
 
 /* SelectWallet ships the app's legacy rounded CTA; on the desk it has to be
    the same square orange control as every other primary action here. */
-.connectAction button {
+.connectAction > button {
   width: auto;
   margin: 0;
   padding: 9px 12px;
@@ -2401,7 +2401,7 @@
   cursor: pointer;
 }
 
-.connectAction button:hover {
+.connectAction > button:hover {
   color: var(--shell-bg);
   background: var(--shell-text);
   border-color: var(--shell-text);

@@ -561,11 +561,11 @@
 }
 .modal {
  width: min(400px, calc(100vw - 32px));
- background: var(--card);
- border: 1px solid var(--line);
- border-radius: 22px;
- box-shadow: 0 20px 60px -18px var(--shadow);
- padding: 18px;
+ background: var(--shell-bg, var(--card));
+ border: 1px solid var(--shell-orange, var(--line));
+ border-radius: 0;
+ box-shadow: var(--shadow-dialog, 0 20px 60px -18px var(--shadow));
+ padding: 16px;
 }
 .modalHead {
  display: flex;
@@ -575,18 +575,18 @@
 }
 .modalTitle {
  margin: 0;
- font-weight: 600;
+ font-weight: 800;
  font-size: 17px;
- letter-spacing: -0.01em;
+ letter-spacing: -0.02em;
 }
 .modalClose {
  display: grid;
  place-items: center;
  width: 30px;
  height: 30px;
- border: none;
- border-radius: 50%;
- background: var(--inset);
+ border: 1px solid var(--line);
+ border-radius: 0;
+ background: transparent;
  color: var(--muted);
  font-size: 20px;
  line-height: 1;
@@ -611,9 +611,9 @@
  align-items: center;
  gap: 13px;
  width: 100%;
- padding: 13px 14px;
+ padding: 12px 13px;
  border: 1px solid var(--line);
- border-radius: 15px;
+ border-radius: 0;
  background: var(--surface-raised);
  cursor: pointer;
  text-align: left;
@@ -623,7 +623,7 @@
 }
 .walletRow:not(:disabled):hover {
  background: var(--inset);
- border-color: var(--pink-soft-2);
+ border-color: var(--shell-orange, var(--pink));
 }
 .walletRow:disabled {
  opacity: 0.6;
@@ -632,7 +632,7 @@
 .walletIcon {
  width: 32px;
  height: 32px;
- border-radius: 8px;
+ border-radius: 0;
  flex: none;
 }
 .walletName {
