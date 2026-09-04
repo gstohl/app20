@@ -483,6 +483,65 @@ a {
   overflow-wrap: anywhere;
 }
 
+/* The funding gate was the one panel still outside the desk's language: a
+   plain paragraph for its eyebrow, body-sans labels on its facts, and every
+   sentence running the full width of the window. */
+.funding-readiness-panel > p:first-child {
+  color: var(--shell-orange);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.funding-readiness-panel h2 {
+  margin: 6px 0 0;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.funding-readiness-panel h3 {
+  margin: 18px 0 6px;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--shell-muted);
+}
+
+.funding-readiness-panel p,
+.funding-readiness-panel li {
+  max-width: var(--measure-reading);
+  line-height: 1.55;
+}
+
+.funding-readiness-panel dl {
+  border: 1px solid var(--shell-line);
+  background: var(--shell-line);
+}
+
+.funding-readiness-panel dl > div {
+  padding: 9px 11px;
+  background: var(--shell-bg);
+}
+
+.funding-readiness-panel dt {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.funding-readiness-panel dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
 .panel-heading {
   display: grid;
   gap: 5px;

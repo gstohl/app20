@@ -242,7 +242,7 @@ export function FundingReadinessPanelView({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 12,
+            gap: 1,
           }}
         >
           <div>
