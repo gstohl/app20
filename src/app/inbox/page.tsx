@@ -400,7 +400,9 @@ export default function InboxPage() {
   }, [address, chainId]);
 
   useEffect(() => {
-    const query = window.matchMedia("(max-width: 900px)");
+    /* Matches the breakpoint where mail.module.css turns the sidebar into a
+       drawer; if these drift, a closed drawer stays focusable off-screen. */
+    const query = window.matchMedia("(max-width: 1179px)");
     const update = () => setMobileSidebarMode(query.matches);
     update();
     query.addEventListener("change", update);
@@ -3070,7 +3072,15 @@ export default function InboxPage() {
         >
           ☰
         </button>
-        <span className={styles.mobileModuleTitle}>APP20 Mail</span>
+        {/* The app header's current tab already says MAILBOX. This row carries
+            what the pane is actually showing, so the phone layout does not
+            spend one of its few rows repeating the module name. */}
+        <span className={styles.mobileModuleTitle}>
+          {composerOpen ? "New document" : folderLabel}
+          {!composerOpen && mailboxFilter !== "all" ? (
+            <em className={styles.mobileFilterChip}>{filterLabel}</em>
+          ) : null}
+        </span>
         <button
           className={styles.mobileCompose}
           type="button"

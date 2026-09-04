@@ -1305,6 +1305,27 @@
   text-transform: uppercase;
 }
 
+.mobileModuleTitle {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileFilterChip {
+  flex: none;
+  padding: 2px 5px;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+}
+
 .sidebarCloseRow {
   display: none;
 }
@@ -2731,7 +2752,7 @@
 }
 
 /* Tablet: two panes remain visible; account/sidebar moves into a drawer. */
-@media (max-width: 1023px) {
+@media (max-width: 1179px) {
   .page {
     grid-template-rows: 62px minmax(0, 1fr);
   }
@@ -2830,10 +2851,6 @@
     grid-column: 2;
   }
 
-  .backToList {
-    display: inline-flex;
-  }
-
   .readingScroll {
     padding: 12px;
   }
@@ -2843,6 +2860,16 @@
 @media (max-width: 639px) {
   .mobileTopbar .brand > span:last-child {
     display: none;
+  }
+
+  /* The topbar names the folder on phones, so the rail heading would be the
+     same words again in a viewport that is already 40% chrome. */
+  .railHeading {
+    display: none;
+  }
+
+  .backToList {
+    display: inline-flex;
   }
 
   .mailWorkspace {
