@@ -169,7 +169,7 @@ sequenceDiagram
 
     T->>B: Enter pair, exact size, local floor
     B->>B: Derive fixed ladder bucket and taker commitment
-    B->>C: RFQ v2: bucket, pair, direction, expiry; no exact size/floor
+    B->>C: RFQ v2: bucket, pair, direction, expiry#59; no exact size/floor
 
     par Invite Maker A
         C->>A: Bucket-only RFQ
@@ -185,7 +185,7 @@ sequenceDiagram
 
     C-->>B: Signed quotes and refusals
     B->>E: Verify every quote against get_lock
-    B->>B: Evaluate exact size; select one or up to four fills; apply floor
+    B->>B: Evaluate exact size#59; select one or up to four fills#59; apply floor
     B->>C: Fair-loss transcript
     C->>A: Full transcript
     C->>M: Full transcript
