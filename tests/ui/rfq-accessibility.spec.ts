@@ -231,6 +231,8 @@ test("RFQ privacy briefing is versioned once and remains reviewable", async ({
 
   const preflight = page.getByLabel("Privacy preflight");
   await expect(preflight).toContainText("BRIEFED ONCE");
+  // The freshness tip sits in the public market board, closed by default.
+  await page.getByText("Public market context", { exact: true }).click();
   const freshnessHelp = page.getByRole("button", {
     name: "About maker-data freshness",
   });
