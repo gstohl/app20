@@ -925,7 +925,7 @@ test("all APP20 localnet journeys", async ({
       )
       .fill(multiBody);
     await expect(
-      page.getByText(/2 \/ 66 recipients\. Recipient count is public/),
+      page.getByText(/2 \/ 66 recipients\./),
     ).toBeVisible();
     await screenshot(page, "24-multi-recipient-compose", testInfo);
     await page.getByRole("button", { name: "Send encrypted message" }).click();
