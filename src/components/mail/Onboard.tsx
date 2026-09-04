@@ -411,6 +411,13 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         Registration is a normal public Starknet transaction. It links this
         wallet address to a public mailbox key in the on-chain directory.
       </p>
+      {address && chainId ? null : (
+        <p className={styles.notice}>
+          Connect a wallet before registering: a mailbox key is bound to the
+          wallet address that will send from it, which is why the button below
+          is disabled.
+        </p>
+      )}
       {helperAddress ? null : (
         <p className={styles.notice}>
           Mailbox registration needs a helper configured for this APP20 rail.
@@ -455,12 +462,23 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               />{" "}
               Encrypt this mailbox on this browser (optional)
             </span>
-            <small>
-              {wrapExisting
-                ? "scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its signing key until you unlock this session, and never stores the passphrase. A wallet signature cannot be the wrap key — Ready signatures are not a stable secret."
-                : "The raw 32-byte mailbox seed is stored in the clear in this browser profile. Anyone with this profile can read your Mail correspondence and create payment requests that display as verified from you."}
-            </small>
+            {wrapExisting ? (
+              <small>
+                scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its
+                signing key until you unlock this session, and never stores the
+                passphrase. A wallet signature cannot be the wrap key — Ready
+                signatures are not a stable secret.
+              </small>
+            ) : null}
           </label>
+          {wrapExisting ? null : (
+            <p className={styles.actionWarning}>
+              Leaving this off stores the raw 32-byte mailbox seed in the clear
+              in this browser profile. Anyone with the profile can read your
+              Mail correspondence and create payment requests that display as
+              verified from you.
+            </p>
+          )}
           <p className={styles.finePrint}>
             Either way, the eight-group backup in step 3 is the only recovery if
             you clear this profile or forget the passphrase, and APP20 currently

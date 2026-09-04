@@ -89,16 +89,23 @@ export function conversationCorrespondent(
 }
 
 /**
- * The same identity, shortened for a heading: a 66-character felt is a title
- * that wraps to three lines and says nothing at a glance.
+ * A felt shortened for a row or a heading: at full length it wraps to two or
+ * three lines and says nothing at a glance that the first and last bytes do
+ * not. The full value stays available on hover and in the record itself.
+ */
+export function shortenFelt(value: string): string {
+  const felt = value.trim();
+  if (felt.length <= 18) return felt;
+  return `${felt.slice(0, 10)}…${felt.slice(-6)}`;
+}
+
+/**
+ * The same identity, shortened for a heading.
  */
 export function correspondentHeadline(
   correspondent: ConversationCorrespondent,
 ): string {
   const { fullAddress } = correspondent;
   if (!fullAddress || fullAddress.length <= 18) return correspondent.primary;
-  return correspondent.primary.replace(
-    fullAddress,
-    `${fullAddress.slice(0, 10)}…${fullAddress.slice(-6)}`,
-  );
+  return correspondent.primary.replace(fullAddress, shortenFelt(fullAddress));
 }

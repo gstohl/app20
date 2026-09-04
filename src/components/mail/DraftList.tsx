@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import type { CompositeDraft } from "@/lib/drafts";
+import { shortenFelt } from "./correspondent";
 import styles from "./mail.module.css";
 
 function draftTime(milliseconds: number): { label: string; dateTime: string } {
@@ -75,7 +76,7 @@ function DraftList({
         <span className={styles.messageTotal}>{drafts.length}</span>
       </header>
       <div className={styles.railPrivacyNote}>
-        <strong>{filterLabel} · local only</strong>
+        <strong>Local only</strong>
         <span>
           Drafts are stored in this browser profile. They are never uploaded or
           included in mailbox scans.
@@ -100,7 +101,11 @@ function DraftList({
                   onClick={() => onSelect(draft.id)}
                 >
                   <span className={styles.conversationTopline}>
-                    <strong>{draft.recipient.trim() || "No recipient"}</strong>
+                    <strong title={draft.recipient.trim() || undefined}>
+                      <bdi>
+                        {shortenFelt(draft.recipient) || "No recipient"}
+                      </bdi>
+                    </strong>
                     <time dateTime={posted.dateTime}>{posted.label}</time>
                   </span>
                   <span className={styles.conversationPreview}>
@@ -114,7 +119,6 @@ function DraftList({
                           }`
                         : "Letter"}
                     </em>
-                    <span className={styles.readIndicator}>DRAFT</span>
                   </span>
                 </button>
                 <button
@@ -135,7 +139,7 @@ function DraftList({
             ✎
           </span>
           <strong>No {filterLabel.toLowerCase()} drafts</strong>
-          <span>Click New to start a device-private document.</span>
+          <span>Compose to start a device-private document.</span>
         </div>
       )}
     </section>

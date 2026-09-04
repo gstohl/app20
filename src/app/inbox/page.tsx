@@ -108,7 +108,10 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { verifyContactSnapshot } from "@/lib/contact-backup";
-import { describeMailScanCursor } from "@/lib/mail-correspondents";
+import {
+  describeMailScanCursor,
+  replyAddressForConversation,
+} from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
 import {
@@ -179,7 +182,10 @@ import {
   saveMailAssignment,
   type MailAssignment,
 } from "@/lib/mail-assignments";
-import { assembleConversation } from "@/lib/mail-thread";
+import {
+  assembleConversation,
+  conversationKeyForMessage,
+} from "@/lib/mail-thread";
 import { evaluateSenderProof, type SenderProof } from "@/lib/sender-proof";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
@@ -3031,6 +3037,16 @@ export default function InboxPage() {
 
   const walletGateShown = storageNotice?.action === "connect-wallet";
 
+  function replyToOpenConversation() {
+    if (!selectedMessage) return;
+    openComposerForRecipient({
+      address:
+        replyAddressForConversation(conversationMessages, address) ?? undefined,
+      conversationId: conversationKeyForMessage(selectedMessage),
+      inReplyTo: selectedMessage.documentId ?? "",
+    });
+  }
+
   function closeDetail() {
     if (composerOpen && activeDraft && isBlankDraft(activeDraft)) {
       removeDraft(activeDraft.id, false);
@@ -3364,11 +3380,14 @@ export default function InboxPage() {
                     ? "LOCAL PLAINTEXT / CARBON COPY"
                     : "APP20 / MAILBOX / ENCRYPTED CORRESPONDENCE"}
               </span>
+              {/* An open thread names itself in its own head, and the folder is
+                  named in the rail beside this; the toolbar spends its line on
+                  the one thing neither of them offers. */}
               <strong>
                 {composerOpen
                   ? "New document"
                   : selectedMessage
-                    ? folderLabel
+                    ? "Opened on this device"
                     : "Private correspondence desk"}
               </strong>
             </div>
@@ -3379,6 +3398,14 @@ export default function InboxPage() {
                 onClick={closeDetail}
               >
                 Close
+              </button>
+            ) : selectedMessage ? (
+              <button
+                className={styles.toolbarReply}
+                type="button"
+                onClick={replyToOpenConversation}
+              >
+                Reply
               </button>
             ) : null}
           </header>

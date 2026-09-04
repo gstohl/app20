@@ -182,6 +182,15 @@
   line-height: 1.6;
 }
 
+/* Prose keeps a measure wherever it appears in the module. */
+.copy,
+.finePrint,
+.notice,
+.actionWarning,
+.restoreWarning {
+  max-width: var(--measure-reading);
+}
+
 .copy {
   margin-top: 20px;
   font-size: 14px;
@@ -2285,8 +2294,28 @@
   display: none;
 }
 
-.closeCompose {
+.closeCompose,
+.toolbarReply {
   margin-left: auto;
+}
+
+.toolbarReply {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--shell-orange);
+  color: var(--shell-orange);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.toolbarReply:hover {
+  color: var(--on-accent);
+  background: var(--shell-orange);
 }
 
 .readingScroll {
