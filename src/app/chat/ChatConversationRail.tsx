@@ -194,7 +194,22 @@ export default function ChatConversationRail({
         ) : (
           <div className={styles.railEmpty}>
             <span className={styles.railGlyph} aria-hidden="true">
-              {searching ? "⌕" : walletGate ? "⚿" : "✉"}
+              {searching ? (
+                <svg viewBox="0 0 24 24">
+                  <circle cx="10.5" cy="10.5" r="6.5" />
+                  <path d="M15.5 15.5 21 21" />
+                </svg>
+              ) : walletGate ? (
+                <svg viewBox="0 0 24 24">
+                  <rect x="4" y="10.5" width="16" height="10" />
+                  <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3M12 14.5v2.5" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24">
+                  <rect x="3" y="5.5" width="18" height="13" />
+                  <path d="m3 7 9 6.5L21 7" />
+                </svg>
+              )}
             </span>
             {walletGate ? (
               <>

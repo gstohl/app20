@@ -32,6 +32,8 @@ type AddressBookFieldProps = {
   rows?: number;
   required?: boolean;
   inputRef?: Ref<HTMLInputElement | HTMLTextAreaElement>;
+  /** Whether the row offers saving or removing the entry; false keeps the field to the picker and the input. */
+  bookActions?: boolean;
 };
 
 export default function AddressBookField({
@@ -51,6 +53,7 @@ export default function AddressBookField({
   rows = 3,
   required = false,
   inputRef,
+  bookActions = true,
 }: AddressBookFieldProps) {
   const [entries, setEntries] = useState<AddressBookEntry[]>([]);
   const [bookError, setBookError] = useState<string | null>(null);
@@ -222,7 +225,7 @@ export default function AddressBookField({
             disabled={disabled}
           />
         )}
-        {saving ? null : resolved?.entry ? (
+        {!bookActions || saving ? null : resolved?.entry ? (
           <button
             type="button"
             onClick={() => void removeEntry(resolved.entry?.label ?? "")}

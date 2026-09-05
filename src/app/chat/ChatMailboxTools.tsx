@@ -160,11 +160,11 @@ export default function ChatMailboxTools({
           <AddressBookField
             selfAddress={selfAddress}
             inputAriaLabel="New conversation address"
-            label="Counterparty"
             value={newAddress}
             onChange={setNewAddress}
             placeholder="0x… or saved label"
             disabled={gate === "wallet"}
+            bookActions={false}
           />
           <div className={styles.toolsActions} data-variant="plain">
             <button type="submit" disabled={gate === "wallet" || !newAddress.trim()}>

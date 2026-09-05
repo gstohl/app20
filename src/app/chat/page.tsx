@@ -348,9 +348,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!highlightId || composeDraft) return;
+    /* Scroll the timeline itself: scrollIntoView would also drag every
+       overflow-hidden ancestor, shifting the whole desk. */
     const frame = window.requestAnimationFrame(() => {
-      document.getElementById(chatEntryDomId(highlightId))?.scrollIntoView({
-        block: "center",
+      const container = scrollRef.current;
+      const element = document.getElementById(chatEntryDomId(highlightId));
+      if (!container || !element) return;
+      const containerBox = container.getBoundingClientRect();
+      const elementBox = element.getBoundingClientRect();
+      const top =
+        container.scrollTop +
+        (elementBox.top - containerBox.top) -
+        (container.clientHeight - elementBox.height) / 2;
+      container.scrollTo({
+        top: Math.max(0, top),
         behavior: prefersReducedMotion() ? "auto" : "smooth",
       });
     });
@@ -791,6 +802,32 @@ export default function ChatPage() {
                 highlightId={highlightId}
                 handlers={timelineHandlers}
               />
+            ) : model.conversations.length ? (
+              <section
+                className={styles.welcome}
+                aria-labelledby="chat-filtered-title"
+              >
+                <p className={styles.kicker}>APP20 / CHAT</p>
+                <h2 id="chat-filtered-title">No conversation matches.</h2>
+                <p>
+                  {model.conversations.length} conversation
+                  {model.conversations.length === 1 ? "" : "s"} on this device
+                  {needsActionOnly && search.trim()
+                    ? " match neither the search nor the needs-action filter."
+                    : needsActionOnly
+                      ? " need nothing from you right now."
+                      : " match nothing in that search."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setNeedsActionOnly(false);
+                  }}
+                >
+                  Show all conversations
+                </button>
+              </section>
             ) : (
               <section
                 className={styles.welcome}

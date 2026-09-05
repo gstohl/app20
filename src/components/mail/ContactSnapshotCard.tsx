@@ -45,7 +45,12 @@ export default function ContactSnapshotCard({
       </p>
       {onMerge ? (
         <div className={styles.sheetActions}>
-          <button type="button" disabled={busy} onClick={onMerge}>
+          <button
+            type="button"
+            className={styles.primaryButton}
+            disabled={busy}
+            onClick={onMerge}
+          >
             {contacts
               ? "Merge verified contacts"
               : "Merge verified RFQ history"}

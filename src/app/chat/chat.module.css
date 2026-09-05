@@ -378,7 +378,16 @@
   place-items: center;
   border: 1px dashed var(--shell-orange);
   color: var(--shell-orange);
-  font-size: 20px;
+}
+
+.railGlyph svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .railFooter {
@@ -1217,6 +1226,25 @@
   display: none;
 }
 
+.welcome button {
+  justify-self: start;
+  min-height: 30px;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.welcome button:hover {
+  border-color: var(--shell-orange);
+}
+
 /* ── Notices, key setup and the document sheet ──────────────────────────── */
 
 .notice {
@@ -1464,9 +1492,13 @@
 
 /* ── Mailbox tools under the conversations ──────────────────────────────── */
 
+/* One column that can shrink: a long address or label in any section must
+   wrap or truncate inside the rail, never widen every section past it. */
 .tools {
   display: grid;
   flex: none;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   margin-top: auto;
   border-top: 2px solid var(--shell-line);
   background: var(--shell-panel);
@@ -1476,6 +1508,8 @@
 .toolsForm,
 .toolsBody {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   gap: var(--space-3, 6px);
   padding: 10px 14px;
 }
@@ -1610,6 +1644,7 @@
 .draftOpen {
   display: grid;
   flex: 1;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 2px;
   padding: 8px 14px;
@@ -1629,9 +1664,12 @@
 }
 
 .draftOpen small {
+  overflow: hidden;
   color: var(--shell-muted);
   font-family: var(--font-mono-ui), monospace;
   font-size: var(--label-sm, 9px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .draftOpen:hover {
