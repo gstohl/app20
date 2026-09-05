@@ -10,6 +10,9 @@ Three surfaces form one workflow:
 2. **Mailbox** — encrypted correspondence, structured evidence, invoice completion, and backup recovery
 3. **Counterparties** — a device-encrypted directory with RFQ and Mail handoffs
 
+**Chat** (`/chat`) complements them: it reads the same device-local records one
+counterparty at a time. Multi-maker requests stay in the RFQ workspace.
+
 Users connect once in the header. The Ready Wallet API path does not expose a
 viewing key to APP20; the optional Privy browser-owned SDK derives/holds its
 viewing key on the user's device. Mailbox keys also stay on-device. The STRK20
@@ -36,6 +39,7 @@ origin is live. This is not a Mainnet value-moving release.
 | Private RFQ     | `/rfq`                                                                              | Two localnet fixture makers, collateralized quotes, browser selection, and atomic Take. No production maker network.     |
 | Mailbox         | `/mail/inbox`                                                                       | Encrypted correspondence, payment handoffs, and self-backups. Evidence and recovery transport, not settlement authority. |
 | Counterparties  | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Mail handoffs and optional encrypted backup.                              |
+| Chat            | `/chat`                                                                             | One counterparty at a time: device-local letters, offers, invoices, and escrows with that contact, plus their open RFQs, pending payments, and escrows. Reads Mailbox's records; value actions stay in Mailbox. |
 | Separate tools  | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay`               | Funding readiness, unavailable public send, dry cross-chain review, Privy recovery, and unsigned payment links.          |
 | Read-only views | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Operations status, proposal-only market planning, and non-executable pair handoffs.                                      |
 

@@ -17,17 +17,20 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const privyConnected = useWalletMode((state) => state.privyConnected);
   const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
   const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
+  const chatActive = pathname === "/chat" || pathname.startsWith("/chat/");
   const connected = walletMode === "privy" ? privyConnected : readyConnected;
   const payActive = pathname === "/pay";
   const moduleName = mailActive
     ? "MAILBOX"
-    : payActive
-      ? "PAY"
-      : pathname === "/contacts"
-        ? "COUNTERPARTIES"
-        : rfqActive
-          ? "RFQ WORKSPACE"
-          : "APP20";
+    : chatActive
+      ? "CHAT"
+      : payActive
+        ? "PAY"
+        : pathname === "/contacts"
+          ? "COUNTERPARTIES"
+          : rfqActive
+            ? "RFQ WORKSPACE"
+            : "APP20";
 
   return (
     <div
@@ -59,6 +62,9 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
         <nav className="app-tabs" aria-label="APP20 modules">
           <Link to="/rfq" aria-current={rfqActive ? "page" : undefined}>
             RFQ
+          </Link>
+          <Link to="/chat" aria-current={chatActive ? "page" : undefined}>
+            Chat
           </Link>
           <Link to="/mail/inbox" aria-current={mailActive ? "page" : undefined}>
             Mailbox
