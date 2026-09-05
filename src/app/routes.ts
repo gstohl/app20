@@ -7,7 +7,6 @@ export const CANONICAL_ROUTES = {
   send: "/send",
   recovery: "/recovery/privy",
   crossChainReview: "/cross-chain-review",
-  mail: "/mail/inbox",
   chat: "/chat",
   intents: "/intents",
   contacts: "/contacts",
@@ -34,7 +33,8 @@ export function legacyRouteTarget(pathname: string): string | null {
   switch (pathname) {
     case "/mail":
     case "/inbox":
-      return CANONICAL_ROUTES.mail;
+    case "/mail/inbox":
+      return CANONICAL_ROUTES.chat;
     case "/vault":
     case "/workflows":
       return CANONICAL_ROUTES.rfq;

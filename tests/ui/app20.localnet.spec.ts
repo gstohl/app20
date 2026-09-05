@@ -18,6 +18,22 @@ import {
   type Page,
   type TestInfo,
 } from "./support/localnet";
+import {
+  COMPOSE_BODY_PLACEHOLDER,
+  attachTerms,
+  contextPanel,
+  conversationRow,
+  conversationRowByAddress,
+  conversationsRail,
+  entry,
+  loadExistingKey,
+  openFullRecord,
+  openMailboxRecovery,
+  openTools,
+  scanRecent,
+  timeline,
+  navLink,
+} from "./support/chat";
 
 const ARTIFACT_DIR = resolve("ui-artifacts/localnet");
 const WRONG_KEY_BACKUP =
@@ -56,6 +72,7 @@ async function switchIdentity(
   );
 }
 
+/** Chat shows the key setup card whenever this device holds no loaded key. */
 async function registerNewKey(
   page: Page,
   identity: LocalnetIdentityId,
@@ -65,9 +82,6 @@ async function registerNewKey(
   const setup = page.getByRole("button", {
     name: "Load device key & register",
   });
-  if ((await setup.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-  }
   await expect(setup).toBeVisible();
   const expectedBackup = await primeLocalnetMailSeed(page, identity);
   try {
@@ -90,23 +104,8 @@ async function registerNewKey(
   await expect(acknowledge).toBeVisible({ timeout: 60_000 });
   await acknowledge.click();
   await expect(
-    page.getByRole("heading", { name: "Register a mail key" }),
+    page.getByRole("heading", { name: "Set up a mailbox key" }),
   ).toHaveCount(0);
-  const deleteDraft = page.getByRole("button", {
-    name: "Delete draft…",
-    exact: true,
-  });
-  if ((await deleteDraft.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await deleteDraft.click();
-  } else {
-    const close = page.getByRole("button", { name: "Close", exact: true });
-    if ((await close.count()) > 0) await close.click();
-  }
-  await page
-    .getByRole("button", { name: /^Inbox/ })
-    .first()
-    .click();
   return backup;
 }
 
@@ -114,88 +113,16 @@ async function restoreRegisteredKey(page: Page, backup: string) {
   const setup = page.getByRole("button", {
     name: "Load device key & register",
   });
-  if ((await setup.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-  }
+  await expect(setup).toBeVisible();
   await page.getByText("Restore from backup").click();
   await page.getByLabel("Backup value").fill(backup);
   await page.getByRole("button", { name: "Restore mailbox key" }).click();
   await expect(setup).toHaveCount(0, { timeout: 60_000 });
-  const deleteDraft = page.getByRole("button", {
-    name: "Delete draft…",
-    exact: true,
-  });
-  if ((await deleteDraft.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await deleteDraft.click();
-  }
 }
 
-/** The recovery panel is a closed disclosure in the mailbox rail. */
-async function openMailboxRecovery(page: Page) {
-  await page
-    .locator("details", {
-      has: page.getByText("Encrypted mailbox recovery", { exact: true }),
-    })
-    .first()
-    .evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-    });
-}
-
-async function loadExistingKey(page: Page) {
-  const button = page.getByRole("button", {
-    name: "Load device key & register",
-  });
-  if ((await button.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-  }
-  await expect(button).toBeVisible();
-  await button.click();
-  await expect(button).toHaveCount(0, { timeout: 60_000 });
-  const deleteDraft = page.getByRole("button", {
-    name: "Delete draft…",
-    exact: true,
-  });
-  if ((await deleteDraft.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await deleteDraft.click();
-  } else {
-    const close = page.getByRole("button", { name: "Close", exact: true });
-    if ((await close.count()) > 0) await close.click();
-  }
-  await page
-    .getByRole("button", { name: /^Inbox/ })
-    .first()
-    .click();
-}
-
-async function scanRecent(page: Page) {
-  const button = page.getByRole("button", { name: "Check for new mail" });
-  await expect(button).toBeEnabled();
-  await button.click();
-  await page.waitForTimeout(100);
-  await expect(
-    page.getByRole("button", { name: "Check for new mail" }),
-  ).toBeEnabled({
-    timeout: 60_000,
-  });
-}
-
-async function openNewDocument(page: Page) {
-  await page.getByRole("button", { name: "Compose", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "New document" }),
-  ).toBeVisible();
-  await expect(page.getByLabel(/^To/)).toBeFocused();
-}
-
-function messageRow(page: Page, body: string) {
-  return page.getByRole("button").filter({ hasText: body });
-}
-
-function threadBody(page: Page, body: string) {
-  return page.getByLabel("Correspondence").getByText(body, { exact: true });
+/** The chain panel every decrypted or sent record carries. */
+async function openChainPanel(record: Locator) {
+  await record.getByText("What the chain sees", { exact: true }).click();
 }
 
 const STRK_SCALE = 10n ** 18n;
@@ -237,10 +164,10 @@ test("creates a standalone payment link without an on-chain action", async ({
   const requestedUrls: string[] = [];
   page.on("request", (outgoing) => requestedUrls.push(outgoing.url()));
 
-  await page.goto("/mail/inbox");
+  await page.goto("/chat");
   await activateLocalnet(page);
   await switchIdentity(page, config, "bob");
-  await page.getByRole("link", { name: "Pay", exact: true }).click();
+  await navLink(page, "Pay").click();
   await expect(
     page.getByRole("heading", { name: "Create a link. Move nothing yet." }),
   ).toBeVisible();
@@ -250,14 +177,15 @@ test("creates a standalone payment link without an on-chain action", async ({
   });
   await expect(
     page.getByText(
-      "Create or restore this wallet's Mail identity in the inbox first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.",
+      "Create or restore this wallet's Mail identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.",
       { exact: true },
     ),
   ).toBeVisible();
   await expect(generate).toBeDisabled();
   await expect(page.getByText("No transaction submitted")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Open APP20 Mail" }).click();
+  await page.getByRole("link", { name: "Open Chat" }).click();
+  await expect(page).toHaveURL(/\/chat$/);
   if (sharedBobBackup) {
     expect(sharedBobBackup).toHaveLength(71);
     await restoreRegisteredKey(page, sharedBobBackup);
@@ -271,7 +199,7 @@ test("creates a standalone payment link without an on-chain action", async ({
     );
     expect(sharedBobBackup).toHaveLength(71);
   }
-  await page.getByRole("link", { name: "Pay", exact: true }).click();
+  await navLink(page, "Pay").click();
   await expect(
     page.getByText(
       "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.",
@@ -347,7 +275,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
   await expect(
     review.getByRole("button", {
-      name: "Continue to inbox to review & pay",
+      name: "Continue to Chat to review & pay",
     }),
   ).toBeEnabled();
   expect(reviewRequests.some((url) => url.includes("#"))).toBeFalsy();
@@ -369,14 +297,17 @@ test("all APP20 localnet journeys", async ({
   page.setDefaultTimeout(60_000);
   const alice = localnetIdentity(config, "alice");
   const bob = localnetIdentity(config, "bob");
-  const compositeBody =
-    "Composite production test: payment, invoice, and offer in one private document.";
-  const escrowBody = "Escrow browser lifecycle";
-  const draftBody = "Draft survives navigation and resumes";
-  const multiBody = "Two recipients decrypt this private circular";
+  const bobLabel = "Bob recovery desk";
+  // Unique per run: a reused chain keeps earlier runs' documents, and a
+  // fresh browser context decrypts them all again.
+  const runTag = Date.now().toString(36);
+  const compositeBody = `Composite production test ${runTag}: payment, invoice, and offer in one private document.`;
+  const escrowBody = `Escrow browser lifecycle ${runTag}`;
+  const draftBody = `Draft ${runTag} survives navigation and resumes`;
+  const multiBody = `Two recipients decrypt private circular ${runTag}`;
 
   await test.step("1. connect and onboard Alice and Bob", async () => {
-    await page.goto("/mail/inbox");
+    await page.goto("/chat");
     await connectLocalnetWallet(page, { auditFocusReturn: true });
     await switchIdentity(page, config, "alice");
     const aliceBackup = await registerNewKey(
@@ -416,16 +347,16 @@ test("all APP20 localnet journeys", async ({
   await test.step("1b. Alice restores Contacts after local ciphertext loss through encrypted self-mail", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
-    await page.getByRole("link", { name: "Counterparties" }).click();
-    await page.getByLabel("New address book label").fill("Bob recovery desk");
+    await navLink(page, "Counterparties").click();
+    await page.getByLabel("New address book label").fill(bobLabel);
     await page.getByLabel("New address book address").fill(bob.address);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await navLink(page, "Chat").click();
     await loadExistingKey(page);
     await openMailboxRecovery(page);
 
     const backupContacts = page.getByRole("button", {
-      name: "Back up contacts to Mailbox",
+      name: "Back up contacts to this mailbox",
     });
     await expect(backupContacts).toBeEnabled({ timeout: 60_000 });
     await backupContacts.click();
@@ -433,7 +364,7 @@ test("all APP20 localnet journeys", async ({
       page.getByText(/1 contact backed up inline in 0x/),
     ).toBeVisible({ timeout: 60_000 });
 
-    await page.getByRole("link", { name: "Counterparties" }).click();
+    await navLink(page, "Counterparties").click();
     await page.evaluate(async (address) => {
       const dynamicImport = new Function("path", "return import(path)") as (
         path: string,
@@ -442,30 +373,35 @@ test("all APP20 localnet journeys", async ({
       localStorage.removeItem(addressBook.addressBookStorageKey(address));
       window.dispatchEvent(new Event(addressBook.ADDRESS_BOOK_CHANGED_EVENT));
     }, alice.address);
-    await expect(page.getByText("Bob recovery desk")).toHaveCount(0);
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await expect(page.getByText(bobLabel)).toHaveCount(0);
+    await navLink(page, "Chat").click();
     await loadExistingKey(page);
     await scanRecent(page);
-    await page
-      .getByRole("button", { name: /Contact backup/ })
-      .first()
-      .click();
+    // Self-addressed backups file under the mailbox itself.
+    const self = conversationRow(page, "This mailbox");
+    await expect(self).toBeVisible({ timeout: 60_000 });
+    await self.click();
+    // Earlier runs on the same chain leave older backups above; the newest
+    // one is the last entry of the chronological timeline.
     await expect(
-      page.getByText("CONTACT BACKUP", { exact: true }),
+      timeline(page).getByText("CONTACT BACKUP", { exact: true }).last(),
     ).toBeVisible();
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Merge verified contacts" }).click();
+    await page
+      .getByRole("button", { name: "Merge verified contacts" })
+      .last()
+      .click();
     await expect(
       page.getByText(/Authenticated backup sequence .* restored/),
     ).toBeVisible();
-    await page.getByRole("link", { name: "Counterparties" }).click();
-    await expect(page.getByText("Bob recovery desk")).toBeVisible();
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await navLink(page, "Counterparties").click();
+    await expect(page.getByText(bobLabel)).toBeVisible();
+    await navLink(page, "Chat").click();
   });
 
   await test.step("2. shield STRK and observe truthful progress", async () => {
     await switchIdentity(page, config, "alice");
-    await page.getByRole("link", { name: "RFQ", exact: true }).click();
+    await navLink(page, "RFQ").click();
     await page.getByRole("link", { name: "Shield / unshield funding" }).click();
     await expect(page).toHaveURL(/\/funding$/);
     await expect(
@@ -507,11 +443,11 @@ test("all APP20 localnet journeys", async ({
     });
 
     // Bob needs STRK for the later offer acceptance and invoice payment.
-    // The identity switch stays in Mail's dev-only sidebar. Return through
+    // The identity switch stays in the dev-only localnet bar. Return through
     // RFQ's explicit separate-operation link to the canonical funding surface.
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await navLink(page, "Chat").click();
     await switchIdentity(page, config, "bob");
-    await page.getByRole("link", { name: "RFQ", exact: true }).click();
+    await navLink(page, "RFQ").click();
     await page.getByRole("link", { name: "Shield / unshield funding" }).click();
     await expect(page).toHaveURL(/\/funding$/);
     const bobBefore = parseDisplayedStrk(
@@ -536,19 +472,16 @@ test("all APP20 localnet journeys", async ({
       },
     );
     await screenshot(page, "05-shielded-balances", testInfo);
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
+    await navLink(page, "Chat").click();
   });
 
   await test.step("3. send a composite document and inspect Sent evidence", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
-    await openNewDocument(page);
+    await conversationRow(page, bobLabel).click();
+    await attachTerms(page);
     await page.getByLabel(/^To/).fill(bob.address);
-    await page
-      .getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      )
-      .fill(compositeBody);
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(compositeBody);
     await page.getByRole("button", { name: /Private payment/ }).click();
     await page.getByRole("button", { name: /OTC offer/ }).click();
     await page.getByRole("button", { name: "+ Invoice", exact: true }).click();
@@ -600,17 +533,14 @@ test("all APP20 localnet journeys", async ({
     ).toHaveCount(0, {
       timeout: 180_000,
     });
-    await expect(page.getByText(/Sent · record local/i)).toBeVisible();
-    await expect(threadBody(page, compositeBody)).toBeVisible();
-    await page.getByText("What the chain sees", { exact: true }).click();
-    await expect(
-      page.getByText("Transaction hash", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("1 recipient · posted", { exact: false }),
-    ).toBeVisible();
-    // Provenance moved next to the type badge; read state is incoming-only.
-    await expect(messageRow(page, compositeBody)).toContainText("Sent");
+    // The Sent copy files under the counterparty with its chain evidence.
+    const sent = entry(page, compositeBody);
+    await expect(sent).toBeVisible();
+    await expect(sent).toContainText("Sent copy on this device");
+    await expect(sent).toContainText("1 recipient");
+    await openChainPanel(sent);
+    await expect(sent.getByText("Transaction hash", { exact: true })).toBeVisible();
+    await expect(conversationRow(page, bobLabel)).toContainText("You:");
     await screenshot(page, "08-composite-in-sent", testInfo);
   });
 
@@ -618,33 +548,33 @@ test("all APP20 localnet journeys", async ({
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
     await scanRecent(page);
-    await expect(messageRow(page, compositeBody)).toBeVisible({
-      timeout: 60_000,
-    });
-    await expect(messageRow(page, compositeBody)).toContainText("UNREAD");
-    await messageRow(page, compositeBody).click();
-    await expect(threadBody(page, compositeBody)).toBeVisible();
-    await expect(messageRow(page, compositeBody)).toContainText("OPENED");
-    // The thread head now names the counterparty, so it is addressed by id.
-    await expect(page.locator("#thread-title")).toBeFocused();
+    const row = conversationRowByAddress(page, alice.address);
+    await expect(row).toBeVisible({ timeout: 60_000 });
+    await expect(row).toContainText(/\d+ unread/);
+    await row.click();
+    await expect(row).toContainText("Opened");
+    const received = entry(page, compositeBody);
+    await expect(received).toBeVisible();
+    await expect(received).toContainText("Opened · record");
+    // Records that need nothing from Bob stay compact until opened.
+    await openFullRecord(
+      received.getByRole("article", { name: /^Private payment:/ }),
+    );
     await expect(
-      page.getByText("PRIVATE PAYMENT MEMO", { exact: true }),
+      received.getByText("PRIVATE PAYMENT MEMO", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("OTC OFFER / ONE-SIDED V1", { exact: true }),
+      received.getByText("OTC OFFER / ONE-SIDED V1", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("PAYMENT REQUEST / ONE-SIDED V1", { exact: true }),
+      received.getByText("PAYMENT REQUEST / ONE-SIDED V1", { exact: true }),
+    ).toBeVisible();
+    await openChainPanel(received);
+    await expect(
+      received.getByText("Sender address", { exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("What the chain sees", { exact: true }),
-    ).toBeVisible();
-    await page.getByText("What the chain sees", { exact: true }).click();
-    await expect(
-      page.getByText("Sender address", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByText("Recipient identities", { exact: true }),
+      received.getByText("Recipient identities", { exact: true }),
     ).toBeVisible();
     await screenshot(page, "09-bob-decrypted-composite", testInfo);
 
@@ -653,12 +583,9 @@ test("all APP20 localnet journeys", async ({
       identity: "bob",
     });
     const wrongKeyPage = await unrelated.newPage();
-    await wrongKeyPage.goto("/mail/inbox");
+    await wrongKeyPage.goto("/chat");
     await connectLocalnetWallet(wrongKeyPage);
     await switchIdentity(wrongKeyPage, config, "bob");
-    await wrongKeyPage
-      .getByRole("button", { name: "Compose", exact: true })
-      .click();
     await wrongKeyPage.getByText("Restore from backup").click();
     await wrongKeyPage.getByLabel("Backup value").fill(WRONG_KEY_BACKUP);
     await wrongKeyPage
@@ -673,13 +600,13 @@ test("all APP20 localnet journeys", async ({
     await expect(
       wrongKeyPage.getByRole("button", { name: "Check for new mail" }),
     ).toBeDisabled();
-    await expect(messageRow(wrongKeyPage, compositeBody)).toHaveCount(0);
+    await expect(wrongKeyPage.getByText(compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
     await unrelated.close();
   });
 
   await test.step("5. accept the offer exactly once", async () => {
-    const accept = page.getByRole("button", {
+    const accept = entry(page, compositeBody).getByRole("button", {
       name: "Accept & send 0.25 STRK",
     });
     await expect(accept).toBeVisible();
@@ -706,8 +633,11 @@ test("all APP20 localnet journeys", async ({
   });
 
   await test.step("6. share, review, and explicitly pay an invoice from a fresh context", async () => {
-    await page.getByRole("button", { name: "Share payment link" }).click();
-    const linkCode = page
+    const invoiceEntry = entry(page, compositeBody);
+    await invoiceEntry
+      .getByRole("button", { name: "Share payment link" })
+      .click();
+    const linkCode = invoiceEntry
       .locator("code")
       .filter({ hasText: `${BASE_URL}/pay#app20p2.` });
     const paymentLink = (await linkCode.innerText()).trim();
@@ -753,7 +683,7 @@ test("all APP20 localnet journeys", async ({
     ).toHaveCount(0);
     await expect(
       payPage.getByRole("button", {
-        name: "Continue to inbox to review & pay",
+        name: "Continue to Chat to review & pay",
       }),
     ).toBeVisible();
     await expect(
@@ -769,14 +699,22 @@ test("all APP20 localnet journeys", async ({
 
     await connectLocalnetWallet(payPage);
     await payPage
-      .getByRole("button", { name: "Continue to inbox to review & pay" })
+      .getByRole("button", { name: "Continue to Chat to review & pay" })
       .click();
+    await expect(payPage).toHaveURL(/\/chat$/);
     await expect(
       payPage.getByRole("heading", { name: "Set up a mailbox key" }),
     ).toBeVisible();
+    // The imported request already files under its requester, before any key.
+    await expect(
+      conversationRowByAddress(payPage, alice.address),
+    ).toContainText("Needs action");
     await payPage.getByText("Restore from backup").click();
     await payPage.getByLabel("Backup value").fill(bobBackup);
     await payPage.getByRole("button", { name: "Restore mailbox key" }).click();
+    // The reviewed link is the record this device pays from; the sealed
+    // copy Alice sent arrives with the post-payment mail check and carries
+    // the outcome forward.
     const pay = payPage.getByRole("button", { name: "Pay 0.2 STRK privately" });
     await expect(pay).toBeVisible();
     await pay.click();
@@ -787,9 +725,15 @@ test("all APP20 localnet journeys", async ({
     ).toBeVisible();
     await screenshot(payPage, "15-invoice-payment-progress", testInfo);
     await expect(
-      payPage.getByText(/payment and encrypted memo confirmed\./i),
+      payPage.getByText(/payment and encrypted memo confirmed\./i).first(),
     ).toBeVisible({ timeout: 180_000 });
-    await expect(pay).toHaveCount(0);
+    const paid = payPage
+      .getByRole("article", { name: /^Invoice:/ })
+      .filter({ hasText: /payment and encrypted memo confirmed/i });
+    await expect(paid.first()).toBeVisible();
+    await expect(
+      paid.getByRole("button", { name: "Pay 0.2 STRK privately" }),
+    ).toHaveCount(0);
     expect(
       requestedUrls.filter((url) =>
         url.includes("/__app20_localnet_wallet/privacy"),
@@ -802,13 +746,10 @@ test("all APP20 localnet journeys", async ({
   await test.step("7. fund, fill, and claim contract-backed escrow", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
-    await openNewDocument(page);
+    await conversationRow(page, bobLabel).click();
+    await attachTerms(page);
     await page.getByLabel(/^To/).fill(bob.address);
-    await page
-      .getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      )
-      .fill(escrowBody);
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(escrowBody);
     await page
       .getByRole("button", { name: "+ Escrow fund", exact: true })
       .click();
@@ -848,8 +789,8 @@ test("all APP20 localnet journeys", async ({
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
     await scanRecent(page);
-    await expect(messageRow(page, escrowBody)).toBeVisible({ timeout: 60_000 });
-    await messageRow(page, escrowBody).click();
+    await conversationRowByAddress(page, alice.address).click();
+    await expect(entry(page, escrowBody)).toBeVisible({ timeout: 60_000 });
     const fill = page.getByRole("button", {
       name: "Deposit 0.01 ETH & receive leg A",
     });
@@ -864,8 +805,8 @@ test("all APP20 localnet journeys", async ({
 
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
-    await page.getByRole("button", { name: /^Sent/ }).first().click();
-    await messageRow(page, escrowBody).click();
+    await conversationRow(page, bobLabel).click();
+    await expect(entry(page, escrowBody)).toBeVisible();
     const claim = page.getByRole("button", { name: "Claim ETH leg" });
     await expect(claim).toBeVisible({ timeout: 60_000 });
     await claim.click();
@@ -875,55 +816,49 @@ test("all APP20 localnet journeys", async ({
       }),
     ).toBeVisible({ timeout: 180_000 });
     await expect(
-      page.getByText("Settled on-chain", { exact: true }),
+      page.getByText("Settled on-chain", { exact: true }).first(),
     ).toBeVisible();
     await screenshot(page, "21-escrow-settled", testInfo);
   });
 
   await test.step("8. persist, resume, and send a device-private draft", async () => {
-    await openNewDocument(page);
+    await attachTerms(page);
     await page.getByLabel(/^To/).fill(bob.address);
-    await page
-      .getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      )
-      .fill(draftBody);
-    await page.getByRole("button", { name: "Close" }).click();
-    await page
-      .getByRole("button", { name: /^Drafts/ })
-      .first()
-      .click();
-    const draftRow = messageRow(page, draftBody);
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(draftBody);
+    await page.getByRole("button", { name: "Close document" }).click();
+    await expect(
+      page.getByRole("heading", { name: "New document" }),
+    ).toHaveCount(0);
+    await openTools(page, "Drafts");
+    const draftRow = page.getByRole("button", {
+      name: `Open draft: ${draftBody}`,
+    });
     await expect(draftRow).toBeVisible();
     await screenshot(page, "22-draft-persisted", testInfo);
     await draftRow.click();
-    await expect(
-      page.getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      ),
-    ).toHaveValue(draftBody);
+    await expect(page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER)).toHaveValue(
+      draftBody,
+    );
     await page.getByRole("button", { name: "Send encrypted message" }).click();
     await expect(
       page.getByRole("heading", { name: "New document" }),
     ).toHaveCount(0, {
       timeout: 180_000,
     });
-    await expect(page.getByText(/Sent · record local/i)).toBeVisible();
-    await expect(threadBody(page, draftBody)).toBeVisible();
+    await expect(entry(page, draftBody)).toContainText(
+      "Sent copy on this device",
+    );
     await expect(
-      page.getByRole("button", { name: /^Drafts/ }).first(),
+      page.locator("summary").filter({ hasText: "Drafts" }),
     ).toContainText("0");
     await screenshot(page, "23-draft-resumed-and-sent", testInfo);
   });
 
   await test.step("9. deliver one body to two independently decrypting recipients", async () => {
-    await openNewDocument(page);
+    // Written from Bob's conversation so the circular stays in that thread.
+    await attachTerms(page);
     await page.getByLabel(/^To/).fill(`${alice.address}\n${bob.address}`);
-    await page
-      .getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      )
-      .fill(multiBody);
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(multiBody);
     await expect(
       page.getByText(/2 \/ 66 recipients\./),
     ).toBeVisible();
@@ -934,26 +869,31 @@ test("all APP20 localnet journeys", async ({
     ).toHaveCount(0, {
       timeout: 180_000,
     });
-    await expect(page.getByText(/2 recipients · posted/i)).toBeVisible();
+    // A circular to Bob and this mailbox files under Bob, with its public count.
+    await expect(conversationRow(page, bobLabel)).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(entry(page, multiBody)).toContainText("2 recipients");
 
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
     await scanRecent(page);
-    await expect(messageRow(page, multiBody)).toBeVisible({ timeout: 60_000 });
-    await messageRow(page, multiBody).click();
-    await expect(threadBody(page, multiBody)).toBeVisible();
+    await conversationRowByAddress(page, alice.address).click();
+    await expect(entry(page, multiBody)).toBeVisible({ timeout: 60_000 });
+    await expect(entry(page, multiBody)).toContainText("Opened · record");
     await screenshot(page, "25-multi-recipient-bob", testInfo);
 
+    // Alice decrypts her own copy from the chain; it stays one record, not
+    // an echo under a sealed sender.
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
     await scanRecent(page);
-    await page
-      .getByRole("button", { name: /^Inbox/ })
-      .first()
-      .click();
-    await expect(messageRow(page, multiBody)).toBeVisible({ timeout: 60_000 });
-    await messageRow(page, multiBody).click();
-    await expect(threadBody(page, multiBody)).toBeVisible();
+    await conversationRow(page, bobLabel).click();
+    await expect(entry(page, multiBody)).toHaveCount(1);
+    await expect(
+      conversationRow(page, "Sealed sender").filter({ hasText: multiBody }),
+    ).toHaveCount(0);
     await screenshot(page, "26-multi-recipient-alice", testInfo);
   });
 
@@ -968,26 +908,31 @@ test("all APP20 localnet journeys", async ({
     for (const width of [375, 768, 1_440]) {
       await page.setViewportSize({ width, height: 900 });
       if (width === 375) {
-        const drawer = page.locator("#mail-sidebar");
-        const menu = page.getByRole("button", {
-          name: "Open mailbox sidebar",
+        // One pane at a time on a phone: the open conversation, a way back
+        // to the rail, and the contact context as a drawer.
+        const back = page.getByRole("button", {
+          name: "Back to conversations",
         });
-        await expect(drawer).toHaveAttribute("inert", "");
-        await expect(menu).toHaveAttribute("aria-expanded", "false");
-        await menu.click();
-        const sidebarDialog = page.getByRole("dialog", {
-          name: "Mailbox sidebar",
+        await expect(back).toBeVisible();
+        await back.click();
+        await expect(conversationsRail(page)).toBeVisible();
+        await expect(back).toBeHidden();
+        await conversationRow(page, bobLabel).click();
+        await expect(timeline(page)).toBeVisible();
+        const context = page.getByRole("button", {
+          name: "Context",
+          exact: true,
         });
-        await expect(sidebarDialog).toBeVisible();
-        await expect(drawer).not.toHaveAttribute("inert");
+        await expect(context).toHaveAttribute("aria-expanded", "false");
+        await context.click();
+        await expect(context).toHaveAttribute("aria-expanded", "true");
         await expect(
-          sidebarDialog.getByRole("button", { name: "Close mailbox sidebar" }),
-        ).toBeFocused();
-        await page.keyboard.press("Escape");
-        await expect(sidebarDialog).toHaveCount(0);
-        await expect(drawer).toHaveAttribute("inert", "");
-        await expect(menu).toHaveAttribute("aria-expanded", "false");
-        await expect(menu).toBeFocused();
+          contextPanel(page).getByRole("region", { name: "Wallet identity" }),
+        ).toBeVisible();
+        await contextPanel(page)
+          .getByRole("button", { name: "Close contact context" })
+          .click();
+        await expect(context).toHaveAttribute("aria-expanded", "false");
       }
       await expectNoHorizontalOverflow(page);
       await screenshot(page, `28-responsive-${width}`, testInfo);

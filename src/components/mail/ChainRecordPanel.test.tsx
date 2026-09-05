@@ -2,7 +2,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import ContactSnapshotCard from "./ContactSnapshotCard";
-import { ChainRecordPanel, type LocalMailMessage } from "./Thread";
+import { ChainRecordPanel } from "./ChainRecordPanel";
+import type { LocalMailMessage } from "./message";
 
 const message: LocalMailMessage = {
   id: "incoming:1",

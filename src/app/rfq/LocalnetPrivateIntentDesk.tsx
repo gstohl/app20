@@ -1626,7 +1626,7 @@ export default function LocalnetPrivateIntentDesk({
           </div>
           {address && chain ? (
             <Link
-              to="/mail/inbox"
+              to="/chat"
               onClick={() =>
                 storeDeskHandoff(window.sessionStorage, "mail", counterparty, {
                   account: address,

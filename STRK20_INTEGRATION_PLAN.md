@@ -211,7 +211,7 @@ Historical status at that checkpoint: code-complete locally, with no helper depl
 
 | File | Landed behavior |
 | --- | --- |
-| `src/app/routes.ts` | Defines the current canonical `/mail/inbox` route and legacy redirects |
+| `src/app/routes.ts` | Defines the canonical `/chat` route and the legacy redirects, `/mail/inbox` included |
 | `src/app/inbox/page.tsx` | Network-aware onboarding, compose, public-event scan, and newest-first local plaintext list |
 | `src/components/mail/Onboard.tsx` | Locally persisted random device seed, one-time backup display, and public `register_pubkey` transaction |
 | `src/components/mail/Compose.tsx` | Recipient directory lookup, local encryption, optional private STRK attachment, and STRK20 submission |

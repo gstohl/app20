@@ -6,16 +6,11 @@ import { hash, validateAndParseAddress } from "starknet";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { loadReadMessageIds, saveReadMessageIds } from "@/lib/mail-read-state";
-import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
-import Compose, { type SentEnvelope } from "@/components/mail/Compose";
-import ConversationList from "@/components/mail/ConversationList";
-import DraftList from "@/components/mail/DraftList";
-import Onboard from "@/components/mail/Onboard";
-import { ScanProgress } from "@/components/mail/OperationProgress";
-import Thread, {
-  type LocalMailMessage,
-  type ThreadActionState,
-} from "@/components/mail/Thread";
+import type { SentEnvelope } from "@/components/mail/Compose";
+import type {
+  LocalMailMessage,
+  ThreadActionState,
+} from "@/components/mail/message";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,
@@ -109,10 +104,7 @@ import {
   type ParsedMailEvent,
 } from "@/lib/mail-scan";
 import { verifyContactSnapshot } from "@/lib/contact-backup";
-import {
-  describeMailScanCursor,
-  replyAddressForConversation,
-} from "@/lib/mail-correspondents";
+import { describeMailScanCursor } from "@/lib/mail-correspondents";
 import { authorizeStrk20ValueAction } from "@/lib/mainnet-safety";
 import { clearLocalMailboxStorage } from "@/lib/local-mailbox-storage";
 import {
@@ -183,20 +175,12 @@ import {
   saveMailAssignment,
   type MailAssignment,
 } from "@/lib/mail-assignments";
-import {
-  assembleConversation,
-  conversationKeyForMessage,
-} from "@/lib/mail-thread";
+import { conversationKeyForMessage } from "@/lib/mail-thread";
 import { evaluateSenderProof, type SenderProof } from "@/lib/sender-proof";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import * as constants from "@/utils/constants";
-import styles from "@/components/mail/mail.module.css";
 
 import {
-  TYPE_FILTERS,
-  MAIL_FOLDERS,
-  type MailFolder,
-  type MailboxFilter,
   type ScanKind,
   type ScanWorkerResponse,
   type ActiveScanWorker,
@@ -212,15 +196,21 @@ import {
   storedSentToLocal,
   paymentLinkToLocal,
   paymentLinkRecords,
-  draftMatchesFilter,
-  mailboxMatchesFilter,
-  partitionMailboxFolders,
-  countMailboxFilterHits,
-  countDraftFilterHits,
   parseBlockTimestamp,
 } from "./mailbox-model";
 
-export default function InboxPage() {
+export type MailboxFocusRequest =
+  | { kind: "message"; id: string }
+  | { kind: "recipient"; address: string };
+
+/**
+ * The mailbox desk: every piece of state and every handler the Mailbox page
+ * carried, without its folders, panes and sidebar. Chat mounts this once and
+ * renders the same records one counterparty at a time; the value actions,
+ * scans, backups and device safety below are the Mailbox implementations,
+ * moved rather than rewritten.
+ */
+export function useMailboxDesk() {
   const navigate = useNavigate();
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
@@ -286,14 +276,9 @@ export default function InboxPage() {
     events: 0,
     maxPages: MAIL_SCAN_MAX_PAGES,
   });
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
-    null,
-  );
-  const [messageActivation, setMessageActivation] = useState(0);
   const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [mailboxSearch, setMailboxSearch] = useState("");
 
   /* Read state belongs to this device and this account: it is loaded when the
      account is known and written back as records are opened, so a reload no
@@ -306,16 +291,14 @@ export default function InboxPage() {
     );
   }, [address, chainId]);
 
-  const [mailFolder, setMailFolder] = useState<MailFolder>("inbox");
-  const [mailboxFilter, setMailboxFilter] = useState<MailboxFilter>("all");
   const [drafts, setDrafts] = useState<CompositeDraft[]>([]);
-  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
-  const [composerOpen, setComposerOpen] = useState(false);
   const [pendingPayment, setPendingPayment] =
     useState<DecodedPaymentLink | null>(null);
-  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [mobileSidebarMode, setMobileSidebarMode] = useState(false);
+  /* Where Chat should look next: an imported payment request, or the
+     counterparty a Counterparties or RFQ handoff named. */
+  const [focusRequest, setFocusRequest] = useState<MailboxFocusRequest | null>(
+    null,
+  );
   const [storageNotice, setStorageNotice] = useState<{
     kind: "ok" | "error";
     message: string;
@@ -355,13 +338,6 @@ export default function InboxPage() {
   const recentLoadedRef = useRef(false);
   const scanWorkerRef = useRef<ActiveScanWorker | null>(null);
   const escrowRefreshRef = useRef(0);
-  const readingPaneRef = useRef<HTMLElement | null>(null);
-  const readingScrollRef = useRef<HTMLDivElement | null>(null);
-  const menuButtonRef = useRef<HTMLButtonElement | null>(null);
-  const sidebarRef = useRef<HTMLElement | null>(null);
-  const sidebarCloseRef = useRef<HTMLButtonElement | null>(null);
-  const sidebarWasOpenRef = useRef(false);
-  const activatedMessageIdRef = useRef<string | null>(null);
   const contactHandoffRef = useRef("");
   const rfqAutoBackupPostingRef = useRef(false);
   scanIdentityRef.current = scanIdentity;
@@ -409,85 +385,8 @@ export default function InboxPage() {
     const handoffKey = `${chainId}:${address}:${recipient}`;
     if (contactHandoffRef.current === handoffKey) return;
     contactHandoffRef.current = handoffKey;
-    const draft = { ...createBlankDraft(), recipient };
-    setDrafts(saveDraft(window.localStorage, chainId, address, draft));
-    setMailFolder("drafts");
-    setMailboxFilter("all");
-    setSelectedDraftId(draft.id);
-    setComposerOpen(true);
-    setMobileDetailOpen(true);
-    setSidebarOpen(false);
+    setFocusRequest({ kind: "recipient", address: recipient });
   }, [address, chainId]);
-
-  useEffect(() => {
-    /* Matches the breakpoint where mail.module.css turns the sidebar into a
-       drawer; if these drift, a closed drawer stays focusable off-screen. */
-    const query = window.matchMedia("(max-width: 1179px)");
-    const update = () => setMobileSidebarMode(query.matches);
-    update();
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-
-  useEffect(() => {
-    if (!mobileSidebarMode) {
-      sidebarWasOpenRef.current = false;
-      return;
-    }
-    if (!sidebarOpen) {
-      if (sidebarWasOpenRef.current) {
-        window.requestAnimationFrame(() => menuButtonRef.current?.focus());
-      }
-      sidebarWasOpenRef.current = false;
-      return;
-    }
-
-    sidebarWasOpenRef.current = true;
-    const frame = window.requestAnimationFrame(() =>
-      sidebarCloseRef.current?.focus(),
-    );
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setSidebarOpen(false);
-        return;
-      }
-      if (event.key !== "Tab" || !sidebarRef.current) return;
-      const focusable = Array.from(
-        sidebarRef.current.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), a[href]",
-        ),
-      );
-      if (!focusable.length) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener("keydown", onKeyDown);
-    };
-  }, [mobileSidebarMode, sidebarOpen]);
-
-  useEffect(() => {
-    const frame = window.requestAnimationFrame(() => {
-      readingScrollRef.current?.scrollTo({ top: 0, behavior: "auto" });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [
-    composerOpen,
-    keyFingerprint,
-    mailFolder,
-    selectedDraftId,
-    selectedMessageId,
-  ]);
 
   function cancelActiveScanWorker() {
     const active = scanWorkerRef.current;
@@ -550,17 +449,9 @@ export default function InboxPage() {
     setMailSeed(null);
     setMessages([]);
     setDrafts([]);
-    setMailFolder("inbox");
-    setMailboxFilter("all");
-    setSelectedDraftId(null);
     setScanKind("idle");
     setScanMessage("");
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
-    setSelectedMessageId(null);
-    activatedMessageIdRef.current = null;
-    setComposerOpen(false);
-    setMobileDetailOpen(false);
-    setSidebarOpen(false);
     setActionStates({});
     setStorageNotice(null);
     if (address && chainId) {
@@ -626,11 +517,7 @@ export default function InboxPage() {
       );
       setPendingPayment(pending);
       setMessages((current) => mergeMailMessages(current, [message]));
-      setMailFolder("inbox");
-      setMailboxFilter("invoices");
-      setSelectedMessageId(message.id);
-      setComposerOpen(false);
-      setMobileDetailOpen(true);
+      setFocusRequest({ kind: "message", id: message.id });
     } catch {
       // /pay already reports blocked session storage. Do not invent a request.
     }
@@ -658,9 +545,7 @@ export default function InboxPage() {
       );
       setMessages((current) => mergeMailMessages(current, [message]));
       setPendingPayment(null);
-      setMailFolder("inbox");
-      setMailboxFilter("invoices");
-      setSelectedMessageId(message.id);
+      setFocusRequest({ kind: "message", id: message.id });
       setActionState(actionKey, {
         pending: false,
         message:
@@ -720,7 +605,10 @@ export default function InboxPage() {
     };
   }, [address, chainId, otcState, providerIndex]);
 
-  const mailboxView = useMemo(() => {
+  /* Every record this device may show: authenticated backups only, and a
+     device-local name carried to every record in its conversation, including
+     ones decrypted later. */
+  const annotatedMessages = useMemo(() => {
     const authenticatedBackupIds = new Set(
       address && chainId && helperAddress && mailSeed && keyFingerprint
         ? newestBackupMessages(messages, {
@@ -742,25 +630,6 @@ export default function InboxPage() {
           authenticatedBackupIds.has(message.id),
       ),
     );
-    const folders = partitionMailboxFolders(visibleMessages);
-    const folderMessages = mailFolder === "sent" ? folders.sent : folders.inbox;
-    const typeCounts =
-      mailFolder === "drafts"
-        ? countDraftFilterHits(drafts)
-        : countMailboxFilterHits(folderMessages);
-    const filteredMessages =
-      mailboxFilter === "all"
-        ? folderMessages
-        : folderMessages.filter((message) =>
-            mailboxMatchesFilter(message, mailboxFilter),
-          );
-    const filteredDrafts =
-      mailboxFilter === "all"
-        ? drafts
-        : drafts.filter((draft) => draftMatchesFilter(draft, mailboxFilter));
-    /* Naming a counterparty is about a conversation, not one envelope: an
-       assignment made on any record carries to every record that shares its
-       conversation, including ones decrypted later. */
     const assignedByConversation = new Map<string, string>();
     for (const message of visibleMessages) {
       const assigned = assignments[message.id]?.address;
@@ -773,7 +642,7 @@ export default function InboxPage() {
         assignedByConversation.set(conversation, assigned);
       }
     }
-    const allAnnotatedMessages = visibleMessages.map((message) => {
+    return visibleMessages.map((message) => {
       const localConversationId = assignments[message.id]?.conversationId;
       const conversation = conversationKeyForMessage({
         ...message,
@@ -787,94 +656,25 @@ export default function InboxPage() {
         localConversationId,
       };
     });
-    const visibleIds = new Set(filteredMessages.map((message) => message.id));
-    const annotatedMessages = allAnnotatedMessages.filter((message) =>
-      visibleIds.has(message.id),
-    );
-    return {
-      folderCounts: {
-        inbox: folders.inbox.length,
-        sent: folders.sent.length,
-        drafts: drafts.length,
-      } satisfies Record<MailFolder, number>,
-      typeCounts,
-      filteredMessages,
-      filteredDrafts,
-      allAnnotatedMessages,
-      annotatedMessages,
-    };
-  }, [
-    address,
-    assignments,
-    chainId,
-    drafts,
-    helperAddress,
-    keyFingerprint,
-    mailFolder,
-    mailboxFilter,
-    mailSeed,
-    messages,
-  ]);
+  }, [address, assignments, chainId, helperAddress, keyFingerprint, mailSeed, messages]);
 
-  useEffect(() => {
-    if (mailFolder === "drafts") {
-      const visibleDrafts = mailboxView.filteredDrafts;
-      if (
-        selectedDraftId &&
-        visibleDrafts.some((draft) => draft.id === selectedDraftId)
-      ) {
-        return;
-      }
-      setSelectedDraftId(visibleDrafts[0]?.id ?? null);
-      return;
-    }
-    const visibleMessages = mailboxView.filteredMessages;
-    if (
-      selectedMessageId &&
-      visibleMessages.some((message) => message.id === selectedMessageId)
-    ) {
-      return;
-    }
-    setSelectedMessageId(visibleMessages[0]?.id ?? null);
-  }, [
-    mailFolder,
-    mailboxView.filteredDrafts,
-    mailboxView.filteredMessages,
-    selectedDraftId,
-    selectedMessageId,
-  ]);
-
-  useEffect(() => {
-    const messageId = selectedMessageId;
-    if (
-      !messageId ||
-      composerOpen ||
-      activatedMessageIdRef.current !== messageId
-    ) {
-      return;
-    }
-    const frame = window.requestAnimationFrame(() => {
-      const pane = readingPaneRef.current;
-      if (!pane || pane.getClientRects().length === 0) return;
+  /* Read state is written when Chat opens a conversation; a reload no longer
+     marks a whole mailbox unread. */
+  const markMessagesRead = useCallback(
+    (ids: readonly string[]) => {
       setReadMessageIds((current) => {
-        if (current.has(messageId)) return current;
+        const pending = ids.filter((id) => !current.has(id));
+        if (!pending.length) return current;
         const next = new Set(current);
-        next.add(messageId);
+        for (const id of pending) next.add(id);
         if (chainId && address) {
           saveReadMessageIds(window.localStorage, chainId, address, next);
         }
         return next;
       });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [
-    address,
-    chainId,
-    composerOpen,
-    messageActivation,
-    mobileDetailOpen,
-    selectedMessageId,
-  ]);
+    },
+    [address, chainId],
+  );
 
   function setActionState(key: string, state: ThreadActionState) {
     setActionStates((current) => ({ ...current, [key]: state }));
@@ -2329,7 +2129,7 @@ export default function InboxPage() {
           buyToken: token.address,
           targetBuyBaseUnits: request.amount,
           ...(request.memo ? { memo: request.memo } : {}),
-          returnTo: "/mail/inbox",
+          returnTo: "/chat",
         },
         { account: context.address, chainId: context.chainId },
       );
@@ -2787,22 +2587,6 @@ export default function InboxPage() {
     }
   }
 
-  const {
-    folderCounts,
-    typeCounts,
-    filteredDrafts,
-    allAnnotatedMessages,
-    annotatedMessages,
-  } = mailboxView;
-  const selectedMessage = annotatedMessages.find(
-    (message) => message.id === selectedMessageId,
-  );
-  const conversationMessages = useMemo(
-    () =>
-      assembleConversation(allAnnotatedMessages, selectedMessage?.id ?? null),
-    [allAnnotatedMessages, selectedMessage?.id],
-  );
-  const activeDraft = drafts.find((draft) => draft.id === selectedDraftId);
   const scanCursorDescription = useMemo(() => {
     if (
       !keypair ||
@@ -2829,11 +2613,6 @@ export default function InboxPage() {
     scanKind,
     scanMessage,
   ]);
-  const folderLabel =
-    MAIL_FOLDERS.find((folder) => folder.id === mailFolder)?.label ?? "Inbox";
-  const filterLabel =
-    TYPE_FILTERS.find((filter) => filter.id === mailboxFilter)?.label ??
-    "All types";
 
   function persistDraft(draft: CompositeDraft) {
     try {
@@ -2890,8 +2669,6 @@ export default function InboxPage() {
         draftId,
       );
       setDrafts(next);
-      setSelectedDraftId(next[0]?.id ?? null);
-      if (selectedDraftId === draftId && !next.length) setComposerOpen(false);
       setStorageNotice({
         kind: "ok",
         message: "Local draft deleted from this browser profile.",
@@ -2948,13 +2725,7 @@ export default function InboxPage() {
       setProofs({});
       setActionStates({});
       setReadMessageIds(new Set());
-      setSelectedMessageId(null);
-      setSelectedDraftId(null);
       setPendingPayment(null);
-      setComposerOpen(false);
-      setMobileDetailOpen(false);
-      setMailFolder("inbox");
-      setMailboxFilter("all");
       setStorageNotice({
         kind: "ok",
         message: `Forgot this device: removed ${removed.length} local mailbox record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted mail. That backup can also recreate the Mail signing key used for payment requests, and APP20 currently cannot revoke it if compromised.`,
@@ -2969,22 +2740,13 @@ export default function InboxPage() {
     }
   }
 
-  const selectMessage = useCallback((messageId: string) => {
-    activatedMessageIdRef.current = messageId;
-    setSelectedMessageId(messageId);
-    setMessageActivation((current) => current + 1);
-    setComposerOpen(false);
-    setMobileDetailOpen(true);
-  }, []);
-
-  const selectDraft = useCallback((draftId: string) => {
-    setSelectedDraftId(draftId);
-    setComposerOpen(true);
-    setMobileDetailOpen(true);
-    setSidebarOpen(false);
-  }, []);
-
-  function openComposer() {
+  /**
+   * A device-private draft for one counterparty. Compose takes it from here;
+   * a draft closed untouched is removed again by Chat.
+   */
+  function createDraft(
+    input: { recipient?: string; conversationId?: string; inReplyTo?: string } = {},
+  ): CompositeDraft | null {
     if (!address || !chainId) {
       setStorageNotice({
         kind: "error",
@@ -2992,50 +2754,19 @@ export default function InboxPage() {
           "Mail is keyed to a wallet: connect one so the draft is saved under the correct mailbox.",
         action: "connect-wallet",
       });
-      setSidebarOpen(true);
-      return;
+      return null;
     }
-    // Compose on an untouched draft reopens it instead of leaving another
-    // identical blank row behind.
-    const existingBlank = drafts.find(isBlankDraft);
-    const draft = existingBlank ?? createBlankDraft();
-    if (!existingBlank) persistDraft(draft);
-    setMailFolder("drafts");
-    setMailboxFilter("all");
-    setSelectedDraftId(draft.id);
-    setComposerOpen(true);
-    setMobileDetailOpen(true);
-    setSidebarOpen(false);
-  }
-
-  function openComposerForRecipient(input: {
-    address?: string;
-    conversationId: string;
-    inReplyTo: string;
-  }) {
-    if (!address || !chainId) {
-      setStorageNotice({
-        kind: "error",
-        message:
-          "Mail is keyed to a wallet: connect one so the draft is saved under the correct mailbox.",
-        action: "connect-wallet",
-      });
-      setSidebarOpen(true);
-      return;
-    }
-    const draft = {
+    const existingBlank = input.recipient
+      ? undefined
+      : drafts.find(isBlankDraft);
+    const draft: CompositeDraft = existingBlank ?? {
       ...createBlankDraft(),
-      recipient: input.address ?? "",
-      conversationId: input.conversationId,
-      inReplyTo: input.inReplyTo,
+      recipient: input.recipient ?? "",
+      ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+      ...(input.inReplyTo ? { inReplyTo: input.inReplyTo } : {}),
     };
-    persistDraft(draft);
-    setMailFolder("drafts");
-    setMailboxFilter("all");
-    setSelectedDraftId(draft.id);
-    setComposerOpen(true);
-    setMobileDetailOpen(true);
-    setSidebarOpen(false);
+    if (!existingBlank) persistDraft(draft);
+    return draft;
   }
 
   function assignMessageAddress(messageId: string, assignedAddress: string) {
@@ -3082,539 +2813,71 @@ export default function InboxPage() {
     setStorageNotice({ kind: "error", message: proofMessage });
   }
 
-  const walletGateShown = storageNotice?.action === "connect-wallet";
-  /* What is actually blocking this mailbox, answered once. The welcome sheet,
-     the rail's empty state and the scan panel used to give three different
-     instructions for the same state. */
+  /* What is actually blocking this mailbox, answered once for every pane. */
   const mailboxGate: "wallet" | "key" | null =
     !address || !chainId ? "wallet" : keypair ? null : "key";
 
-  function replyToOpenConversation() {
-    if (!selectedMessage) return;
-    openComposerForRecipient({
-      address:
-        replyAddressForConversation(conversationMessages, address) ?? undefined,
-      conversationId: conversationKeyForMessage(selectedMessage),
-      inReplyTo: selectedMessage.documentId ?? "",
-    });
-  }
+  const clearFocusRequest = useCallback(() => setFocusRequest(null), []);
 
-  function closeDetail() {
-    if (composerOpen && activeDraft && isBlankDraft(activeDraft)) {
-      removeDraft(activeDraft.id, false);
-    }
-    setComposerOpen(false);
-    setMobileDetailOpen(false);
-  }
-
-  function selectFolder(nextFolder: MailFolder) {
-    setMailboxSearch("");
-    setMailFolder(nextFolder);
-    setSidebarOpen(false);
-    setMobileDetailOpen(false);
-    setComposerOpen(nextFolder === "drafts" && Boolean(filteredDrafts[0]));
-    if (nextFolder === "drafts") {
-      const nextDraft = drafts.find((draft) =>
-        draftMatchesFilter(draft, mailboxFilter),
-      );
-      setSelectedDraftId(nextDraft?.id ?? null);
-    }
-  }
-
-  function selectTypeFilter(nextFilter: MailboxFilter) {
-    setMailboxSearch("");
-    setMailboxFilter(nextFilter);
-    setSidebarOpen(false);
-    setMobileDetailOpen(false);
-  }
-
-  return (
-    <div className={styles.page}>
-      <header className={styles.mobileTopbar}>
-        <button
-          ref={menuButtonRef}
-          className={styles.menuButton}
-          type="button"
-          aria-label="Open mailbox sidebar"
-          aria-controls="mail-sidebar"
-          aria-expanded={sidebarOpen}
-          onClick={() => setSidebarOpen(true)}
-        >
-          ☰
-        </button>
-        {/* The app header's current tab already says MAILBOX. This row carries
-            what the pane is actually showing, so the phone layout does not
-            spend one of its few rows repeating the module name. */}
-        <span className={styles.mobileModuleTitle}>
-          {composerOpen ? "New document" : folderLabel}
-          {!composerOpen && mailboxFilter !== "all" ? (
-            <em className={styles.mobileFilterChip}>{filterLabel}</em>
-          ) : null}
-        </span>
-        <button
-          className={styles.mobileCompose}
-          type="button"
-          aria-label="Compose new message"
-          onClick={openComposer}
-        >
-          New
-        </button>
-      </header>
-
-      {sidebarOpen ? (
-        <button
-          className={styles.sidebarBackdrop}
-          type="button"
-          aria-label="Close mailbox sidebar"
-          onClick={() => setSidebarOpen(false)}
-        />
-      ) : null}
-
-      <main
-        aria-label="APP20 Mail"
-        className={`${styles.mailWorkspace} ${
-          mobileDetailOpen ? styles.detailOpen : ""
-        }`}
-      >
-        <aside
-          ref={sidebarRef}
-          id="mail-sidebar"
-          inert={mobileSidebarMode && !sidebarOpen ? true : undefined}
-          className={`${styles.mailSidebar} ${
-            sidebarOpen ? styles.sidebarOpen : ""
-          }`}
-          role={mobileSidebarMode && sidebarOpen ? "dialog" : undefined}
-          aria-modal={mobileSidebarMode && sidebarOpen ? true : undefined}
-          aria-label="Mailbox sidebar"
-        >
-          <div className={styles.sidebarCloseRow}>
-            <button
-              ref={sidebarCloseRef}
-              className={styles.sidebarClose}
-              type="button"
-              aria-label="Close mailbox sidebar"
-              onClick={() => setSidebarOpen(false)}
-            >
-              ×
-            </button>
-          </div>
-
-          <div className={styles.sidebarCreateActions}>
-            <button
-              className={styles.composeButton}
-              type="button"
-              onClick={openComposer}
-            >
-              <span aria-hidden="true">＋</span>
-              Compose
-            </button>
-          </div>
-
-          <nav className={styles.mailboxNav} aria-label="Mail folders">
-            <span className={styles.sidebarLabel}>FOLDERS</span>
-            {MAIL_FOLDERS.map((folder) => (
-              <button
-                key={folder.id}
-                type="button"
-                aria-current={mailFolder === folder.id ? "page" : undefined}
-                onClick={() => selectFolder(folder.id)}
-              >
-                <span>{folder.label}</span>
-                <strong>{folderCounts[folder.id]}</strong>
-              </button>
-            ))}
-          </nav>
-
-          <nav
-            className={styles.typeFilterNav}
-            aria-label="Filter current folder"
-          >
-            <span className={styles.sidebarLabel}>SHOW</span>
-            {TYPE_FILTERS.map((filter) => (
-              <button
-                key={filter.id}
-                type="button"
-                aria-pressed={mailboxFilter === filter.id}
-                onClick={() => selectTypeFilter(filter.id)}
-              >
-                <span>{filter.label}</span>
-                <strong>{typeCounts[filter.id]}</strong>
-              </button>
-            ))}
-          </nav>
-
-          <section className={styles.sidebarScan} aria-labelledby="scan-title">
-            <div className={styles.scanHeading}>
-              <strong id="scan-title">Check for mail</strong>
-            </div>
-            <div className={styles.scanActions}>
-              <button
-                type="button"
-                onClick={() => void scanInbox("newer")}
-                disabled={!keypair || scanning}
-              >
-                {scanning ? "Checking…" : "Check for new mail"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void scanInbox("older")}
-                disabled={!keypair || scanning}
-              >
-                Load older mail
-              </button>
-            </div>
-            <ScanProgress
-              scanning={scanning}
-              pages={scanProgress.pages}
-              maxPages={scanProgress.maxPages}
-              events={scanProgress.events}
-              phase={scanMessage}
-            />
-            {mailboxGate ? (
-              <p className={styles.scanMessage}>
-                {mailboxGate === "wallet"
-                  ? "Connect a wallet before checking for mail."
-                  : "Set up a mailbox key before checking for mail."}
-              </p>
-            ) : null}
-            {scanCursorDescription ? (
-              <p className={styles.scanMessage}>{scanCursorDescription}</p>
-            ) : null}
-            {!scanning && scanMessage ? (
-              <p
-                className={`${styles.scanMessage} ${
-                  scanKind === "error" ? styles.scanMessageError : ""
-                }`}
-                role={scanKind === "error" ? "alert" : "status"}
-              >
-                {scanMessage}
-              </p>
-            ) : null}
-          </section>
-
-          <details className={styles.contactBackupPanel}>
-            <summary>Encrypted mailbox recovery</summary>
-            <div className={styles.contactBackupBody}>
-              <p>
-                Post authenticated contact or RFQ-history self-mail. Oversized
-                ciphertext uses a verified CID pointer. The same wallet locates
-                it; the mailbox recovery phrase decrypts it. Wallet alone is not
-                enough. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
-              </p>
-              <button
-                className={styles.secondaryButton}
-                type="button"
-                disabled={
-                  !keypair ||
-                  !mailSeed ||
-                  !helperAddress ||
-                  actionStates["contacts:backup"]?.pending ||
-                  actionStates["rfq-resume:backup"]?.pending
-                }
-                onClick={() => void handleContactBackup()}
-              >
-                {actionStates["contacts:backup"]?.pending
-                  ? "Backing up…"
-                  : "Back up contacts to Mailbox"}
-              </button>
-              {actionStates["contacts:backup"]?.message ? (
-                <p className={styles.scanMessage} role="status">
-                  {actionStates["contacts:backup"].message}
-                </p>
-              ) : null}
-              <button
-                className={styles.secondaryButton}
-                type="button"
-                disabled={
-                  !keypair ||
-                  !mailSeed ||
-                  !helperAddress ||
-                  actionStates["contacts:backup"]?.pending ||
-                  actionStates["rfq-resume:backup"]?.pending
-                }
-                onClick={() => void handleRfqHistoryBackup()}
-              >
-                {actionStates["rfq-resume:backup"]?.pending
-                  ? "Backing up…"
-                  : "Back up RFQ history"}
-              </button>
-              {actionStates["rfq-resume:backup"]?.message ? (
-                <p className={styles.scanMessage} role="status">
-                  {actionStates["rfq-resume:backup"].message}
-                </p>
-              ) : null}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={rfqAutoBackupEnabled}
-                  disabled={!address || !chainId}
-                  onChange={(event) =>
-                    updateRfqAutoBackup(event.target.checked)
-                  }
-                />{" "}
-                Automatically back up RFQ history after settlement (opt in)
-              </label>
-            </div>
-          </details>
-
-          <details className={styles.forgetDevice}>
-            <summary>Device safety</summary>
-            <p>
-              Disconnecting is not logout: drafts, Sent copies, and aliases stay
-              in this browser profile.
-            </p>
-            <button
-              className={styles.secondaryButton}
-              type="button"
-              onClick={lockMailboxSession}
-            >
-              Lock mailbox this session
-            </button>
-            <button
-              className={styles.warningButton}
-              type="button"
-              onClick={forgetThisDevice}
-            >
-              Forget this device
-            </button>
-          </details>
-
-          <footer className={styles.sidebarFooter}>
-            <a
-              href="https://github.com/gstohl/app20"
-              target="_blank"
-              rel="noreferrer"
-            >
-              GitHub ↗
-            </a>
-          </footer>
-        </aside>
-
-        {mailFolder === "drafts" ? (
-          <DraftList
-            drafts={filteredDrafts}
-            selectedDraftId={selectedDraftId}
-            filterLabel={filterLabel}
-            onSelect={selectDraft}
-            onDelete={(draftId) => removeDraft(draftId)}
-          />
-        ) : (
-          <ConversationList
-            messages={annotatedMessages}
-            selectedMessageId={selectedMessageId}
-            readMessageIds={readMessageIds}
-            aliases={displayAliases}
-            selfAddress={address}
-            folderLabel={folderLabel}
-            filterLabel={filterLabel}
-            search={mailboxSearch}
-            onSearchChange={setMailboxSearch}
-            gate={mailboxGate}
-            onSelect={selectMessage}
-          />
-        )}
-
-        <section
-          ref={readingPaneRef}
-          className={styles.readingPane}
-          aria-label="Reading pane"
-        >
-          <header className={styles.readingToolbar}>
-            <button
-              className={styles.backToList}
-              type="button"
-              aria-label="Back to message list"
-              onClick={closeDetail}
-            >
-              ← Messages
-            </button>
-            <div>
-              <span className={styles.sidebarLabel}>
-                {composerOpen
-                  ? "LOCAL DRAFT / NOT ENCRYPTED AT REST"
-                  : selectedMessage
-                    ? "LOCAL PLAINTEXT / CARBON COPY"
-                    : "APP20 / MAILBOX / ENCRYPTED CORRESPONDENCE"}
-              </span>
-              {/* An open thread names itself in its own head, and the folder is
-                  named in the rail beside this; the toolbar spends its line on
-                  the one thing neither of them offers. */}
-              <strong>
-                {composerOpen
-                  ? "New document"
-                  : selectedMessage
-                    ? "Opened on this device"
-                    : "Private correspondence desk"}
-              </strong>
-            </div>
-            {composerOpen ? (
-              <button
-                className={styles.closeCompose}
-                type="button"
-                onClick={closeDetail}
-              >
-                Close
-              </button>
-            ) : selectedMessage ? (
-              <button
-                className={styles.toolbarReply}
-                type="button"
-                onClick={replyToOpenConversation}
-              >
-                Reply
-              </button>
-            ) : null}
-          </header>
-
-          <div ref={readingScrollRef} className={styles.readingScroll}>
-            {storageNotice ? (
-              <div
-                className={`${styles.storageNotice} ${
-                  storageNotice.kind === "error"
-                    ? styles.storageNoticeError
-                    : ""
-                }`}
-                role={storageNotice.kind === "error" ? "alert" : "status"}
-              >
-                <span>{storageNotice.message}</span>
-                {storageNotice.action === "connect-wallet" ? (
-                  <span className={styles.connectAction}>
-                    <SelectWallet />
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
-            {!keypair && selectedMessage && !composerOpen ? (
-              <Onboard
-                key={`${providerIndex}:${address}`}
-                helperAddress={helperAddress}
-                onKeyReady={handleKeyReady}
-              />
-            ) : null}
-            {!keypair && composerOpen ? (
-              <p className={styles.keySetupNotice}>
-                <strong>No mailbox key on this device</strong>
-                <span>
-                  Write and save the draft now. Sending needs a mailbox key —{" "}
-                  <a href="#mailbox-key-setup">set one up below</a>.
-                </span>
-              </p>
-            ) : null}
-            {composerOpen && activeDraft ? (
-              <Compose
-                draft={activeDraft}
-                helperAddress={helperAddress}
-                escrowAddress={escrowAddress}
-                escrowEnabled={escrowEnabled}
-                mailSeed={mailSeed}
-                keyReady={Boolean(keypair)}
-                networkName={networkName}
-                onDraftChange={persistDraft}
-                onDeleteDraft={(draftId) => removeDraft(draftId, false)}
-                onSent={(message) => {
-                  handleSent(message);
-                  removeDraft(message.draftId, false);
-                  setMailFolder("sent");
-                  setMailboxFilter("all");
-                  setSelectedMessageId(`sent:${message.documentId}`);
-                  setComposerOpen(false);
-                }}
-              />
-            ) : selectedMessage ? (
-              <Thread
-                messages={conversationMessages}
-                focusVersion={messageActivation}
-                selfAddress={address}
-                aliases={displayAliases}
-                otcState={otcState}
-                escrowState={escrowState}
-                actionStates={actionStates}
-                onAccept={(offer, index) => void handleAccept(offer, index)}
-                onDecline={(offer) => void handleDecline(offer)}
-                onPostReceipt={(offer) => void handlePostReceipt(offer)}
-                onPay={(request) => void handlePay(request)}
-                onPayPrivatelyWithStrk={handlePayPrivatelyWithStrk}
-                invoiceMaturityHeadBlock={invoiceMaturityHeadBlock}
-                onEscrowFill={(fund) => void handleEscrowFill(fund)}
-                onEscrowClaim={
-                  providerIndex === constants.LOCALNET_PROVIDER_INDEX
-                    ? (fund) => void handleLocalnetEscrowPayout(fund, "claim")
-                    : undefined
-                }
-                onEscrowTimeout={
-                  providerIndex === constants.LOCALNET_PROVIDER_INDEX
-                    ? (fund) => void handleLocalnetEscrowPayout(fund, "timeout")
-                    : undefined
-                }
-                onRestoreContacts={(payload, message) =>
-                  void restoreContactBackup(payload, message)
-                }
-                onRestoreBackup={(payload, message) =>
-                  void restoreAuthenticatedBackup(payload, message)
-                }
-                contactRestorePending={
-                  actionStates["contacts:restore"]?.pending
-                }
-                backupRestorePending={actionStates["backup:restore"]?.pending}
-                onReply={openComposerForRecipient}
-                onAssign={assignMessageAddress}
-                onProve={(messageId, assigned) =>
-                  void proveAssignedAddress(messageId, assigned)
-                }
-                proofs={proofs}
-              />
-            ) : (
-              <section
-                className={styles.welcomeState}
-                aria-labelledby="mail-welcome-title"
-              >
-                <div className={styles.welcomeSheet}>
-                  <p className={styles.eyebrow}>APP20 / MAILBOX</p>
-                  <h1 id="mail-welcome-title">
-                    Encrypted messages. Private value.
-                  </h1>
-                  <p className={styles.welcomeCopy}>
-                    {walletGateShown
-                      ? "Composing sets up your mailbox key when needed."
-                      : !address || !chainId
-                        ? "Mail is keyed to a wallet: connect one to read this mailbox or write a letter. Your mailbox key is set up here when it is first needed."
-                        : keypair
-                          ? "Check for mail or compose a letter."
-                          : "Composing sets up your mailbox key when needed."}
-                  </p>
-                  {/* The CTA has to be the step that is actually available:
-                      offering compose to a disconnected desk only produced a
-                      notice pointing at a control in the app header. The gate
-                      notice carries the same control, so only one of the two
-                      asks for the wallet at a time. */}
-                  {walletGateShown ? null : !address || !chainId ? (
-                    <div
-                      className={`${styles.welcomeConnect} ${styles.connectAction}`}
-                    >
-                      <SelectWallet />
-                    </div>
-                  ) : (
-                    <button
-                      className={styles.welcomeCompose}
-                      type="button"
-                      onClick={openComposer}
-                    >
-                      Compose encrypted mail
-                    </button>
-                  )}
-                </div>
-              </section>
-            )}
-            {!keypair && composerOpen ? (
-              <Onboard
-                key={`${providerIndex}:${address}`}
-                helperAddress={helperAddress}
-                onKeyReady={handleKeyReady}
-              />
-            ) : null}
-          </div>
-        </section>
-      </main>
-    </div>
-  );
+  return {
+    address,
+    chainId,
+    providerIndex,
+    helperAddress,
+    escrowAddress,
+    escrowEnabled,
+    networkName,
+    keypair,
+    mailSeed,
+    keyFingerprint,
+    mailboxGate,
+    messages: annotatedMessages,
+    aliases,
+    displayAliases,
+    bookEntries,
+    otcState,
+    escrowState,
+    actionStates,
+    assignments,
+    proofs,
+    invoiceMaturityHeadBlock,
+    drafts,
+    readMessageIds,
+    markMessagesRead,
+    scanning,
+    scanKind,
+    scanMessage,
+    scanProgress,
+    scanCursorDescription,
+    scanInbox,
+    handleKeyReady,
+    lockMailboxSession,
+    forgetThisDevice,
+    handleSent,
+    persistDraft,
+    removeDraft,
+    createDraft,
+    handleAccept,
+    handleDecline,
+    handlePostReceipt,
+    handlePay,
+    handlePayPrivatelyWithStrk,
+    handleEscrowFill,
+    handleLocalnetEscrowPayout,
+    handleContactBackup,
+    handleRfqHistoryBackup,
+    rfqAutoBackupEnabled,
+    updateRfqAutoBackup,
+    restoreContactBackup,
+    restoreAuthenticatedBackup,
+    assignMessageAddress,
+    proveAssignedAddress,
+    storageNotice,
+    setStorageNotice,
+    focusRequest,
+    clearFocusRequest,
+    pendingPayment,
+  };
 }
+
+export type MailboxDesk = ReturnType<typeof useMailboxDesk>;

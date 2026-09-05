@@ -126,16 +126,16 @@ export default function PayPage() {
   let readinessMessage: string;
   if (!isConnected || !address || !chainId) {
     readinessMessage =
-      "No wallet is connected. Continue to the inbox, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
+      "No wallet is connected. Continue to Chat, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
   } else if (!isStrk20Capable) {
     readinessMessage =
       "The connected wallet does not expose the dapp-facing STRK20 API APP20 requires. No private payment can be submitted.";
   } else if (mailVaultKind === "missing") {
     readinessMessage =
-      "This account is not onboarded in this browser. Continue to the inbox to create or restore and register its device mail key before paying.";
+      "This account is not onboarded in this browser. Continue to Chat to create or restore and register its device mail key before paying.";
   } else {
     readinessMessage =
-      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in the inbox before paying. Clear the local mailbox when using a shared machine.";
+      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in Chat before paying. Clear the local mailbox when using a shared machine.";
   }
 
   let creatorReadiness: string;
@@ -144,7 +144,7 @@ export default function PayPage() {
       "Connect the privacy-enabled wallet and network that should receive the private STRK payment.";
   } else if (isStrk20Capable && mailVaultKind === "missing") {
     creatorReadiness =
-      "Create or restore this wallet's Mail identity in the inbox first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.";
+      "Create or restore this wallet's Mail identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.";
   } else if (isStrk20Capable) {
     creatorReadiness =
       "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
@@ -153,7 +153,7 @@ export default function PayPage() {
       "This wallet does not expose APP20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
   }
 
-  function continueToInbox(replaceExisting = false) {
+  function continueToChat(replaceExisting = false) {
     if (!request) return;
 
     try {
@@ -170,7 +170,7 @@ export default function PayPage() {
 
       storePendingPayment(window.sessionStorage, window.location.hash);
       setPendingConflict(false);
-      void navigate({ to: "/mail/inbox" });
+      void navigate({ to: "/chat" });
     } catch (error: unknown) {
       setHandoffError(
         error instanceof Error
@@ -207,7 +207,7 @@ export default function PayPage() {
       const vault = inspectMailVault(window.localStorage, chainId, address);
       if (vault.kind === "missing") {
         throw new Error(
-          "Create or restore this wallet's Mail identity in the inbox before generating a signed link.",
+          "Create or restore this wallet's Mail identity in Chat before generating a signed link.",
         );
       }
       if (vault.kind === "passphrase" && !mailPassphrase) {
@@ -338,7 +338,7 @@ export default function PayPage() {
               />
               <p className={styles.actionWarning}>
                 Continuing stores this decoded request in this tab. It does not
-                submit a payment. In the inbox, review it again and explicitly
+                submit a payment. In Chat, review it again and explicitly
                 confirm through the normal wallet flow. Shield separately before
                 paying; bundling a public shield with the transfer would
                 correlate them.
@@ -354,7 +354,7 @@ export default function PayPage() {
                   <button
                     className={styles.warningButton}
                     type="button"
-                    onClick={() => continueToInbox(true)}
+                    onClick={() => continueToChat(true)}
                   >
                     Replace pending request and continue
                   </button>
@@ -363,14 +363,14 @@ export default function PayPage() {
                 <button
                   className={styles.primaryButton}
                   type="button"
-                  onClick={() => continueToInbox(false)}
+                  onClick={() => continueToChat(false)}
                   disabled={expired || wrongNetwork}
                 >
                   {expired
                     ? "Expired request — payment disabled"
                     : wrongNetwork
                       ? `Switch wallet to ${requestedNetwork}`
-                      : "Continue to inbox to review & pay"}
+                      : "Continue to Chat to review & pay"}
                 </button>
               )}
               {handoffError ? (
@@ -581,7 +581,7 @@ export default function PayPage() {
       </main>
 
       <footer className={styles.footer}>
-        <Link to="/mail/inbox">Open APP20 Mail</Link>
+        <Link to="/chat">Open Chat</Link>
         <span>
           {hasFragment
             ? "No link can authorize or auto-submit a payment."

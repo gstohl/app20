@@ -1334,7 +1334,7 @@ export default function RfqWorkspace() {
             <span>Elsewhere</span>
             <Link to="/rfq/operations">RFQ operations status</Link>
             <Link to="/funding">Shield / unshield funding</Link>
-            <Link to="/mail/inbox">Mail · coordination only</Link>
+            <Link to="/chat">Chat · coordination only</Link>
             <Link to="/cross-chain-review">Cross-chain dry review</Link>
             <Link to="/recovery/privy">Privy recovery</Link>
           </nav>

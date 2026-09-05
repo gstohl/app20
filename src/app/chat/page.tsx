@@ -2,52 +2,37 @@
 
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { validateAndParseAddress } from "starknet";
 import { useActiveStarknetSession } from "@/app/active-session";
-import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import {
-  helperForNetwork,
-  paymentLinkRecords,
-  paymentLinkToLocal,
-  storedSentToLocal,
-} from "@/app/inbox/mailbox-model";
 import {
   restoreRfqLifecycle,
   type RfqLifecycleRecord,
 } from "@/app/rfq/rfq-lifecycle";
 import { createIndexedDbRfqStorage } from "@/app/rfq/rfq-storage";
+import Compose, { type SentEnvelope } from "@/components/mail/Compose";
+import Onboard from "@/components/mail/Onboard";
 import { shortenFelt } from "@/components/mail/correspondent";
-import type { LocalMailMessage } from "@/components/mail/Thread";
-import {
-  ADDRESS_BOOK_CHANGED_EVENT,
-  loadAddressBook,
-  type AddressBookEntry,
-} from "@/lib/address-book";
-import { loadAliases, type AliasRecord } from "@/lib/aliases";
-import { emptyEscrowState, loadEscrowState, type EscrowState } from "@/lib/escrow";
-import { deriveKeypair, type MailKeypair } from "@/lib/mail";
-import { loadReadMessageIds, saveReadMessageIds } from "@/lib/mail-read-state";
+import type { AddressBookEntry } from "@/lib/address-book";
+import { canonicalizeStarknetAddress, feltEquals } from "@/lib/addresses";
+import { isBlankDraft, type CompositeDraft } from "@/lib/drafts";
 import {
   conversationFieldsFromPayload,
   parseConversationId,
 } from "@/lib/mail-thread";
-import {
-  inspectMailVault,
-  unwrapMailSeed,
-  type MailVaultRecord,
-} from "@/lib/mail-vault";
-import { emptyOtcState, expireStoredDeals, type OtcState } from "@/lib/otc";
-import { loadSentMail } from "@/lib/sent-mail";
 import * as constants from "@/utils/constants";
-import ChatComposer, {
-  type ChatComposerStatus,
-  type ChatKeyState,
-} from "./ChatComposer";
+import ChatComposer, { type ChatComposerStatus } from "./ChatComposer";
 import ChatContextPanel from "./ChatContextPanel";
 import ChatConversationRail from "./ChatConversationRail";
-import ChatTimeline, { chatEntryDomId } from "./ChatTimeline";
+import ChatMailboxTools from "./ChatMailboxTools";
+import type { ChatRecordActions } from "./ChatRecordCard";
+import ChatTimeline, {
+  chatEntryDomId,
+  type ChatTimelineHandlers,
+} from "./ChatTimeline";
 import {
+  SELF_CONVERSATION_KEY,
   buildChatModel,
   buildContactContext,
   contactDisplayName,
@@ -60,72 +45,20 @@ import {
   previewChatLetterBudget,
   sendChatLetter,
 } from "./chat-send";
+import { useMailboxDesk } from "./useMailboxDesk";
 import styles from "./chat.module.css";
 
-type ChatRecords = Readonly<{
-  sent: readonly LocalMailMessage[];
-  paymentLinks: readonly LocalMailMessage[];
-  otc: OtcState;
-  escrow: EscrowState;
-  aliases: readonly AliasRecord[];
-  addressBook: readonly AddressBookEntry[];
-  rfqRecords: readonly RfqLifecycleRecord[];
-}>;
-
-const EMPTY_RECORDS: ChatRecords = Object.freeze({
-  sent: [],
-  paymentLinks: [],
-  otc: emptyOtcState(),
-  escrow: emptyEscrowState(),
-  aliases: [],
-  addressBook: [],
-  rfqRecords: [],
-});
-
-type VaultState =
-  | { kind: "missing" }
-  | {
-      kind: "locked";
-      record: Extract<MailVaultRecord, { kind: "passphrase" }>;
-      busy: boolean;
-      error?: string;
-    }
-  | { kind: "ready"; seed: Uint8Array; keypair: MailKeypair };
-
-function wipeVault(vault: VaultState): void {
-  if (vault.kind !== "ready") return;
-  vault.seed.fill(0);
-  vault.keypair.privateKey.fill(0);
+/** The conversation key an address files under, or null when it is not one. */
+function conversationKeyFor(address: string | undefined): string | null {
+  if (!address) return null;
+  try {
+    return canonicalizeStarknetAddress(address);
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Everything Chat reads is the mailbox's own device-local state, loaded with
- * the same functions Mailbox uses so the two surfaces can never disagree
- * about a record. Nothing is fetched from the chain here.
- */
-function loadSynchronousRecords(
-  chainId: string,
-  address: string,
-): Pick<ChatRecords, "sent" | "paymentLinks" | "otc" | "escrow" | "aliases"> {
-  const otc = expireStoredDeals(window.localStorage, chainId, address);
-  return {
-    sent: loadSentMail(window.localStorage, chainId, address).map(
-      storedSentToLocal,
-    ),
-    paymentLinks: paymentLinkRecords(otc).map((payment) =>
-      paymentLinkToLocal(
-        payment.request,
-        payment.updatedAt,
-        payment.linkAuthenticity,
-      ),
-    ),
-    otc,
-    escrow: loadEscrowState(window.localStorage, chainId, address),
-    aliases: loadAliases(window.localStorage, address),
-  };
-}
-
-/** The conversation tag Mailbox threads this counterparty under, if any. */
+/** The conversation tag the mailbox threads this counterparty under, if any. */
 function conversationIdFor(
   conversation: ChatConversation,
 ): string | undefined {
@@ -146,6 +79,12 @@ function conversationIdFor(
   return undefined;
 }
 
+/** The first address a draft names, for filing the document composer. */
+function draftRecipientKey(draft: CompositeDraft): string | null {
+  const first = draft.recipient.split(/[\n,;]+/)[0]?.trim();
+  return conversationKeyFor(first || undefined);
+}
+
 function prefersReducedMotion(): boolean {
   try {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -154,61 +93,47 @@ function prefersReducedMotion(): boolean {
   }
 }
 
+/**
+ * Chat is the mailbox: every encrypted record this wallet holds, read one
+ * counterparty at a time, with the mailbox desk's own handlers behind every
+ * card. The desk hook owns keys, scanning, deal state and value actions; this
+ * page owns which conversation is open and what the person is writing.
+ */
 export default function ChatPage() {
+  const desk = useMailboxDesk();
+  const {
+    address,
+    chainId,
+    providerIndex,
+    helperAddress,
+    networkName,
+    keypair,
+    mailSeed,
+    markMessagesRead,
+    clearFocusRequest,
+  } = desk;
   const session = useActiveStarknetSession();
-  const providerIndex = useFrontendProvider(
-    (state) => state.currentFrontendProviderIndex,
-  );
-  const address = useStoreWallet((state) => state.address);
-  const chainId = useStoreWallet((state) => state.chain);
   const isConnected = useStoreWallet((state) => state.isConnected);
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
   const isStrk20Capable = useStoreWallet((state) => state.isStrk20Capable);
-  const helperAddress = helperForNetwork(providerIndex);
-  const networkName = constants.Strk20Networks[providerIndex] ?? "this network";
   const scope = address && chainId ? `${chainId}:${address}` : "";
-  const gate: "wallet" | null = scope ? null : "wallet";
+  const gate = desk.mailboxGate;
   const handoffsEnabled =
     session.rail === "ready" && session.compatible && Boolean(scope);
 
-  const [records, setRecords] = useState<ChatRecords>(EMPTY_RECORDS);
-  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
-  const [version, setVersion] = useState(0);
-  const refresh = useCallback(() => setVersion((value) => value + 1), []);
-  const scopeRef = useRef("");
-
+  /* Multi-maker requests live in the RFQ workspace; Chat only reads them so
+     the context panel can show the ones a counterparty is part of. */
+  const [rfqRecords, setRfqRecords] = useState<readonly RfqLifecycleRecord[]>(
+    [],
+  );
+  const [rfqVersion, setRfqVersion] = useState(0);
   useEffect(() => {
-    if (!scope || !address || !chainId) {
-      scopeRef.current = "";
-      setRecords(EMPTY_RECORDS);
-      setReadIds(new Set());
+    if (!address || !chainId) {
+      setRfqRecords([]);
       return;
     }
-    const sameScope = scopeRef.current === scope;
-    scopeRef.current = scope;
     let cancelled = false;
-    try {
-      const loaded = loadSynchronousRecords(chainId, address);
-      setRecords((current) => ({
-        ...loaded,
-        addressBook: sameScope ? current.addressBook : [],
-        rfqRecords: sameScope ? current.rfqRecords : [],
-      }));
-    } catch {
-      setRecords(EMPTY_RECORDS);
-    }
-    setReadIds(loadReadMessageIds(window.localStorage, chainId, address));
-    void loadAddressBook(window.localStorage, address)
-      .then((entries) => {
-        if (!cancelled) {
-          setRecords((current) => ({ ...current, addressBook: entries }));
-        }
-      })
-      .catch(() => {
-        // A book that will not open is reported on the Counterparties page.
-        if (!cancelled) setRecords((current) => ({ ...current, addressBook: [] }));
-      });
     void createIndexedDbRfqStorage()
       .list(chainId, address)
       .then((rows) => {
@@ -224,7 +149,7 @@ export default function ChatPage() {
             // An unreadable row is the RFQ workspace's to reconcile.
           }
         }
-        setRecords((current) => ({ ...current, rfqRecords: restored }));
+        setRfqRecords(restored);
       })
       .catch(() => {
         // Without IndexedDB the workspace section simply stays empty here.
@@ -232,84 +157,47 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [address, chainId, scope, version]);
-
+  }, [address, chainId, rfqVersion]);
   useEffect(() => {
-    const onChange = () => refresh();
-    window.addEventListener(ADDRESS_BOOK_CHANGED_EVENT, onChange);
-    window.addEventListener("storage", onChange);
-    return () => {
-      window.removeEventListener(ADDRESS_BOOK_CHANGED_EVENT, onChange);
-      window.removeEventListener("storage", onChange);
-    };
-  }, [refresh]);
+    const onStorage = () => setRfqVersion((value) => value + 1);
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
-  /* The mailbox key stays exactly where Mailbox keeps it: a plaintext vault
-     opens silently, a passphrase vault asks once per tab, and the seed is
-     zeroed whenever the account changes or the page goes away. */
-  const [vault, setVault] = useState<VaultState>({ kind: "missing" });
-  const vaultRef = useRef<VaultState>(vault);
-  vaultRef.current = vault;
-  useEffect(() => {
-    if (!address || !chainId) {
-      setVault({ kind: "missing" });
-      return;
-    }
-    let next: VaultState = { kind: "missing" };
-    try {
-      const inspected = inspectMailVault(window.localStorage, chainId, address);
-      if (inspected.kind === "plaintext") {
-        next = {
-          kind: "ready",
-          seed: inspected.seed,
-          keypair: deriveKeypair(inspected.seed),
-        };
-      } else if (inspected.kind === "passphrase") {
-        next = { kind: "locked", record: inspected.record, busy: false };
-      }
-    } catch {
-      next = { kind: "missing" };
-    }
-    setVault(next);
-    return () => {
-      wipeVault(vaultRef.current);
-      wipeVault(next);
-    };
-  }, [address, chainId]);
-
-  async function unlockVault(passphrase: string) {
-    const current = vaultRef.current;
-    if (current.kind !== "locked" || current.busy) return;
-    setVault({ ...current, busy: true, error: undefined });
-    try {
-      const seed = await unwrapMailSeed(current.record, passphrase);
-      setVault({ kind: "ready", seed, keypair: deriveKeypair(seed) });
-    } catch (error: unknown) {
-      setVault({
-        kind: "locked",
-        record: current.record,
-        busy: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "That passphrase does not open this mailbox vault.",
-      });
-    }
-  }
-
+  /* Addresses opened this session that hold no record yet: a new conversation
+     from the tools, or a Counterparties handoff. */
+  const [extraContacts, setExtraContacts] = useState<string[]>([]);
+  const addressBook = useMemo<AddressBookEntry[]>(
+    () =>
+      desk.bookEntries.map((entry) => ({
+        label: entry.label,
+        address: entry.address,
+        updatedAt: entry.addedAt,
+      })),
+    [desk.bookEntries],
+  );
   const model = useMemo(
     () =>
       buildChatModel({
         selfAddress: address,
-        sent: records.sent,
-        paymentLinks: records.paymentLinks,
-        otc: records.otc,
-        escrow: records.escrow,
-        addressBook: records.addressBook,
-        aliases: records.aliases,
-        readIds,
+        messages: desk.messages,
+        otc: desk.otcState,
+        escrow: desk.escrowState,
+        addressBook,
+        aliases: desk.aliases,
+        readIds: desk.readMessageIds,
+        extraContacts,
       }),
-    [address, records, readIds],
+    [
+      address,
+      addressBook,
+      desk.aliases,
+      desk.escrowState,
+      desk.messages,
+      desk.otcState,
+      desk.readMessageIds,
+      extraContacts,
+    ],
   );
   const [search, setSearch] = useState("");
   const [needsActionOnly, setNeedsActionOnly] = useState(false);
@@ -321,7 +209,7 @@ export default function ChatPage() {
     [model.conversations, needsActionOnly, search],
   );
 
-  const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   /* A conversation is "activated" by an explicit choice, not by being the
      first row on load. The counter lets choosing the already-open row count
      again, so its records are marked read even when nothing else changed. */
@@ -331,42 +219,52 @@ export default function ChatPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [letters, setLetters] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<ChatComposerStatus>(null);
   const [sending, setSending] = useState(false);
+  /* The document composer, open on one device-private draft. */
+  const [composeDraftId, setComposeDraftId] = useState<string | null>(null);
+  /* Bumped when a handoff or a new address should land the cursor in the
+     quick composer; the composer exists only once its conversation renders. */
+  const [composerFocus, setComposerFocus] = useState(0);
+  useEffect(() => {
+    if (!composerFocus) return;
+    document.getElementById("chat-composer")?.focus();
+  }, [composerFocus, selectedKey]);
 
   useEffect(() => {
-    setSelectedAddress(null);
+    setSelectedKey(null);
     activatedRef.current = null;
     setEntryId(null);
     setHighlightId(null);
-    setDrafts({});
+    setLetters({});
     setStatus(null);
     setSending(false);
     setMobileDetailOpen(false);
     setContextOpen(false);
     setSearch("");
     setNeedsActionOnly(false);
+    setExtraContacts([]);
+    setComposeDraftId(null);
   }, [scope]);
 
   useEffect(() => {
     if (
-      selectedAddress &&
-      visible.some((conversation) => conversation.contact.address === selectedAddress)
+      selectedKey &&
+      visible.some((conversation) => conversation.contact.key === selectedKey)
     ) {
       return;
     }
-    setSelectedAddress(visible[0]?.contact.address ?? null);
-  }, [selectedAddress, visible]);
+    setSelectedKey(visible[0]?.contact.key ?? null);
+  }, [selectedKey, visible]);
 
   const conversation =
     model.conversations.find(
-      (candidate) => candidate.contact.address === selectedAddress,
+      (candidate) => candidate.contact.key === selectedKey,
     ) ?? null;
   const context = useMemo(
-    () =>
-      conversation ? buildContactContext(conversation, records.rfqRecords) : null,
-    [conversation, records.rfqRecords],
+    () => (conversation ? buildContactContext(conversation, rfqRecords) : null),
+    [conversation, rfqRecords],
   );
   const selectedEntry = useMemo(() => {
     if (!context || !entryId) return null;
@@ -378,32 +276,78 @@ export default function ChatPage() {
   }, [context, entryId]);
 
   /* Opening a conversation is what marks its incoming records read; the
-     first row being selected on load is not. Same rule as Mailbox. */
+     first row being selected on load is not. */
   useEffect(() => {
-    if (!conversation || !address || !chainId) return;
-    if (activatedRef.current !== conversation.contact.address) return;
-    const pending = unreadItemIds(conversation).filter((id) => !readIds.has(id));
-    if (!pending.length) return;
-    const next = new Set(readIds);
-    for (const id of pending) next.add(id);
-    setReadIds(next);
-    saveReadMessageIds(window.localStorage, chainId, address, next);
-  }, [activation, address, chainId, conversation, readIds]);
+    if (!conversation) return;
+    if (activatedRef.current !== conversation.contact.key) return;
+    const pending = unreadItemIds(conversation);
+    if (pending.length) markMessagesRead(pending);
+  }, [activation, conversation, markMessagesRead]);
+
+  const selectConversation = useCallback((next: string) => {
+    activatedRef.current = next;
+    setActivation((value) => value + 1);
+    setSelectedKey(next);
+    setEntryId(null);
+    setHighlightId(null);
+    setStatus(null);
+    setMobileDetailOpen(true);
+    setContextOpen(false);
+  }, []);
+
+  /* Where the desk asks Chat to look: an imported payment request, or the
+     counterparty a Counterparties or RFQ handoff named. */
+  useEffect(() => {
+    const request = desk.focusRequest;
+    if (!request) return;
+    if (request.kind === "recipient") {
+      const key = conversationKeyFor(request.address);
+      if (key && address && !feltEquals(key, address)) {
+        setSearch("");
+        setNeedsActionOnly(false);
+        setExtraContacts((current) =>
+          current.includes(key) ? current : [...current, key],
+        );
+        selectConversation(key);
+        setComposerFocus((value) => value + 1);
+      }
+      clearFocusRequest();
+      return;
+    }
+    const owner = model.conversations.find((candidate) =>
+      candidate.items.some((item) => item.id === request.id),
+    );
+    if (!owner) return;
+    setSearch("");
+    setNeedsActionOnly(false);
+    selectConversation(owner.contact.key);
+    setHighlightId(request.id);
+    clearFocusRequest();
+  }, [
+    address,
+    clearFocusRequest,
+    desk.focusRequest,
+    model.conversations,
+    selectConversation,
+  ]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const conversationAddress = conversation?.contact.address ?? null;
   const conversationLength = conversation?.items.length ?? 0;
+  const composeDraft =
+    (composeDraftId &&
+      desk.drafts.find((draft) => draft.id === composeDraftId)) ||
+    null;
   useEffect(() => {
-    if (highlightId) return;
+    if (highlightId || composeDraft) return;
     const frame = window.requestAnimationFrame(() => {
       const element = scrollRef.current;
       if (element) element.scrollTop = element.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [conversationAddress, conversationLength, highlightId]);
+  }, [composeDraft, conversationLength, highlightId, selectedKey]);
 
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightId || composeDraft) return;
     const frame = window.requestAnimationFrame(() => {
       document.getElementById(chatEntryDomId(highlightId))?.scrollIntoView({
         block: "center",
@@ -415,31 +359,102 @@ export default function ChatPage() {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timer);
     };
-  }, [highlightId]);
-
-  const selectConversation = useCallback((next: string) => {
-    activatedRef.current = next;
-    setActivation((value) => value + 1);
-    setSelectedAddress(next);
-    setEntryId(null);
-    setHighlightId(null);
-    setStatus(null);
-    setMobileDetailOpen(true);
-    setContextOpen(false);
-  }, []);
+  }, [composeDraft, highlightId]);
 
   function locate(itemId: string) {
     setContextOpen(false);
     setMobileDetailOpen(true);
+    setComposeDraftId(null);
     setHighlightId(itemId);
   }
 
-  const keyState: ChatKeyState =
-    vault.kind === "ready"
-      ? { kind: "ready" }
-      : vault.kind === "locked"
-        ? { kind: "locked", busy: vault.busy, error: vault.error }
-        : { kind: "missing" };
+  function startConversation(input: string) {
+    let recipient: string;
+    try {
+      recipient = validateAndParseAddress(input.trim());
+    } catch {
+      desk.setStorageNotice({
+        kind: "error",
+        message:
+          "That is not a valid Starknet address. Pick a saved counterparty or paste the address itself.",
+      });
+      return;
+    }
+    if (address && feltEquals(recipient, address)) {
+      if (model.conversations.some((row) => row.contact.key === SELF_CONVERSATION_KEY)) {
+        selectConversation(SELF_CONVERSATION_KEY);
+        return;
+      }
+      desk.setStorageNotice({
+        kind: "error",
+        message:
+          "This is your own mailbox. Self-addressed backups are posted from the mailbox tools.",
+      });
+      return;
+    }
+    const key = conversationKeyFor(recipient);
+    if (!key) return;
+    setSearch("");
+    setNeedsActionOnly(false);
+    setExtraContacts((current) =>
+      current.includes(key) ? current : [...current, key],
+    );
+    selectConversation(key);
+    setComposerFocus((value) => value + 1);
+  }
+
+  /* The document composer: terms, invoices and escrow announcements go out
+     as one sealed document, exactly as the mailbox has always sent them. */
+  function openDocumentComposer(recipient?: string) {
+    const draft = desk.createDraft({
+      recipient,
+      conversationId:
+        recipient && conversation?.contact.address === recipient
+          ? conversationIdFor(conversation)
+          : undefined,
+    });
+    if (!draft) return;
+    setComposeDraftId(draft.id);
+    setEntryId(null);
+    setHighlightId(null);
+    setMobileDetailOpen(true);
+    setContextOpen(false);
+  }
+
+  function openDraft(draft: CompositeDraft) {
+    const key = draftRecipientKey(draft);
+    if (key && model.conversations.some((row) => row.contact.key === key)) {
+      selectConversation(key);
+    }
+    setComposeDraftId(draft.id);
+    setMobileDetailOpen(true);
+    setContextOpen(false);
+  }
+
+  function closeDocumentComposer() {
+    if (composeDraft && isBlankDraft(composeDraft)) {
+      desk.removeDraft(composeDraft.id, false);
+    }
+    setComposeDraftId(null);
+  }
+
+  function handleDocumentSent(message: SentEnvelope) {
+    desk.handleSent(message);
+    desk.removeDraft(message.draftId, false);
+    setComposeDraftId(null);
+    const recipientKeys = message.recipients
+      .map((recipient) => conversationKeyFor(recipient))
+      .filter((key): key is string => key !== null);
+    const others = recipientKeys.filter(
+      (key) => !(address && feltEquals(key, address)),
+    );
+    const target = others.length ? others : [SELF_CONVERSATION_KEY];
+    if (!selectedKey || !target.includes(selectedKey)) {
+      selectConversation(target[0]);
+    }
+    setHighlightId(`sent:${message.documentId}`);
+  }
+
   const blocker = chatSendBlocker({
     helperAddress,
     networkName,
@@ -447,20 +462,22 @@ export default function ChatPage() {
     hasWalletAccount: Boolean(walletAccount),
     senderAddress: address,
     isStrk20Capable,
-    keyReady: vault.kind === "ready",
+    keyReady: Boolean(keypair),
   });
-  const draft = conversation ? (drafts[conversation.contact.address] ?? "") : "";
+  const letter = conversation ? (letters[conversation.contact.key] ?? "") : "";
   const budget = useMemo(
-    () => previewChatLetterBudget(draft, vault.kind === "ready"),
-    [draft, vault.kind],
+    () => previewChatLetterBudget(letter, Boolean(mailSeed)),
+    [letter, mailSeed],
   );
 
   async function send() {
     if (
       !conversation ||
+      conversation.contact.kind !== "counterparty" ||
+      !conversation.contact.address ||
       sending ||
       blocker ||
-      vault.kind !== "ready" ||
+      !keypair ||
       !helperAddress ||
       !walletAccount ||
       !selectedWallet ||
@@ -470,7 +487,8 @@ export default function ChatPage() {
       return;
     }
     const target = conversation.contact.address;
-    const body = draft;
+    const key = conversation.contact.key;
+    const body = letter;
     setSending(true);
     setStatus({
       kind: "sending",
@@ -490,10 +508,9 @@ export default function ChatPage() {
           selectedWallet,
           senderAddress: address,
           chainId,
-          mailSeed: vault.seed,
-          keypair: vault.keypair,
+          mailSeed,
+          keypair,
         },
-        storage: window.localStorage,
         onPhase: (_phase, detail) =>
           setStatus((current) => ({
             kind: "sending",
@@ -501,17 +518,13 @@ export default function ChatPage() {
             startedAt: current?.startedAt ?? Date.now(),
           })),
       });
-      setDrafts((current) => ({ ...current, [target]: "" }));
+      desk.handleSent(result.envelope);
+      setLetters((current) => ({ ...current, [key]: "" }));
       setStatus({
         kind: "ok",
-        message: result.localCopySaved
-          ? `Sealed and confirmed in ${shortenFelt(result.transactionHash)}. The Sent copy is saved in this browser profile (not encrypted at rest).`
-          : `Confirmed in ${result.transactionHash}, but the local Sent copy could not be saved: ${result.localCopyError ?? "browser storage failed"}. It will not appear here after this tab closes.`,
+        message: `Sealed and confirmed in ${shortenFelt(result.transactionHash)}. The Sent copy is filed here on this device (not encrypted at rest).`,
       });
-      if (result.localCopySaved) {
-        refresh();
-        setHighlightId(`sent:${result.sent.documentId}`);
-      }
+      setHighlightId(`sent:${result.envelope.documentId}`);
     } catch (error: unknown) {
       setStatus({
         kind: "error",
@@ -525,20 +538,62 @@ export default function ChatPage() {
     }
   }
 
+  const actions: ChatRecordActions = {
+    selfAddress: address,
+    actionStates: desk.actionStates,
+    invoiceMaturityHeadBlock: desk.invoiceMaturityHeadBlock,
+    onAccept: (offer, offerIndex) => void desk.handleAccept(offer, offerIndex),
+    onDecline: (offer) => void desk.handleDecline(offer),
+    onPostReceipt: (offer) => void desk.handlePostReceipt(offer),
+    onPay: (request) => void desk.handlePay(request),
+    onPayPrivatelyWithStrk: (request) =>
+      void desk.handlePayPrivatelyWithStrk(request),
+    onEscrowFill: (fund) => void desk.handleEscrowFill(fund),
+    onEscrowClaim: (fund) => void desk.handleLocalnetEscrowPayout(fund, "claim"),
+    onEscrowTimeout: (fund) =>
+      void desk.handleLocalnetEscrowPayout(fund, "timeout"),
+  };
+  const timelineHandlers: ChatTimelineHandlers = {
+    actions,
+    proofs: desk.proofs,
+    onAssign: desk.assignMessageAddress,
+    onProve: desk.proveAssignedAddress,
+    onRestoreContacts: (payload, message) =>
+      void desk.restoreContactBackup(payload, message),
+    onRestoreBackup: (payload, message) =>
+      void desk.restoreAuthenticatedBackup(payload, message),
+    contactRestorePending: Boolean(
+      desk.actionStates["contacts:restore"]?.pending,
+    ),
+    backupRestorePending: Boolean(desk.actionStates["backup:restore"]?.pending),
+  };
+
   const name = conversation ? contactDisplayName(conversation.contact) : null;
+  const walletGateShown = desk.storageNotice?.action === "connect-wallet";
+  const composeRecipientName = composeDraft
+    ? (() => {
+        const key = draftRecipientKey(composeDraft);
+        const row = key
+          ? model.conversations.find((candidate) => candidate.contact.key === key)
+          : null;
+        if (row) return contactDisplayName(row.contact);
+        return composeDraft.recipient.trim() ? "the named recipients" : null;
+      })()
+    : null;
+  const detailOpen = mobileDetailOpen || Boolean(composeDraft);
 
   return (
     <div className={styles.page}>
       <main
         aria-label="APP20 Chat"
-        className={`${styles.workspace}${mobileDetailOpen ? ` ${styles.detailOpen}` : ""}${
+        className={`${styles.workspace}${detailOpen ? ` ${styles.detailOpen}` : ""}${
           contextOpen ? ` ${styles.contextOpen}` : ""
         }`}
       >
         <ChatConversationRail
           conversations={visible}
           totalCount={model.conversations.length}
-          selectedAddress={selectedAddress}
+          selectedKey={selectedKey}
           search={search}
           onSearchChange={setSearch}
           needsActionOnly={needsActionOnly}
@@ -547,7 +602,35 @@ export default function ChatPage() {
           gate={gate}
           unattributedSent={model.unattributedSent}
           onSelect={selectConversation}
-        />
+        >
+          <ChatMailboxTools
+            selfAddress={address}
+            gate={gate}
+            keyLoaded={Boolean(keypair)}
+            seedLoaded={Boolean(mailSeed)}
+            helperConfigured={Boolean(helperAddress)}
+            scanning={desk.scanning}
+            scanKind={desk.scanKind}
+            scanMessage={desk.scanMessage}
+            scanProgress={desk.scanProgress}
+            scanCursorDescription={desk.scanCursorDescription}
+            onScan={(direction) => void desk.scanInbox(direction)}
+            drafts={desk.drafts}
+            onOpenDraft={openDraft}
+            onDeleteDraft={(draftId) => {
+              desk.removeDraft(draftId);
+            }}
+            onStartConversation={startConversation}
+            onNewDocument={(recipient) => openDocumentComposer(recipient)}
+            actionStates={desk.actionStates}
+            onContactBackup={() => void desk.handleContactBackup()}
+            onRfqHistoryBackup={() => void desk.handleRfqHistoryBackup()}
+            rfqAutoBackupEnabled={desk.rfqAutoBackupEnabled}
+            onRfqAutoBackupChange={desk.updateRfqAutoBackup}
+            onLock={desk.lockMailboxSession}
+            onForget={desk.forgetThisDevice}
+          />
+        </ChatConversationRail>
 
         <section className={styles.conversation} aria-label="Conversation">
           <header className={styles.conversationHead}>
@@ -555,32 +638,57 @@ export default function ChatPage() {
               type="button"
               className={`${styles.headButton} ${styles.backButton}`}
               aria-label="Back to conversations"
-              onClick={() => setMobileDetailOpen(false)}
+              onClick={() => {
+                if (composeDraft) closeDocumentComposer();
+                setMobileDetailOpen(false);
+              }}
             >
               ← Chats
             </button>
             <div>
               <p className={styles.kicker}>
-                {conversation
-                  ? "DEVICE-LOCAL RECORDS · NOT SETTLEMENT AUTHORITY"
-                  : "APP20 / CHAT / ENCRYPTED CORRESPONDENCE"}
+                {composeDraft
+                  ? "ENCRYPTED DOCUMENT · SEALED ON THIS DEVICE"
+                  : conversation
+                    ? "ENCRYPTED RECORDS · NOT SETTLEMENT AUTHORITY"
+                    : "APP20 / CHAT / ENCRYPTED CORRESPONDENCE"}
               </p>
               <strong>
-                {name ? (
+                {composeDraft ? (
+                  composeRecipientName ? (
+                    <>
+                      Document to <bdi>{composeRecipientName}</bdi>
+                    </>
+                  ) : (
+                    "New document"
+                  )
+                ) : name ? (
                   <bdi>{name}</bdi>
                 ) : (
                   "Private correspondence, one counterparty at a time"
                 )}
               </strong>
-              {conversation ? (
+              {conversation && !composeDraft ? (
                 <small>
                   {conversation.items.length} record
                   {conversation.items.length === 1 ? "" : "s"} on this device ·{" "}
-                  {shortenFelt(conversation.contact.address)}
+                  {conversation.contact.kind === "self"
+                    ? "your own mailbox"
+                    : conversation.contact.address
+                      ? shortenFelt(conversation.contact.address)
+                      : "unnamed thread"}
                 </small>
               ) : null}
             </div>
-            {conversation ? (
+            {composeDraft ? (
+              <button
+                type="button"
+                className={styles.headButton}
+                onClick={closeDocumentComposer}
+              >
+                Close document
+              </button>
+            ) : conversation ? (
               <button
                 type="button"
                 className={`${styles.headButton} ${styles.contextButton}`}
@@ -594,27 +702,94 @@ export default function ChatPage() {
           </header>
 
           <div ref={scrollRef} className={styles.timelineScroll}>
-            {gate ? (
+            {desk.storageNotice ? (
+              <div
+                className={styles.notice}
+                data-kind={desk.storageNotice.kind}
+                role={desk.storageNotice.kind === "error" ? "alert" : "status"}
+              >
+                <span>{desk.storageNotice.message}</span>
+                {desk.storageNotice.action === "connect-wallet" ? (
+                  <span className={styles.connectAction}>
+                    <SelectWallet />
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.noticeDismiss}
+                  aria-label="Dismiss notice"
+                  onClick={() => desk.setStorageNotice(null)}
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
+
+            {gate === "key" ? (
+              <div className={styles.keySetup}>
+                <Onboard
+                  key={`${providerIndex}:${address}`}
+                  helperAddress={helperAddress}
+                  onKeyReady={desk.handleKeyReady}
+                />
+              </div>
+            ) : null}
+
+            {composeDraft ? (
+              <section className={styles.sheet} aria-label="Document composer">
+                {gate === "key" ? (
+                  <p className={styles.keyNotice}>
+                    <strong>No mailbox key on this device</strong>
+                    <span>
+                      Write and save the draft now. Sending needs a mailbox
+                      key — <a href="#mailbox-key-setup">set one up above</a>.
+                    </span>
+                  </p>
+                ) : null}
+                <Compose
+                  key={composeDraft.id}
+                  draft={composeDraft}
+                  helperAddress={helperAddress}
+                  escrowAddress={desk.escrowAddress}
+                  escrowEnabled={desk.escrowEnabled}
+                  mailSeed={mailSeed}
+                  keyReady={Boolean(keypair)}
+                  networkName={networkName}
+                  onDraftChange={desk.persistDraft}
+                  onDeleteDraft={(draftId) => {
+                    desk.removeDraft(draftId, false);
+                    setComposeDraftId(null);
+                  }}
+                  onSent={handleDocumentSent}
+                />
+              </section>
+            ) : gate === "wallet" ? (
               <section
                 className={styles.welcome}
                 aria-labelledby="chat-welcome-title"
               >
                 <p className={styles.kicker}>APP20 / CHAT</p>
-                <h2 id="chat-welcome-title">One counterparty, every record.</h2>
+                <h2 id="chat-welcome-title">
+                  Encrypted correspondence, one counterparty at a time.
+                </h2>
                 <p>
-                  Chat reads the letters, offers, invoices and escrows this
-                  device already holds and groups them by counterparty. It is
-                  keyed to a wallet: connect one to open it.
+                  Letters, offers, invoices and escrow announcements are sealed
+                  to a registered mailbox key and read back from the chain on
+                  this device. Chat is keyed to a wallet: connect one to open
+                  it.
                 </p>
-                <div className={styles.connectAction}>
-                  <SelectWallet />
-                </div>
+                {walletGateShown ? null : (
+                  <div className={styles.connectAction}>
+                    <SelectWallet />
+                  </div>
+                )}
               </section>
             ) : conversation ? (
               <ChatTimeline
                 conversation={conversation}
-                aliases={records.aliases}
+                aliases={desk.displayAliases}
                 highlightId={highlightId}
+                handlers={timelineHandlers}
               />
             ) : (
               <section
@@ -622,43 +797,53 @@ export default function ChatPage() {
                 aria-labelledby="chat-empty-title"
               >
                 <p className={styles.kicker}>APP20 / CHAT</p>
-                <h2 id="chat-empty-title">No counterparties on this device.</h2>
+                <h2 id="chat-empty-title">No conversations on this device yet.</h2>
                 <p>
-                  Save a wallet under Counterparties or send a letter from
-                  Mailbox; each one becomes a conversation here. Records a
-                  counterparty sends you appear after Mailbox checks for mail.
+                  Check for mail to read what counterparties sent this wallet,
+                  write to a new address from the mailbox tools, or save a
+                  wallet under Counterparties. Each becomes a conversation
+                  here.
                 </p>
                 <div className={styles.welcomeLinks}>
                   <Link to="/contacts">Counterparties</Link>
-                  <Link to="/mail/inbox">Mailbox</Link>
                   <Link to="/rfq">RFQ workspace</Link>
                 </div>
               </section>
             )}
           </div>
 
-          {conversation && name ? (
-            <ChatComposer
-              contactName={name}
-              value={draft}
-              onChange={(value) =>
-                setDrafts((current) => ({
-                  ...current,
-                  [conversation.contact.address]: value,
-                }))
-              }
-              blocker={blocker}
-              keyState={keyState}
-              onUnlock={(passphrase) => void unlockVault(passphrase)}
-              sending={sending}
-              status={status}
-              budget={budget}
-              onSend={() => void send()}
-            />
+          {conversation && name && !composeDraft && gate !== "wallet" ? (
+            conversation.contact.kind === "counterparty" &&
+            conversation.contact.address ? (
+              <ChatComposer
+                contactName={name}
+                value={letter}
+                onChange={(value) =>
+                  setLetters((current) => ({
+                    ...current,
+                    [conversation.contact.key]: value,
+                  }))
+                }
+                blocker={blocker}
+                sending={sending}
+                status={status}
+                budget={budget}
+                onSend={() => void send()}
+                onAttach={() =>
+                  openDocumentComposer(conversation.contact.address ?? undefined)
+                }
+              />
+            ) : (
+              <p className={styles.composerNote}>
+                {conversation.contact.kind === "self"
+                  ? "Backups are posted from the mailbox tools; this mailbox does not write letters to itself."
+                  : "A sealed thread has no address to write to. Name its sender above to file it under a counterparty."}
+              </p>
+            )
           ) : null}
         </section>
 
-        {conversation && context ? (
+        {conversation && context && !composeDraft ? (
           <ChatContextPanel
             conversation={conversation}
             context={context}
@@ -668,7 +853,8 @@ export default function ChatPage() {
             selfAddress={address}
             chainId={chainId}
             handoffsEnabled={handoffsEnabled}
-            aliases={records.aliases}
+            aliases={desk.displayAliases}
+            actions={actions}
             onClose={() => setContextOpen(false)}
           />
         ) : (
@@ -688,8 +874,9 @@ export default function ChatPage() {
               </button>
             </header>
             <p className={styles.contextPlaceholder}>
-              Wallet identity, open RFQs, pending payments and escrows for the
-              selected counterparty appear here.
+              {composeDraft
+                ? "The document goes to the recipients named in it. Close it to return to the conversation."
+                : "Wallet identity, open RFQs, pending payments and escrows for the selected counterparty appear here."}
             </p>
           </aside>
         )}

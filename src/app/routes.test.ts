@@ -10,8 +10,9 @@ import {
 
 describe("APP20 canonical routes", () => {
   it.each([
-    ["/mail", "/mail/inbox"],
-    ["/inbox", "/mail/inbox"],
+    ["/mail", "/chat"],
+    ["/inbox", "/chat"],
+    ["/mail/inbox", "/chat"],
     ["/vault", "/rfq"],
     ["/intents", "/cross-chain-review"],
     ["/workflows", "/rfq"],
@@ -20,7 +21,7 @@ describe("APP20 canonical routes", () => {
   });
 
   it.each([
-    ["/inbox", "#thread", "/mail/inbox"],
+    ["/inbox", "#thread", "/chat"],
     ["/intents", "#review", "/cross-chain-review"],
     ["/workflows", "#active", "/rfq"],
   ])("preserves %s bookmark hash through its redirect", (source, hash, to) => {
@@ -31,7 +32,7 @@ describe("APP20 canonical routes", () => {
   });
 
   it("omits an empty redirect hash and rejects non-legacy paths", () => {
-    expect(legacyRouteRedirect("/inbox")).toEqual({ to: "/mail/inbox" });
+    expect(legacyRouteRedirect("/inbox")).toEqual({ to: "/chat" });
     expect(legacyRouteRedirect("/rfq", "#new")).toBeNull();
   });
 
@@ -51,7 +52,6 @@ describe("APP20 canonical routes", () => {
     expect(CANONICAL_ROUTES.recovery).toBe("/recovery/privy");
     expect(CANONICAL_ROUTES.crossChainReview).toBe("/cross-chain-review");
     expect(legacyRouteTarget(CANONICAL_ROUTES.rfq)).toBeNull();
-    expect(legacyRouteTarget(CANONICAL_ROUTES.mail)).toBeNull();
     expect(CANONICAL_ROUTES.chat).toBe("/chat");
     expect(legacyRouteTarget(CANONICAL_ROUTES.chat)).toBeNull();
     expect(legacyRouteTarget(CANONICAL_ROUTES.contacts)).toBeNull();

@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import type { AliasRecord } from "@/lib/aliases";
 import { storeDeskHandoff } from "@/lib/desk-handoff";
-import { ChatRecordFull } from "./ChatRecordCard";
+import { ChatRecordFull, type ChatRecordActions } from "./ChatRecordCard";
 import {
   contactDisplayName,
   type ChatContactContext,
@@ -19,19 +19,31 @@ const SECTION_LABELS: Readonly<Record<ChatContextSection, string>> = {
 };
 
 function identityNote(conversation: ChatConversation): string {
-  switch (conversation.contact.nameSource) {
+  const { contact } = conversation;
+  if (contact.kind === "self") {
+    return "Backups and self-addressed copies this wallet posted to its own mailbox. Restore one from the conversation; post new ones from the mailbox tools.";
+  }
+  if (contact.kind === "sealed") {
+    return "MessagePosted carries no sender. Name the thread from the conversation to file it under a counterparty; until then it stays here.";
+  }
+  switch (contact.nameSource) {
     case "address-book":
       return "Saved counterparty. The label is device-encrypted and is never authentication.";
     case "alias":
       return "Local alias. A label on this device, never authentication.";
     default:
-      return "No local name. This address came from a Sent copy or an unauthenticated payload claim.";
+      return "No local name. This address came from a Sent copy, a name assigned on this device, or an unauthenticated payload claim.";
   }
 }
 
 function expiryLabel(at: number): string {
   if (at === 0) return "No expiry";
   return new Date(at * 1_000).toLocaleString();
+}
+
+function safeOfferIndex(index: string | undefined): number | undefined {
+  const value = Number(index);
+  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
 function ContextSection({
@@ -98,6 +110,8 @@ type ChatContextPanelProps = {
   chainId: string;
   handoffsEnabled: boolean;
   aliases: readonly AliasRecord[];
+  /** The value actions the mailbox desk offers, so a record acts from here too. */
+  actions: ChatRecordActions;
   onClose: () => void;
 };
 
@@ -111,13 +125,21 @@ export default function ChatContextPanel({
   chainId,
   handoffsEnabled,
   aliases,
+  actions,
   onClose,
 }: ChatContextPanelProps) {
   const { contact } = conversation;
   const name = contactDisplayName(contact);
-  const handoff = (kind: "rfq" | "mail") => {
+  const identityAddress =
+    contact.kind === "self" ? selfAddress : (contact.address ?? null);
+  const selectedItem = selectedEntry?.itemId
+    ? (conversation.items.find((item) => item.id === selectedEntry.itemId) ??
+      null)
+    : null;
+  const handoff = () => {
+    if (!contact.address) return;
     try {
-      storeDeskHandoff(window.sessionStorage, kind, contact.address, {
+      storeDeskHandoff(window.sessionStorage, "rfq", contact.address, {
         account: selfAddress,
         chainId,
       });
@@ -215,7 +237,6 @@ export default function ChatContextPanel({
             {selectedEntry.record?.needsAction ? (
               <p className={styles.recordAction}>
                 <span>{selectedEntry.record.needsAction}</span>
-                <Link to="/mail/inbox">Open Mailbox</Link>
               </p>
             ) : null}
             <div className={styles.detailActions}>
@@ -237,8 +258,12 @@ export default function ChatContextPanel({
               <div className={styles.recordFull}>
                 <ChatRecordFull
                   record={selectedEntry.record}
-                  own={selectedEntry.direction === "outgoing"}
                   aliases={aliases}
+                  linkAuthenticity={selectedItem?.message?.linkAuthenticity}
+                  actions={{
+                    ...actions,
+                    offerIndex: safeOfferIndex(selectedItem?.message?.index),
+                  }}
                 />
               </div>
             ) : null}
@@ -246,26 +271,29 @@ export default function ChatContextPanel({
         ) : (
           <>
             <section className={styles.identity} aria-label="Wallet identity">
-              <p className={styles.kicker}>WALLET IDENTITY</p>
+              <p className={styles.kicker}>
+                {contact.kind === "counterparty"
+                  ? "WALLET IDENTITY"
+                  : contact.kind === "self"
+                    ? "YOUR MAILBOX"
+                    : "SEALED THREAD"}
+              </p>
               <h2>
                 <bdi>{name}</bdi>
               </h2>
-              <code>{contact.address}</code>
+              {identityAddress ? <code>{identityAddress}</code> : null}
               <p className={styles.identityNote}>{identityNote(conversation)}</p>
               <div className={styles.identityActions}>
-                {handoffsEnabled ? (
-                  <>
-                    <Link to="/rfq" hash="desk" onClick={() => handoff("rfq")}>
-                      New RFQ
-                    </Link>
-                    <Link to="/mail/inbox" onClick={() => handoff("mail")}>
-                      Encrypted Mail
-                    </Link>
-                  </>
+                {handoffsEnabled && contact.kind === "counterparty" ? (
+                  <Link to="/rfq" hash="desk" onClick={handoff}>
+                    New RFQ
+                  </Link>
                 ) : null}
-                <Link to="/contacts">
-                  {contact.saved ? "Counterparties" : "Save to Counterparties"}
-                </Link>
+                {contact.kind === "counterparty" ? (
+                  <Link to="/contacts">
+                    {contact.saved ? "Counterparties" : "Save to Counterparties"}
+                  </Link>
+                ) : null}
               </div>
             </section>
 
@@ -297,8 +325,8 @@ export default function ChatContextPanel({
               empty={
                 <>
                   No escrow announcement with {name} on this device. Escrow
-                  state is read from the contract by Mailbox, never proven by
-                  a message.
+                  state is read from the contract when this mailbox checks for
+                  mail, never proven by a message.
                 </>
               }
               selectedEntryId={null}

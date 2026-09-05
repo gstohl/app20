@@ -15,22 +15,19 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const readyConnected = useStoreWallet((state) => state.isConnected);
   const walletMode = useWalletMode((state) => state.mode);
   const privyConnected = useWalletMode((state) => state.privyConnected);
-  const mailActive = pathname.startsWith("/mail") || pathname === "/inbox";
   const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
   const chatActive = pathname === "/chat" || pathname.startsWith("/chat/");
   const connected = walletMode === "privy" ? privyConnected : readyConnected;
   const payActive = pathname === "/pay";
-  const moduleName = mailActive
-    ? "MAILBOX"
-    : chatActive
-      ? "CHAT"
-      : payActive
-        ? "PAY"
-        : pathname === "/contacts"
-          ? "COUNTERPARTIES"
-          : rfqActive
-            ? "RFQ WORKSPACE"
-            : "APP20";
+  const moduleName = chatActive
+    ? "CHAT"
+    : payActive
+      ? "PAY"
+      : pathname === "/contacts"
+        ? "COUNTERPARTIES"
+        : rfqActive
+          ? "RFQ WORKSPACE"
+          : "APP20";
 
   return (
     <div
@@ -44,8 +41,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           className={`signal-dot ${connected ? "is-live" : ""}`}
           aria-hidden="true"
         />
-        {/* Live session state for the module you are actually in. It used to
-            name the RFQ workspace on every route, Mailbox included. */}
+        {/* Live session state for the module you are actually in. */}
         {connected
           ? `${moduleName} · WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED`
           : `${moduleName} · NO WALLET CONNECTED`}
@@ -65,9 +61,6 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           </Link>
           <Link to="/chat" aria-current={chatActive ? "page" : undefined}>
             Chat
-          </Link>
-          <Link to="/mail/inbox" aria-current={mailActive ? "page" : undefined}>
-            Mailbox
           </Link>
           <Link
             to="/contacts"

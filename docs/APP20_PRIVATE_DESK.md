@@ -3,13 +3,21 @@
 APP20 joins three surfaces into one workflow:
 
 1. **RFQ** — inventory-backed private USDC↔STRK quote and settlement.
-2. **Mailbox** — encrypted correspondence, authenticated backup, and non-authoritative evidence.
-3. **Counterparties** — a device-encrypted address book with RFQ and Mail handoffs.
+2. **Chat** — encrypted correspondence one counterparty at a time, authenticated backup, and non-authoritative evidence.
+3. **Counterparties** — a device-encrypted address book with RFQ and Chat handoffs.
 
-**Chat** (`/chat`) reads the same device-local Mailbox records one counterparty at a
-time: letters, offers, invoices, and escrows with that contact beside their open RFQs,
-pending payments, and escrows. It complements the multi-maker RFQ workspace and takes
-no value action of its own.
+**Chat** (`/chat`) is the mailbox: every encrypted record this wallet holds, grouped by
+counterparty, with letters, offers, invoices, and escrows beside that contact's open RFQs,
+pending payments, and escrows. Accept, receipt, pay, and escrow actions sit on the cards
+themselves; key setup, chain scans, drafts, self-backups, and device safety live in its
+mailbox tools. Multi-maker requests stay in the RFQ workspace. The former `/mail/inbox`
+route redirects to `/chat`.
+
+MessagePosted carries no sender, so a decrypted record joins a counterparty's
+conversation only through evidence this device holds: a name assigned on this device,
+the offerer, requester or maker a payload claims, the thread a single-recipient Sent copy
+opened, or the deal, request or escrow id a memo answers. Anything else shows as a
+sealed sender until it is named; the name is a local label, never authentication.
 
 APP20 is a bookless invited-maker venue using the existing STRK20 privacy pool. It does not create a pool, AMM, public order book, or automatic public fallback. See [`GAPS.md`](GAPS.md) for open engineering work.
 
@@ -76,7 +84,7 @@ The localnet desk renders the maturity estimate and verified maker-mid context. 
 
 Mail accepts a registry-resolved localnet USDC payment request as well as STRK. For USDC, **Pay privately with STRK** stores an account/chain-scoped, five-minute invoice handoff and opens `/rfq`. The v3 invoice model estimates a STRK bucket from the verified maker median with a 2% buffer, then finds the minimum selected schedule allocations whose USDC output reaches the invoice amount.
 
-The localnet desk consumes the scoped handoff, requires a fresh verified maker median for preliminary sizing, minimizes the sell amount against verified schedules, and enforces the exact invoice amount as its floor. After a confirmed Take, it binds the request to the Take hash, Take block, USDC token, and exact invoice amount in state `awaiting-note-maturity`, then returns to Mail. At `takeBlock + 10`, Mail can reserve and submit the existing private memo-transfer path in USDC, then move through submitted to confirmed.
+The localnet desk consumes the scoped handoff, requires a fresh verified maker median for preliminary sizing, minimizes the sell amount against verified schedules, and enforces the exact invoice amount as its floor. After a confirmed Take, it binds the request to the Take hash, Take block, USDC token, and exact invoice amount in state `awaiting-note-maturity`, then returns to Chat. At `takeBlock + 10`, Chat can reserve and submit the existing private memo-transfer path in USDC, then move through submitted to confirmed.
 
 ## Chain-anchored encrypted backup
 
@@ -94,7 +102,7 @@ Restore authenticates every candidate before sequence ranking. Authenticated sam
 
 RFQ history payload v2 carries bounded authenticated portable tombstones as well as records. Forget wins over any included record for the same lifecycle id, including on a fresh database, and the tombstone is persisted before the row is removed. Export recursively strips signing-key fields. Every restored v3 row is durably marked `restoredFromBackup`, local, and non-authoritative; it has no `takerSigningKey`, cannot submit Take, and remains verify-only through reload, re-export, and re-import. A fresh device that receives only an old snapshot which predates a deletion cannot infer the missing newer tombstone, so operators must preserve the newest authenticated self-backup.
 
-The localnet IPFS emulator binds only to `127.0.0.1:5054` and stores blocks in an in-memory `Map`; restart loses them. On a configured production deployment, the IPFS RPC service would learn the source network metadata, upload timing, CID, and padded ciphertext size; gateways would learn fetch timing and requested CID. They receive encrypted padded blob bytes, not snapshot plaintext. The APP20 relay only permits reviewed origins in CSP and does not proxy or pin blobs itself. Production blob storage fails closed unless both browser IPFS origin settings and matching relay `IPFS_ORIGINS` are configured. A settled Take queues the opt-in RFQ auto-backup for the next unlocked Mailbox session.
+The localnet IPFS emulator binds only to `127.0.0.1:5054` and stores blocks in an in-memory `Map`; restart loses them. On a configured production deployment, the IPFS RPC service would learn the source network metadata, upload timing, CID, and padded ciphertext size; gateways would learn fetch timing and requested CID. They receive encrypted padded blob bytes, not snapshot plaintext. The APP20 relay only permits reviewed origins in CSP and does not proxy or pin blobs itself. Production blob storage fails closed unless both browser IPFS origin settings and matching relay `IPFS_ORIGINS` are configured. A settled Take queues the opt-in RFQ auto-backup for the next unlocked mailbox session in Chat.
 
 ## Contact storage and recovery
 

@@ -4,8 +4,6 @@ import {
   expect,
   localNetworkToggle,
   localnetIdentity,
-  primeLocalnetMailSeed,
-  restoreLocalnetMailRandomness,
   selectLocalNetwork,
   test,
   type APIRequestContext,
@@ -14,6 +12,18 @@ import {
   type Locator,
   type Page,
 } from "./support/localnet";
+import {
+  COMPOSE_BODY_PLACEHOLDER,
+  conversationRow,
+  conversationRowByAddress,
+  ensureMailboxKey as ensureChatMailboxKey,
+  entry,
+  openFullRecord,
+  openMailboxRecovery,
+  openNewDocument,
+  scanRecent,
+  timeline,
+} from "./support/chat";
 
 test.describe.configure({ mode: "serial" });
 
@@ -42,83 +52,11 @@ async function switchIdentity(
 }
 
 async function ensureMailboxKey(page: Page, identity: LocalnetIdentityId) {
-  let setup = page.getByRole("button", {
-    name: "Load device key & register",
-  });
-  if ((await setup.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-    setup = page.getByRole("button", {
-      name: "Load device key & register",
-    });
-  }
-  await expect(setup).toBeVisible();
-  await primeLocalnetMailSeed(page, identity);
-  try {
-    await setup.click();
-  } finally {
-    await restoreLocalnetMailRandomness(page);
-  }
-  const backupHeading = page.getByText(
-    "Back up now — this phrase is shown once",
-  );
-  const scanButton = page.getByRole("button", { name: "Check for new mail" });
-  await expect
-    .poll(
-      async () => {
-        if (await backupHeading.isVisible()) return "backup";
-        return (await scanButton.isEnabled()) ? "ready" : "waiting";
-      },
-      { timeout: 120_000 },
-    )
-    .not.toBe("waiting");
-  if (await backupHeading.isVisible()) {
-    const phrase = (
-      await backupHeading.locator("..").locator("code").innerText()
-    ).trim();
-    expect(phrase).toMatch(/^(?:[0-9a-f]{8} ){7}[0-9a-f]{8}$/);
-    await page
-      .getByRole("button", { name: "I saved the backup — open mailbox" })
-      .click();
-  }
-  await expect(scanButton).toBeEnabled({ timeout: 60_000 });
+  await ensureChatMailboxKey(page, identity);
   await openMailboxRecovery(page);
   await expect(
     page.getByRole("button", { name: "Back up RFQ history" }),
   ).toBeEnabled({ timeout: 60_000 });
-  const deleteDraft = page.getByRole("button", {
-    name: "Delete draft…",
-    exact: true,
-  });
-  if ((await deleteDraft.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await deleteDraft.click();
-  } else {
-    const close = page.getByRole("button", { name: "Close", exact: true });
-    if ((await close.count()) > 0) await close.click();
-  }
-}
-
-/** The recovery panel is a closed disclosure in the mailbox rail. */
-async function openMailboxRecovery(page: Page) {
-  await page
-    .locator("details", {
-      has: page.getByText("Encrypted mailbox recovery", { exact: true }),
-    })
-    .first()
-    .evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-    });
-}
-
-async function scanRecent(page: Page) {
-  const button = page.getByRole("button", { name: "Check for new mail" });
-  await expect(button).toBeEnabled({ timeout: 120_000 });
-  await button.click();
-  const inbox = page.getByRole("button", { name: /^Inbox \d+$/ });
-  if ((await inbox.getAttribute("aria-current")) !== "page") {
-    await inbox.click();
-  }
-  await expect(inbox).toHaveAttribute("aria-current", "page");
 }
 
 async function privateBalance(
@@ -451,7 +389,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   // Leave the split payout note mature for the Mail-backed invoice journey.
   await createBlocks(request, config.runtimeEpoch, 10);
 
-  await page.goto("/mail/inbox");
+  await page.goto("/chat");
   await selectLocalNetwork(page);
   await switchIdentity(page, config, "alice");
   await ensureMailboxKey(page, "alice");
@@ -519,8 +457,10 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   expect(erasedRecordCount).toBeGreaterThan(0);
 
   await scanRecent(page);
+  // Self-addressed backups file under the mailbox itself.
+  await conversationRow(page, "This mailbox").click();
   await expect(
-    page.getByText("RFQ HISTORY BACKUP", { exact: true }),
+    timeline(page).getByText("RFQ HISTORY BACKUP", { exact: true }),
   ).toBeVisible({ timeout: 60_000 });
   page.once("dialog", (dialog) => dialog.accept());
   await page
@@ -564,13 +504,9 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   const invoiceBody = `Lane U localnet USDC invoice ${Date.now()}`;
   await switchIdentity(page, config, "bob");
   await ensureMailboxKey(page, "bob");
-  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await openNewDocument(page);
   await page.getByLabel(/^To/).fill(localnetIdentity(config, "alice").address);
-  await page
-    .getByPlaceholder(
-      "Write a private message, or leave blank when sending attachments only",
-    )
-    .fill(invoiceBody);
+  await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(invoiceBody);
   await page.getByRole("button", { name: "+ Invoice", exact: true }).click();
   const invoiceToken = page.getByLabel("Invoice token");
   await expect(invoiceToken.locator("option")).toHaveText(["STRK", "USDC"]);
@@ -588,9 +524,14 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await switchIdentity(page, config, "alice");
   await ensureMailboxKey(page, "alice");
   await scanRecent(page);
-  const invoiceRow = page.getByRole("button").filter({ hasText: invoiceBody });
-  await expect(invoiceRow).toBeVisible({ timeout: 60_000 });
-  await invoiceRow.click();
+  const bobRow = conversationRowByAddress(
+    page,
+    localnetIdentity(config, "bob").address,
+  );
+  await expect(bobRow).toBeVisible({ timeout: 60_000 });
+  await bobRow.click();
+  const invoiceEntry = entry(page, invoiceBody);
+  await expect(invoiceEntry).toBeVisible({ timeout: 60_000 });
   await expect(
     page.getByText(/This unsigned message requests\s+0\.1 USDC/),
   ).toBeVisible();
@@ -624,7 +565,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await invoiceReview
     .getByRole("button", { name: "Take atomically on LOCALNET" })
     .click();
-  await expect(page).toHaveURL(/\/mail\/inbox$/, { timeout: 5 * 60_000 });
+  await expect(page).toHaveURL(/\/chat$/, { timeout: 5 * 60_000 });
   expect(invokeUrls).toHaveLength(invoiceInvokesBefore + 1);
 
   // The hard return navigation intentionally drops the in-memory wallet and
@@ -632,8 +573,10 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await switchIdentity(page, config, "alice");
   await ensureMailboxKey(page, "alice");
   await scanRecent(page);
-  await expect(invoiceRow).toBeVisible({ timeout: 120_000 });
-  await invoiceRow.click();
+  await expect(bobRow).toBeVisible({ timeout: 120_000 });
+  await bobRow.click();
+  await expect(invoiceEntry).toBeVisible({ timeout: 120_000 });
+  await openFullRecord(invoiceEntry.getByRole("article", { name: /^Invoice:/ }));
   await expect(
     page.getByText(/USDC note from the private exchange matures/),
   ).toBeVisible();
@@ -654,13 +597,18 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
   await switchIdentity(page, config, "bob");
   await ensureMailboxKey(page, "bob");
   await scanRecent(page);
-  const paymentMemoRow = page.getByRole("button", {
-    name: /Memo\. 0\.1 USDC to settle/,
-  });
-  await expect(paymentMemoRow).toBeVisible({ timeout: 60_000 });
-  await paymentMemoRow.click();
-  await expect(page.getByText("PAYMENT MEMO", { exact: true })).toBeVisible();
-  await expect(page.getByText(/claims they sent 0\.1 USDC/)).toBeVisible();
+  const aliceRow = conversationRowByAddress(
+    page,
+    localnetIdentity(config, "alice").address,
+  );
+  await expect(aliceRow).toBeVisible({ timeout: 60_000 });
+  await aliceRow.click();
+  // Alice's payment memo names only the request; the invoice's Sent copy
+  // says that request is with her, so it lands in her conversation.
+  const memo = timeline(page).getByRole("article", { name: /^Payment memo/ });
+  await expect(memo).toBeVisible({ timeout: 60_000 });
+  await expect(memo.getByText("PAYMENT MEMO", { exact: true })).toBeVisible();
+  await expect(memo.getByText(/claims they sent 0\.1 USDC/)).toBeVisible();
 });
 
 test("modeled localnet authority survives TTL, two tabs, disagreement, reorg, and reload without resubmission", async ({
