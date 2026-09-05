@@ -322,7 +322,11 @@ export default function ChatPage() {
   );
 
   const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
+  /* A conversation is "activated" by an explicit choice, not by being the
+     first row on load. The counter lets choosing the already-open row count
+     again, so its records are marked read even when nothing else changed. */
   const activatedRef = useRef<string | null>(null);
+  const [activation, setActivation] = useState(0);
   const [entryId, setEntryId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -384,7 +388,7 @@ export default function ChatPage() {
     for (const id of pending) next.add(id);
     setReadIds(next);
     saveReadMessageIds(window.localStorage, chainId, address, next);
-  }, [address, chainId, conversation, readIds]);
+  }, [activation, address, chainId, conversation, readIds]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const conversationAddress = conversation?.contact.address ?? null;
@@ -415,6 +419,7 @@ export default function ChatPage() {
 
   const selectConversation = useCallback((next: string) => {
     activatedRef.current = next;
+    setActivation((value) => value + 1);
     setSelectedAddress(next);
     setEntryId(null);
     setHighlightId(null);
