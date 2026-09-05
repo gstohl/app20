@@ -470,6 +470,18 @@ a {
   background: var(--shell-panel);
 }
 
+/* A lazily loaded route announces itself in the desk's label voice while its
+   chunk arrives; there is no spinner anywhere on the desk. */
+.route-loading {
+  padding: 18px;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .funding-readiness-panel dd,
 .funding-readiness-panel code {
   min-width: 0;

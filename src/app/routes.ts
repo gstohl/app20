@@ -8,6 +8,7 @@ export const CANONICAL_ROUTES = {
   recovery: "/recovery/privy",
   crossChainReview: "/cross-chain-review",
   mail: "/mail/inbox",
+  chat: "/chat",
   intents: "/intents",
   contacts: "/contacts",
   pay: "/pay",

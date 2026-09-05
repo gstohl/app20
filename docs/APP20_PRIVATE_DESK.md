@@ -6,6 +6,11 @@ APP20 joins three surfaces into one workflow:
 2. **Mailbox** — encrypted correspondence, authenticated backup, and non-authoritative evidence.
 3. **Counterparties** — a device-encrypted address book with RFQ and Mail handoffs.
 
+**Chat** (`/chat`) reads the same device-local Mailbox records one counterparty at a
+time: letters, offers, invoices, and escrows with that contact beside their open RFQs,
+pending payments, and escrows. It complements the multi-maker RFQ workspace and takes
+no value action of its own.
+
 APP20 is a bookless invited-maker venue using the existing STRK20 privacy pool. It does not create a pool, AMM, public order book, or automatic public fallback. See [`GAPS.md`](GAPS.md) for open engineering work.
 
 ## Localnet-only boundary

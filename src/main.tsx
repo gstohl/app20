@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -12,18 +12,27 @@ import AppShell from "@/app/components/AppShell";
 import ReadyRailGate from "@/app/components/ReadyRailGate";
 import AppProviders from "@/app/providers";
 import InboxPage from "@/app/inbox/page";
+import ChatPage from "@/app/chat/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
 import OperationsDashboard from "@/app/rfq/OperationsDashboard";
-import MarketProposalPage from "@/app/rfq/markets/proposal/page";
 import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
 import PrivyRecoveryPage from "@/app/recovery/privy/page";
-import CrossChainReviewPage from "@/app/cross-chain-review/page";
 import { CANONICAL_ROUTES, legacyRouteRedirect } from "@/app/routes";
 import "@/app/globals.css";
 import "@/app/design-system.css";
+
+// The proposal-only market view and the dry cross-chain review are secondary,
+// read-only tools. Deferring them keeps the eagerly loaded shell inside its
+// recorded byte budget now that Chat joins RFQ, Mailbox and Counterparties.
+const MarketProposalPage = lazy(
+  () => import("@/app/rfq/markets/proposal/page"),
+);
+const CrossChainReviewPage = lazy(
+  () => import("@/app/cross-chain-review/page"),
+);
 
 let renderLocalnetTools: (() => ReactNode) | null = null;
 
@@ -51,6 +60,14 @@ function ReadyMailPage() {
   );
 }
 
+function ReadyChatPage() {
+  return (
+    <ReadyRailGate moduleName="Chat">
+      <ChatPage />
+    </ReadyRailGate>
+  );
+}
+
 function ReadyPaymentPage() {
   return (
     <ReadyRailGate moduleName="Payment Request">
@@ -59,9 +76,29 @@ function ReadyPaymentPage() {
   );
 }
 
+function RouteLoading({ name }: { name: string }) {
+  return (
+    <p className="route-loading" role="status">
+      Opening {name}…
+    </p>
+  );
+}
+
 function RoutedMarketProposalPage() {
   const { tokenA, tokenB } = useParams({ strict: false });
-  return <MarketProposalPage tokenA={String(tokenA)} tokenB={String(tokenB)} />;
+  return (
+    <Suspense fallback={<RouteLoading name="market proposal" />}>
+      <MarketProposalPage tokenA={String(tokenA)} tokenB={String(tokenB)} />
+    </Suspense>
+  );
+}
+
+function RoutedCrossChainReviewPage() {
+  return (
+    <Suspense fallback={<RouteLoading name="cross-chain review" />}>
+      <CrossChainReviewPage />
+    </Suspense>
+  );
 }
 
 const homeRoute = createRoute({
@@ -128,6 +165,12 @@ const mailboxRoute = createRoute({
   component: ReadyMailPage,
 });
 
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat",
+  component: ReadyChatPage,
+});
+
 const intentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/intents",
@@ -171,7 +214,7 @@ const recoveryRoute = createRoute({
 const crossChainReviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/cross-chain-review",
-  component: CrossChainReviewPage,
+  component: RoutedCrossChainReviewPage,
 });
 
 const router = createRouter({
@@ -185,6 +228,7 @@ const router = createRouter({
     mailRoute,
     legacyInboxRoute,
     mailboxRoute,
+    chatRoute,
     intentsRoute,
     contactsRoute,
     workflowsRoute,
