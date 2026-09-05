@@ -7,11 +7,11 @@ execution are disabled and unauthorized.**
 Three surfaces form one workflow:
 
 1. **RFQ** — collateralized, bucket-only private USDC↔STRK requests and atomic localnet Take
-2. **Mailbox** — encrypted correspondence, structured evidence, invoice completion, and backup recovery
-3. **Counterparties** — a device-encrypted directory with RFQ and Mail handoffs
+2. **Chat** — encrypted correspondence one counterparty at a time: letters, structured evidence, invoice completion, and backup recovery
+3. **Counterparties** — a device-encrypted directory with RFQ and Chat handoffs
 
-**Chat** (`/chat`) complements them: it reads the same device-local records one
-counterparty at a time. Multi-maker requests stay in the RFQ workspace.
+Multi-maker requests stay in the RFQ workspace; Chat holds the correspondence
+around them and is the only mail surface. The former Mailbox route redirects to it.
 
 Users connect once in the header. The Ready Wallet API path does not expose a
 viewing key to APP20; the optional Privy browser-owned SDK derives/holds its
@@ -37,16 +37,15 @@ origin is live. This is not a Mainnet value-moving release.
 | Surface         | Route                                                                               | Current scope                                                                                                            |
 | --------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Private RFQ     | `/rfq`                                                                              | Two localnet fixture makers, collateralized quotes, browser selection, and atomic Take. No production maker network.     |
-| Mailbox         | `/mail/inbox`                                                                       | Encrypted correspondence, payment handoffs, and self-backups. Evidence and recovery transport, not settlement authority. |
-| Counterparties  | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Mail handoffs and optional encrypted backup.                              |
-| Chat            | `/chat`                                                                             | One counterparty at a time: device-local letters, offers, invoices, and escrows with that contact, plus their open RFQs, pending payments, and escrows. Reads Mailbox's records; value actions stay in Mailbox. |
+| Chat            | `/chat` (`/mail/inbox` redirects here)                                              | Encrypted correspondence one counterparty at a time: letters, offers, invoices, escrows, payment handoffs, and self-backups, beside that contact's open RFQs. Evidence and recovery transport, not settlement authority. |
+| Counterparties  | `/contacts`                                                                         | Device-encrypted labels and addresses with RFQ/Chat handoffs and optional encrypted backup.                              |
 | Separate tools  | `/funding`, `/send`, `/cross-chain-review`, `/recovery/privy`, `/pay`               | Funding readiness, unavailable public send, dry cross-chain review, Privy recovery, and unsigned payment links.          |
 | Read-only views | `/rfq/operations`, `/rfq/markets/:tokenA/:tokenB/proposal`, `/swap/:tokenA/:tokenB` | Operations status, proposal-only market planning, and non-executable pair handoffs.                                      |
 
 `/pay` is a Mail helper, not a separate settlement product. It only creates an unsigned
-payment-request link. Nothing is sent until the payer confirms in Mail.
+payment-request link. Nothing is sent until the payer confirms in Chat.
 
-### RFQ, Mailbox, and Counterparties
+### RFQ, Chat, and Counterparties
 
 Within the localnet fixture, only Cairo plus pool-applied chain state can confirm
 an RFQ lifecycle. Same-devnet confirmation is not production configured-chain
@@ -81,7 +80,7 @@ Wallet policy is enforced below the UI:
 - **Sepolia** — Ready, plus an optional Privy browser signer
 - **Localnet** — build-gated development wallet
 
-In the product, mail is **Mailbox** / **Mail**. This pre-release namespace
+In the product, encrypted mail is **Chat** / **Mail**. This pre-release namespace
 reset renames the active contracts, storage keys, cryptographic domains,
 environment variables, and localnet paths to APP20. Pre-reset browser data,
 Mail ciphertext, signed payment links, and contract artifacts are not compatible
@@ -108,7 +107,7 @@ flowchart TD
     M --> V[Funding utilities, public send unavailable]
     S --> V
     LD --> D[Private RFQ]
-    W -. UI view only, live Mail action denied .-> MB[Mailbox and Counterparties, localnet actions only]
+    W -. UI view only, live Mail action denied .-> MB[Chat and Counterparties, localnet actions only]
     L --> MB
 
     D -. no automatic fallback .-> X[Public venue]

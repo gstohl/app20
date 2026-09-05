@@ -3,13 +3,26 @@ import {
   connectLocalnetWallet,
   expect,
   localnetIdentity,
-  primeLocalnetMailSeed,
-  restoreLocalnetMailRandomness,
   test,
   type LocalnetConfig,
   type LocalnetIdentityId,
   type Page,
 } from "./support/localnet";
+import {
+  COMPOSE_BODY_PLACEHOLDER,
+  addressPattern,
+  attachTerms,
+  contextPanel,
+  conversationPane,
+  conversationRow,
+  conversationRowByAddress,
+  ensureMailboxKey,
+  entry,
+  loadExistingKey,
+  scanRecent,
+  timeline,
+  navLink,
+} from "./support/chat";
 
 test.describe.configure({ mode: "serial" });
 
@@ -37,117 +50,7 @@ async function switchIdentity(
   ).toHaveAttribute("title", new RegExp(target.address.slice(2), "i"));
 }
 
-/** The recovery panel is a closed disclosure in the mailbox rail. */
-async function openMailboxRecovery(page: Page) {
-  await page
-    .locator("details", {
-      has: page.getByText("Encrypted mailbox recovery", { exact: true }),
-    })
-    .first()
-    .evaluate((element) => {
-      (element as HTMLDetailsElement).open = true;
-    });
-}
-
-async function closeComposerIfOpen(page: Page) {
-  const deleteDraft = page.getByRole("button", {
-    name: "Delete draft…",
-    exact: true,
-  });
-  if ((await deleteDraft.count()) > 0) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await deleteDraft.click();
-  } else {
-    const close = page.getByRole("button", { name: "Close", exact: true });
-    if ((await close.count()) > 0) await close.click();
-  }
-}
-
-/** Registers the fixture mailbox key for an identity, or loads the saved one. */
-async function ensureMailboxKey(page: Page, identity: LocalnetIdentityId) {
-  let setup = page.getByRole("button", {
-    name: "Load device key & register",
-  });
-  if ((await setup.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-    setup = page.getByRole("button", {
-      name: "Load device key & register",
-    });
-  }
-  await expect(setup).toBeVisible();
-  await primeLocalnetMailSeed(page, identity);
-  try {
-    await setup.click();
-  } finally {
-    await restoreLocalnetMailRandomness(page);
-  }
-  const backupHeading = page.getByText(
-    "Back up now — this phrase is shown once",
-  );
-  const scanButton = page.getByRole("button", { name: "Check for new mail" });
-  await expect
-    .poll(
-      async () => {
-        if (await backupHeading.isVisible()) return "backup";
-        return (await scanButton.isEnabled()) ? "ready" : "waiting";
-      },
-      { timeout: 120_000 },
-    )
-    .not.toBe("waiting");
-  if (await backupHeading.isVisible()) {
-    await page
-      .getByRole("button", { name: "I saved the backup — open mailbox" })
-      .click();
-  }
-  await expect(scanButton).toBeEnabled({ timeout: 60_000 });
-  await openMailboxRecovery(page);
-  await expect(
-    page.getByRole("button", { name: "Back up RFQ history" }),
-  ).toBeEnabled({ timeout: 60_000 });
-  await closeComposerIfOpen(page);
-}
-
-async function loadExistingKey(page: Page) {
-  const button = page.getByRole("button", {
-    name: "Load device key & register",
-  });
-  if ((await button.count()) === 0) {
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-  }
-  await expect(button).toBeVisible();
-  await button.click();
-  await expect(button).toHaveCount(0, { timeout: 60_000 });
-  await closeComposerIfOpen(page);
-  await page
-    .getByRole("button", { name: /^Inbox/ })
-    .first()
-    .click();
-}
-
-async function scanRecent(page: Page) {
-  const button = page.getByRole("button", { name: "Check for new mail" });
-  await expect(button).toBeEnabled();
-  await button.click();
-  await page.waitForTimeout(100);
-  await expect(button).toBeEnabled({ timeout: 60_000 });
-}
-
-function messageRow(page: Page, body: string) {
-  return page.getByRole("button").filter({ hasText: body });
-}
-
-/** Displayed addresses are canonical felts; fixture addresses may be zero-padded. */
-function addressPattern(address: string): RegExp {
-  return new RegExp(address.replace(/^0x0*/i, ""), "i");
-}
-
-function conversationRow(page: Page, name: string) {
-  return page
-    .getByRole("region", { name: "Conversations", exact: true })
-    .getByRole("button", { name: new RegExp(name) });
-}
-
-test("chat sends an encrypted letter and reads Mailbox's records per counterparty", async ({
+test("chat carries a letter and an attached offer between two mailboxes", async ({
   page,
   localnetConfig: config,
 }) => {
@@ -161,11 +64,12 @@ test("chat sends an encrypted letter and reads Mailbox's records per counterpart
   const quote = `0.01${String(Date.now() % 1_000).padStart(3, "0")}`;
   const terms = `0.25 STRK for ${quote} ETH`;
   const letter = `Chat letter ${runTag}: can you quote 0.25 STRK against ETH today?`;
-  const offerBody = `Offer ${runTag} from Mailbox that Chat should read as work`;
+  const offerBody = `Offer ${runTag} attached from the conversation`;
   const contactLabel = "Alice desk";
 
-  await test.step("1. both fixture mailboxes register their keys", async () => {
+  await test.step("1. the old mailbox route lands on Chat and both fixture mailboxes register keys", async () => {
     await page.goto("/mail/inbox");
+    await expect(page).toHaveURL(/\/chat$/);
     await activateLocalnet(page);
     await switchIdentity(page, config, "alice");
     await ensureMailboxKey(page, "alice");
@@ -173,82 +77,83 @@ test("chat sends an encrypted letter and reads Mailbox's records per counterpart
     await ensureMailboxKey(page, "bob");
   });
 
-  await test.step("2. Bob saves Alice as a counterparty and opens Chat", async () => {
-    await page.getByRole("link", { name: "Counterparties" }).click();
+  await test.step("2. Bob saves Alice as a counterparty and opens her conversation from the book", async () => {
+    await navLink(page, "Counterparties").click();
     await page.getByLabel("New address book label").fill(contactLabel);
     await page.getByLabel("New address book address").fill(alice.address);
     await page.getByRole("button", { name: "Add", exact: true }).click();
     await expect(page.getByText(contactLabel, { exact: true })).toBeVisible();
 
-    await page.getByRole("link", { name: "Chat", exact: true }).click();
+    await page.getByRole("link", { name: "Open in Chat" }).click();
     await expect(page).toHaveURL(/\/chat$/);
     await expect(page.locator(".signal-bar")).toContainText("CHAT");
     await expect(
-      page.getByRole("link", { name: "Chat", exact: true }),
+      navLink(page, "Chat"),
     ).toHaveAttribute("aria-current", "page");
     const row = conversationRow(page, contactLabel);
-    await expect(row).toBeVisible();
-    await row.click();
-    await expect(
-      page
-        .getByRole("region", { name: "Conversation", exact: true })
-        .locator("header strong"),
-    ).toContainText(contactLabel);
+    await expect(row).toHaveAttribute("aria-current", "true");
+    await expect(conversationPane(page).locator("header strong")).toContainText(
+      contactLabel,
+    );
     await expect(
       page.getByText(`No records with ${contactLabel} on this device yet.`),
     ).toBeVisible();
-    await expect(
-      page.getByRole("complementary", { name: "Contact context" }),
-    ).toContainText(addressPattern(alice.address));
+    await expect(contextPanel(page)).toContainText(addressPattern(alice.address));
+    await expect(page.getByLabel(`Message to ${contactLabel}`)).toBeFocused();
   });
 
-  await test.step("3. Bob sends an encrypted letter from the composer", async () => {
+  await test.step("3. Bob loads his key and sends an encrypted letter from the composer", async () => {
+    const form = page.getByRole("form", { name: `Write to ${contactLabel}` });
+    await expect(form).toContainText("Set up a mailbox key");
+    await loadExistingKey(page);
     const input = page.getByLabel(`Message to ${contactLabel}`);
     await input.fill(letter);
-    await expect(
-      page.getByRole("form", { name: `Write to ${contactLabel}` }),
-    ).toContainText(/bytes · sealed on this device · 1 wallet approval/i);
+    await expect(form).toContainText(
+      /bytes · sealed on this device · 1 wallet approval/i,
+    );
     await page.getByRole("button", { name: "Send encrypted" }).click();
     await expect(
       page.getByRole("status").filter({ hasText: /Sealed and confirmed in/ }),
     ).toBeVisible({ timeout: 180_000 });
-    const timeline = page.getByRole("list", {
-      name: `Conversation with ${contactLabel}`,
-    });
-    await expect(timeline).toContainText(letter);
-    await expect(timeline).toContainText("Sent copy on this device");
+    await expect(entry(page, letter)).toContainText("Sent copy on this device");
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: /Sent copy saved in this browser profile/ }),
+    ).toBeVisible();
     await expect(conversationRow(page, contactLabel)).toContainText("You:");
     await expect(input).toHaveValue("");
-
-    // The same Sent copy is what Mailbox shows: one store, two surfaces.
-    await page.getByRole("link", { name: "Mailbox", exact: true }).click();
-    await page
-      .getByRole("button", { name: /^Sent/ })
-      .first()
-      .click();
-    await expect(messageRow(page, letter)).toBeVisible();
   });
 
-  await test.step("4. Alice decrypts it in Mailbox and answers with an offer", async () => {
+  await test.step("4. Alice names the sealed sender and answers with an offer in the same thread", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
     await scanRecent(page);
-    await expect(messageRow(page, letter)).toBeVisible({ timeout: 60_000 });
-    await messageRow(page, letter).click();
+    // MessagePosted carries no sender: a first letter from an unknown
+    // mailbox arrives sealed until Alice files it under Bob herself.
+    const sealed = conversationRow(page, "Sealed sender").filter({
+      hasText: runTag,
+    });
+    await expect(sealed).toBeVisible({ timeout: 60_000 });
+    await expect(sealed).toContainText(/\d+ unread/);
+    await sealed.click();
+    await expect(entry(page, letter)).toContainText("Opened · record");
+    const naming = page.getByRole("form", { name: "Name this sender" });
+    await naming.getByLabel("Name this sender").fill(bob.address);
+    await naming.getByRole("button", { name: "Save name" }).click();
     await expect(
-      page.getByLabel("Correspondence").getByText(letter, { exact: true }),
+      page.getByRole("status").filter({ hasText: /Named on this device/ }),
     ).toBeVisible();
+    await expect(sealed).toHaveCount(0);
+    const row = conversationRowByAddress(page, bob.address);
+    await expect(row).toBeVisible();
+    await row.click();
+    await expect(entry(page, letter)).toBeVisible();
+    await expect(page.getByRole("form", { name: "Name this sender" })).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Compose", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "New document" }),
-    ).toBeVisible();
-    await page.getByLabel(/^To/).fill(bob.address);
-    await page
-      .getByPlaceholder(
-        "Write a private message, or leave blank when sending attachments only",
-      )
-      .fill(offerBody);
+    await attachTerms(page);
+    await expect(page.getByLabel(/^To/)).toHaveValue(addressPattern(bob.address));
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(offerBody);
     await page.getByRole("button", { name: /OTC offer/ }).click();
     await page.getByLabel("STRK to buy").fill("0.25");
     await page.getByLabel("Quoted token symbol").fill("ETH");
@@ -265,35 +170,39 @@ test("chat sends an encrypted letter and reads Mailbox's records per counterpart
     await expect(
       page.getByRole("heading", { name: "New document" }),
     ).toHaveCount(0, { timeout: 180_000 });
-    await expect(messageRow(page, offerBody)).toBeVisible();
+    const sent = entry(page, offerBody);
+    await expect(sent).toContainText("Sent copy on this device");
+    await expect(
+      sent.getByRole("article", {
+        name: new RegExp(`^Offer: ${terms.replaceAll(".", "\\.")}`),
+      }),
+    ).toBeVisible();
   });
 
-  await test.step("5. Bob's Chat reads the received offer as work, with context", async () => {
+  await test.step("5. Bob's conversation reads the offer as work, with context and actions", async () => {
     await switchIdentity(page, config, "bob");
     await loadExistingKey(page);
     await scanRecent(page);
-    await expect(messageRow(page, offerBody)).toBeVisible({ timeout: 60_000 });
-
-    await page.getByRole("link", { name: "Chat", exact: true }).click();
     const row = conversationRow(page, contactLabel);
-    await expect(row).toContainText("Needs action");
+    await expect(row).toContainText("Needs action", { timeout: 60_000 });
     await expect(row).toContainText(/\d+ unread/);
     await row.click();
     await expect(row).toContainText("Opened");
     await expect(row).not.toContainText("unread");
 
-    const timeline = page.getByRole("list", {
-      name: `Conversation with ${contactLabel}`,
-    });
-    await expect(timeline).toContainText(letter);
-    const offerCard = timeline.getByRole("article", {
+    const conversation = timeline(page);
+    await expect(conversation).toContainText(letter);
+    const offerCard = conversation.getByRole("article", {
       name: new RegExp(`^Offer: ${terms.replaceAll(".", "\\.")}`),
     });
     await expect(offerCard).toBeVisible();
-    await expect(offerCard).toContainText("Accept or decline this offer in Mailbox.");
-    await expect(timeline).toContainText("Saved by Mailbox from decrypted mail");
+    await expect(offerCard).toContainText("Accept or decline this offer.");
+    await expect(
+      offerCard.getByRole("button", { name: "Accept & send 0.25 STRK" }),
+    ).toBeVisible();
+    await expect(entry(page, offerBody)).toContainText("Opened · record");
 
-    const context = page.getByRole("complementary", { name: "Contact context" });
+    const context = contextPanel(page);
     await expect(context.getByRole("region", { name: "Open RFQs" })).toContainText(
       terms,
     );
@@ -305,9 +214,9 @@ test("chat sends an encrypted letter and reads Mailbox's records per counterpart
     await expect(
       context.getByText("OTC OFFER / ONE-SIDED V1", { exact: true }),
     ).toBeVisible();
-    await expect(timeline).toBeVisible();
+    await expect(conversation).toBeVisible();
     await context.getByRole("button", { name: "Show in conversation" }).click();
-    await expect(timeline.locator('li[data-highlight="true"]')).toHaveCount(1);
+    await expect(conversation.locator('li[data-highlight="true"]')).toHaveCount(1);
     await context
       .getByRole("button", { name: `Back to ${contactLabel}` })
       .click();

@@ -422,7 +422,7 @@ export default function PrivacyWalletMenu({
             <div>
               <span className={styles.sidebarLabel}>IDENTITY</span>
               <strong>
-                {isConnected ? "Mailbox account" : "Wallet disconnected"}
+                {isConnected ? "Connected account" : "Wallet disconnected"}
               </strong>
             </div>
             <SelectWallet variant="nav" />

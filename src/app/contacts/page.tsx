@@ -84,7 +84,7 @@ function AddressBookPanel({
       setAddressDraft("");
       setError(null);
       setStatus(
-        "Saved under this device's AES-GCM key. Use Mailbox for an encrypted on-chain recovery snapshot.",
+        "Saved under this device's AES-GCM key. Back it up from Chat's mailbox tools for an encrypted on-chain recovery snapshot.",
       );
       window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
     } catch (cause: unknown) {
@@ -197,7 +197,7 @@ function AddressBookPanel({
                           New RFQ
                         </Link>
                         <Link
-                          to="/mail/inbox"
+                          to="/chat"
                           onClick={() => {
                             storeDeskHandoff(
                               window.sessionStorage,
@@ -207,14 +207,14 @@ function AddressBookPanel({
                             );
                           }}
                         >
-                          Encrypted Mail
+                          Open in Chat
                         </Link>
                       </>
                     ) : (
                       <button
                         type="button"
                         disabled
-                        title="RFQ and Mail handoffs require the active Ready account and network"
+                        title="RFQ and Chat handoffs require the active Ready account and network"
                       >
                         Handoffs unavailable
                       </button>
@@ -236,7 +236,7 @@ function AddressBookPanel({
               <p className={styles.bookEmpty}>
                 Add a label and address above. Entries stay AES-GCM encrypted
                 under a device-local key until you explicitly post an encrypted
-                recovery snapshot from Mailbox.
+                recovery snapshot from Chat&apos;s mailbox tools.
               </p>
             </div>
           )
@@ -271,8 +271,8 @@ export default function ContactsPage() {
           <h1>Counterparties on file. Nothing leaves this device.</h1>
           <span>
             Label the wallets you trade with, then jump straight into an RFQ or
-            encrypted Mail. The book is AES-GCM encrypted and never posted
-            anywhere unless you snapshot it from Mailbox yourself.
+            their Chat conversation. The book is AES-GCM encrypted and never
+            posted anywhere unless you snapshot it from Chat yourself.
           </span>
         </div>
       </header>
@@ -284,9 +284,9 @@ export default function ContactsPage() {
       <p className={styles.disclosure}>
         Local contacts are AES-GCM encrypted under app20/address-book/v1. Code
         running in this browser profile can still read an unlocked book. For
-        cross-device recovery, Mailbox can post a self-addressed encrypted
-        snapshot: connect the same wallet and restore the mailbox recovery
-        phrase. Wallet possession alone cannot decrypt it. {" "}
+        cross-device recovery, Chat&apos;s mailbox tools can post a
+        self-addressed encrypted snapshot: connect the same wallet and restore
+        the mailbox recovery phrase. Wallet possession alone cannot decrypt it. {" "}
         {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} On-chain ciphertext, size,
         timing, and helper activity remain public and cannot be deleted.
       </p>

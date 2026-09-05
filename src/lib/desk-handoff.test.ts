@@ -140,7 +140,7 @@ describe("invoice desk handoff", () => {
     buyToken: "0x5",
     targetBuyBaseUnits: "100000000",
     memo: "  invoice 7  ",
-    returnTo: "/mail/inbox",
+    returnTo: "/chat",
   };
 
   it("stores normalized invoice terms and consumes them once for the same scope", async () => {
@@ -167,7 +167,7 @@ describe("invoice desk handoff", () => {
         "0x0000000000000000000000000000000000000000000000000000000000000005",
       targetBuyBaseUnits: "100000000",
       memo: "invoice 7",
-      returnTo: "/mail/inbox",
+      returnTo: "/chat",
     });
     expect(
       consumeInvoiceDeskHandoff(

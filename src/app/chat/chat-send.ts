@@ -13,7 +13,7 @@ import {
 } from "@/lib/mail";
 import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
 import { randomConversationId } from "@/lib/mail-thread";
-import { saveSentMail, type StoredSentMail } from "@/lib/sent-mail";
+import type { SentEnvelope } from "@/components/mail/Compose";
 import {
   APP20_HELPER_FUNDING_BASE_UNITS,
   assertPrivateStrk20BatchBalance,
@@ -26,7 +26,7 @@ import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { addrSTRK } from "@/utils/constants";
 
 /**
- * The chat composer sends exactly what Mailbox's Compose sends for a body-only
+ * The chat composer sends exactly what the document composer sends for a body-only
  * document: one encrypted `text` envelope to one registered mailbox, funded by
  * the same fixed helper deposit, through the same wallet policy. Every step
  * below is the Compose step it mirrors; Chat never gets a looser path.
@@ -59,7 +59,7 @@ export type ChatSendBlocker = Readonly<{
   message: string;
 }>;
 
-/** The same reasons, in the same order, that disable Send in Mailbox. */
+/** The same reasons, in the same order, that disable Send in the document composer. */
 export function chatSendBlocker(
   readiness: ChatSendReadiness,
 ): ChatSendBlocker | null {
@@ -199,7 +199,8 @@ export type ChatSendContext = Readonly<{
   selectedWallet: WalletWithStarknetFeatures;
   senderAddress: string;
   chainId: string;
-  mailSeed: Uint8Array;
+  /** Null for a mailbox opened without its recovery seed: the letter is then unsigned. */
+  mailSeed: Uint8Array | null;
   keypair: MailKeypair;
 }>;
 
@@ -209,17 +210,13 @@ export type ChatSendInput = Readonly<{
   conversationId?: string;
   inReplyTo?: string;
   context: ChatSendContext;
-  storage: Pick<Storage, "getItem" | "setItem">;
   onPhase?: (phase: ChatSendPhase, detail: string) => void;
-  now?: () => number;
 }>;
 
+/** The confirmed letter in the shape the mailbox desk records as its Sent copy. */
 export type ChatSendResult = Readonly<{
-  sent: StoredSentMail;
+  envelope: SentEnvelope;
   transactionHash: string;
-  /** False when the chain confirmed the letter but browser storage refused the copy. */
-  localCopySaved: boolean;
-  localCopyError?: string;
 }>;
 
 export class ChatSendError extends Error {
@@ -244,7 +241,7 @@ export async function sendChatLetter(
   }
   if (feltEquals(recipient, context.senderAddress)) {
     throw new ChatSendError(
-      "This is your own mailbox. Self-addressed backups are posted from Mailbox.",
+      "This is your own mailbox. Self-addressed backups are posted from the mailbox tools.",
     );
   }
   let letter: ChatLetter;
@@ -325,9 +322,9 @@ export async function sendChatLetter(
       },
     );
 
-    const sent: StoredSentMail = {
-      version: 1,
+    const envelope: SentEnvelope = {
       documentId: letter.documentId,
+      draftId: letter.documentId,
       type: "text",
       payload: letter.payload,
       plaintext: input.body,
@@ -337,20 +334,8 @@ export async function sendChatLetter(
       recipientCount: 1,
       recipients: [recipient],
       deliveryState: "confirmed",
-      createdAt: (input.now ?? Date.now)(),
     };
-    try {
-      saveSentMail(input.storage, context.chainId, context.senderAddress, sent);
-    } catch (error: unknown) {
-      return {
-        sent,
-        transactionHash: result.transactionHash,
-        localCopySaved: false,
-        localCopyError:
-          error instanceof Error ? error.message : "Browser storage failed.",
-      };
-    }
-    return { sent, transactionHash: result.transactionHash, localCopySaved: true };
+    return { envelope, transactionHash: result.transactionHash };
   } catch (error: unknown) {
     if (error instanceof ChatSendError) throw error;
     const base = strk20ErrorMessage(error);

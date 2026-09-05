@@ -4,7 +4,7 @@ import { parseCompositePayload } from "@/lib/composite";
 import { parseOfferPayload, parsePaymentRequestPayload } from "@/lib/otc";
 import { parseEscrowFundPayload } from "@/lib/escrow";
 import { formatDeviceSentRecipients } from "@/lib/mail-correspondents";
-import type { LocalMailMessage } from "./Thread";
+import type { LocalMailMessage } from "./message";
 
 export type ConversationCorrespondent = {
   primary: string;

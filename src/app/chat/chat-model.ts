@@ -1,14 +1,16 @@
-import { mailMessageTimestampMs } from "@/app/inbox/mailbox-model";
+import { mailMessageTimestampMs } from "@/app/chat/mailbox-model";
 import type {
   RfqLifecycleRecord,
   RfqLifecycleState,
 } from "@/app/rfq/rfq-lifecycle";
 import { rfqStateLabel } from "@/app/rfq/rfq-state-label";
-import type { LocalMailMessage } from "@/components/mail/Thread";
+import type { LocalMailMessage } from "@/components/mail/message";
 import { shortenFelt } from "@/components/mail/correspondent";
 import type { AddressBookEntry } from "@/lib/address-book";
 import { canonicalizeStarknetAddress, feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
+import { parseBackupPointer } from "@/lib/backup-blob";
+import { decodeBackupSnapshot } from "@/lib/backup-snapshot";
 import { parseCompositePayload } from "@/lib/composite";
 import {
   contractDealMatchesFund,
@@ -21,6 +23,11 @@ import {
   type EscrowFundPayload,
   type EscrowState,
 } from "@/lib/escrow";
+import { claimedFinancialAddress } from "@/lib/mail-correspondents";
+import {
+  conversationFieldsFromPayload,
+  conversationKeyForMessage,
+} from "@/lib/mail-thread";
 import {
   formatBaseUnits,
   offerIsExpired,
@@ -43,21 +50,37 @@ import {
 import { sanitizeUntrustedText } from "@/lib/text";
 
 /**
- * Chat is a per-counterparty reading of what this device already holds:
- * device-local Sent copies, imported payment links, and the OTC, payment and
- * escrow records Mailbox persisted while it read the chain. Nothing here is a
- * new store and nothing here is settlement authority; every record carries
- * the same caveats it carries in Mailbox.
+ * Chat is the mailbox read one counterparty at a time. Every record here is
+ * a mailbox record: a decrypted letter, a device-local Sent copy, an imported
+ * payment link, or the OTC, payment and escrow state saved while reading the
+ * chain. Nothing here is settlement authority, and every record carries the
+ * same caveats it always carried.
+ *
+ * MessagePosted has no sender, so a decrypted record joins a counterparty's
+ * conversation only through evidence this device holds: a name assigned on
+ * this device, an address claimed inside the payload (never authenticated),
+ * or the thread it replies to. Anything else stays a sealed thread until it
+ * is named.
  */
+
+export type ChatContactKind = "counterparty" | "self" | "sealed";
 
 export type ChatContactNameSource = "address-book" | "alias" | "none";
 
 export type ChatContact = Readonly<{
-  address: string;
+  /** Canonical address for a counterparty, "self", or the sealed thread key. */
+  key: string;
+  kind: ChatContactKind;
+  address: string | null;
   label: string | null;
   nameSource: ChatContactNameSource;
   saved: boolean;
+  /** The mailbox conversation a sealed thread is keyed under. */
+  threadKey?: string;
 }>;
+
+export const SELF_CONVERSATION_KEY = "self";
+const SEALED_KEY_PREFIX = "sealed:";
 
 export type ChatRecordKind = "offer" | "invoice" | "escrow" | "payment";
 
@@ -78,6 +101,8 @@ export type ChatRecord = Readonly<{
   id: string;
   facts: ChatRecordFacts;
   needsAction: string | null;
+  /** This wallet issued the record. */
+  own: boolean;
   offer?: OfferPayload;
   deal?: DealRecord;
   request?: PaymentRequestPayload;
@@ -100,13 +125,18 @@ export type ChatItemKind =
   | "receipt"
   | "memo"
   | "decline"
+  | "backup"
   | "unsupported";
 
-export type ChatItemProvenance = "device-sent" | "payment-link" | "mailbox-record";
+export type ChatItemProvenance =
+  | "device-sent"
+  | "decrypted"
+  | "payment-link"
+  | "mailbox-record";
 
 export type ChatItem = Readonly<{
   id: string;
-  contact: string;
+  conversationKey: string;
   direction: "incoming" | "outgoing";
   /** Milliseconds; undefined when no local or chain time is known. */
   at: number | undefined;
@@ -120,6 +150,8 @@ export type ChatItem = Readonly<{
   message?: LocalMailMessage;
   /** Other recipients of the same device-local Sent copy. */
   otherRecipients: number;
+  /** For backup self-mail: what the snapshot restores. */
+  backupKind?: "contacts" | "rfq-resume";
 }>;
 
 export type ChatConversation = Readonly<{
@@ -133,15 +165,15 @@ export type ChatConversation = Readonly<{
 
 export type ChatModelInput = Readonly<{
   selfAddress: string;
-  /** Device-local Sent copies, already projected to mailbox messages. */
-  sent: readonly LocalMailMessage[];
-  /** Payment requests imported from /pay, projected the way Mailbox shows them. */
-  paymentLinks: readonly LocalMailMessage[];
+  /** Every visible mailbox record, decrypted or device-local, any direction. */
+  messages: readonly LocalMailMessage[];
   otc: OtcState;
   escrow: EscrowState;
   addressBook: readonly AddressBookEntry[];
   aliases: readonly AliasRecord[];
   readIds: ReadonlySet<string>;
+  /** Addresses opened as conversations this session without any record yet. */
+  extraContacts?: readonly string[];
   /** Seconds. */
   now?: number;
 }>;
@@ -244,8 +276,14 @@ function amountLabel(value: {
   }
 }
 
+export function sealedConversationKey(threadKey: string): string {
+  return `${SEALED_KEY_PREFIX}${threadKey}`;
+}
+
 export function contactDisplayName(contact: ChatContact): string {
-  return contact.label ?? shortenFelt(contact.address);
+  if (contact.kind === "self") return "This mailbox";
+  if (contact.kind === "sealed") return "Sealed sender";
+  return contact.label ?? shortenFelt(contact.address ?? "");
 }
 
 export function offerRecord(
@@ -264,14 +302,14 @@ export function offerRecord(
   );
   let needsAction: string | null = null;
   if (!own && status === "offered" && !expired) {
-    needsAction = "Accept or decline this offer in Mailbox.";
+    needsAction = "Accept or decline this offer.";
   } else if (
     !own &&
     status === "accepted" &&
     deal?.settlementVerified &&
     !deal.receipt
   ) {
-    needsAction = "Post the receipt for this accepted offer in Mailbox.";
+    needsAction = "Post the receipt for this accepted offer.";
   } else if (own && unverifiedClaim && !deal?.settlementVerified) {
     needsAction =
       "A counterparty claims to have settled this offer. Verify the transfer before releasing anything.";
@@ -288,14 +326,16 @@ export function offerRecord(
       kind: "offer",
       title: "Offer",
       terms: `${amountLabel(offer.give)} for ${amountLabel(offer.want)}`,
-      status: unverifiedClaim && !deal?.settlementVerified
-        ? `${label} · unverified claim`
-        : label,
+      status:
+        unverifiedClaim && !deal?.settlementVerified
+          ? `${label} · unverified claim`
+          : label,
       tone,
       open,
       expiresAt: offer.expiresAt,
     },
     needsAction,
+    own,
     offer,
     ...(deal ? { deal } : {}),
   };
@@ -332,7 +372,9 @@ export function invoiceRecord(
   const open = !expired && status === "requested";
   let needsAction: string | null = null;
   if (!own && open && !inProgress) {
-    needsAction = "Pay this request in Mailbox after verifying the requester.";
+    needsAction = "Pay this request after verifying the requester.";
+  } else if (!own && open && operation === "awaiting-note-maturity") {
+    needsAction = `Complete the payment once the ${collapse(request.token.symbol) || "token"} note matures.`;
   } else if (
     own &&
     payment?.counterpartyPaymentClaim &&
@@ -361,6 +403,7 @@ export function invoiceRecord(
       expiresAt: request.expiresAt,
     },
     needsAction,
+    own,
     request,
     ...(payment ? { payment } : {}),
   };
@@ -380,14 +423,15 @@ export function escrowRecord(
       contractDealMatchesFund(escrow.chainDeal, fund),
   );
   const label = status ? ESCROW_STATUS[status] : "Contract state not read yet";
-  const open = status === undefined || status === "funded" || status === "filled";
+  const open =
+    status === undefined || status === "funded" || status === "filled";
   let needsAction: string | null = null;
   if (!own && status === "funded" && termsVerified && !expired) {
-    needsAction = "Deposit leg B in Mailbox to receive leg A.";
+    needsAction = "Deposit leg B to receive leg A.";
   } else if (own && status === "filled") {
-    needsAction = "Claim leg B in Mailbox.";
+    needsAction = "Claim leg B.";
   } else if (own && status === "funded" && expired) {
-    needsAction = "The fill deadline passed. Refund leg A in Mailbox.";
+    needsAction = "The fill deadline passed. Refund leg A.";
   }
   return {
     id: `escrow:${fund.dealId}`,
@@ -395,7 +439,8 @@ export function escrowRecord(
       kind: "escrow",
       title: "Escrow",
       terms: `${amountLabel(fund.legA)} against ${amountLabel(fund.legB)}`,
-      status: expired && status === "funded" ? `${label} · deadline passed` : label,
+      status:
+        expired && status === "funded" ? `${label} · deadline passed` : label,
       tone:
         status === "settled"
           ? "live"
@@ -408,6 +453,7 @@ export function escrowRecord(
       expiresAt: fund.deadline,
     },
     needsAction,
+    own,
     fund,
     ...(escrow ? { escrow } : {}),
     escrowTermsVerified: termsVerified,
@@ -425,29 +471,106 @@ function receiptRecord(
       kind: "payment",
       title: standalonePayment ? "Private payment" : "Transfer claim",
       terms: amountLabel(receipt.transfer),
-      status: own ? "Submitted from this device" : "Unverified counterparty claim",
+      status: own
+        ? "Submitted from this device"
+        : "Unverified counterparty claim",
       tone: own ? "live" : "deal",
       open: false,
       expiresAt: 0,
     },
     needsAction: null,
+    own,
     receipt,
     receiptKind: standalonePayment ? "payment" : "transfer",
   };
 }
 
-type PartialItem = Omit<ChatItem, "contact" | "otherRecipients">;
+type PartialItem = Omit<ChatItem, "conversationKey" | "otherRecipients">;
+
+/** The document id a record carries, in its payload or on its local copy. */
+function stableDocumentId(message: LocalMailMessage): string | undefined {
+  const fields = conversationFieldsFromPayload(
+    message.envelope.type,
+    message.envelope.type === "unsupported" ? null : message.envelope.payload,
+  );
+  return fields.documentId ?? message.documentId;
+}
+
+function compositeAttachments(
+  payload: unknown,
+): Array<{ type: string; payload: unknown }> {
+  const composite = parseCompositePayload(payload);
+  return composite ? composite.attachments : [];
+}
+
+function idList(...ids: Array<string | undefined>): string[] {
+  return ids.filter((id): id is string => typeof id === "string" && id !== "");
+}
+
+/** The deals, requests and escrows a record opens: its author owns them. */
+function openedDealIds(message: LocalMailMessage): string[] {
+  const payload =
+    message.envelope.type === "unsupported" ? null : message.envelope.payload;
+  switch (message.envelope.type) {
+    case "offer":
+      return idList(parseOfferPayload(payload)?.dealId);
+    case "payment_request":
+      return idList(parsePaymentRequestPayload(payload)?.requestId);
+    case "escrow_fund":
+      return idList(parseEscrowFundPayload(payload)?.dealId);
+    case "composite":
+      return compositeAttachments(payload).flatMap((attachment) => {
+        const fields = attachment.payload as {
+          dealId?: string;
+          requestId?: string;
+        };
+        if (attachment.type === "payment_request") return idList(fields.requestId);
+        return idList(fields.dealId);
+      });
+    default:
+      return [];
+  }
+}
+
+/** The deal, request or escrow a memo answers: the other side sent it. */
+function answeredDealIds(message: LocalMailMessage): string[] {
+  const payload =
+    message.envelope.type === "unsupported" ? null : message.envelope.payload;
+  switch (message.envelope.type) {
+    case "accept":
+      return idList(parseAcceptPayload(payload)?.dealId);
+    case "decline":
+      return idList(parseDeclinePayload(payload)?.dealId);
+    case "receipt":
+      return idList(parseReceiptPayload(payload)?.dealId);
+    case "escrow_fill":
+      return idList(parseEscrowFillPayload(payload)?.dealId);
+    case "escrow_claim":
+      return idList(parseEscrowClaimPayload(payload)?.dealId);
+    case "escrow_timeout":
+      return idList(parseEscrowTimeoutPayload(payload)?.dealId);
+    default:
+      return [];
+  }
+}
+
+function messageDirection(message: LocalMailMessage): "incoming" | "outgoing" {
+  return message.direction === "outgoing" ? "outgoing" : "incoming";
+}
+
+function messageProvenance(message: LocalMailMessage): ChatItemProvenance {
+  if (message.transport === "payment_link") return "payment-link";
+  return messageDirection(message) === "outgoing" ? "device-sent" : "decrypted";
+}
 
 function baseItem(
   message: LocalMailMessage,
-  provenance: ChatItemProvenance,
-  direction: "incoming" | "outgoing",
 ): Pick<ChatItem, "id" | "at" | "provenance" | "direction" | "message"> {
   return {
     id: message.id,
     at: mailMessageTimestampMs(message),
-    provenance,
-    direction,
+    provenance: messageProvenance(message),
+    direction: messageDirection(message),
     message,
   };
 }
@@ -462,12 +585,9 @@ function firstAction(records: readonly ChatRecord[]): string | null {
   return records.find((record) => record.needsAction)?.needsAction ?? null;
 }
 
-function unsupportedItem(
-  message: LocalMailMessage,
-  direction: "incoming" | "outgoing",
-): PartialItem {
+function unsupportedItem(message: LocalMailMessage): PartialItem {
   return {
-    ...baseItem(message, "device-sent", direction),
+    ...baseItem(message),
     kind: "unsupported",
     label: "Unsupported",
     preview: "This record could not be read",
@@ -477,14 +597,43 @@ function unsupportedItem(
   };
 }
 
-/** A device-local Sent copy, read as one outgoing chat item. */
-export function sentItemFor(
+function backupKindOf(
   message: LocalMailMessage,
-  input: Pick<ChatModelInput, "otc" | "escrow">,
+): "contacts" | "rfq-resume" | null {
+  try {
+    if (message.envelope.type === "contact_snapshot") return "contacts";
+    if (message.envelope.type === "backup_snapshot") {
+      return decodeBackupSnapshot(message.envelope.payload).kind;
+    }
+    if (message.envelope.type === "backup_pointer") {
+      return parseBackupPointer(message.envelope.payload).kind;
+    }
+  } catch {
+    // A malformed backup-shaped record stays visibly unsupported.
+  }
+  return null;
+}
+
+function isBackupEnvelope(message: LocalMailMessage): boolean {
+  return (
+    message.envelope.type === "contact_snapshot" ||
+    message.envelope.type === "backup_snapshot" ||
+    message.envelope.type === "backup_pointer"
+  );
+}
+
+/** One mailbox record, read as a chat item. The wallet decides ownership per payload. */
+export function messageItemFor(
+  message: LocalMailMessage,
+  input: Pick<ChatModelInput, "otc" | "escrow" | "selfAddress">,
   now = nowSeconds(),
 ): PartialItem {
   const { envelope } = message;
-  const base = baseItem(message, "device-sent", "outgoing");
+  const base = baseItem(message);
+  const self = canonical(input.selfAddress);
+  const outgoing = base.direction === "outgoing";
+  const ownsAddress = (claimed: string): boolean =>
+    self ? feltEquals(claimed, self) : outgoing;
   const payload = envelope.type === "unsupported" ? null : envelope.payload;
   switch (envelope.type) {
     case "text": {
@@ -501,28 +650,28 @@ export function sentItemFor(
     }
     case "composite": {
       const composite = parseCompositePayload(payload);
-      if (!composite) return unsupportedItem(message, "outgoing");
+      if (!composite) return unsupportedItem(message);
       const records = composite.attachments.map((attachment) => {
         switch (attachment.type) {
           case "offer":
             return offerRecord(
               attachment.payload,
               input.otc.deals[attachment.payload.dealId],
-              true,
+              ownsAddress(attachment.payload.offerer),
               now,
             );
           case "payment_request":
             return invoiceRecord(
               attachment.payload,
               input.otc.payments[attachment.payload.requestId],
-              true,
+              ownsAddress(attachment.payload.requester),
               now,
             );
           case "escrow_fund":
             return escrowRecord(
               attachment.payload,
               input.escrow.deals[attachment.payload.dealId],
-              true,
+              ownsAddress(attachment.payload.maker),
               now,
             );
           default:
@@ -533,7 +682,7 @@ export function sentItemFor(
                 transfer: attachment.payload.transfer,
                 warning: ONE_SIDED_WARNING,
               },
-              true,
+              outgoing,
               true,
             );
         }
@@ -552,8 +701,13 @@ export function sentItemFor(
     }
     case "offer": {
       const offer = parseOfferPayload(payload);
-      if (!offer) return unsupportedItem(message, "outgoing");
-      const record = offerRecord(offer, input.otc.deals[offer.dealId], true, now);
+      if (!offer) return unsupportedItem(message);
+      const record = offerRecord(
+        offer,
+        input.otc.deals[offer.dealId],
+        ownsAddress(offer.offerer),
+        now,
+      );
       return {
         ...base,
         kind: "offer",
@@ -566,11 +720,11 @@ export function sentItemFor(
     }
     case "payment_request": {
       const request = parsePaymentRequestPayload(payload);
-      if (!request) return unsupportedItem(message, "outgoing");
+      if (!request) return unsupportedItem(message);
       const record = invoiceRecord(
         request,
         input.otc.payments[request.requestId],
-        true,
+        ownsAddress(request.requester),
         now,
       );
       return {
@@ -585,8 +739,13 @@ export function sentItemFor(
     }
     case "escrow_fund": {
       const fund = parseEscrowFundPayload(payload);
-      if (!fund) return unsupportedItem(message, "outgoing");
-      const record = escrowRecord(fund, input.escrow.deals[fund.dealId], true, now);
+      if (!fund) return unsupportedItem(message);
+      const record = escrowRecord(
+        fund,
+        input.escrow.deals[fund.dealId],
+        ownsAddress(fund.maker),
+        now,
+      );
       return {
         ...base,
         kind: "escrow",
@@ -599,12 +758,15 @@ export function sentItemFor(
     }
     case "accept": {
       const accept = parseAcceptPayload(payload);
-      if (!accept) return unsupportedItem(message, "outgoing");
+      if (!accept) return unsupportedItem(message);
+      const isPayment = Boolean(input.otc.payments[accept.dealId]);
       return {
         ...base,
         kind: "memo",
-        label: "Memo",
-        preview: `${amountLabel(accept.transfer)} sent to settle ${accept.dealId.slice(0, 10)}…`,
+        label: isPayment ? "Payment memo" : "Accept memo",
+        preview: outgoing
+          ? `${amountLabel(accept.transfer)} sent to settle ${accept.dealId.slice(0, 10)}…`
+          : `Claims ${amountLabel(accept.transfer)} was sent to settle ${accept.dealId.slice(0, 10)}…`,
         body: "",
         needsAction: null,
         records: [],
@@ -612,8 +774,8 @@ export function sentItemFor(
     }
     case "receipt": {
       const receipt = parseReceiptPayload(payload);
-      if (!receipt) return unsupportedItem(message, "outgoing");
-      const record = receiptRecord(receipt, true, false);
+      if (!receipt) return unsupportedItem(message);
+      const record = receiptRecord(receipt, outgoing, false);
       return {
         ...base,
         kind: "receipt",
@@ -626,7 +788,7 @@ export function sentItemFor(
     }
     case "decline": {
       const decline = parseDeclinePayload(payload);
-      if (!decline) return unsupportedItem(message, "outgoing");
+      if (!decline) return unsupportedItem(message);
       return {
         ...base,
         kind: "decline",
@@ -646,7 +808,7 @@ export function sentItemFor(
           : envelope.type === "escrow_claim"
             ? parseEscrowClaimPayload(payload)
             : parseEscrowTimeoutPayload(payload);
-      if (!update) return unsupportedItem(message, "outgoing");
+      if (!update) return unsupportedItem(message);
       const operation = envelope.type.slice("escrow_".length);
       return {
         ...base,
@@ -658,27 +820,28 @@ export function sentItemFor(
         records: [],
       };
     }
+    case "contact_snapshot":
+    case "backup_snapshot":
+    case "backup_pointer": {
+      const kind = backupKindOf(message);
+      if (!kind) return unsupportedItem(message);
+      return {
+        ...base,
+        kind: "backup",
+        label: kind === "contacts" ? "Contact backup" : "RFQ history backup",
+        preview:
+          kind === "contacts"
+            ? "Encrypted contact backup · wallet + mailbox recovery phrase required"
+            : "Encrypted RFQ history backup · verification-only",
+        body: "",
+        needsAction: null,
+        records: [],
+        backupKind: kind,
+      };
+    }
     default:
-      return unsupportedItem(message, "outgoing");
+      return unsupportedItem(message);
   }
-}
-
-function paymentLinkItem(
-  message: LocalMailMessage,
-  request: PaymentRequestPayload,
-  payment: PaymentRecord | undefined,
-  now: number,
-): PartialItem {
-  const record = invoiceRecord(request, payment, false, now);
-  return {
-    ...baseItem(message, "payment-link", "incoming"),
-    kind: "invoice",
-    label: "Invoice",
-    preview: record.facts.terms,
-    body: "",
-    needsAction: record.needsAction,
-    records: [record],
-  };
 }
 
 function recordItem(
@@ -718,6 +881,8 @@ function contactFor(
   );
   if (entry) {
     return {
+      key: address,
+      kind: "counterparty",
       address,
       label: entry.label,
       nameSource: "address-book",
@@ -726,9 +891,23 @@ function contactFor(
   }
   const alias = findAliasByAddress(aliases, address);
   if (alias) {
-    return { address, label: alias.label, nameSource: "alias", saved: false };
+    return {
+      key: address,
+      kind: "counterparty",
+      address,
+      label: alias.label,
+      nameSource: "alias",
+      saved: false,
+    };
   }
-  return { address, label: null, nameSource: "none", saved: false };
+  return {
+    key: address,
+    kind: "counterparty",
+    address,
+    label: null,
+    nameSource: "none",
+    saved: false,
+  };
 }
 
 function compareConversations(
@@ -743,138 +922,276 @@ function compareConversations(
   return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
 }
 
+type Placement =
+  | { key: string; kind: "counterparty"; address: string }
+  | { key: typeof SELF_CONVERSATION_KEY; kind: "self" }
+  | { key: string; kind: "sealed"; threadKey: string };
+
 export function buildChatModel(input: ChatModelInput): ChatModel {
   const self = canonical(input.selfAddress);
   const now = input.now ?? nowSeconds();
-  const itemsByContact = new Map<string, ChatItem[]>();
-  const push = (contact: string, item: ChatItem) => {
-    const existing = itemsByContact.get(contact);
+  const isSelf = (address: string) => Boolean(self && feltEquals(address, self));
+  const itemsByKey = new Map<string, ChatItem[]>();
+  const placements = new Map<string, Placement>();
+  const push = (placement: Placement, item: ChatItem) => {
+    placements.set(placement.key, placement);
+    const existing = itemsByKey.get(placement.key);
     if (existing) existing.push(item);
-    else itemsByContact.set(contact, [item]);
+    else itemsByKey.set(placement.key, [item]);
   };
 
-  const sentDealIds = new Set<string>();
-  const sentRequestIds = new Set<string>();
-  const sentEscrowIds = new Set<string>();
-  let unattributedSent = 0;
-
-  for (const message of input.sent) {
-    const partial = sentItemFor(message, input, now);
-    for (const record of partial.records) {
-      if (record.offer) sentDealIds.add(record.offer.dealId);
-      if (record.request) sentRequestIds.add(record.request.requestId);
-      if (record.fund) sentEscrowIds.add(record.fund.dealId);
-    }
-    const stored = message.recipients ?? [];
-    const recipients = [
+  const sentDocumentIds = new Set<string>();
+  /* Which counterparty a mailbox thread belongs to: a Sent copy with one
+     stored recipient, or a decrypted record with a name or a payload claim. */
+  const threadOwners = new Map<string, string>();
+  /* Which counterparty a deal, request or escrow is with. Accept, receipt
+     and escrow memos name only the deal, so this is how a counterparty's
+     answer lands in their conversation. The ids are 32-byte secrets shared
+     by the two parties; a memo naming one is still an unverified claim, and
+     the cards say so. */
+  const dealOwners = new Map<string, string>();
+  const recipientsOf = (message: LocalMailMessage): string[] =>
+    [
       ...new Set(
-        stored
+        (message.recipients ?? [])
           .map(canonical)
           .filter((address): address is string => address !== null),
       ),
-    ].filter((address) => !self || !feltEquals(address, self));
-    if (!recipients.length) {
-      // Self-mail (backups, self-tests) is Mailbox's business; a copy with no
-      // stored recipient at all is counted so the rail can say so.
-      if (stored.length === 0) unattributedSent += 1;
-      continue;
-    }
-    for (const recipient of recipients) {
-      push(recipient, {
-        ...partial,
-        contact: recipient,
-        otherRecipients: recipients.length - 1,
-      });
-    }
-  }
-
-  for (const message of input.paymentLinks) {
-    if (message.envelope.type !== "payment_request") continue;
-    const request = parsePaymentRequestPayload(message.envelope.payload);
-    if (!request) continue;
-    const requester = canonical(request.requester);
-    if (!requester || (self && feltEquals(requester, self))) continue;
-    push(requester, {
-      ...paymentLinkItem(
-        message,
-        request,
-        input.otc.payments[request.requestId],
-        now,
-      ),
-      contact: requester,
-      otherRecipients: 0,
-    });
-  }
+    ].filter((address) => !isSelf(address));
+  const claimOwner = (ids: readonly string[], owner: string) => {
+    for (const id of ids) dealOwners.set(id, owner);
+  };
 
   for (const deal of Object.values(input.otc.deals)) {
-    if (sentDealIds.has(deal.dealId)) continue;
     const offerer = canonical(deal.offer.offerer);
-    if (!offerer || (self && feltEquals(offerer, self))) continue;
-    const record = offerRecord(deal.offer, deal, false, now);
-    push(offerer, {
-      ...recordItem(
-        `record:${record.id}`,
-        record,
-        "offer",
-        "Offer",
-        deal.updatedAt * 1_000,
-      ),
-      contact: offerer,
-      otherRecipients: 0,
-    });
+    if (offerer && !isSelf(offerer)) dealOwners.set(deal.dealId, offerer);
   }
-
   for (const payment of Object.values(input.otc.payments)) {
-    if (sentRequestIds.has(payment.requestId)) continue;
-    if (payment.origin === "payment_link") continue;
     const requester = canonical(payment.request.requester);
-    if (!requester || (self && feltEquals(requester, self))) continue;
+    if (requester && !isSelf(requester)) {
+      dealOwners.set(payment.requestId, requester);
+    }
+  }
+  for (const deal of Object.values(input.escrow.deals)) {
+    const maker = canonical(deal.fund.maker);
+    if (maker && !isSelf(maker)) dealOwners.set(deal.dealId, maker);
+  }
+
+  for (const message of input.messages) {
+    if (messageDirection(message) === "outgoing") {
+      const documentId = stableDocumentId(message);
+      if (documentId) sentDocumentIds.add(documentId);
+      const recipients = recipientsOf(message);
+      if (recipients.length === 1) {
+        threadOwners.set(conversationKeyForMessage(message), recipients[0]);
+        claimOwner(
+          [...openedDealIds(message), ...answeredDealIds(message)],
+          recipients[0],
+        );
+      }
+      continue;
+    }
+    const attributed =
+      canonical(message.assignedAddress) ??
+      claimedFinancialAddress(message, input.selfAddress);
+    if (attributed && !isSelf(attributed)) {
+      const thread = conversationKeyForMessage(message);
+      if (!threadOwners.has(thread)) threadOwners.set(thread, attributed);
+      claimOwner(openedDealIds(message), attributed);
+    }
+  }
+  const dealOwnerOf = (message: LocalMailMessage): string | null => {
+    for (const id of answeredDealIds(message)) {
+      const owner = dealOwners.get(id);
+      if (owner) return owner;
+    }
+    return null;
+  };
+
+  const coveredDeals = new Set<string>();
+  const coveredRequests = new Set<string>();
+  const coveredEscrows = new Set<string>();
+  let unattributedSent = 0;
+
+  for (const message of input.messages) {
+    const partial = messageItemFor(message, input, now);
+    for (const record of partial.records) {
+      if (record.offer) coveredDeals.add(record.offer.dealId);
+      if (record.request) coveredRequests.add(record.request.requestId);
+      if (record.fund) coveredEscrows.add(record.fund.dealId);
+    }
+    if (partial.direction === "outgoing") {
+      const stored = message.recipients ?? [];
+      const recipients = recipientsOf(message);
+      if (!recipients.length) {
+        // A copy addressed only to this wallet is self-mail (backups, tests);
+        // one with no stored recipient at all is counted so the rail can say so.
+        if (stored.length === 0) unattributedSent += 1;
+        else {
+          push(
+            { key: SELF_CONVERSATION_KEY, kind: "self" },
+            {
+              ...partial,
+              conversationKey: SELF_CONVERSATION_KEY,
+              otherRecipients: 0,
+            },
+          );
+        }
+        continue;
+      }
+      for (const recipient of recipients) {
+        push(
+          { key: recipient, kind: "counterparty", address: recipient },
+          {
+            ...partial,
+            conversationKey: recipient,
+            otherRecipients: recipients.length - 1,
+          },
+        );
+      }
+      continue;
+    }
+
+    // A letter this wallet sent to several recipients comes back to it as a
+    // decrypted record too; the Sent copy already tells that story.
+    const documentId = stableDocumentId(message);
+    if (documentId && sentDocumentIds.has(documentId)) continue;
+
+    if (isBackupEnvelope(message)) {
+      push(
+        { key: SELF_CONVERSATION_KEY, kind: "self" },
+        { ...partial, conversationKey: SELF_CONVERSATION_KEY, otherRecipients: 0 },
+      );
+      continue;
+    }
+
+    const thread = conversationKeyForMessage(message);
+    const address =
+      canonical(message.assignedAddress) ??
+      claimedFinancialAddress(message, input.selfAddress) ??
+      threadOwners.get(thread) ??
+      dealOwnerOf(message);
+    if (address && !isSelf(address)) {
+      push(
+        { key: address, kind: "counterparty", address },
+        { ...partial, conversationKey: address, otherRecipients: 0 },
+      );
+      continue;
+    }
+    const key = sealedConversationKey(thread);
+    push(
+      { key, kind: "sealed", threadKey: thread },
+      { ...partial, conversationKey: key, otherRecipients: 0 },
+    );
+  }
+
+  /* Deal state Mailbox saved earlier still shows when its message is not
+     decrypted in this session; a decrypted record always wins over it. */
+  for (const deal of Object.values(input.otc.deals)) {
+    if (coveredDeals.has(deal.dealId)) continue;
+    const offerer = canonical(deal.offer.offerer);
+    if (!offerer || isSelf(offerer)) continue;
+    const record = offerRecord(deal.offer, deal, false, now);
+    push(
+      { key: offerer, kind: "counterparty", address: offerer },
+      {
+        ...recordItem(
+          `record:${record.id}`,
+          record,
+          "offer",
+          "Offer",
+          deal.updatedAt * 1_000,
+        ),
+        conversationKey: offerer,
+        otherRecipients: 0,
+      },
+    );
+  }
+  for (const payment of Object.values(input.otc.payments)) {
+    if (coveredRequests.has(payment.requestId)) continue;
+    const requester = canonical(payment.request.requester);
+    if (!requester || isSelf(requester)) continue;
     const record = invoiceRecord(payment.request, payment, false, now);
-    push(requester, {
-      ...recordItem(
-        `record:${record.id}`,
-        record,
-        "invoice",
-        "Invoice",
-        payment.updatedAt * 1_000,
-      ),
-      contact: requester,
-      otherRecipients: 0,
-    });
+    push(
+      { key: requester, kind: "counterparty", address: requester },
+      {
+        ...recordItem(
+          `record:${record.id}`,
+          record,
+          "invoice",
+          "Invoice",
+          payment.updatedAt * 1_000,
+        ),
+        conversationKey: requester,
+        otherRecipients: 0,
+      },
+    );
   }
-
   for (const escrow of Object.values(input.escrow.deals)) {
-    if (sentEscrowIds.has(escrow.dealId)) continue;
+    if (coveredEscrows.has(escrow.dealId)) continue;
     const maker = canonical(escrow.fund.maker);
-    if (!maker || (self && feltEquals(maker, self))) continue;
+    if (!maker || isSelf(maker)) continue;
     const record = escrowRecord(escrow.fund, escrow, false, now);
-    push(maker, {
-      ...recordItem(
-        `record:${record.id}`,
-        record,
-        "escrow",
-        "Escrow",
-        escrow.updatedAt * 1_000,
-      ),
-      contact: maker,
-      otherRecipients: 0,
-    });
+    push(
+      { key: maker, kind: "counterparty", address: maker },
+      {
+        ...recordItem(
+          `record:${record.id}`,
+          record,
+          "escrow",
+          "Escrow",
+          escrow.updatedAt * 1_000,
+        ),
+        conversationKey: maker,
+        otherRecipients: 0,
+      },
+    );
   }
 
-  const contacts = new Set(itemsByContact.keys());
   for (const entry of input.addressBook) {
     const address = canonical(entry.address);
-    if (address && (!self || !feltEquals(address, self))) contacts.add(address);
+    if (address && !isSelf(address) && !placements.has(address)) {
+      placements.set(address, { key: address, kind: "counterparty", address });
+    }
+  }
+  for (const raw of input.extraContacts ?? []) {
+    const address = canonical(raw);
+    if (address && !isSelf(address) && !placements.has(address)) {
+      placements.set(address, { key: address, kind: "counterparty", address });
+    }
   }
 
   const conversations: ChatConversation[] = [];
-  for (const address of contacts) {
-    const items = (itemsByContact.get(address) ?? []).slice().sort(compareItems);
+  for (const placement of placements.values()) {
+    const items = (itemsByKey.get(placement.key) ?? [])
+      .slice()
+      .sort(compareItems);
+    const contact: ChatContact =
+      placement.kind === "counterparty"
+        ? contactFor(placement.address, input.addressBook, input.aliases)
+        : placement.kind === "self"
+          ? {
+              key: SELF_CONVERSATION_KEY,
+              kind: "self",
+              address: self,
+              label: "This mailbox",
+              nameSource: "none",
+              saved: false,
+            }
+          : {
+              key: placement.key,
+              kind: "sealed",
+              address: null,
+              label: null,
+              nameSource: "none",
+              saved: false,
+              threadKey: placement.threadKey,
+            };
     const unreadCount = items.filter(
       (item) => item.direction === "incoming" && !input.readIds.has(item.id),
     ).length;
     conversations.push({
-      contact: contactFor(address, input.addressBook, input.aliases),
+      contact,
       items,
       latest: items.length ? items[items.length - 1] : null,
       unreadCount,
@@ -887,13 +1204,16 @@ export function buildChatModel(input: ChatModelInput): ChatModel {
 
 function conversationHaystack(conversation: ChatConversation): string {
   return [
+    contactDisplayName(conversation.contact),
     conversation.contact.label ?? "",
-    conversation.contact.address,
+    conversation.contact.address ?? "",
     ...conversation.items.flatMap((item) => [
       item.label,
       item.preview,
+      item.body,
       ...item.records.map(
-        (record) => `${record.facts.title} ${record.facts.status}`,
+        (record) =>
+          `${record.facts.title} ${record.facts.terms} ${record.facts.status}`,
       ),
     ]),
   ]
@@ -919,23 +1239,32 @@ export function rfqNamesContact(
   record: Pick<RfqLifecycleRecord, "selectedQuote" | "fills">,
   contact: ChatContact,
 ): boolean {
+  if (!contact.address) return false;
+  const address = contact.address;
   const makerIds = [
     record.selectedQuote?.solverId,
     ...(record.fills ?? []).map((fill) => fill.makerId),
-  ].filter((value): value is string => typeof value === "string" && value !== "");
+  ].filter(
+    (value): value is string => typeof value === "string" && value !== "",
+  );
   if (!makerIds.length) return false;
   const label = contact.label?.trim().toLowerCase();
   return makerIds.some(
     (makerId) =>
-      (label !== undefined && label !== "" && makerId.toLowerCase() === label) ||
-      feltEquals(makerId, contact.address),
+      (label !== undefined &&
+        label !== "" &&
+        makerId.toLowerCase() === label) ||
+      feltEquals(makerId, address),
   );
 }
 
 function rfqEntry(record: RfqLifecycleRecord): ChatContextEntry {
   const terms = record.terms
     ? `${amountLabel({
-        token: { symbol: record.terms.sellSymbol, decimals: record.terms.sellDecimals },
+        token: {
+          symbol: record.terms.sellSymbol,
+          decimals: record.terms.sellDecimals,
+        },
         amount: record.terms.sellAmount,
       })} → ${collapse(record.terms.buySymbol)}`
     : "Terms not stored";
@@ -966,7 +1295,7 @@ function recordEntry(
     status: record.facts.status,
     tone: record.facts.tone,
     open: record.facts.open,
-    direction: item.direction,
+    direction: record.own ? "outgoing" : "incoming",
     itemId: item.id,
     record,
   };
@@ -996,7 +1325,8 @@ export function buildContactContext(
       } else if (
         record.facts.kind === "invoice" &&
         (record.facts.open ||
-          record.payment?.paymentOperation?.state === "awaiting-note-maturity" ||
+          record.payment?.paymentOperation?.state ===
+            "awaiting-note-maturity" ||
           record.payment?.paymentOperation?.state === "submitted" ||
           record.payment?.paymentOperation?.state === "reserved")
       ) {
@@ -1023,4 +1353,14 @@ export function unreadItemIds(conversation: ChatConversation): string[] {
   return conversation.items
     .filter((item) => item.direction === "incoming")
     .map((item) => item.id);
+}
+
+/** The decrypted record a sealed thread can be named through. */
+export function namingTarget(
+  conversation: ChatConversation,
+): LocalMailMessage | null {
+  for (const item of conversation.items) {
+    if (item.direction === "incoming" && item.message) return item.message;
+  }
+  return null;
 }

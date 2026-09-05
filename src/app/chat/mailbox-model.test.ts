@@ -9,20 +9,17 @@ import {
 import { createBackupSnapshot } from "@/lib/backup-snapshot";
 import { computeCidV1Raw } from "@/lib/blob-store";
 import { addrSTRK } from "@/utils/constants";
-import type { LocalMailMessage } from "@/components/mail/Thread";
+import type { LocalMailMessage } from "@/components/mail/message";
 import type { EncryptedMailRecord } from "@/lib/mail";
 import {
-  countMailboxFilterHits,
   escrowForNetwork,
   helperForNetwork,
-  mailboxMatchesFilter,
   mailMessageDateTime,
   mergeDisplayAliases,
   mergeMailMessages,
   newestBackupMessages,
   loadBackupSnapshotWithFallback,
   parseBlockTimestamp,
-  partitionMailboxFolders,
   paymentLinkToLocal,
   sortMailMessages,
 } from "./mailbox-model";
@@ -221,7 +218,7 @@ describe("mailbox list model", () => {
       "contacts-2",
       "rfq-1",
     ]);
-    expect(mailboxMatchesFilter(newestContacts, "letters")).toBe(true);
+    expect(newestContacts.envelope.type).toBe("backup_pointer");
   });
 
   it("ignores tampered high-sequence pointers and inline snapshots before ranking", () => {
@@ -435,28 +432,6 @@ describe("mailbox list model", () => {
       }),
     ).rejects.toThrow(/3 authenticated backup candidates/i);
     expect(fetches).toBe(3);
-  });
-
-  it("partitions inbox and sent in one pass", () => {
-    const folders = partitionMailboxFolders([
-      textMessage("in"),
-      textMessage("out", { direction: "outgoing" }),
-    ]);
-    expect(folders.inbox.map((message) => message.id)).toEqual(["in"]);
-    expect(folders.sent.map((message) => message.id)).toEqual(["out"]);
-  });
-
-  it("counts composite filter hits without extra full-list scans", () => {
-    const message = invoiceMessage(`0x${"22".repeat(32)}`);
-    expect(mailboxMatchesFilter(message, "invoices")).toBe(true);
-    expect(mailboxMatchesFilter(message, "letters")).toBe(false);
-    expect(countMailboxFilterHits([message, textMessage("letter")])).toEqual({
-      all: 2,
-      letters: 1,
-      deals: 0,
-      invoices: 1,
-      escrow: 0,
-    });
   });
 
   it("exposes an ISO timestamp for accessible list times", () => {

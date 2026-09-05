@@ -11,7 +11,6 @@ import {
 import AppShell from "@/app/components/AppShell";
 import ReadyRailGate from "@/app/components/ReadyRailGate";
 import AppProviders from "@/app/providers";
-import InboxPage from "@/app/inbox/page";
 import ChatPage from "@/app/chat/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
@@ -26,7 +25,7 @@ import "@/app/design-system.css";
 
 // The proposal-only market view and the dry cross-chain review are secondary,
 // read-only tools. Deferring them keeps the eagerly loaded shell inside its
-// recorded byte budget now that Chat joins RFQ, Mailbox and Counterparties.
+// recorded byte budget now that Chat carries the whole correspondence desk.
 const MarketProposalPage = lazy(
   () => import("@/app/rfq/markets/proposal/page"),
 );
@@ -50,14 +49,6 @@ function redirectLegacyRoute(pathname: string, locationHash: string): never {
   const target = legacyRouteRedirect(pathname, locationHash);
   if (!target) throw new Error(`Unknown legacy route: ${pathname}`);
   throw redirect({ ...target, replace: true });
-}
-
-function ReadyMailPage() {
-  return (
-    <ReadyRailGate moduleName="Mail">
-      <InboxPage />
-    </ReadyRailGate>
-  );
 }
 
 function ReadyChatPage() {
@@ -159,10 +150,13 @@ const legacyInboxRoute = createRoute({
   beforeLoad: ({ location }) => redirectLegacyRoute("/inbox", location.hash),
 });
 
+/* The Mailbox surface retired into Chat; its bookmarks land on the desk that
+   now holds the same records. */
 const mailboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/mail/inbox",
-  component: ReadyMailPage,
+  beforeLoad: ({ location }) =>
+    redirectLegacyRoute("/mail/inbox", location.hash),
 });
 
 const chatRoute = createRoute({

@@ -186,11 +186,17 @@
   text-transform: uppercase;
 }
 
-.conversationList {
+.railScroll {
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.conversationList {
+  flex: none;
   list-style: none;
 }
 
@@ -923,56 +929,6 @@
   border-left-color: var(--shell-orange);
 }
 
-.unlockForm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3, 6px);
-}
-
-.unlockForm span {
-  flex: 1 1 100%;
-  color: var(--shell-muted);
-  font-size: var(--text-xs, 11px);
-  line-height: 1.45;
-}
-
-.unlockForm input {
-  min-width: 0;
-  flex: 1 1 180px;
-  min-height: 32px;
-  border: 1px solid var(--shell-line);
-  border-radius: 0;
-  padding: 0 8px;
-  color: var(--shell-text);
-  background: var(--shell-bg);
-  font: inherit;
-  font-size: var(--text-sm, 12px);
-}
-
-.unlockForm button {
-  min-height: 32px;
-  border: 1px solid var(--shell-line);
-  padding: 0 10px;
-  color: var(--shell-text);
-  background: var(--shell-inset);
-  cursor: pointer;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: var(--label-sm, 9px);
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.unlockForm button:hover:not(:disabled) {
-  border-color: var(--shell-orange);
-}
-
-.unlockForm button:disabled {
-  cursor: not-allowed;
-  opacity: var(--disabled-opacity, 0.38);
-}
-
 /* ── Right: contact context ──────────────────────────────────────────────── */
 
 .context {
@@ -1261,6 +1217,465 @@
   display: none;
 }
 
+/* ── Notices, key setup and the document sheet ──────────────────────────── */
+
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: var(--border-record-width, 4px) solid var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-size: var(--text-sm, 12px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.notice > span:first-child {
+  flex: 1 1 240px;
+}
+
+.notice[data-kind="ok"] {
+  border-left-color: var(--shell-live);
+}
+
+.notice[data-kind="error"] {
+  border-left-color: var(--shell-danger);
+  color: var(--shell-text);
+  background: color-mix(in srgb, var(--shell-danger) 14%, var(--shell-bg));
+}
+
+.noticeDismiss {
+  flex: none;
+  min-width: 28px;
+  min-height: 28px;
+  border: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.noticeDismiss:hover {
+  border-color: var(--shell-orange);
+  color: var(--shell-text);
+}
+
+/* Onboard and Compose keep their own mail styling; the desk only frames
+   them so they read as sheets inside the conversation. */
+.keySetup,
+.sheet {
+  display: grid;
+  gap: var(--space-4, 8px);
+  max-width: 760px;
+  margin: 0 auto 16px;
+}
+
+.keyNotice {
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--shell-orange);
+  color: var(--shell-text);
+  background: var(--accent-wash, var(--shell-panel));
+  font-size: var(--text-sm, 12px);
+  line-height: 1.5;
+}
+
+.keyNotice strong {
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-md, 10px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.keyNotice span {
+  color: var(--shell-muted);
+}
+
+.keyNotice a {
+  color: var(--shell-orange);
+  text-decoration: underline;
+}
+
+.composerActions {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: var(--space-3, 6px);
+}
+
+.attachButton {
+  min-height: 36px;
+  border: 1px solid var(--shell-line);
+  padding: 0 12px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-md, 10px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: var(--transition-control, none);
+}
+
+.attachButton:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+}
+
+.attachButton:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity, 0.38);
+}
+
+/* A conversation with nothing to write to: the mailbox itself, or a thread
+   whose sender has not been named. */
+.composerNote {
+  flex: none;
+  padding: 10px 14px;
+  border-top: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-size: var(--text-xs, 11px);
+  line-height: 1.5;
+}
+
+/* ── Timeline evidence: naming, proofs, notices, chain records ───────────── */
+
+.naming {
+  display: grid;
+  gap: var(--space-4, 8px);
+  max-width: 560px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--shell-orange);
+  background: var(--shell-panel);
+}
+
+.namingNote {
+  color: var(--shell-muted);
+  font-size: var(--text-xs, 11px);
+  line-height: 1.5;
+}
+
+.namingSave {
+  justify-self: start;
+  min-height: 32px;
+  border: 1px solid var(--shell-orange);
+  padding: 0 12px;
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.namingSave:hover {
+  color: var(--shell-orange);
+  background: transparent;
+}
+
+.entryProof {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  width: 100%;
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  letter-spacing: 0.04em;
+}
+
+.entryProof p {
+  flex: 1 1 100%;
+  color: var(--shell-text);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: var(--text-xs, 11px);
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+
+.entryProof button {
+  min-height: 24px;
+  border: 1px solid var(--shell-line);
+  padding: 0 8px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.entryProof button:hover {
+  border-color: var(--shell-orange);
+}
+
+.entryNotice {
+  width: 100%;
+  padding: 7px 10px;
+  border-left: var(--border-record-width, 4px) solid var(--shell-orange);
+  color: var(--shell-muted);
+  background: var(--shell-panel);
+  font-size: var(--text-xs, 11px);
+  line-height: 1.5;
+}
+
+.entrySubmissions {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px dashed var(--shell-line);
+  color: var(--shell-muted);
+  font-size: var(--text-2xs, 10px);
+  line-height: 1.45;
+}
+
+.entrySubmissions strong {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.entrySubmissions code {
+  font-family: var(--font-mono-ui), monospace;
+  overflow-wrap: anywhere;
+}
+
+.entryChain {
+  width: 100%;
+  color: var(--shell-muted);
+  font-size: var(--text-xs, 11px);
+}
+
+/* ── Mailbox tools under the conversations ──────────────────────────────── */
+
+.tools {
+  display: grid;
+  flex: none;
+  margin-top: auto;
+  border-top: 2px solid var(--shell-line);
+  background: var(--shell-panel);
+}
+
+.toolsSection,
+.toolsForm,
+.toolsBody {
+  display: grid;
+  gap: var(--space-3, 6px);
+  padding: 10px 14px;
+}
+
+.toolsSection {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.toolsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+}
+
+.toolsHead strong,
+.toolsDisclosure > summary {
+  color: var(--shell-text);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-md, 10px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.toolsKeyState {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.toolsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 6px);
+}
+
+.toolsActions button,
+.toolsForm button,
+.toolsBody button {
+  min-height: 32px;
+  border: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.toolsActions:not([data-variant="plain"]) button:first-child {
+  border-color: var(--shell-orange);
+  color: var(--shell-bg);
+  background: var(--shell-orange);
+}
+
+.toolsActions button:hover:not(:disabled),
+.toolsForm button:hover:not(:disabled),
+.toolsBody button:hover:not(:disabled) {
+  border-color: var(--shell-orange);
+}
+
+.toolsActions button:disabled,
+.toolsForm button:disabled,
+.toolsBody button:disabled {
+  cursor: not-allowed;
+  opacity: var(--disabled-opacity, 0.38);
+}
+
+.toolsNote {
+  color: var(--shell-muted);
+  font-size: var(--text-2xs, 10px);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.toolsNote[data-kind="error"] {
+  color: var(--shell-danger);
+}
+
+.toolsDisclosure {
+  border-bottom: 1px solid var(--shell-line);
+}
+
+.toolsDisclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 8px);
+  padding: 9px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.toolsDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.toolsDisclosure > summary::after {
+  content: "+";
+  color: var(--shell-muted);
+}
+
+.toolsDisclosure[open] > summary::after {
+  content: "\2212";
+}
+
+.toolsDisclosure > summary strong {
+  color: var(--shell-muted);
+  font-weight: 700;
+}
+
+.draftList {
+  display: grid;
+  gap: 1px;
+  list-style: none;
+  background: var(--shell-line);
+}
+
+.draftList li {
+  display: flex;
+  align-items: stretch;
+  background: var(--shell-bg);
+}
+
+.draftOpen {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 0;
+  color: var(--shell-text);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-xs, 11px);
+  text-align: left;
+}
+
+.draftOpen span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draftOpen small {
+  color: var(--shell-muted);
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+}
+
+.draftOpen:hover {
+  background: var(--shell-inset);
+}
+
+.draftDelete {
+  flex: none;
+  border: 0;
+  border-left: 1px solid var(--shell-line);
+  padding: 0 10px;
+  color: var(--shell-muted);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono-ui), monospace;
+  font-size: var(--label-sm, 9px);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.draftDelete:hover {
+  color: var(--shell-danger);
+}
+
+.toolsCheck {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 6px);
+  color: var(--shell-muted);
+  font-size: var(--text-2xs, 10px);
+  line-height: 1.45;
+}
+
+.toolsCheck input {
+  margin-top: 1px;
+  accent-color: var(--shell-orange);
+}
+
+.toolsDanger {
+  border-color: var(--shell-danger) !important;
+  color: var(--shell-danger) !important;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 1179px) {
@@ -1276,12 +1691,17 @@
     z-index: 40;
     width: min(360px, 100vw);
     box-shadow: var(--shadow-hard, 4px 4px 0 rgb(0 0 0 / 35%));
+    visibility: hidden;
     transform: translateX(100%);
-    transition: transform var(--duration-fast, 120ms) ease;
+    transition:
+      transform var(--duration-fast, 120ms) ease,
+      visibility 0s linear var(--duration-fast, 120ms);
   }
 
   .contextOpen .context {
+    visibility: visible;
     transform: translateX(0);
+    transition-delay: 0s;
   }
 
   .contextButton,

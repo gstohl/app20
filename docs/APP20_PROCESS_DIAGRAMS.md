@@ -24,7 +24,7 @@ flowchart TD
     RS --> V
     PS --> PR[Privy Sepolia recovery vault]
     LD --> D[Private RFQ v3 localnet desk plus legacy recovery]
-    RW -. UI view only, live Mail action denied .-> M[Mailbox and Counterparties, localnet actions only]
+    RW -. UI view only, live Mail action denied .-> M[Chat and Counterparties, localnet actions only]
     LW --> M
 
     D -. no automatic fallback .-> X[Public venue]

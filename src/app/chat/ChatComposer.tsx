@@ -1,5 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { useState, type FormEvent, type KeyboardEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
 import { ProvingProgress } from "@/components/mail/OperationProgress";
 import {
   CHAT_LETTER_MAX_CHARS,
@@ -7,11 +6,6 @@ import {
   type ChatSendBlocker,
 } from "./chat-send";
 import styles from "./chat.module.css";
-
-export type ChatKeyState =
-  | { kind: "ready" }
-  | { kind: "missing" }
-  | { kind: "locked"; busy: boolean; error?: string };
 
 export type ChatComposerStatus = Readonly<{
   kind: "sending" | "ok" | "error";
@@ -24,12 +18,13 @@ type ChatComposerProps = {
   value: string;
   onChange: (value: string) => void;
   blocker: ChatSendBlocker | null;
-  keyState: ChatKeyState;
-  onUnlock: (passphrase: string) => void;
   sending: boolean;
   status: ChatComposerStatus;
   budget: ChatLetterBudget;
   onSend: () => void;
+  /** Opens the document composer for this counterparty: terms, invoices, escrow. */
+  onAttach: () => void;
+  attachDisabled?: boolean;
 };
 
 export default function ChatComposer({
@@ -37,14 +32,13 @@ export default function ChatComposer({
   value,
   onChange,
   blocker,
-  keyState,
-  onUnlock,
   sending,
   status,
   budget,
   onSend,
+  onAttach,
+  attachDisabled = false,
 }: ChatComposerProps) {
-  const [passphrase, setPassphrase] = useState("");
   const disabled = Boolean(blocker) || sending;
   const canSend = !disabled && value.trim().length > 0 && budget.fits;
 
@@ -80,42 +74,15 @@ export default function ChatComposer({
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
       />
-      {keyState.kind === "locked" ? (
-        <div className={styles.unlockForm}>
-          <span>
-            This mailbox is passphrase-wrapped on this device. Unlock it for
-            this tab to sign and send.
-            {keyState.error ? ` ${keyState.error}` : ""}
-          </span>
-          <input
-            type="password"
-            aria-label="Mailbox passphrase"
-            autoComplete="current-password"
-            value={passphrase}
-            disabled={keyState.busy}
-            onChange={(event) => setPassphrase(event.target.value)}
-          />
-          <button
-            type="button"
-            disabled={keyState.busy || passphrase.length < 8}
-            onClick={() => {
-              onUnlock(passphrase);
-              setPassphrase("");
-            }}
-          >
-            {keyState.busy ? "Unlocking…" : "Unlock for this tab"}
-          </button>
-        </div>
-      ) : null}
       <div className={styles.composerRow}>
         <span className={styles.composerMeta}>
           {blocker ? (
             <>
               {blocker.message}
-              {blocker.kind === "key" && keyState.kind === "missing" ? (
+              {blocker.kind === "key" ? (
                 <>
                   {" "}
-                  <Link to="/mail/inbox">Set one up in Mailbox</Link>
+                  <a href="#mailbox-key-setup">Set up a mailbox key</a>
                 </>
               ) : null}
             </>
@@ -127,9 +94,19 @@ export default function ChatComposer({
             </>
           )}
         </span>
-        <button type="submit" className={styles.sendButton} disabled={!canSend}>
-          {sending ? "Sending…" : "Send encrypted"}
-        </button>
+        <span className={styles.composerActions}>
+          <button
+            type="button"
+            className={styles.attachButton}
+            disabled={attachDisabled || sending}
+            onClick={onAttach}
+          >
+            Attach terms
+          </button>
+          <button type="submit" className={styles.sendButton} disabled={!canSend}>
+            {sending ? "Sending…" : "Send encrypted"}
+          </button>
+        </span>
       </div>
       {status ? (
         <p
