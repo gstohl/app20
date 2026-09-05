@@ -16,6 +16,7 @@ import {
   conversationPane,
   conversationRow,
   conversationRowByAddress,
+  conversationsRail,
   ensureMailboxKey,
   entry,
   loadExistingKey,
@@ -229,8 +230,18 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await page.getByLabel("Search conversations").fill(`${quote} ETH`);
     await expect(conversationRow(page, contactLabel)).toBeVisible();
     await page.getByLabel("Search conversations").fill("nothing matches this");
-    await expect(page.getByText("No conversation matches")).toBeVisible();
-    await page.getByLabel("Search conversations").fill("");
-    await page.getByRole("button", { name: /Needs action only/ }).click();
+    // Rail and centre pane agree, and the centre offers the way back.
+    await expect(
+      conversationsRail(page).getByText("No conversation matches", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "No conversation matches." }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Show all conversations" }).click();
+    await expect(page.getByLabel("Search conversations")).toHaveValue("");
+    await expect(
+      page.getByRole("button", { name: /Needs action only/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await expect(conversationRow(page, contactLabel)).toBeVisible();
   });
 });

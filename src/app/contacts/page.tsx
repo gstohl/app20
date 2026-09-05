@@ -125,7 +125,7 @@ function AddressBookPanel({
       <header className={styles.panelHeading}>
         <span>COUNTERPARTIES</span>
         <strong id="rfq-book-title">
-          Device-encrypted directory · RFQ and Mail actions
+          Device-encrypted directory · RFQ and Chat handoffs
         </strong>
       </header>
       <div className={styles.bookBody}>

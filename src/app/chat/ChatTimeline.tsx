@@ -135,6 +135,7 @@ function SenderNaming({
         value={value}
         onChange={setValue}
         placeholder="0x… or saved label"
+        bookActions={false}
       />
       <button type="submit" className={styles.namingSave}>
         Save name
