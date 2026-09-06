@@ -21,7 +21,7 @@ const SECTION_LABELS: Readonly<Record<ChatContextSection, string>> = {
 function identityNote(conversation: ChatConversation): string {
   const { contact } = conversation;
   if (contact.kind === "self") {
-    return "Backups and self-addressed copies this wallet posted to its own mailbox. Restore one from the conversation; post new ones from the mailbox tools.";
+    return "Backups and self-addressed copies this wallet posted to its own chat. Restore one from the conversation; post new ones from the chat tools.";
   }
   if (contact.kind === "sealed") {
     return "MessagePosted carries no sender. Name the thread from the conversation to file it under a counterparty; until then it stays here.";
@@ -279,7 +279,7 @@ export default function ChatContextPanel({
                 {contact.kind === "counterparty"
                   ? "WALLET IDENTITY"
                   : contact.kind === "self"
-                    ? "YOUR MAILBOX"
+                    ? "YOUR CHAT"
                     : "SEALED THREAD"}
               </p>
               <h2>
@@ -329,8 +329,8 @@ export default function ChatContextPanel({
               empty={
                 <>
                   No escrow announcement with {name} on this device. Escrow
-                  state is read from the contract when this mailbox checks for
-                  mail, never proven by a message.
+                  state is read from the contract when this chat checks for
+                  messages, never proven by a message.
                 </>
               }
               selectedEntryId={null}

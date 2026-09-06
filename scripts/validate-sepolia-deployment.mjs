@@ -16,7 +16,7 @@ const POOL =
   "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91";
 const STRK =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
-const PRODUCTS = ["App20Mail", "App20Escrow", "App20Claim"];
+const PRODUCTS = ["App20Chat", "App20Escrow", "App20Claim"];
 
 function usage() {
   console.log(`Validate only the checked-in, intentionally blocked Sepolia template.
@@ -237,16 +237,16 @@ for (const name of PRODUCTS) {
   )
     fail(`${name} review/audit/approval must remain blocked`);
 }
-const mail = manifest.contracts.App20Mail;
+const mail = manifest.contracts.App20Chat;
 if (mail.source?.path !== "cairo/src/lib.cairo" || mail.source?.commit !== null)
-  fail("App20Mail source placeholder changed");
+  fail("App20Chat source placeholder changed");
 if (
   JSON.stringify(mail.constructor?.calldata) !== JSON.stringify([POOL]) ||
   mail.constructor?.calldataSha256 !== null
 )
-  fail("App20Mail blocked constructor placeholder changed");
+  fail("App20Chat blocked constructor placeholder changed");
 if (Object.keys(mail.reviewedSelectors ?? {}).length !== 0)
-  fail("App20Mail selectors must remain unattested");
+  fail("App20Chat selectors must remain unattested");
 for (const name of ["App20Escrow", "App20Claim"]) {
   const contract = manifest.contracts[name];
   if (contract.source?.path !== null || contract.source?.commit !== null)

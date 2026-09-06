@@ -400,7 +400,7 @@ export function LocalnetDevTools({
       </span> : null}
       <span className={switchError ? styles.notice : styles.srNotice} role="status">{notice}</span>
       <details className={styles.runtimeDetails}>
-        <summary>{variant === "header" ? "Local demo" : "Runtime details"}</summary>
+        <summary aria-label={variant === "header" ? "Demo account details" : undefined} title={variant === "header" ? "Demo account details" : undefined}>{variant === "header" ? "⋯" : "Runtime details"}</summary>
         <div className={styles.copies}>
           <span>Switch between Alice and Bob to try both sides of a conversation.</span>
           <span>Runtime {wallet.config.runtimeEpoch.slice(0, 8)}</span>
@@ -417,7 +417,7 @@ export function LocalnetDevTools({
           ))}
           <span role="status">{copied === "error" ? "Could not copy the address. Check clipboard permissions." : copied ? "Address copied." : ""}</span>
           <span>Pool {shortAddress(wallet.config.poolAddress)}</span>
-          <span>Mail {shortAddress(wallet.config.helperAddress)}</span>
+          <span>Chat service {shortAddress(wallet.config.helperAddress)}</span>
           <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
           <button
             type="button"

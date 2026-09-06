@@ -31,7 +31,7 @@ describe("compose ciphertext preflight", () => {
     expect(composerInvoiceTokenOptions(3, "0x0")).toHaveLength(1);
   });
 
-  it("keeps preview senderAuth the same encoded length as a real Mail signature", () => {
+  it("keeps preview senderAuth the same encoded length as a real Chat signature", () => {
     const mailbox = deriveKeypair(seed(9));
     const real = createMailSenderAuth(seed(9), mailbox.publicKey, {
       documentId: `0x${"11".repeat(32)}`,

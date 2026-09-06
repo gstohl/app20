@@ -1245,7 +1245,7 @@ export default function LocalnetPrivateIntentDesk({
         !feltEquals(address, result.record.account)
       ) {
         throw new Error(
-          "The connected Mail scope changed before invoice settlement could be recorded.",
+          "The connected Chat scope changed before invoice settlement could be recorded.",
         );
       }
       // Mail keys local OTC state by the wallet-facing chain/account strings;

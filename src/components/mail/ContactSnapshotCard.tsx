@@ -26,21 +26,21 @@ export default function ContactSnapshotCard({
           {contacts ? "CONTACT BACKUP" : "RFQ HISTORY BACKUP"}
         </h3>
         <span className={styles.proofStamp}>
-          Self-mail · verify before restore
+          Self-messages · verify before restore
         </span>
       </div>
       <p className={styles.termsSentence}>
-        This encrypted letter contains a versioned{" "}
+        This encrypted message contains a versioned{" "}
         {contacts ? "address-book" : "RFQ resume"} snapshot scoped to one
-        wallet, network, Mail helper, and mailbox key.
+        wallet, network, Chat helper, and chat key.
         {pointer
-          ? " The encrypted snapshot bytes are stored outside Mail. Only owner-MAC-authenticated pointers are accepted and CID-verified before decryption; older pointers without a valid MAC are ignored."
+          ? " The encrypted snapshot bytes are stored outside Chat. Only owner-MAC-authenticated pointers are accepted and CID-verified before decryption; older pointers without a valid MAC are ignored."
           : ""}
       </p>
       <p className={styles.riskCopy}>
-        Connect the same wallet and restore the mailbox recovery phrase first.
-        The wallet identifies the mailbox; it cannot decrypt this backup by
-        itself. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} Mail is evidence and
+        Connect the same wallet and restore the chat recovery phrase first.
+        The wallet identifies the chat; it cannot decrypt this backup by
+        itself. {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} Chat is evidence and
         storage, never settlement authority.
       </p>
       {onMerge ? (
@@ -58,7 +58,7 @@ export default function ContactSnapshotCard({
         </div>
       ) : (
         <p className={styles.actionWarning}>
-          Unlock the mailbox to verify and restore this snapshot.
+          Unlock the chat to verify and restore this snapshot.
         </p>
       )}
     </article>

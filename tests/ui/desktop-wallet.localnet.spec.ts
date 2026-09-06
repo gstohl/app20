@@ -31,7 +31,7 @@ test('desktop wallet switches Alice and Bob, copies the active address, and open
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await expect(page.getByRole('heading', { name: 'No conversations on this device yet.' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Create mailbox & register' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Enable encrypted chat' })).toBeVisible();
   await expect(page.getByRole('complementary', { name: 'Contact context' })).toBeHidden();
   await page.screenshot({ path: 'artifacts/desktop-ux/iteration-2/chat-empty.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'New conversation', exact: true }).click();

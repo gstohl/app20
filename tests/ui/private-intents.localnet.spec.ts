@@ -458,7 +458,7 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
 
   await scanRecent(page);
   // Self-addressed backups file under the mailbox itself.
-  await conversationRow(page, "This mailbox").click();
+  await conversationRow(page, "This chat").click();
   await expect(
     timeline(page).getByText("RFQ HISTORY BACKUP", { exact: true }),
   ).toBeVisible({ timeout: 60_000 });
@@ -536,9 +536,9 @@ test("v3 keeps floors sealed, expires locks, and atomically settles single and s
     page.getByText(/This unsigned message requests\s+0\.1 USDC/),
   ).toBeVisible();
   await expect(
-    page.getByText(/Mail coordinates the invoice but does not authenticate/),
+    page.getByText(/Chat coordinates the invoice but does not authenticate/),
   ).toBeVisible();
-  await expect(page.getByText("Mail key signature verified")).toHaveCount(0);
+  await expect(page.getByText("Chat key signature verified")).toHaveCount(0);
   await page.getByRole("button", { name: "Pay privately with STRK" }).click();
   await expect(page).toHaveURL(/\/rfq(?:#desk)?$/, { timeout: 60_000 });
 

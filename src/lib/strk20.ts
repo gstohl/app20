@@ -10,7 +10,7 @@ export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
 export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
 export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
-/** Reviewed amount atomically withdrawn to App20Mail and returned to the OPEN note. */
+/** Reviewed amount atomically withdrawn to App20Chat and returned to the OPEN note. */
 export const APP20_HELPER_FUNDING_BASE_UNITS = 7n;
 
 /**

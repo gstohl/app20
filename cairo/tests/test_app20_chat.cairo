@@ -1,7 +1,7 @@
-use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
-use app20_mail::{
-    App20Mail, IApp20MailDispatcher, IApp20MailDispatcherTrait, IApp20MailSafeDispatcher,
-    IApp20MailSafeDispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS, OpenNoteDeposit,
+use app20_chat::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use app20_chat::{
+    App20Chat, CHAT_RECOVERY_AMOUNT, IApp20ChatDispatcher, IApp20ChatDispatcherTrait,
+    IApp20ChatSafeDispatcher, IApp20ChatSafeDispatcherTrait, MAX_CT_FELTS, OpenNoteDeposit,
 };
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, EventSpyAssertionsTrait,
@@ -13,10 +13,10 @@ fn contract_address(value: felt252) -> ContractAddress {
     value.try_into().unwrap()
 }
 
-fn deploy_helper(pool: ContractAddress) -> (ContractAddress, IApp20MailDispatcher) {
-    let contract = declare("App20Mail").unwrap().contract_class();
+fn deploy_helper(pool: ContractAddress) -> (ContractAddress, IApp20ChatDispatcher) {
+    let contract = declare("App20Chat").unwrap().contract_class();
     let (address, _) = contract.deploy(@array![pool.into()]).unwrap();
-    (address, IApp20MailDispatcher { contract_address: address })
+    (address, IApp20ChatDispatcher { contract_address: address })
 }
 
 fn deploy_token(
@@ -42,7 +42,7 @@ fn transfer_from_pool(
 
 fn prepare_funding(
     helper_address: ContractAddress,
-    helper: IApp20MailDispatcher,
+    helper: IApp20ChatDispatcher,
     token: ContractAddress,
     transaction_hash: felt252,
 ) {
@@ -52,7 +52,7 @@ fn prepare_funding(
 
 fn invoke(
     helper_address: ContractAddress,
-    helper: IApp20MailDispatcher,
+    helper: IApp20ChatDispatcher,
     pool: ContractAddress,
     token: ContractAddress,
     note_id: felt252,
@@ -74,7 +74,7 @@ fn invoke(
 }
 
 fn compute_protected(
-    helper: IApp20MailDispatcher,
+    helper: IApp20ChatDispatcher,
     identity_key: felt252,
     token: ContractAddress,
     note_id: felt252,
@@ -89,7 +89,7 @@ fn compute_protected(
 
 fn invoke_protected(
     helper_address: ContractAddress,
-    helper: IApp20MailDispatcher,
+    helper: IApp20ChatDispatcher,
     pool: ContractAddress,
     computation: (felt252, felt252),
     token: ContractAddress,
@@ -200,8 +200,8 @@ fn post_emits_event_with_exact_payload() {
             @array![
                 (
                     helper_address,
-                    App20Mail::Event::MessagePosted(
-                        App20Mail::MessagePosted {
+                    App20Chat::Event::MessagePosted(
+                        App20Chat::MessagePosted {
                             index: 0,
                             eph_pk: (0x111, 0x222),
                             view_tag: 0x7a,
@@ -378,7 +378,7 @@ fn only_fixed_recovery_amount_is_approved_and_echoed() {
 
     transfer_from_pool(pool, helper_address, token_address, token, dust.try_into().unwrap());
     prepare_funding(helper_address, helper, token_address, 0x717);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT);
 
     let deposits = invoke(
         helper_address, helper, pool, token_address, 0x717, array![0x1, 0xcafe], 0,
@@ -388,13 +388,13 @@ fn only_fixed_recovery_amount_is_approved_and_echoed() {
     let deposit = *deposits.at(0);
     assert(deposit.note_id == 0x717, 'wrong note id');
     assert(deposit.token == token_address, 'wrong token');
-    assert(deposit.amount == MAIL_RECOVERY_AMOUNT, 'wrong amount');
+    assert(deposit.amount == CHAT_RECOVERY_AMOUNT, 'wrong amount');
     assert(
-        token.allowance(helper_address, pool) == MAIL_RECOVERY_AMOUNT.into(),
+        token.allowance(helper_address, pool) == CHAT_RECOVERY_AMOUNT.into(),
         'wrong recovery approval',
     );
     assert(
-        token.balance_of(helper_address) == dust + MAIL_RECOVERY_AMOUNT.into(),
+        token.balance_of(helper_address) == dust + CHAT_RECOVERY_AMOUNT.into(),
         'balance moved early',
     );
 }
@@ -434,7 +434,7 @@ fn prepared_short_recovery_input_reverts() {
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, token) = deploy_token(pool, 1_000);
     prepare_funding(helper_address, helper, token_address, 0x812);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT - 1);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT - 1);
 
     invoke(helper_address, helper, pool, token_address, 0x812, array![0x1], 0);
 }
@@ -446,7 +446,7 @@ fn prepared_excess_recovery_input_reverts() {
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, token) = deploy_token(pool, 1_000);
     prepare_funding(helper_address, helper, token_address, 0x813);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT + 1);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT + 1);
 
     invoke(helper_address, helper, pool, token_address, 0x813, array![0x1], 0);
 }
@@ -457,7 +457,7 @@ fn stale_preparation_preserves_message_only_semantics() {
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, token) = deploy_token(pool, 1_000);
     prepare_funding(helper_address, helper, token_address, 0x814);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT);
     start_cheat_transaction_hash(helper_address, 0x815);
 
     let deposits = invoke(helper_address, helper, pool, token_address, 0x814, array![0x1], 0);
@@ -472,10 +472,10 @@ fn stale_preparation_preserves_message_only_semantics() {
 fn failed_short_fill_rolls_back_snapshot_consumption() {
     let pool = contract_address(0x115);
     let (helper_address, helper) = deploy_helper(pool);
-    let safe_helper = IApp20MailSafeDispatcher { contract_address: helper_address };
+    let safe_helper = IApp20ChatSafeDispatcher { contract_address: helper_address };
     let (token_address, token) = deploy_token(pool, 1_000);
     prepare_funding(helper_address, helper, token_address, 0x815);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT - 1);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT - 1);
     cheat_caller_address(helper_address, pool, CheatSpan::TargetCalls(1));
 
     let failed = safe_helper
@@ -503,7 +503,7 @@ fn consumed_preparation_cannot_recover_twice() {
     let (helper_address, helper) = deploy_helper(pool);
     let (token_address, token) = deploy_token(pool, 1_000);
     prepare_funding(helper_address, helper, token_address, 0x816);
-    transfer_from_pool(pool, helper_address, token_address, token, MAIL_RECOVERY_AMOUNT);
+    transfer_from_pool(pool, helper_address, token_address, token, CHAT_RECOVERY_AMOUNT);
 
     let first = invoke(helper_address, helper, pool, token_address, 0x816, array![0x1], 0);
     let second = invoke(helper_address, helper, pool, token_address, 0x817, array![0x2], 0);

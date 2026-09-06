@@ -11,6 +11,9 @@ export type ChatComposerStatus = Readonly<{
   kind: "sending" | "ok" | "error";
   message: string;
   startedAt?: number;
+  detail?: string;
+  transactionHash?: string;
+  retryBlocked?: boolean;
 }> | null;
 
 type ChatComposerProps = {
@@ -22,6 +25,7 @@ type ChatComposerProps = {
   status: ChatComposerStatus;
   budget: ChatLetterBudget;
   onSend: () => void;
+  onCheckDelivery?: () => void;
   /** Opens the document composer for this counterparty: terms, invoices, escrow. */
   onAttach: () => void;
   attachDisabled?: boolean;
@@ -36,10 +40,11 @@ export default function ChatComposer({
   status,
   budget,
   onSend,
+  onCheckDelivery,
   onAttach,
   attachDisabled = false,
 }: ChatComposerProps) {
-  const disabled = Boolean(blocker) || sending;
+  const disabled = Boolean(blocker) || sending || Boolean(status?.retryBlocked);
   const canSend = !disabled && value.trim().length > 0 && budget.fits;
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -71,7 +76,7 @@ export default function ChatComposer({
         maxLength={CHAT_LETTER_MAX_CHARS}
         aria-describedby="chat-send-guidance"
         aria-invalid={!budget.fits || undefined}
-        placeholder={`Write an encrypted letter to ${contactName}…`}
+        placeholder={`Write an encrypted message to ${contactName}…`}
         disabled={sending}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
@@ -84,7 +89,7 @@ export default function ChatComposer({
               {blocker.kind === "key" ? (
                 <>
                   {" "}
-                  <a href="#mailbox-key-setup">Open mailbox key tools</a>
+                  <a href="#mailbox-key-setup">Open chat key tools</a>
                 </>
               ) : null}
             </>
@@ -104,7 +109,7 @@ export default function ChatComposer({
             Attach terms
           </button>
           <button type="submit" className={styles.sendButton} disabled={!canSend}>
-            {sending ? "Sending…" : "Send encrypted"}
+            {sending ? "Please wait…" : status?.retryBlocked ? "Confirmation pending" : status?.kind === "error" ? "Retry send" : "Send encrypted"}
           </button>
         </span>
       </div>
@@ -127,10 +132,22 @@ export default function ChatComposer({
           {status.message}
         </p>
       ) : null}
+      {status?.retryBlocked && onCheckDelivery ? (
+        <button type="button" className={styles.attachButton} disabled={sending} onClick={onCheckDelivery}>
+          {sending ? "Checking delivery…" : "Check delivery"}
+        </button>
+      ) : null}
+      {status?.detail || status?.transactionHash ? (
+        <details className={styles.sendDetails}>
+          <summary>Delivery details</summary>
+          {status.transactionHash ? <p>Transaction <code style={{ overflowWrap: "anywhere" }}>{status.transactionHash}</code></p> : null}
+          {status.detail ? <p>{status.detail}</p> : null}
+        </details>
+      ) : null}
       <ProvingProgress
         active={sending}
         startedAt={status?.startedAt}
-        label="Sealing and submitting the letter"
+        label="Sealing and submitting the message"
       />
     </form>
   );

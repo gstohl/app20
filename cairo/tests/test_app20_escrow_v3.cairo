@@ -1,13 +1,13 @@
-use app20_mail::OpenNoteDeposit;
-use app20_mail::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
-use app20_mail::escrow::{
+use app20_chat::OpenNoteDeposit;
+use app20_chat::claim_ticket::{IClaimTicketDispatcher, IClaimTicketDispatcherTrait};
+use app20_chat::escrow::{
     App20Escrow, EscrowOperation, FillParams, FundParams, IApp20EscrowDispatcher,
     IApp20EscrowDispatcherTrait, IApp20EscrowSafeDispatcher, IApp20EscrowSafeDispatcherTrait,
     LockParams, LockStatus, TAKE_DOMAIN, TAKE_IDENTITY_DOMAIN, TakeFill, TakeParams,
     evaluate_schedule,
 };
-use app20_mail::lock_ticket::{ILockTicketDispatcher, ILockTicketDispatcherTrait};
-use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use app20_chat::lock_ticket::{ILockTicketDispatcher, ILockTicketDispatcherTrait};
+use app20_chat::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use core::poseidon::poseidon_hash_span;
 use snforge_std::signature::stark_curve::{
     StarkCurveKeyPair, StarkCurveKeyPairImpl, StarkCurveSignerImpl,

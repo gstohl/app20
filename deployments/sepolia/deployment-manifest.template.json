@@ -38,17 +38,17 @@
     "reproducedAt": null
   },
   "contracts": {
-    "App20Mail": {
-      "productName": "App20Mail",
+    "App20Chat": {
+      "productName": "App20Chat",
       "deploymentAllowed": false,
       "source": {
         "path": "cairo/src/lib.cairo",
         "commit": null
       },
       "artifacts": {
-        "sierraPath": "cairo/target/dev/app20_mail_App20Mail.contract_class.json",
+        "sierraPath": "cairo/target/dev/app20_chat_App20Chat.contract_class.json",
         "sierraSha256": null,
-        "casmPath": "cairo/target/dev/app20_mail_App20Mail.compiled_contract_class.json",
+        "casmPath": "cairo/target/dev/app20_chat_App20Chat.compiled_contract_class.json",
         "casmSha256": null,
         "abiSha256": null
       },

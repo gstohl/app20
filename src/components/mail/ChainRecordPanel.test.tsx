@@ -37,11 +37,11 @@ describe("versioned backup cards", () => {
 
     const legacy = renderToStaticMarkup(<ContactSnapshotCard />);
     expect(legacy).toContain("CONTACT BACKUP");
-    expect(legacy).toContain("Unlock the mailbox");
+    expect(legacy).toContain("Unlock the chat");
   });
 });
 
-describe("mail chain evidence", () => {
+describe("messages chain evidence", () => {
   it("is collapsed by default", () => {
     const markup = renderToStaticMarkup(<ChainRecordPanel message={message} />);
     expect(markup).toContain("<details");

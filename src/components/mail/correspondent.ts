@@ -71,7 +71,7 @@ export function conversationCorrespondent(
     message.envelope.type === "backup_pointer"
   ) {
     return {
-      primary: "This mailbox",
+      primary: "This chat",
       detail: "Encrypted self-backup · verify before restore",
     };
   }

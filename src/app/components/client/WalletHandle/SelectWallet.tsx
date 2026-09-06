@@ -88,7 +88,7 @@ export default function SelectWallet({
       const [account] = change.accounts;
       if (!account) {
         walletStore.disconnect(
-          "The wallet removed account access. Connect again to reopen this mailbox.",
+          "The wallet removed account access. Connect again to reopen Chat.",
         );
         return;
       }

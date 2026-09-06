@@ -81,11 +81,11 @@ export async function openTools(page: Page, title: string) {
 }
 
 export function openMailboxRecovery(page: Page) {
-  return openTools(page, "Encrypted mailbox recovery");
+  return openTools(page, "Encrypted chat recovery");
 }
 
 export async function scanRecent(page: Page) {
-  const button = page.getByRole("button", { name: "Check for new mail" });
+  const button = page.getByRole("button", { name: "Check for new messages" });
   await expect(button).toBeEnabled({ timeout: 120_000 });
   await button.click();
   await page.waitForTimeout(100);
@@ -95,7 +95,7 @@ export async function scanRecent(page: Page) {
 /** Every page load starts with the key unloaded; this loads the persisted one. */
 export async function loadExistingKey(page: Page) {
   const button = page.getByRole("button", {
-    name: "Open mailbox",
+    name: "Open chat",
   });
   await expect(button).toBeVisible();
   await button.click();
@@ -108,7 +108,7 @@ export async function ensureMailboxKey(
   identity: LocalnetIdentityId,
 ) {
   const setup = page.getByRole("button", {
-    name: /^(Create mailbox & register|Open mailbox)$/,
+    name: /^(Enable encrypted chat|Open chat)$/,
   });
   await expect(setup).toBeVisible();
   await primeLocalnetMailSeed(page, identity);
@@ -120,7 +120,7 @@ export async function ensureMailboxKey(
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
-  const scanButton = page.getByRole("button", { name: "Check for new mail" });
+  const scanButton = page.getByRole("button", { name: "Check for new messages" });
   await expect
     .poll(
       async () => {
@@ -136,7 +136,7 @@ export async function ensureMailboxKey(
     ).trim();
     expect(phrase).toMatch(/^(?:[0-9a-f]{8} ){7}[0-9a-f]{8}$/);
     await page
-      .getByRole("button", { name: "I saved the backup — open mailbox" })
+      .getByRole("button", { name: "I saved the backup — open chat" })
       .click();
   }
   await expect(scanButton).toBeEnabled({ timeout: 60_000 });

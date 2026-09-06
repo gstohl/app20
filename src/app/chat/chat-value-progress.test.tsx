@@ -27,4 +27,20 @@ describe("offer progress in the expanded Chat card", () => {
     expect(html).not.toContain("Transfer verified locally");
     expect(html).not.toContain("Accept &amp; send");
   });
+
+  it("keeps receipt recovery visible without transient action state after payment confirmation", () => {
+    const record = offerRecord(offer, {
+      dealId: offer.dealId, offer, status: "accepted", updatedAt: 1,
+      settlementVerified: true, acceptTxHash: "0xabc",
+      acceptOperation: { state: "confirmed", updatedAt: 1 },
+    }, false);
+    const html = renderToStaticMarkup(<ChatRecordFull record={record} aliases={[]} actions={{
+      selfAddress: "0xb0b", actionStates: {}, onAccept: () => undefined, onPostReceipt: () => undefined,
+    }} />);
+    expect(html).toContain("Payment complete. Only the receipt remains.");
+    expect(html).toContain("Posting it will not send the payment again.");
+    expect(html).toContain(">Post receipt</button>");
+    expect(html).not.toContain("Accept &amp; send");
+  });
+
 });

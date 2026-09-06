@@ -110,7 +110,7 @@ Those are dated observations, not assertions about today's registry state. APP20
 - live Mainnet/Sepolia escrow helper constants are hard-coded to `0x0`
 - public build-variable injection cannot override those constants
 - localnet helper/escrow addresses are ephemeral and environment-generated
-- historical App20Mail and legacy App20Escrow/ClaimTicket Sepolia proof records are denylisted under [`evidence/historical-sepolia-proofs/`](evidence/historical-sepolia-proofs/)
+- historical App20Chat and legacy App20Escrow/ClaimTicket Sepolia proof records are denylisted under [`evidence/historical-sepolia-proofs/`](evidence/historical-sepolia-proofs/)
 - no historical proof address is configured in runtime, the blocked production manifest, or `strk20.json`
 
 Contract source or historical proof presence is not production configuration, deployment approval, or audit evidence. The team owns contract specification, implementation, independent review, deployment keys, class-hash verification, and maintenance.

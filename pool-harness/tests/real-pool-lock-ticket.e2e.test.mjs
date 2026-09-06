@@ -305,17 +305,17 @@ test("real privacy pool: LockTicket supply two survives take and both maker sett
     const claimTicketClassHash = await declare(
       env,
       artifactRoot,
-      "app20_mail_ClaimTicket",
+      "app20_chat_ClaimTicket",
     );
     const lockTicketClassHash = await declare(
       env,
       artifactRoot,
-      "app20_mail_LockTicket",
+      "app20_chat_LockTicket",
     );
     const escrowClassHash = await declare(
       env,
       artifactRoot,
-      "app20_mail_App20Escrow",
+      "app20_chat_App20Escrow",
     );
     const deployment = await env.admin.deployContract({
       classHash: escrowClassHash,

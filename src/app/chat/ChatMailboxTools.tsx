@@ -84,10 +84,10 @@ export default function ChatMailboxTools({
 
 
   return (
-    <div className={styles.tools} aria-label="Mailbox tools">
+    <div className={styles.tools} aria-label="Chat tools">
       <section className={styles.toolsSection} aria-labelledby="chat-scan-title">
         <div className={styles.toolsHead}>
-          <strong id="chat-scan-title">Check for mail</strong>
+          <strong id="chat-scan-title">Check for messages</strong>
           <span className={styles.toolsKeyState}>
             {gate === "wallet"
               ? "NO WALLET"
@@ -102,14 +102,14 @@ export default function ChatMailboxTools({
             onClick={() => onScan("newer")}
             disabled={!keyLoaded || scanning}
           >
-            {scanning ? "Checking…" : "Check for new mail"}
+            {scanning ? "Checking…" : "Check for new messages"}
           </button>
           <button
             type="button"
             onClick={() => onScan("older")}
             disabled={!keyLoaded || scanning}
           >
-            Load older mail
+            Load older messages
           </button>
         </div>
         <ScanProgress
@@ -122,8 +122,8 @@ export default function ChatMailboxTools({
         {gate ? (
           <p className={styles.toolsNote}>
             {gate === "wallet"
-              ? "Connect a wallet before checking for mail."
-              : "Load this device's mailbox key before checking for mail."}
+              ? "Connect a wallet before checking for messages."
+              : "Load this device's chat key before checking for messages."}
           </p>
         ) : null}
         {scanCursorDescription ? (
@@ -184,12 +184,12 @@ export default function ChatMailboxTools({
       </details>
 
       <details className={styles.toolsDisclosure}>
-        <summary>Encrypted mailbox recovery</summary>
+        <summary>Encrypted chat recovery</summary>
         <div className={styles.toolsBody}>
           <p className={styles.toolsNote}>
-            Post authenticated contact or RFQ-history self-mail. Oversized
+            Post authenticated contact or RFQ-history self-messages. Oversized
             ciphertext uses a verified CID pointer. The same wallet locates it;
-            the mailbox recovery phrase decrypts it. Wallet alone is not enough.{" "}
+            the chat recovery phrase decrypts it. Wallet alone is not enough.{" "}
             {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
           </p>
           <button
@@ -199,7 +199,7 @@ export default function ChatMailboxTools({
           >
             {actionStates["contacts:backup"]?.pending
               ? "Backing up…"
-              : "Back up contacts to this mailbox"}
+              : "Back up contacts to this chat"}
           </button>
           {actionStates["contacts:backup"]?.message ? (
             <p className={styles.toolsNote} role="status">
@@ -230,7 +230,7 @@ export default function ChatMailboxTools({
             Automatically back up RFQ history after settlement (opt in)
           </label>
           <p className={styles.toolsNote}>
-            Restore from the backups filed under <em>This mailbox</em> above.
+            Restore from the backups filed under <em>This chat</em> above.
           </p>
         </div>
       </details>
@@ -243,7 +243,7 @@ export default function ChatMailboxTools({
             in this browser profile.
           </p>
           <button type="button" onClick={onLock}>
-            Lock mailbox this session
+            Lock chat this session
           </button>
           <button type="button" className={styles.toolsDanger} onClick={onForget}>
             Forget this device

@@ -298,7 +298,7 @@ be revoked.
 
 ```mermaid
 flowchart TD
-    L[Current localnet] --> LM[App20Mail]
+    L[Current localnet] --> LM[App20Chat]
     L --> LE[App20Escrow v3 plus legacy variants]
     L --> LT[LockTicket supply two]
     L --> CT[Legacy ClaimTicket supply one]

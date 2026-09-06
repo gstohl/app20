@@ -52,7 +52,9 @@ async function switchIdentity(
   ).toHaveAttribute("title", new RegExp(target.address.slice(2), "i"));
 }
 
-test("chat carries a letter and an attached offer between two mailboxes", async ({
+const recoveryRun = process.env.APP20_TEST_CHAT_RECOVERY === "1";
+
+test(recoveryRun ? "chat recovers lost confirmation and two receipt failures without repeating payment" : "chat carries a message and an attached offer between two chats", async ({
   page,
   localnetConfig: config,
 }) => {
@@ -65,11 +67,41 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
   const runTag = Date.now().toString(36);
   const quote = `0.01${String(Date.now() % 1_000).padStart(3, "0")}`;
   const terms = `0.25 STRK for ${quote} ETH`;
-  const letter = `Chat letter ${runTag}: can you quote 0.25 STRK against ETH today?`;
+  const letter = `Chat message ${runTag}: can you quote 0.25 STRK against ETH today?`;
   const offerBody = `Offer ${runTag} attached from the conversation`;
   const contactLabel = "Alice desk";
 
-  await test.step("1. the old mailbox route lands on Chat and both fixture mailboxes register keys", async () => {
+  if (recoveryRun) {
+    // Fault injection exists only in the browser test; real localnet transactions
+    // still execute. Drop one confirmed send response and fail two receipt attempts.
+    await page.route('**/src/app/chat/chat-send.ts*', async (route) => {
+      const response = await route.fetch();
+      const source = await response.text();
+      const marker = /return\s*\{\s*envelope,\s*transactionHash: result.transactionHash\s*\};/;
+      expect(source).toMatch(marker);
+      await route.fulfill({ response, body: source.replace(marker, `
+        window.__chatSendCount = (window.__chatSendCount || 0) + 1;
+        throw chatSendFailure(new Error("Injected lost confirmation"), pendingLetter);
+      `) });
+    });
+    await page.route('**/src/app/chat/useMailboxDesk.ts*', async (route) => {
+      const response = await route.fetch();
+      let source = await response.text();
+      const marker = 'async function postReceipt(offer, accept, acceptTransactionHash, recipientKey) {';
+      expect(source).toContain(marker);
+      source = source.replace(marker, marker + `
+        window.__receiptAttempts = (window.__receiptAttempts || 0) + 1;
+        if (window.__receiptAttempts <= 2) throw new Error("Injected receipt interruption");
+      `);
+      const transfer = 'const result = await submitOtcAccept(';
+      expect(source).toContain(transfer);
+      source = source.replace(transfer, 'window.__acceptCount = (window.__acceptCount || 0) + 1; ' + transfer);
+      await route.fulfill({ response, body: source });
+    });
+  }
+
+
+  await test.step("1. the old chat route lands on Chat and both fixture chats register keys", async () => {
     await page.goto("/mail/inbox");
     await expect(page).toHaveURL(/\/chat$/);
     await activateLocalnet(page);
@@ -111,9 +143,9 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(page.getByLabel(`Message to ${contactLabel}`)).toBeFocused();
   });
 
-  await test.step("3. Bob loads his key and sends an encrypted letter from the composer", async () => {
+  await test.step("3. Bob loads his key and sends an encrypted message from the composer", async () => {
     const form = page.getByRole("form", { name: `Write to ${contactLabel}` });
-    await expect(form).toContainText("Open mailbox key tools");
+    await expect(form).toContainText("Open chat key tools");
     await loadExistingKey(page);
     const input = page.getByLabel(`Message to ${contactLabel}`);
     await input.fill(letter);
@@ -124,9 +156,19 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(form).toContainText("Ctrl+Enter");
     await input.focus();
     await page.keyboard.press("Control+Enter");
-    await expect(
-      page.getByRole("status").filter({ hasText: /Sealed and confirmed in/ }),
-    ).toBeVisible({ timeout: 180_000 });
+    if (recoveryRun) {
+      await expect(form.getByRole("button", { name: "Check delivery", exact: true })).toBeVisible({ timeout: 180_000 });
+      await expect(input).toHaveValue(letter);
+      await expect(form.getByRole("button", { name: "Confirmation pending" })).toBeDisabled();
+      await input.press("Control+Enter");
+      expect(await page.evaluate(() => (window as any).__chatSendCount)).toBe(1);
+      await page.screenshot({ path: "artifacts/desktop-ux/recovery/check-delivery.png" });
+      await form.getByRole("button", { name: "Check delivery", exact: true }).click();
+      await expect(form).toContainText("Delivery confirmed.");
+      expect(await page.evaluate(() => (window as any).__chatSendCount)).toBe(1);
+    } else {
+      await expect(page.getByRole("status").filter({ hasText: /Sealed and confirmed in/ })).toBeVisible({ timeout: 180_000 });
+    }
     await expect(entry(page, letter)).toContainText("Sent copy on this device");
     await expect(
       page
@@ -273,7 +315,21 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await conversationRow(page, contactLabel).click();
     const accept = entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" });
     await accept.click();
-    await expect(page.getByText("Accept transfer and one-sided receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
+    if (recoveryRun) {
+      const card = entry(page, offerBody);
+      await expect(card.getByText(/Payment complete; receipt not confirmed/)).toBeVisible({ timeout: 180_000 });
+      await expect(accept).toHaveCount(0);
+      await expect(card).toContainText("Posting it will not send the payment again.");
+      await card.getByRole("button", { name: "Post receipt", exact: true }).click();
+      await expect(card).toContainText("You can retry only the receipt.");
+      await page.screenshot({ path: "artifacts/desktop-ux/recovery/receipt-retry.png" });
+      await card.getByRole("button", { name: "Post receipt", exact: true }).click();
+      await expect(card.getByText("Receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
+      expect(await page.evaluate(() => (window as any).__acceptCount)).toBe(1);
+      expect(await page.evaluate(() => (window as any).__receiptAttempts)).toBe(3);
+    } else {
+      await expect(page.getByText("Accept transfer and one-sided receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
+    }
     await expect(accept).toHaveCount(0);
     await page.screenshot({ path: "artifacts/desktop-ux/bob-accepted.png", animations: "disabled" });
   });

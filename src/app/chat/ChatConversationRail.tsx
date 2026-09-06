@@ -140,7 +140,7 @@ export default function ChatConversationRail({
           <div className={styles.railNote}>
             <strong>Conversations on this device</strong>
             <span>
-              Check for new mail to update this list. Message history alone
+              Check for new messages to update this list. Message history alone
               does not verify a payment.
             </span>
           </div>
@@ -221,8 +221,8 @@ export default function ChatConversationRail({
                 </svg>
               ) : (
                 <svg viewBox="0 0 24 24">
-                  <rect x="3" y="5.5" width="18" height="13" />
-                  <path d="m3 7 9 6.5L21 7" />
+                  <path d="M4 4h16v12H9l-5 4V4Z" />
+                  <path d="M8 8h8M8 12h5" />
                 </svg>
               )}
             </span>
@@ -253,7 +253,7 @@ export default function ChatConversationRail({
               <>
                 <strong>No conversations yet</strong>
                 <span>
-                  Check for mail, write to a new address below, or save a
+                  Check for messages, write to a new address below, or save a
                   wallet under Counterparties. Each becomes a conversation
                   here.
                 </span>

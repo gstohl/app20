@@ -191,7 +191,7 @@ export default function InvoiceCard({
       setShareMessage(
         error instanceof Error
           ? error.message
-          : "Mail could not create this payment link.",
+          : "Chat could not create this payment link.",
       );
     }
   }, [
@@ -224,7 +224,7 @@ export default function InvoiceCard({
       setShareMessage(
         error instanceof Error
           ? error.message
-          : "Mail could not create this payment link.",
+          : "Chat could not create this payment link.",
       );
     }
   }
@@ -255,7 +255,7 @@ export default function InvoiceCard({
         {pendingLabel ? (
           <span className={styles.proofStamp} role="status">{pendingLabel}</span>
         ) : mailSignatureVerified ? (
-          <span className={styles.proofStamp}>Mail key signature verified</span>
+          <span className={styles.proofStamp}>Chat key signature verified</span>
         ) : unverifiedClaim || (status === "paid" && !paymentVerified) ? (
           <span className={styles.proofStamp}>
             Unverified counterparty claim
@@ -264,22 +264,11 @@ export default function InvoiceCard({
           <span className={styles.proofStamp}>Payment verified locally</span>
         ) : null}
       </div>
-      <p className={styles.termsSentence}>
-        {mailSignatureVerified
-          ? "This Mail-key-signed request asks for "
-          : "This unsigned message requests "}
-        <strong>
-          {amount} <bdi>{token.symbol}</bdi>
-        </strong>
-        {memo ? (
-          <>
-            {" "}
-            for “<bdi>{memo}</bdi>”.
-          </>
-        ) : (
-          "."
-        )}
-      </p>
+      <dl className={styles.tradeSummary}>
+        <div><dt>Requested payment</dt><dd>{amount} <bdi>{token.symbol}</bdi></dd>
+          <small>{mailSignatureVerified ? "Chat-key-signed request" : "Unsigned request"}</small></div>
+        {memo ? <div><dt>For</dt><dd className={styles.paymentMemo}><bdi>{memo}</bdi></dd></div> : null}
+      </dl>
 
       <div className={styles.addressProof}>
         <strong>Claimed payment address</strong>
@@ -291,17 +280,17 @@ export default function InvoiceCard({
         ) : null}
         <span>
           {mailSignatureVerified
-            ? `The valid signature covers this address and every displayed term. Displayed Mail key ${signerFingerprint}.`
+            ? `The valid signature covers this address and every displayed term. Displayed Chat key ${signerFingerprint}.`
             : "Unverified: anyone can rewrite this address and issue a new checksum. Verify it out-of-band before paying."}
         </span>
         {linkAuthenticity.kind === "verified" ? (
           <details className={styles.explanation}>
             <summary>Signature &amp; identity details</summary>
-            <strong>Verified Mail signing key</strong>
+            <strong>Verified Chat signing key</strong>
             <code>{linkAuthenticity.authPublicKey}</code>
             <span>
               This exact key produced the valid signature. The message also
-              claims mailbox encryption key {linkAuthenticity.mailboxPublicKey};
+              claims chat encryption key {linkAuthenticity.mailboxPublicKey};
               neither key proves a person or wallet identity.
             </span>
           </details>
@@ -318,7 +307,7 @@ export default function InvoiceCard({
             ? "Private STRK can first be exchanged for the requested localnet USDC."
             : `${amount} ${token.symbol} moves only after explicit wallet approval.`}
         </strong>{" "}
-        Mail coordinates the invoice but does not authenticate the person behind
+        Chat coordinates the invoice but does not authenticate the person behind
         it. Verify the requester and terms independently.
       </p>
       <p className={styles.sheetMeta}>
@@ -331,13 +320,13 @@ export default function InvoiceCard({
       {networkMismatch ? (
         <p className={styles.actionWarning}>
           This request is for {requestNetwork}. Switch the connected wallet to
-          that network before paying. Mail will not submit it on the wrong
+          that network before paying. Chat will not submit it on the wrong
           chain.
         </p>
       ) : null}
       {canShare ? (
         <p className={styles.actionWarning}>
-          Mail does not globally mark a payment link paid. Local status blocks a
+          Chat does not globally mark a payment link paid. Local status blocks a
           repeat only for this account in this browser profile; another device
           can explicitly approve the same link again.
         </p>
@@ -360,7 +349,7 @@ export default function InvoiceCard({
         <div className={styles.addressProof}>
           <strong>
             {mailSignatureVerified
-              ? "Mail-signed payment link"
+              ? "Chat-signed payment link"
               : "Unverified unsigned payment link"}
           </strong>
           <QRCodeSVG
@@ -383,7 +372,7 @@ export default function InvoiceCard({
           </button>
           <span>
             {mailSignatureVerified
-              ? `The valid Mail-key signature covers every invoice field shown here and binds the request to ${requestNetwork}. ${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE}`
+              ? `The valid Chat-key signature covers every invoice field shown here and binds the request to ${requestNetwork}. ${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE}`
               : `This legacy link is bound to ${requestNetwork} but is not authenticated. Anyone can change its terms and recompute its checksum; verify the full requester address out-of-band.`}
           </span>
         </div>
@@ -424,13 +413,13 @@ export default function InvoiceCard({
           )
         ) : (
           <p className={styles.actionWarning}>
-            Mail refuses this request because its token metadata is
+            Chat refuses this request because its token metadata is
             inconsistent.
           </p>
         )
       ) : (
         <p className={styles.actionWarning}>
-          Mail refuses this request: its requester is not a bounded Starknet
+          Chat refuses this request: its requester is not a bounded Starknet
           address.
         </p>
       )}

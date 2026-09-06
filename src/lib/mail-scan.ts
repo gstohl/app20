@@ -256,7 +256,7 @@ export function parseMailEvent(event: MailEvent): ParsedMailEvent | null {
       !Number.isSafeInteger(ciphertextLength) ||
       ciphertextLength < 0 ||
       ciphertextLength > MAX_CT_FELTS ||
-      // App20Mail appends action_id after the counted ciphertext felts.
+      // App20Chat appends action_id after the counted ciphertext felts.
       event.data.length !== 7 + ciphertextLength ||
       !Number.isInteger(viewTag) ||
       viewTag < 0 ||

@@ -46,6 +46,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
+  const [setupMode, setSetupMode] = useState<"create" | "restore">("create");
   const [setup, setSetup] = useState<SetupState>({ kind: "idle" });
   const [backupPhrase, setBackupPhrase] = useState("");
   const [pending, setPending] = useState<{
@@ -119,7 +120,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "ok",
         message:
-          "Device mail key is ready. Save its one-time backup before opening the mailbox.",
+          "Device chat key is ready. Save its one-time backup before opening the chat.",
       });
       return;
     }
@@ -134,21 +135,21 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     if (!helperAddress) {
       setSetup({
         kind: "error",
-        message: "No mail helper is configured for this network.",
+        message: "No chat service is configured for this network.",
       });
       return;
     }
 
     setSetup({
       kind: "pending",
-      message: "Loading this device's mail key…",
+      message: "Loading this device's chat key…",
     });
 
     try {
       const existing = inspectMailVault(window.localStorage, chainId, address);
       if (existing.kind === "passphrase") {
         throw new Error(
-          "This mailbox is passphrase-wrapped. Unlock it below instead of creating another key.",
+          "This chat is passphrase-wrapped. Unlock it below instead of creating another key.",
         );
       }
 
@@ -178,7 +179,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         if (!created && !backupPhrase) {
           setSetup({
             kind: "ok",
-            message: "Device mail key loaded and matched the public directory.",
+            message: "Device chat key loaded and matched the public directory.",
           });
         }
         return;
@@ -188,7 +189,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         (BigInt(registered[0]) !== 0n || BigInt(registered[1]) !== 0n)
       ) {
         throw new Error(
-          "A different device mail key is registered. Mail will not overwrite it; use the original device or its backup.",
+          "A different device chat key is registered. Chat will not overwrite it; use the original device or its backup.",
         );
       }
 
@@ -235,13 +236,13 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         setSetup({
           kind: "ok",
           message:
-            "Device mail key registered. Save its one-time backup before opening the mailbox.",
+            "Device chat key registered. Save its one-time backup before opening the chat.",
           transactionHash,
         });
       } else {
         setSetup({
           kind: "ok",
-          message: "Device mail key registered and ready for local scans.",
+          message: "Device chat key registered and ready for local scans.",
           transactionHash,
         });
       }
@@ -260,11 +261,11 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     if (existing.kind !== "passphrase") {
       setSetup({
         kind: "error",
-        message: "This mailbox is not passphrase-wrapped on this device.",
+        message: "This chat is not passphrase-wrapped on this device.",
       });
       return;
     }
-    setSetup({ kind: "pending", message: "Unlocking the mailbox vault…" });
+    setSetup({ kind: "pending", message: "Unlocking the chat vault…" });
     try {
       const seed = await unwrapMailSeed(existing.record, unlockPassphrase);
       if (!aliveRef.current) {
@@ -275,7 +276,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setUnlockPassphrase("");
       setSetup({
         kind: "ok",
-        message: "Mailbox vault unlocked for this session.",
+        message: "Chat vault unlocked for this session.",
       });
     } catch (error: unknown) {
       if (!aliveRef.current) return;
@@ -292,14 +293,14 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "error",
         message:
-          "Mailbox setup needs the mail helper deployed on this network. Shield and unshield still work without it.",
+          "Chat setup needs the chat service deployed on this network. Shield and unshield still work without it.",
       });
       return;
     }
 
     setSetup({
       kind: "pending",
-      message: "Checking this backup against the public mailbox directory…",
+      message: "Checking this backup against the public chat directory…",
     });
 
     try {
@@ -317,12 +318,12 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
 
       if (!hasRegisteredKey) {
         throw new Error(
-          "This wallet has no public mailbox key registered. Nothing was replaced; register a new mailbox key instead.",
+          "This wallet has no public chat key registered. Nothing was replaced; register a new chat key instead.",
         );
       }
       if (!keysEqual(registered, restoredPublicKey)) {
         throw new Error(
-          "This backup belongs to a different mailbox key. Nothing was replaced; use the backup registered to this wallet address.",
+          "This backup belongs to a different chat key. Nothing was replaced; use the backup registered to this wallet address.",
         );
       }
 
@@ -333,7 +334,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         setSetup({
           kind: "idle",
           message:
-            "Backup matches this wallet's public mailbox key. Confirm before replacing the local vault.",
+            "Backup matches this wallet's public chat key. Confirm before replacing the local vault.",
         });
         return;
       }
@@ -349,7 +350,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
       setSetup({
         kind: "ok",
         message:
-          "Backup restored locally and matched this wallet's public mailbox key.",
+          "Backup restored locally and matched this wallet's public chat key.",
       });
     } catch (error: unknown) {
       if (!aliveRef.current) return;
@@ -389,13 +390,21 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     >
       <div className={styles.cardNumber}>01</div>
       <div>
-        <p className={styles.kicker}>{vault.kind === "missing" ? "NEW MAILBOX" : "EXISTING MAILBOX"}</p>
+        <p className={styles.kicker}>{vault.kind === "missing" ? "CHAT SETUP" : "CHAT ACCESS"}</p>
         <h2 id="onboard-title" className={styles.cardTitle}>
-          {vault.kind === "missing" || pending ? "Set up a mailbox key" : "Open your mailbox"}
+          {pending ? "Save your chat backup" : vault.kind === "missing" ? "Set up encrypted chat" : "Open encrypted chat"}
         </h2>
       </div>
-      {vault.kind !== "missing" && !pending ? null : (
-        <ol className={styles.setupSteps} aria-label="Mailbox setup progress">
+      {vault.kind === "missing" && !pending ? (
+        <div className={styles.setupChoices} role="group" aria-label="Chat setup method">
+          <button type="button" aria-pressed={setupMode === "create"} disabled={disabled}
+            onClick={() => setSetupMode("create")}>Set up Chat</button>
+          <button type="button" aria-pressed={setupMode === "restore"} disabled={disabled}
+            onClick={() => setSetupMode("restore")}>Restore chat access</button>
+        </div>
+      ) : null}
+      {(vault.kind !== "missing" && !pending) || (setupMode === "restore" && !pending) ? null : (
+        <ol className={styles.setupSteps} aria-label="Chat setup progress">
           <li data-state={stepState(0)}>
             <span aria-hidden="true">1</span>Device
           </li>
@@ -408,34 +417,36 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         </ol>
       )}
       <p className={styles.copy}>
-        {vault.kind === "missing"
-          ? "Create a device key and register its public key to receive encrypted mail. Registration is a public Starknet transaction."
-          : "Your mailbox key is saved on this device. Load it to read and send mail. We check its registration; no new transaction is needed when it already matches."}
+        {pending ? "Keep this backup private. You need it to restore chat access on another device."
+          : vault.kind === "missing" && setupMode === "restore" ? "Restore your chat key from a backup to read your encrypted messages."
+          : vault.kind === "missing"
+          ? "Create a device key and register its public key to receive encrypted messages. Registration is a public Starknet transaction."
+          : "Your chat key is saved on this device. Load it to read and send messages. We check its registration; no new transaction is needed when it already matches."}
       </p>
       {address && chainId ? null : (
         <p className={styles.notice}>
-          Connect a wallet before registering: a mailbox key is bound to the
+          Connect a wallet before registering: a chat key is bound to the
           wallet address that will send from it, which is why the button below
           is disabled.
         </p>
       )}
       {helperAddress ? null : (
         <p className={styles.notice}>
-          Mailbox registration needs a helper configured for this APP20 rail.
+          Chat registration needs a helper configured for this APP20 rail.
           Live-network helpers are intentionally unavailable, so register and
           restore stay disabled. Shield and unshield still work from the wallet
           rail — they talk to the live STRK20 pool, not this helper.
         </p>
       )}
 
-      {vault.kind === "passphrase" ? (
+      {pending ? null : vault.kind === "passphrase" ? (
         <div className={styles.restoreForm}>
           <p className={styles.notice}>
-            This mailbox is passphrase-wrapped on this device. Unlock it for
+            Your chat key is protected with a passphrase. Unlock it for
             this session, or restore from backup if you forgot the passphrase.
           </p>
           <label className={styles.field}>
-            Mailbox passphrase
+            Chat passphrase
             <input
               type="password"
               value={unlockPassphrase}
@@ -449,13 +460,13 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             onClick={() => void unlockWrapped()}
             disabled={setup.kind === "pending" || unlockPassphrase.length === 0}
           >
-            {setup.kind === "pending" ? "Unlocking…" : "Unlock mailbox"}
+            {setup.kind === "pending" ? "Unlocking…" : "Unlock chat"}
           </button>
         </div>
       ) : (
         <>
           <details open={vault.kind === "missing" || undefined}>
-            <summary>Mailbox key protection and recovery</summary>
+            <summary>Chat key protection and recovery</summary>
             <label className={styles.field}>
               <span>
                 <input
@@ -463,11 +474,11 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
                   checked={wrapExisting}
                   onChange={(event) => setWrapExisting(event.target.checked)}
                 />{" "}
-                Encrypt this mailbox on this browser (optional)
+                Protect your chat key with a passphrase (optional)
               </span>
               {wrapExisting ? (
                 <small>
-                  scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its
+                  Your key is encrypted on this device. APP20 cannot read messages or use your
                   signing key until you unlock this session, and never stores the
                   passphrase. A wallet signature cannot be the wrap key — Ready
                   signatures are not a stable secret.
@@ -476,21 +487,21 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             </label>
             {wrapExisting ? null : (
               <p className={styles.actionWarning}>
-                Leaving this off stores the raw 32-byte mailbox seed in the clear
+                Leaving this off stores the raw 32-byte chat seed in the clear
                 in this browser profile. Anyone with the profile can read your
-                Mail correspondence and create payment requests that display as
+                messages and create payment requests that display as
                 verified from you.
               </p>
             )}
             <p className={styles.finePrint}>
-              Your mailbox backup is the only recovery if
+              Your chat backup is the only recovery if
               you clear this profile or forget the passphrase, and APP20 currently
-              cannot revoke the Mail key if that backup is compromised.
+              cannot revoke the Chat key if that backup is compromised.
             </p>
             {wrapExisting ? (
               <>
                 <label className={styles.field}>
-                  New mailbox passphrase
+                  New chat passphrase
                   <input
                     type="password"
                     value={passphrase}
@@ -512,7 +523,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               </>
             ) : null}
           </details>
-          <button
+          {vault.kind === "missing" && setupMode === "restore" ? null : <button
             className={styles.primaryButton}
             type="button"
             onClick={() => void loadAndRegister()}
@@ -520,8 +531,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           >
             {setup.kind === "pending"
               ? "Waiting…"
-              : vault.kind === "plaintext" ? "Open mailbox" : "Create mailbox & register"}
-          </button>
+              : vault.kind === "plaintext" ? "Open chat" : "Enable encrypted chat"}
+          </button>}
         </>
       )}
 
@@ -531,7 +542,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           <code>{backupPhrase}</code>
           <p>
             {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} Store it secret and offline;
-            Mail does not upload it. If you chose a passphrase, this backup is
+            Chat does not upload it. If you chose a passphrase, this backup is
             still required when you forget it.
           </p>
           <button
@@ -551,13 +562,15 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
                 onKeyReady(next.keypair, next.seed);
               }}
             >
-              I saved the backup — open mailbox
+              I saved the backup — open chat
             </button>
           ) : null}
         </div>
       ) : null}
 
-      <details className={styles.restoreDisclosure}>
+      {pending ? null : <details className={styles.restoreDisclosure}
+        open={setupMode === "restore"}
+        onToggle={(event) => setSetupMode(event.currentTarget.open ? "restore" : "create")}>
         <summary>Restore from backup</summary>
         <div className={styles.restoreForm}>
           <label className={styles.field} htmlFor="mail-seed-backup">
@@ -578,24 +591,24 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
             <small>
               Paste exactly eight groups of eight hexadecimal characters. Choose
               plaintext or passphrase wrap above before restoring. Whoever has
-              this value can read your Mail correspondence and create payment
+              this value can read your messages and create payment
               requests that display as verified from you; APP20 currently cannot
               revoke the key if it is compromised.
             </small>
           </label>
           {restoreNeedsConfirmation ? (
             <div className={styles.restoreWarning} role="alert">
-              <strong>Replace the existing mailbox vault?</strong>
+              <strong>Replace the existing chat vault?</strong>
               <p>
-                This replaces the mailbox key on this device; mail encrypted to
-                the old key becomes unreadable here.
+                This replaces the chat key on this device; messages encrypted to
+                the old key become unreadable here.
               </p>
               <button
                 className={styles.warningButton}
                 type="button"
                 onClick={() => void restoreBackup(true)}
               >
-                Replace mailbox key
+                Replace chat key
               </button>
             </div>
           ) : (
@@ -612,11 +625,11 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
                 !canWrap
               }
             >
-              Restore mailbox key
+              Restore chat key
             </button>
           )}
         </div>
-      </details>
+      </details>}
 
       {setup.message ? (
         <div

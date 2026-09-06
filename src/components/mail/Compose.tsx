@@ -466,21 +466,21 @@ export default function Compose({
 
   let disabledReason = "";
   if (!helperAddress) {
-    disabledReason = `Mail is unavailable on ${networkName} in this deployment. Switch network or try again later.`;
+    disabledReason = `Chat is unavailable on ${networkName} in this deployment. Switch network or try again later.`;
   } else if (!isConnected || !walletAccount || !senderAddress) {
-    disabledReason = "Connect a privacy-enabled wallet before sending mail.";
+    disabledReason = "Connect a privacy-enabled wallet before sending messages.";
   } else if (!isStrk20Capable) {
     disabledReason =
-      "This wallet does not expose the dapp-facing STRK20 Wallet API Mail requires. See the wallet capability diagnostic.";
+      "This wallet does not expose the dapp-facing STRK20 Wallet API Chat requires. See the wallet capability diagnostic.";
   } else if (!keyReady) {
-    disabledReason = "Load this device's mail key before sending.";
+    disabledReason = "Load this device's chat key before sending.";
   } else if (hasEscrow && (!escrowEnabled || !escrowAddress)) {
     disabledReason =
       networkName === "MAINNET"
         ? "Escrow is disabled on Mainnet because it has not been independently reviewed; it stays off the mainnet scoring path until review."
         : `No reviewed escrow deployment is configured on ${networkName}.`;
   } else if (hasEscrow && (!mailSeed || !chainId)) {
-    disabledReason = "Reload the mailbox seed before funding escrow.";
+    disabledReason = "Reload the chat seed before funding escrow.";
   }
 
   const sendPending = ["lookup", "encrypting", "proving"].includes(
@@ -492,7 +492,7 @@ export default function Compose({
       throw new Error("Add at least one recipient.");
     if (recipientEntries.length > MAX_MULTI_RECIPIENTS) {
       throw new Error(
-        `Multi-recipient mail supports at most ${MAX_MULTI_RECIPIENTS} recipients within the 140-felt ciphertext cap.`,
+        `Multi-recipient messages supports at most ${MAX_MULTI_RECIPIENTS} recipients within the 140-felt ciphertext cap.`,
       );
     }
     const addresses = recipientEntries.map((entry) =>
@@ -791,7 +791,7 @@ export default function Compose({
     ) {
       setSendState({
         kind: "error",
-        message: disabledReason || "Mail sending is not ready.",
+        message: disabledReason || "Chat sending is not ready.",
       });
       return;
     }
@@ -847,8 +847,8 @@ export default function Compose({
       setSendState({
         kind: "lookup",
         message: document.payment
-          ? "Checking private STRK for the payment plus mail-helper funding…"
-          : "Checking private STRK for mail-helper funding…",
+          ? "Checking private STRK for the payment plus chat service funding…"
+          : "Checking private STRK for chat service funding…",
         step: 1,
         totalSteps: 1,
       });
@@ -891,7 +891,7 @@ export default function Compose({
 
       setSendState({
         kind: "lookup",
-        message: `Looking up ${recipientAddresses.length} recipient mail key${recipientAddresses.length === 1 ? "" : "s"}…`,
+        message: `Looking up ${recipientAddresses.length} recipient chat key${recipientAddresses.length === 1 ? "" : "s"}…`,
         step: 1,
         totalSteps: steps.length,
       });
@@ -907,7 +907,7 @@ export default function Compose({
             (BigInt(registeredKey[0]) === 0n && BigInt(registeredKey[1]) === 0n)
           ) {
             throw new Error(
-              `Recipient ${index + 1} has not registered a mail public key.`,
+              `Recipient ${index + 1} has not registered a chat public key.`,
             );
           }
           return publicKeyFromFelts(registeredKey);
@@ -937,7 +937,7 @@ export default function Compose({
           );
         }
         if (!chainId || !escrowAddress) {
-          throw new Error("Connect the escrow mailbox account first.");
+          throw new Error("Connect the escrow chat account first.");
         }
         const stored = recordEscrowFund(
           window.localStorage,
@@ -955,8 +955,8 @@ export default function Compose({
         } else if (existingFund && existingFund.state !== "reverted") {
           throw new Error(
             existingFund.transactionHash
-              ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Mail will not issue another Fund.`
-              : "Escrow funding is already reserved. Mail will not risk a second Fund; reopen after checking the prior wallet request.",
+              ? `Escrow funding ${existingFund.transactionHash} was already submitted. Verify it before retrying; Chat will not issue another Fund.`
+              : "Escrow funding is already reserved. Chat will not risk a second Fund; reopen after checking the prior wallet request.",
           );
         } else {
           if (!poolAddress) {
@@ -1166,9 +1166,9 @@ export default function Compose({
       const message = documentSubmittedHash
         ? `${base} The document transaction ${documentSubmittedHash} was submitted but confirmation was not observed. Its stable action id prevents a duplicate document or payment; check that transaction before retrying.`
         : fundConfirmedHash
-          ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Mail will skip funding.`
+          ? `${base} Escrow funding ${fundConfirmedHash} is already confirmed. The document and any private payment were not submitted. Retry this unchanged draft; Chat will skip funding.`
           : escrowReservation?.transactionHash
-            ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Mail will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
+            ? `${base} Escrow funding ${escrowReservation.transactionHash} was submitted and Chat will not fund it again while its outcome is unknown. The document was not submitted; verify funding before retrying.`
             : base;
       if (isCurrentSubmit()) {
         setSendState({
@@ -1235,7 +1235,7 @@ export default function Compose({
             hint={
               <>
                 {recipientEntries.length} / {MAX_MULTI_RECIPIENTS} recipients.
-                Attachments are bilateral; a body-only letter can go to several.
+                Attachments are bilateral; a body-only message can go to several.
               </>
             }
           />
@@ -1313,7 +1313,7 @@ export default function Compose({
                       required
                     />
                     <small>
-                      The private transfer and mail helper invoke share the
+                      The private transfer and chat service invoke share the
                       document transaction. Timing and pool activity remain
                       public.
                     </small>
@@ -1445,7 +1445,7 @@ export default function Compose({
                     <li>No user-requested payment or attachment transfer.</li>
                   )}
                   <li>
-                    The atomic mail batch temporarily withdraws 7 STRK base
+                    The atomic messages batch temporarily withdraws 7 STRK base
                     units to the public helper address and returns those units
                     to your OPEN recovery note. The helper, amount, ciphertext
                     size, and timing remain public.
@@ -1458,7 +1458,7 @@ export default function Compose({
                     the connected wallet.
                   </li>
                   <li>
-                    The configured RPC sees each recipient's public mailbox-key
+                    The configured RPC sees each recipient's public chat-key
                     lookup and is trusted to return the correct key. Verify key
                     fingerprints out-of-band before moving value.
                   </li>

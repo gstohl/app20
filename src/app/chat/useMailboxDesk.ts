@@ -392,7 +392,7 @@ export function useMailboxDesk() {
     const active = scanWorkerRef.current;
     if (!active) return;
     scanWorkerRef.current = null;
-    active.reject(new Error("Mail scan cancelled."));
+    active.reject(new Error("Chat scan cancelled."));
   }
 
   function decryptMailRecords(
@@ -432,7 +432,7 @@ export function useMailboxDesk() {
       };
       worker.onerror = () => {
         settle(() => {
-          reject(new Error("The background mailbox scanner failed."));
+          reject(new Error("The background chat scanner failed."));
         });
       };
       worker.postMessage({ privateKey, records });
@@ -550,7 +550,7 @@ export function useMailboxDesk() {
         pending: false,
         message:
           imported.linkAuthenticity?.kind === "verified"
-            ? "Verified Mail-signed link imported for local review. No payment was submitted."
+            ? "Verified Chat-signed link imported for local review. No payment was submitted."
             : "Unverified legacy link imported for local review. No payment was submitted.",
       });
     } catch (error: unknown) {
@@ -735,7 +735,7 @@ export function useMailboxDesk() {
   }
 
   function requireActionContext() {
-    if (!helperAddress) throw new Error("Mail is unavailable on this network.");
+    if (!helperAddress) throw new Error("Chat is unavailable on this network.");
     if (
       !walletAccount ||
       !selectedWallet ||
@@ -802,7 +802,7 @@ export function useMailboxDesk() {
       registered.length !== 2 ||
       (BigInt(registered[0]) === 0n && BigInt(registered[1]) === 0n)
     ) {
-      throw new Error("The response recipient has not registered a mail key.");
+      throw new Error("The response recipient has not registered a chat key.");
     }
     return publicKeyFromFelts(registered);
   }
@@ -976,17 +976,17 @@ export function useMailboxDesk() {
   async function scanInbox(requested: "newer" | "older" = "newer") {
     if (!keypair) {
       setScanKind("error");
-      setScanMessage("Load this device's mail key before scanning.");
+      setScanMessage("Load this device's chat key before scanning.");
       return;
     }
     if (!helperAddress) {
       setScanKind("error");
-      setScanMessage(`No mail helper is configured on ${networkName}.`);
+      setScanMessage(`No chat service is configured on ${networkName}.`);
       return;
     }
     if (!address || !chainId || !keyFingerprint) {
       setScanKind("error");
-      setScanMessage("Connect the mailbox account before scanning.");
+      setScanMessage("Connect the chat account before scanning.");
       return;
     }
 
@@ -1030,7 +1030,7 @@ export function useMailboxDesk() {
         setScanKind("ok");
         setScanMessage(
           requested === "older"
-            ? "The persisted mailbox cursor has reached genesis."
+            ? "The persisted chat cursor has reached genesis."
             : "No newer blocks are available; the bounded recent scan is current.",
         );
         return;
@@ -1061,7 +1061,7 @@ export function useMailboxDesk() {
           !Array.isArray(chunk.events) ||
           chunk.events.length > MAIL_SCAN_CHUNK_SIZE
         ) {
-          throw new Error("The RPC exceeded the bounded mail event page size.");
+          throw new Error("The RPC exceeded the bounded messages event page size.");
         }
 
         for (const rpcEvent of chunk.events) {
@@ -1175,7 +1175,7 @@ export function useMailboxDesk() {
       if (isCurrentScan()) {
         setScanKind("error");
         setScanMessage(
-          error instanceof Error ? error.message : "Mailbox scan failed.",
+          error instanceof Error ? error.message : "Chat scan failed.",
         );
       }
     } finally {
@@ -1281,7 +1281,7 @@ export function useMailboxDesk() {
       const context = requireActionContext();
       if (!keypair || !mailSeed || !keyFingerprint) {
         throw new Error(
-          "Unlock the mailbox and save its recovery phrase before backing up.",
+          "Unlock the chat and save its recovery phrase before backing up.",
         );
       }
       setActionState(actionKey, {
@@ -1343,14 +1343,14 @@ export function useMailboxDesk() {
           !projectEncryptedMailSize(envelope.length, 1).fits
         ) {
           throw new Error(
-            "The verified backup pointer exceeds one Mail letter.",
+            "The verified backup pointer exceeds one Chat message.",
           );
         }
         external = true;
       }
       await authorizeValueAction(
         context,
-        `Back up ${kind === "contacts" ? "contacts" : "RFQ history"} to encrypted Mail`,
+        `Back up ${kind === "contacts" ? "contacts" : "RFQ history"} to encrypted Chat`,
         APP20_HELPER_FUNDING_BASE_UNITS.toString(),
         [APP20_HELPER_FUNDING_BASE_UNITS],
       );
@@ -1371,7 +1371,7 @@ export function useMailboxDesk() {
       });
       setStorageNotice({
         kind: "ok",
-        message: `Backup plaintext never left this browser. Wallet plus mailbox recovery phrase are required to decrypt it. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
+        message: `Backup plaintext never left this browser. Wallet plus chat recovery phrase are required to decrypt it. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -1510,7 +1510,7 @@ export function useMailboxDesk() {
         !keyFingerprint
       ) {
         throw new Error(
-          "Connect the matching wallet and unlock its mailbox recovery phrase first.",
+          "Connect the matching wallet and unlock its chat recovery phrase first.",
         );
       }
       const startedAt = Date.now();
@@ -1662,7 +1662,7 @@ export function useMailboxDesk() {
       }
       setStorageNotice({
         kind: "ok",
-        message: `Authenticated backup sequence ${snapshot.seq} (${usedSource}) restored.${fallbackWarning} Mail and IPFS supplied encrypted evidence only; neither proves settlement.`,
+        message: `Authenticated backup sequence ${snapshot.seq} (${usedSource}) restored.${fallbackWarning} Chat and IPFS supplied encrypted evidence only; neither proves settlement.`,
       });
     } catch (error: unknown) {
       const message =
@@ -1692,7 +1692,7 @@ export function useMailboxDesk() {
         !keyFingerprint
       ) {
         throw new Error(
-          "Connect the matching wallet and unlock its mailbox recovery phrase first.",
+          "Connect the matching wallet and unlock its chat recovery phrase first.",
         );
       }
       setActionState(actionKey, {
@@ -1747,7 +1747,7 @@ export function useMailboxDesk() {
           ? "This snapshot predates at least one local contact update."
           : "",
         olderThanLoaded
-          ? "A newer authenticated contact snapshot is loaded in this mailbox."
+          ? "A newer authenticated contact snapshot is loaded in this chat."
           : "",
       ].filter(Boolean);
       const preview = snapshot.entries
@@ -1781,7 +1781,7 @@ export function useMailboxDesk() {
       setStorageNotice({
         kind: "ok",
         message:
-          "Authenticated contact snapshot restored. Mail supplied encrypted evidence only; it did not trigger a trade or prove settlement.",
+          "Authenticated contact snapshot restored. Chat supplied encrypted evidence only; it did not trigger a trade or prove settlement.",
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -1982,7 +1982,7 @@ export function useMailboxDesk() {
       } catch (receiptError: unknown) {
         setActionState(actionKey, {
           pending: false,
-          message: `STRK moved in confirmed transaction ${acceptHash}, but the separate receipt failed: ${strk20ErrorMessage(receiptError)} Use “Post receipt” to retry only the receipt; do not accept again.`,
+          message: `Payment complete; receipt not confirmed. Use “Post receipt” to retry only the receipt. ${strk20ErrorMessage(receiptError)}`,
         });
       }
     } catch (error: unknown) {
@@ -2062,6 +2062,7 @@ export function useMailboxDesk() {
 
   async function handlePostReceipt(offer: OfferPayload) {
     const actionKey = `deal:${offer.dealId}`;
+    let transferVerified = false;
     try {
       const context = requireActionContext();
       const deal = loadOtcState(
@@ -2079,6 +2080,7 @@ export function useMailboxDesk() {
           "No locally verified accept transfer is waiting for a receipt.",
         );
       }
+      transferVerified = true;
       setActionState(actionKey, {
         pending: true,
         message: "Posting the one-sided receipt…",
@@ -2092,7 +2094,9 @@ export function useMailboxDesk() {
     } catch (error: unknown) {
       setActionState(actionKey, {
         pending: false,
-        message: strk20ErrorMessage(error),
+        message: transferVerified
+          ? `Payment complete; receipt not confirmed. You can retry only the receipt. ${strk20ErrorMessage(error)}`
+          : strk20ErrorMessage(error),
       });
     }
   }
@@ -2202,7 +2206,7 @@ export function useMailboxDesk() {
       setActionState(actionKey, {
         pending: true,
         message:
-          "Checking the private payment plus mail-helper funding, live pool fee, and public fee balance…",
+          "Checking the private payment plus chat service funding, live pool fee, and public fee balance…",
         startedAt: Date.now(),
       });
       await authorizeValueAction(
@@ -2691,14 +2695,14 @@ export function useMailboxDesk() {
     setStorageNotice({
       kind: "ok",
       message:
-        "Mailbox locked in this tab. A passphrase-wrapped vault stays on this device; a plaintext seed is still in this profile until you forget the device.",
+        "Chat locked in this tab. A passphrase-wrapped vault stays on this device; a plaintext seed is still in this profile until you forget the device.",
     });
   }
 
   function forgetThisDevice() {
     if (
       !window.confirm(
-        `Forget this device and clear every mailbox key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this mailbox again. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
+        `Forget this device and clear every chat key, draft, Sent copy, alias, payment/OTC record, escrow record, and scan cursor from this browser profile? On-chain ciphertext remains public. You will need the offline backup to read this chat again. ${MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}`,
       )
     ) {
       return;
@@ -2728,12 +2732,12 @@ export function useMailboxDesk() {
       setPendingPayment(null);
       setStorageNotice({
         kind: "ok",
-        message: `Forgot this device: removed ${removed.length} local mailbox record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted mail. That backup can also recreate the Mail signing key used for payment requests, and APP20 currently cannot revoke it if compromised.`,
+        message: `Forgot this device: removed ${removed.length} local chat record${removed.length === 1 ? "" : "s"}. Disconnecting alone does not do this. Restore the offline backup to reopen encrypted messages. That backup can also recreate the Chat signing key used for payment requests, and APP20 currently cannot revoke it if compromised.`,
       });
     } catch (error: unknown) {
       setStorageNotice({
         kind: "error",
-        message: `Mail could not clear every local mailbox record. Do not leave this shared profile unattended. ${
+        message: `Chat could not clear every local chat record. Do not leave this shared profile unattended. ${
           error instanceof Error ? error.message : "Browser storage failed."
         }`,
       });
@@ -2751,7 +2755,7 @@ export function useMailboxDesk() {
       setStorageNotice({
         kind: "error",
         message:
-          "Mail is keyed to a wallet: connect one so the draft is saved under the correct mailbox.",
+          "Chat is keyed to a wallet: connect one so the draft is saved under the correct chat.",
         action: "connect-wallet",
       });
       return null;
@@ -2803,12 +2807,12 @@ export function useMailboxDesk() {
     });
     setProofs((current) => ({ ...current, [messageId]: proof }));
     let proofMessage =
-      "This letter has no usable auth signature, so the assignment stays a local label.";
+      "This message has no usable auth signature, so the assignment stays a local label.";
     if (proof.kind === "unbound_signature") {
       proofMessage =
-        "The Mail auth signature is valid, but the claim is not bound to this mailbox or wallet address.";
+        "The Chat auth signature is valid, but the claim is not bound to this chat or wallet address.";
     } else if (proof.kind === "invalid_signature") {
-      proofMessage = "The claimed Mail auth signature is invalid.";
+      proofMessage = "The claimed Chat auth signature is invalid.";
     }
     setStorageNotice({ kind: "error", message: proofMessage });
   }

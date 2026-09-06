@@ -2,7 +2,7 @@
 version = 1
 
 [[package]]
-name = "app20_mail"
+name = "app20_chat"
 version = "0.1.0"
 dependencies = [
  "snforge_std",

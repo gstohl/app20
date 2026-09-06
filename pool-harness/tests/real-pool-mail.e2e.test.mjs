@@ -297,13 +297,13 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		const artifactRoot = join(ROOT, "cairo", "target", "dev");
 		const sierra = json.parse(
 			readFileSync(
-				join(artifactRoot, "app20_mail_App20Mail.contract_class.json"),
+				join(artifactRoot, "app20_chat_App20Chat.contract_class.json"),
 				"utf8",
 			),
 		);
 		const casm = json.parse(
 			readFileSync(
-				join(artifactRoot, "app20_mail_App20Mail.compiled_contract_class.json"),
+				join(artifactRoot, "app20_chat_App20Chat.compiled_contract_class.json"),
 				"utf8",
 			),
 		);
@@ -313,7 +313,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		await waitForSuccess(
 			env.node,
 			declaration.transaction_hash,
-			"App20Mail declaration",
+			"App20Chat declaration",
 		);
 
 		const deployment = await env.admin.deployContract({
@@ -324,10 +324,10 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		await waitForSuccess(
 			env.node,
 			deployment.transaction_hash,
-			"App20Mail deployment",
+			"App20Chat deployment",
 		);
 		const helperAddress = deployment.contract_address ?? deployment.address;
-		assert.ok(helperAddress, "App20Mail deployment must return an address");
+		assert.ok(helperAddress, "App20Chat deployment must return an address");
 		assert.equal(
 			feltEqual(helperAddress, env.privacy.address),
 			false,
@@ -372,7 +372,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		assert.deepEqual(
 			registeredBobKey.map(BigInt),
 			bobPubkey.map(BigInt),
-			"Bob's mail public key must round-trip through App20Mail",
+			"Bob's mail public key must round-trip through App20Chat",
 		);
 
 		const { prover, transfers: aliceTransfers } = makeAlicePrivacy(env);
@@ -519,7 +519,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		assert.equal(
 			feltEqual(firstEvents[0].from_address, helperAddress),
 			true,
-			"MessagePosted must come from the deployed App20Mail helper",
+			"MessagePosted must come from the deployed App20Chat helper",
 		);
 		assert.equal(
 			feltEqual(firstEvents[0].transaction_hash, firstMail.transactionHash),
@@ -578,7 +578,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 		assert.match(
 			revertReason(replay.receipt),
 			/ACTION_ID_USED/,
-			"replay must revert at App20Mail's action-id nullifier",
+			"replay must revert at App20Chat's action-id nullifier",
 		);
 		assert.equal(
 			await tokenBalance(env.node, env.strk, helperAddress),
@@ -648,7 +648,7 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 
 		console.log("APP20 real-pool mail flow passed:");
 		console.log(`  privacy_Privacy: ${env.privacy.address}`);
-		console.log(`  App20Mail: ${helperAddress}`);
+		console.log(`  App20Chat: ${helperAddress}`);
 		console.log(`  action id: ${actionId}`);
 		for (const [label, transactionHash] of Object.entries(txHashes)) {
 			console.log(`  ${label}: ${transactionHash}`);

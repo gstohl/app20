@@ -1,7 +1,7 @@
 use starknet::ContractAddress;
 
 pub const MAX_CT_FELTS: usize = 140;
-pub const MAIL_RECOVERY_AMOUNT: u128 = 7;
+pub const CHAT_RECOVERY_AMOUNT: u128 = 7;
 
 // Must match privacy::objects::OpenNoteDeposit (positional Serde).
 #[derive(Serde, Copy, Drop, PartialEq, Debug)]
@@ -13,7 +13,7 @@ pub struct OpenNoteDeposit {
 
 /// Pre-transfer balance observed in the same outer transaction as the pool invocation.
 #[derive(Copy, Drop, starknet::Store)]
-pub struct MailFundingSnapshot {
+pub struct ChatFundingSnapshot {
     pub transaction_hash: felt252,
     pub balance: u256,
     pub prepared: bool,
@@ -26,7 +26,7 @@ pub trait IErc20<TState> {
 }
 
 #[starknet::interface]
-pub trait IApp20Mail<TState> {
+pub trait IApp20Chat<TState> {
     /// The submitting account calls this before the pool withdrawal in one atomic multicall.
     fn prepare_funding(ref self: TState, token: ContractAddress);
     fn privacy_compute(
@@ -70,7 +70,7 @@ pub trait IApp20Mail<TState> {
 }
 
 #[starknet::contract]
-pub mod App20Mail {
+pub mod App20Chat {
     use core::num::traits::Zero;
     use core::poseidon::poseidon_hash_span;
     use starknet::storage::{
@@ -78,8 +78,8 @@ pub mod App20Mail {
     };
     use starknet::{ContractAddress, get_caller_address, get_contract_address, get_tx_info};
     use super::{
-        IErc20Dispatcher, IErc20DispatcherTrait, MAIL_RECOVERY_AMOUNT, MAX_CT_FELTS,
-        MailFundingSnapshot, OpenNoteDeposit,
+        CHAT_RECOVERY_AMOUNT, ChatFundingSnapshot, IErc20Dispatcher, IErc20DispatcherTrait,
+        MAX_CT_FELTS, OpenNoteDeposit,
     };
 
     mod errors {
@@ -101,7 +101,7 @@ pub mod App20Mail {
         pubkeys: Map<ContractAddress, (felt252, felt252)>,
         message_count: u64,
         used_replay_slots: Map<felt252, bool>,
-        funding_snapshots: Map<ContractAddress, MailFundingSnapshot>,
+        funding_snapshots: Map<ContractAddress, ChatFundingSnapshot>,
     }
 
     #[event]
@@ -174,15 +174,15 @@ pub mod App20Mail {
         let balance = erc20.balance_of(get_contract_address());
         assert(balance >= snapshot.balance, errors::BALANCE_DEFICIT);
         let received = balance - snapshot.balance;
-        let recovery_amount: u256 = MAIL_RECOVERY_AMOUNT.into();
+        let recovery_amount: u256 = CHAT_RECOVERY_AMOUNT.into();
         assert(received >= recovery_amount, errors::SHORT_FILL);
         assert(received == recovery_amount, errors::EXCESS_FILL);
         assert(erc20.approve(pool, recovery_amount), errors::APPROVE_FAILED);
-        array![OpenNoteDeposit { note_id, token, amount: MAIL_RECOVERY_AMOUNT }].span()
+        array![OpenNoteDeposit { note_id, token, amount: CHAT_RECOVERY_AMOUNT }].span()
     }
 
     #[abi(embed_v0)]
-    impl App20MailImpl of super::IApp20Mail<ContractState> {
+    impl App20ChatImpl of super::IApp20Chat<ContractState> {
         fn prepare_funding(ref self: ContractState, token: ContractAddress) {
             assert(token.is_non_zero(), errors::ZERO_TOKEN);
             let erc20 = IErc20Dispatcher { contract_address: token };
@@ -190,7 +190,7 @@ pub mod App20Mail {
                 .funding_snapshots
                 .entry(token)
                 .write(
-                    MailFundingSnapshot {
+                    ChatFundingSnapshot {
                         transaction_hash: get_tx_info().unbox().transaction_hash,
                         balance: erc20.balance_of(get_contract_address()),
                         prepared: true,

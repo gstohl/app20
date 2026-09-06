@@ -21,6 +21,8 @@ import {
   strk20ErrorMessage,
   submitMail,
   transactionHashFromError,
+  transactionStateFromError,
+  waitForStrk20Transaction,
 } from "@/lib/strk20";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { addrSTRK } from "@/utils/constants";
@@ -66,7 +68,7 @@ export function chatSendBlocker(
   if (!readiness.helperAddress) {
     return {
       kind: "network",
-      message: `Mail is unavailable on ${readiness.networkName} in this deployment. Switch network or try again later.`,
+      message: `Chat is unavailable on ${readiness.networkName} in this deployment. Switch network or try again later.`,
     };
   }
   if (
@@ -76,20 +78,20 @@ export function chatSendBlocker(
   ) {
     return {
       kind: "wallet",
-      message: "Connect a privacy-enabled wallet before sending mail.",
+      message: "Connect a privacy-enabled wallet before sending messages.",
     };
   }
   if (!readiness.isStrk20Capable) {
     return {
       kind: "capability",
       message:
-        "This wallet does not expose the dapp-facing STRK20 Wallet API Mail requires. See the wallet capability diagnostic.",
+        "This wallet does not expose the dapp-facing STRK20 Wallet API Chat requires. See the wallet capability diagnostic.",
     };
   }
   if (!readiness.keyReady) {
     return {
       kind: "key",
-      message: "Load this device's mail key before sending.",
+      message: "Load this device's chat key before sending.",
     };
   }
   return null;
@@ -114,7 +116,7 @@ export function buildChatLetter(input: {
   if (!body.trim()) throw new Error("Write a message before sending.");
   if (body.length > CHAT_LETTER_MAX_CHARS) {
     throw new Error(
-      `Letters stay under ${CHAT_LETTER_MAX_CHARS + 1} characters.`,
+      `Messages stay under ${CHAT_LETTER_MAX_CHARS + 1} characters.`,
     );
   }
   const documentId = input.documentId ?? randomConversationId();
@@ -219,14 +221,51 @@ export type ChatSendResult = Readonly<{
   transactionHash: string;
 }>;
 
-export class ChatSendError extends Error {
-  readonly submittedTransactionHash: string | undefined;
+export type PendingChatLetter = Omit<SentEnvelope, "deliveryState">;
 
-  constructor(message: string, submittedTransactionHash?: string) {
+export class ChatSendError extends Error {
+  constructor(
+    message: string,
+    readonly submittedTransactionHash?: string,
+    readonly outcome: "retryable" | "unknown" = "retryable",
+    readonly pendingLetter?: PendingChatLetter,
+    readonly detail?: string,
+  ) {
     super(message);
     this.name = "ChatSendError";
-    this.submittedTransactionHash = submittedTransactionHash;
   }
+}
+
+export function chatSendFailure(error: unknown, pendingLetter?: PendingChatLetter): ChatSendError {
+  const detail = strk20ErrorMessage(error);
+  const hash = transactionHashFromError(error) ?? pendingLetter?.transactionHash;
+  const state = transactionStateFromError(error);
+  if (state === "unknown" || (hash && state !== "reverted")) {
+    return new ChatSendError(
+      hash
+        ? "Delivery isn’t confirmed yet. Your draft is kept here. Check delivery before sending again."
+        : "The wallet didn’t return a transaction ID. Your draft is kept here. Check your wallet activity before sending again.",
+      hash, "unknown", pendingLetter, detail,
+    );
+  }
+  return new ChatSendError(
+    detail === "The wallet request was declined."
+      ? "Wallet request declined. Your draft is kept here; retry when you’re ready."
+      : "The message wasn’t sent. Your draft is kept here; review the details and retry.",
+    hash, "retryable", undefined, detail,
+  );
+}
+
+/** Reconcile the original transaction. This never calls the wallet or submits mail. */
+export async function checkChatDelivery(
+  provider: ProviderInterface,
+  pending: PendingChatLetter,
+): Promise<ChatSendResult> {
+  await waitForStrk20Transaction(provider, pending.transactionHash, 10_000);
+  return {
+    transactionHash: pending.transactionHash,
+    envelope: { ...pending, deliveryState: "confirmed" },
+  };
 }
 
 export async function sendChatLetter(
@@ -241,7 +280,7 @@ export async function sendChatLetter(
   }
   if (feltEquals(recipient, context.senderAddress)) {
     throw new ChatSendError(
-      "This is your own mailbox. Self-addressed backups are posted from the mailbox tools.",
+      "This is your own chat. Self-addressed backups are posted from the chat tools.",
     );
   }
   let letter: ChatLetter;
@@ -255,14 +294,14 @@ export async function sendChatLetter(
     });
   } catch (error: unknown) {
     throw new ChatSendError(
-      error instanceof Error ? error.message : "The letter could not be built.",
+      error instanceof Error ? error.message : "The message could not be built.",
     );
   }
   const budget = chatLetterBudget(letter);
   if (!budget.fits) {
     const excess = budget.plaintextBytes - budget.maxPlaintextBytes;
     throw new ChatSendError(
-      `This letter would use ${budget.ciphertextFelts} / ${budget.maxCiphertextFelts} ciphertext felts. Remove at least ${excess} encoded byte${excess === 1 ? "" : "s"}. Nothing was submitted.`,
+      `This message would use ${budget.ciphertextFelts} / ${budget.maxCiphertextFelts} ciphertext felts. Remove at least ${excess} encoded byte${excess === 1 ? "" : "s"}. Nothing was submitted.`,
     );
   }
   const encoded = encodeEnvelope(letter.type, letter.payload);
@@ -274,14 +313,15 @@ export async function sendChatLetter(
     );
 
   let submittedHash: string | undefined;
+  let pendingLetter: PendingChatLetter | undefined;
   try {
     policy();
-    input.onPhase?.("checking", "Checking private STRK for mail-helper funding…");
+    input.onPhase?.("checking", "Checking private STRK for chat service funding…");
     await assertPrivateStrk20BatchBalance(context.walletAccount, addrSTRK, [
       APP20_HELPER_FUNDING_BASE_UNITS,
     ]);
 
-    input.onPhase?.("lookup", "Looking up the counterparty's registered mail key…");
+    input.onPhase?.("lookup", "Looking up the counterparty's registered chat key…");
     const registered = await context.provider.callContract({
       contractAddress: context.helperAddress,
       entrypoint: "get_pubkey",
@@ -291,11 +331,11 @@ export async function sendChatLetter(
       registered.length !== 2 ||
       (BigInt(registered[0]) === 0n && BigInt(registered[1]) === 0n)
     ) {
-      throw new Error("The counterparty has not registered a mail public key.");
+      throw new Error("The counterparty has not registered a chat public key.");
     }
     const recipientKey = publicKeyFromFelts(registered);
 
-    input.onPhase?.("encrypting", "Sealing the letter on this device…");
+    input.onPhase?.("encrypting", "Sealing the message on this device…");
     const record = await encryptMailForRecipients([recipientKey], encoded);
 
     input.onPhase?.("proving", "Waiting for the wallet to prove and submit…");
@@ -314,6 +354,12 @@ export async function sendChatLetter(
       {
         onSubmitted: (transactionHash) => {
           submittedHash = transactionHash;
+          pendingLetter = {
+            documentId: letter.documentId, draftId: letter.documentId,
+            type: "text", payload: letter.payload, plaintext: input.body,
+            record, transactionHash, transactionHashes: [transactionHash],
+            recipientCount: 1, recipients: [recipient],
+          };
           input.onPhase?.(
             "submitted",
             `Transaction ${transactionHash} submitted; waiting for confirmation…`,
@@ -338,13 +384,12 @@ export async function sendChatLetter(
     return { envelope, transactionHash: result.transactionHash };
   } catch (error: unknown) {
     if (error instanceof ChatSendError) throw error;
-    const base = strk20ErrorMessage(error);
-    const hash = transactionHashFromError(error) ?? submittedHash;
-    throw new ChatSendError(
-      hash
-        ? `${base} Transaction ${hash} was submitted but confirmation was not observed. Its stable action id prevents a duplicate letter; check that transaction before retrying.`
-        : base,
-      hash,
-    );
+    const failure = chatSendFailure(error, pendingLetter);
+    // A callback may fail after submission; retain its hash even if the original
+    // exception did not carry one.
+    if (submittedHash && !failure.submittedTransactionHash) {
+      throw new ChatSendError(failure.message, submittedHash, "unknown", pendingLetter, failure.detail);
+    }
+    throw failure;
   }
 }

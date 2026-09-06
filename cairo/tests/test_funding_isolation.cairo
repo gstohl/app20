@@ -1,9 +1,9 @@
-use app20_mail::OpenNoteDeposit;
-use app20_mail::escrow::{
+use app20_chat::OpenNoteDeposit;
+use app20_chat::escrow::{
     DealStatus, EscrowOperation, FillParams, FundParams, IApp20EscrowDispatcher,
     IApp20EscrowDispatcherTrait,
 };
-use app20_mail::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
+use app20_chat::mock_erc20::{IMockErc20Dispatcher, IMockErc20DispatcherTrait};
 use snforge_std::{
     CheatSpan, ContractClassTrait, DeclareResultTrait, cheat_block_timestamp, cheat_caller_address,
     declare, start_cheat_transaction_hash,

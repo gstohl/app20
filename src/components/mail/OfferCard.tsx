@@ -15,6 +15,7 @@ import styles from "./mail.module.css";
 
 type OfferCardProps = {
   offer: OfferPayload;
+  own?: boolean;
   alias?: string;
   status?: DealStatus;
   settlementVerified?: boolean;
@@ -35,6 +36,7 @@ function expiryLabel(expiresAt: number): string {
 
 export default function OfferCard({
   offer,
+  own = false,
   alias,
   status = "offered",
   settlementVerified = false,
@@ -90,15 +92,13 @@ export default function OfferCard({
         ) : null}
       </div>
 
-      <p className={styles.termsSentence}>
-        This unsigned message offers to buy <strong>{giveAmount} STRK</strong>{" "}
-        from you for{" "}
-        <strong>
-          {wantAmount} <bdi>{wantToken.symbol}</bdi>
-        </strong>
-        .
-      </p>
-
+      <dl className={styles.tradeSummary}>
+        <div><dt>{own ? "Counterparty sends" : settlementVerified ? "You sent" : "You send"}</dt>
+          <dd>{giveAmount} STRK</dd></div>
+        <div><dt>{own ? "You offer" : "You’re offered"}</dt>
+          <dd>{wantAmount} <bdi>{wantToken.symbol}</bdi></dd>
+          <small>Separate payment · not guaranteed by Chat</small></div>
+      </dl>
       <div className={styles.addressProof}>
         <strong>Claimed payment address</strong>
         <code>{claimedPaymentAddress}</code>
@@ -109,14 +109,6 @@ export default function OfferCard({
         ) : null}
         <span>verify this address out-of-band before accepting</span>
       </div>
-      <p className={styles.riskCopy}>
-        <strong>{giveAmount} STRK {settlementVerified ? "transferred privately." : "will be sent privately when you accept."}</strong>{" "}
-        Mail does not settle the {wantToken.symbol} payment. You must trust the
-        counterparty to pay you. This is not an atomic swap.
-      </p>
-      {active ? <p className={styles.actionWarning}>
-        Accepting requires 2 wallet approvals and 2 transactions.
-      </p> : null}
       <details className={styles.explanation}>
         <summary>Address verification &amp; receipt details</summary>
         <p>Messages are not sender-authenticated in v1. The claimed payment address
@@ -150,16 +142,24 @@ export default function OfferCard({
           ) : null
         ) : (
           <p className={styles.actionWarning}>
-            Mail refuses this offer: OTC v1 can settle only canonical STRK
+            Chat refuses this offer: OTC v1 can settle only canonical STRK
             on the give leg.
           </p>
         )
       ) : (
         <p className={styles.actionWarning}>
-          Mail refuses this offer: its STRK address has inconsistent token
+          Chat refuses this offer: its STRK address has inconsistent token
           metadata.
         </p>
       )}
+
+      <p className={styles.riskCopy}>
+        <strong>{giveAmount} STRK {settlementVerified ? "transferred privately." : own ? "is requested from the counterparty." : "will be sent privately when you accept."}</strong>{" "}
+        Chat does not settle the {wantToken.symbol} payment. The offered payment is not guaranteed. This is not an atomic swap.
+      </p>
+      {active ? <p className={styles.actionWarning}>
+        Accepting requires 2 wallet approvals and 2 transactions.
+      </p> : null}
 
       {active && (onAccept || onDecline) ? (
         <div className={styles.sheetActions}>
@@ -189,6 +189,10 @@ export default function OfferCard({
       ) : null}
 
       {status === "accepted" && settlementVerified && onPostReceipt ? (
+        <div>
+        <p className={styles.actionWarning} role="status">
+          Payment complete. Only the receipt remains. Posting it will not send the payment again.
+        </p>
         <button
           className={styles.secondaryButton}
           type="button"
@@ -197,6 +201,7 @@ export default function OfferCard({
         >
           {busy ? "Posting receipt…" : "Post receipt"}
         </button>
+        </div>
       ) : null}
       <ProvingProgress
         active={busy}

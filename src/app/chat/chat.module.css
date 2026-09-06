@@ -1859,3 +1859,8 @@
 .railTools > .toolsDisclosure > summary { padding: 6px 0; font-size: 11px; }
 .railTools .toolsForm { padding: 6px 0 10px; }
 .entry:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 4px; }
+.entry > .messageDetails { width: 100%; border-top: 1px solid var(--shell-line); margin-top: 8px; padding-top: 4px; }
+.messageDetails .entryProof code { display: block; overflow-wrap: anywhere; }
+.latestMessages { align-self: center; min-height: 38px; padding: 8px 16px; border: 1px solid var(--shell-orange); color: var(--shell-text); background: var(--shell-inset); font: inherit; cursor: pointer; }
+.latestMessages:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 2px; }
+.unreadBadge { color: var(--shell-orange); }

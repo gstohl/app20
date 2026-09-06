@@ -257,12 +257,12 @@ function conversation(model: ReturnType<typeof buildChatModel>, key: string) {
 }
 
 describe("chat conversations", () => {
-  it("groups every mailbox record by counterparty and orders by activity", () => {
+  it("groups every chat record by counterparty and orders by activity", () => {
     const model = buildChatModel(input());
     expect(model.unattributedSent).toBe(1);
     const names = model.conversations.map((row) => contactDisplayName(row.contact));
     expect(names).toEqual([
-      "This mailbox",
+      "This chat",
       "Carol desk",
       "Bob",
       "Sealed sender",
@@ -336,7 +336,7 @@ describe("chat conversations", () => {
     expect(offers[0].records[0].deal?.status).toBe("offered");
   });
 
-  it("skips the decrypted echo of a letter this wallet sent to several recipients", () => {
+  it("skips the decrypted echo of a message this wallet sent to several recipients", () => {
     const circular = sent(
       id("ee"),
       "text",
@@ -436,7 +436,7 @@ describe("chat conversations", () => {
     expect(sealed[0].items[0].kind).toBe("receipt");
   });
 
-  it("keeps backups and self-addressed copies under this mailbox", () => {
+  it("keeps backups and self-addressed copies under this chat", () => {
     const self = conversation(buildChatModel(input()), SELF_CONVERSATION_KEY);
     expect(self.contact.kind).toBe("self");
     expect(self.items).toHaveLength(1);

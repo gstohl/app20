@@ -28,6 +28,15 @@ export function chatEntryDomId(itemId: string): string {
   return `chat-item-${itemId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+export function chatDeliveryLabel(item: ChatItem): string {
+  if (item.provenance === "payment-link") return "Imported request";
+  if (item.provenance === "mailbox-record") return "Saved record";
+  if (item.message?.deliveryState === "partially_confirmed") return "Partially confirmed";
+  if (item.message?.deliveryState === "confirmed" || item.message?.threadProvenance === "device_sent_and_on_chain" ||
+      (item.direction === "incoming" && item.message?.blockNumber !== undefined)) return "Confirmed on-chain";
+  return item.direction === "outgoing" ? "Saved on this device" : "Received";
+}
+
 function fullTime(at: number | undefined): { label: string; dateTime?: string } {
   if (at === undefined) return { label: "Time not recorded" };
   const date = new Date(at);
@@ -88,7 +97,7 @@ function provenanceLabel(item: ChatItem): string {
         : "Sent copy on this device";
     case "payment-link":
       return message?.linkAuthenticity?.kind === "verified"
-        ? "Imported link · Mail-key signature verified"
+        ? "Imported link · Chat-key signature verified"
         : "Imported link · unverified";
     case "decrypted":
       return message
@@ -163,7 +172,7 @@ function RecordProvenance({
     <div className={styles.entryProof}>
       {proof ? <p>{senderProofLabel(proof)}</p> : null}
       {fields.conversationId ? (
-        <details><summary>Thread reference</summary><code>{fields.conversationId}</code></details>
+        <div><strong>Thread reference</strong><code>{fields.conversationId}</code></div>
       ) : null}
       {assigned && onProve ? (
         <button type="button" onClick={() => onProve(message.id, assigned)}>
@@ -189,6 +198,7 @@ type ChatTimelineProps = {
   conversation: ChatConversation;
   aliases: readonly AliasRecord[];
   highlightId: string | null;
+  readIds?: ReadonlySet<string>;
   handlers: ChatTimelineHandlers;
 };
 
@@ -196,6 +206,7 @@ export default function ChatTimeline({
   conversation,
   aliases,
   highlightId,
+  readIds,
   handlers,
 }: ChatTimelineProps) {
   const name = contactDisplayName(conversation.contact);
@@ -207,9 +218,9 @@ export default function ChatTimeline({
       <div className={styles.timelineEmpty}>
         <strong>No records with {name} on this device yet.</strong>
         <p>
-          A letter sent from here is sealed to their registered mailbox key and
+          A message sent from here is sealed to their registered chat key and
           kept as a Sent copy in this browser profile. Records they send you
-          appear after you check for new mail.
+          appear after you check for new messages.
         </p>
       </div>
     );
@@ -319,6 +330,18 @@ export default function ChatTimeline({
                 <b>{item.direction === "outgoing" ? "You" : name}</b>
                 <span>{item.label}</span>
                 <time dateTime={time.dateTime}>{time.label}</time>
+                <span>{chatDeliveryLabel(item)}</span>
+                {item.direction === "incoming" && readIds && !readIds.has(item.id) ? <strong className={styles.unreadBadge}>New</strong> : null}
+
+              </div>
+              {paymentLink ? (
+                <p className={styles.entryNotice} role="status">
+                  {message?.linkAuthenticity?.kind === "verified"
+                    ? `${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE} This request came from a URL fragment, not a MessagePosted event, and opening or importing it did not submit a payment.`
+                    : "This unverified legacy request was imported from a URL fragment for local review. It is not a MessagePosted event, cannot authenticate the requester, and opening or importing it did not submit a payment."}
+                </p>
+              ) : null}
+              {renderContent(item)}
                 <details className={styles.messageDetails}>
                   <summary>Message details</summary>
                   <div>
@@ -335,15 +358,6 @@ export default function ChatTimeline({
                   </span>
                 ) : null}
                   </div>
-                </details>
-              </div>
-              {paymentLink ? (
-                <p className={styles.entryNotice} role="status">
-                  {message?.linkAuthenticity?.kind === "verified"
-                    ? `${MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE} This request came from a URL fragment, not a MessagePosted event, and opening or importing it did not submit a payment.`
-                    : "This unverified legacy request was imported from a URL fragment for local review. It is not a MessagePosted event, cannot authenticate the requester, and opening or importing it did not submit a payment."}
-                </p>
-              ) : null}
               {message && !paymentLink ? (
                 <RecordProvenance
                   message={message}
@@ -351,12 +365,11 @@ export default function ChatTimeline({
                   onProve={handlers.onProve}
                 />
               ) : null}
-              {renderContent(item)}
               {message &&
               message.transactionHashes &&
               message.transactionHashes.length > 1 ? (
-                <details className={styles.entrySubmissions}>
-                  <summary>Submission transactions</summary>
+                <div className={styles.entrySubmissions}>
+                  <strong>Submission transactions</strong>
                   {message.transactionHashes.map((transactionHash, index) => (
                     <code key={`${index}:${transactionHash}`}>
                       {index + 1}. {transactionHash}
@@ -366,13 +379,15 @@ export default function ChatTimeline({
                     Escrow funding and document delivery are separate because
                     the pool permits one external invoke per transaction.
                   </span>
-                </details>
+                </div>
               ) : null}
               {message && !paymentLink && item.provenance !== "mailbox-record" ? (
                 <div className={styles.entryChain}>
-                  <ChainRecordPanel message={message} />
+                  <ChainRecordPanel message={message} embedded />
                 </div>
               ) : null}
+                </details>
+
             </li>
           );
         })}

@@ -282,7 +282,7 @@ export function sealedConversationKey(threadKey: string): string {
 }
 
 export function contactDisplayName(contact: ChatContact): string {
-  if (contact.kind === "self") return "This mailbox";
+  if (contact.kind === "self") return "This chat";
   if (contact.kind === "sealed") return "Sealed sender";
   return contact.label ?? shortenFelt(contact.address ?? "");
 }
@@ -648,8 +648,8 @@ export function messageItemFor(
       return {
         ...base,
         kind: "letter",
-        label: "Letter",
-        preview: collapse(body).slice(0, PREVIEW_MAX_CHARS) || "Empty letter",
+        label: "Message",
+        preview: collapse(body).slice(0, PREVIEW_MAX_CHARS) || "Empty message",
         body,
         needsAction: null,
         records: [],
@@ -699,8 +699,8 @@ export function messageItemFor(
       return {
         ...base,
         kind: records.length ? "document" : "letter",
-        label: records.length ? "Document" : "Letter",
-        preview: preview || recordsPreview(records) || "Empty letter",
+        label: records.length ? "Document" : "Message",
+        preview: preview || recordsPreview(records) || "Empty message",
         body,
         needsAction: firstAction(records),
         records,
@@ -838,7 +838,7 @@ export function messageItemFor(
         label: kind === "contacts" ? "Contact backup" : "RFQ history backup",
         preview:
           kind === "contacts"
-            ? "Encrypted contact backup · wallet + mailbox recovery phrase required"
+            ? "Encrypted contact backup · wallet + chat recovery phrase required"
             : "Encrypted RFQ history backup · verification-only",
         body: "",
         needsAction: null,
@@ -1181,7 +1181,7 @@ export function buildChatModel(input: ChatModelInput): ChatModel {
               key: SELF_CONVERSATION_KEY,
               kind: "self",
               address: self,
-              label: "This mailbox",
+              label: "This chat",
               nameSource: "none",
               saved: false,
             }

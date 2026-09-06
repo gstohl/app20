@@ -55,9 +55,9 @@
     "contracts": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["App20Mail", "App20Escrow", "App20Claim"],
+      "required": ["App20Chat", "App20Escrow", "App20Claim"],
       "properties": {
-        "App20Mail": { "$ref": "#/$defs/contract" },
+        "App20Chat": { "$ref": "#/$defs/contract" },
         "App20Escrow": { "$ref": "#/$defs/contract" },
         "App20Claim": { "$ref": "#/$defs/contract" }
       }
@@ -180,7 +180,7 @@
       "additionalProperties": false,
       "required": ["productName", "deploymentAllowed", "source", "artifacts", "constructor", "reviewedSelectors", "classHash", "casmClassHash", "declaration", "deployment", "audits", "review", "operatorApproval"],
       "properties": {
-        "productName": { "enum": ["App20Mail", "App20Escrow", "App20Claim"] },
+        "productName": { "enum": ["App20Chat", "App20Escrow", "App20Claim"] },
         "deploymentAllowed": { "const": false },
         "source": {
           "type": "object",

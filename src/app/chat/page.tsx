@@ -41,9 +41,13 @@ import {
   type ChatConversation,
 } from "./chat-model";
 import {
+  ChatSendError,
+  chatSendFailure,
+  checkChatDelivery,
   chatSendBlocker,
   previewChatLetterBudget,
   sendChatLetter,
+  type ChatSendResult,
 } from "./chat-send";
 import { useMailboxDesk } from "./useMailboxDesk";
 import styles from "./chat.module.css";
@@ -215,6 +219,9 @@ export default function ChatPage() {
      again, so its records are marked read even when nothing else changed. */
   const activatedRef = useRef<string | null>(null);
   const [activation, setActivation] = useState(0);
+  const nearLatestRef = useRef(true);
+  const scrollHistoryRef = useRef<{ key: string | null; ids: string[]; height: number }>({ key: null, ids: [], height: 0 });
+  const [newMessages, setNewMessages] = useState(0);
   const [entryId, setEntryId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -222,6 +229,18 @@ export default function ChatPage() {
   const [letters, setLetters] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<ChatComposerStatus>(null);
   const [sending, setSending] = useState(false);
+  const [sendFailures, setSendFailures] = useState<Record<string, ChatSendError>>({});
+  const activeScope = useRef(scope);
+  activeScope.current = scope;
+  const activeConversation = useRef(selectedKey);
+  activeConversation.current = selectedKey;
+  const failureKey = `${scope}:${selectedKey}`;
+  const sendFailure = sendFailures[failureKey];
+  const composerStatus: ChatComposerStatus = !sending && sendFailure ? {
+    kind: "error", message: sendFailure.message, detail: sendFailure.detail,
+    transactionHash: sendFailure.submittedTransactionHash,
+    retryBlocked: sendFailure.outcome === "unknown",
+  } : status;
   /* The document composer, open on one device-private draft. */
   const [composeDraftId, setComposeDraftId] = useState<string | null>(null);
   /* Bumped when a handoff or a new address should land the cursor in the
@@ -279,13 +298,15 @@ export default function ChatPage() {
      first row being selected on load is not. */
   useEffect(() => {
     if (!conversation) return;
-    if (activatedRef.current !== conversation.contact.key) return;
+    if (activatedRef.current !== conversation.contact.key || !nearLatestRef.current) return;
     const pending = unreadItemIds(conversation);
     if (pending.length) markMessagesRead(pending);
   }, [activation, conversation, markMessagesRead]);
 
   const selectConversation = useCallback((next: string) => {
     activatedRef.current = next;
+    nearLatestRef.current = true;
+    setNewMessages(0);
     setActivation((value) => value + 1);
     setSelectedKey(next);
     setEntryId(null);
@@ -341,10 +362,36 @@ export default function ChatPage() {
     if (highlightId || composeDraft) return;
     const frame = window.requestAnimationFrame(() => {
       const element = scrollRef.current;
-      if (element) element.scrollTop = element.scrollHeight;
+      if (!element) return;
+      const items = conversation?.items ?? [];
+      const previous = scrollHistoryRef.current;
+      const ids = items.map((item) => item.id);
+      const previousIds = new Set(previous.ids);
+      const added = items.filter((item) => !previousIds.has(item.id));
+      const changed = previous.key !== selectedKey;
+      const outgoing = added.some((item) => item.direction === "outgoing") &&
+        ids.at(-1) !== previous.ids.at(-1);
+      if (changed || nearLatestRef.current || outgoing) {
+        element.scrollTop = element.scrollHeight;
+        nearLatestRef.current = true;
+        setNewMessages(0);
+      } else if (previous.ids.length && ids.at(-1) === previous.ids.at(-1) &&
+        ids.indexOf(previous.ids[0]) > 0) {
+        element.scrollTop += element.scrollHeight - previous.height;
+      } else {
+        setNewMessages((count) => count + added.filter((item) => item.direction === "incoming").length);
+      }
+      scrollHistoryRef.current = { key: selectedKey, ids, height: element.scrollHeight };
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [composeDraft, conversationLength, highlightId, selectedKey]);
+  }, [composeDraft, conversation, conversationLength, highlightId, selectedKey]);
+
+  function readLatest() {
+    if (conversation && activatedRef.current === conversation.contact.key) {
+      markMessagesRead(unreadItemIds(conversation));
+    }
+    setNewMessages(0);
+  }
 
   useEffect(() => {
     if (!highlightId || composeDraft) return;
@@ -400,7 +447,7 @@ export default function ChatPage() {
       desk.setStorageNotice({
         kind: "error",
         message:
-          "This is your own mailbox. Self-addressed backups are posted from the mailbox tools.",
+          "This is your own chat. Self-addressed backups are posted from the chat tools.",
       });
       return;
     }
@@ -488,6 +535,7 @@ export default function ChatPage() {
       conversation.contact.kind !== "counterparty" ||
       !conversation.contact.address ||
       sending ||
+      sendFailure?.outcome === "unknown" ||
       blocker ||
       !keypair ||
       !helperAddress ||
@@ -504,9 +552,10 @@ export default function ChatPage() {
     setSending(true);
     setStatus({
       kind: "sending",
-      message: "Preparing the sealed letter…",
+      message: "Preparing the sealed message…",
       startedAt: Date.now(),
     });
+    let confirmed: ChatSendResult | undefined;
     try {
       const result = await sendChatLetter({
         recipient: target,
@@ -523,30 +572,54 @@ export default function ChatPage() {
           mailSeed,
           keypair,
         },
-        onPhase: (_phase, detail) =>
+        onPhase: (_phase, detail) => {
+          if (activeScope.current !== scope || activeConversation.current !== key) return;
           setStatus((current) => ({
             kind: "sending",
             message: detail,
             startedAt: current?.startedAt ?? Date.now(),
-          })),
+          }));
+        },
       });
+      confirmed = result;
+      if (activeScope.current !== scope) return;
+      setSendFailures((current) => { const next = { ...current }; delete next[failureKey]; return next; });
       desk.handleSent(result.envelope);
       setLetters((current) => ({ ...current, [key]: "" }));
+      if (activeConversation.current !== key) return;
       setStatus({
         kind: "ok",
         message: `Sealed and confirmed in ${shortenFelt(result.transactionHash)}. The Sent copy is filed here on this device (not encrypted at rest).`,
       });
       setHighlightId(`sent:${result.envelope.documentId}`);
     } catch (error: unknown) {
-      setStatus({
-        kind: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "The letter was not sent. Nothing was submitted.",
-      });
+      const failure = error instanceof ChatSendError ? error : chatSendFailure(error, confirmed?.envelope);
+      setSendFailures((current) => ({ ...current, [failureKey]: failure }));
     } finally {
-      setSending(false);
+      if (activeScope.current === scope) setSending(false);
+    }
+  }
+
+  async function checkDelivery() {
+    const pending = sendFailure?.pendingLetter;
+    if (!pending || sending) return;
+    const key = selectedKey;
+    setSending(true);
+    setStatus({ kind: "sending", message: "Checking the original transaction…", retryBlocked: true });
+    try {
+      const result = await checkChatDelivery(constants.myFrontendProviders[providerIndex], pending);
+      if (activeScope.current !== scope) return;
+      desk.handleSent(result.envelope);
+      setSendFailures((current) => { const next = { ...current }; delete next[failureKey]; return next; });
+      if (key) setLetters((current) => current[key] === pending.plaintext ? { ...current, [key]: "" } : current);
+      if (activeConversation.current === key) {
+        setStatus({ kind: "ok", message: "Delivery confirmed. Your message is filed in this conversation." });
+        setHighlightId(`sent:${result.envelope.documentId}`);
+      }
+    } catch (error: unknown) {
+      setSendFailures((current) => ({ ...current, [failureKey]: chatSendFailure(error, pending) }));
+    } finally {
+      if (activeScope.current === scope) setSending(false);
     }
   }
 
@@ -699,7 +772,7 @@ export default function ChatPage() {
                   {conversation.items.length} record
                   {conversation.items.length === 1 ? "" : "s"} on this device ·{" "}
                   {conversation.contact.kind === "self"
-                    ? "your own mailbox"
+                    ? "your own chat"
                     : conversation.contact.address
                       ? shortenFelt(conversation.contact.address)
                       : "unnamed thread"}
@@ -728,7 +801,12 @@ export default function ChatPage() {
             ) : null}
           </header>
 
-          <div ref={scrollRef} className={styles.timelineScroll}>
+          <div ref={scrollRef} className={styles.timelineScroll}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              nearLatestRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+              if (nearLatestRef.current) readLatest();
+            }}>
             {desk.storageNotice ? (
               <div
                 className={styles.notice}
@@ -766,9 +844,9 @@ export default function ChatPage() {
               <section className={styles.sheet} aria-label="Document composer">
                 {gate === "key" ? (
                   <p className={styles.keyNotice}>
-                    <strong>No mailbox key on this device</strong>
+                    <strong>No chat key on this device</strong>
                     <span>
-                      Write and save the draft now. Sending needs a mailbox
+                      Write and save the draft now. Sending needs a chat
                       key — <a href="#mailbox-key-setup">set one up above</a>.
                     </span>
                   </p>
@@ -801,7 +879,7 @@ export default function ChatPage() {
                 </h2>
                 <p>
                   Send encrypted messages, offers and payment requests.
-                  Each wallet has its own mailbox.
+                  Each wallet has its own chat.
                 </p>
                 {walletGateShown ? null : (
                   <div className={styles.connectAction}>
@@ -814,6 +892,7 @@ export default function ChatPage() {
                 conversation={conversation}
                 aliases={desk.displayAliases}
                 highlightId={highlightId}
+                readIds={desk.readMessageIds}
                 handlers={timelineHandlers}
               />
             ) : model.conversations.length ? (
@@ -851,7 +930,7 @@ export default function ChatPage() {
                 <h2 id="chat-empty-title">No conversations on this device yet.</h2>
                 <p>
                   Start with a wallet address or a saved counterparty.
-                  Expecting a message? Use Check for new mail in the sidebar.
+                  Expecting a message? Use Check for new messages in the sidebar.
                 </p>
                 <div className={styles.welcomeLinks}>
                   <button type="button" onClick={openNewConversation}>Start a conversation</button>
@@ -860,6 +939,17 @@ export default function ChatPage() {
               </section>
             )}
           </div>
+
+          {newMessages > 0 ? (
+            <button className={styles.latestMessages} type="button" onClick={() => {
+              const element = scrollRef.current;
+              if (element) element.scrollTop = element.scrollHeight;
+              nearLatestRef.current = true;
+              readLatest();
+              const last = conversation?.items.at(-1);
+              if (last) document.getElementById(chatEntryDomId(last.id))?.focus({ preventScroll: true });
+            }}>{newMessages} new message{newMessages === 1 ? "" : "s"} · Jump to latest</button>
+          ) : null}
 
           {conversation && name && !composeDraft && gate !== "wallet" ? (
             conversation.contact.kind === "counterparty" &&
@@ -875,7 +965,8 @@ export default function ChatPage() {
                 }
                 blocker={blocker}
                 sending={sending}
-                status={status}
+                status={composerStatus}
+                onCheckDelivery={sendFailure?.pendingLetter ? () => void checkDelivery() : undefined}
                 budget={budget}
                 onSend={() => void send()}
                 onAttach={() =>
@@ -885,7 +976,7 @@ export default function ChatPage() {
             ) : (
               <p className={styles.composerNote}>
                 {conversation.contact.kind === "self"
-                  ? "Backups are posted from the mailbox tools; this mailbox does not write letters to itself."
+                  ? "Backups are posted from the chat tools; this chat does not write messages to itself."
                   : "To reply, set the sender’s wallet address above. You can paste an address or choose a saved counterparty."}
               </p>
             )

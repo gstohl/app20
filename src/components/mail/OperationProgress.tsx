@@ -50,7 +50,7 @@ export function ProvingProgress({
       </div>
       <p>
         Indeterminate: elapsed time is not completion percentage. The wallet may
-        spend 30 seconds or longer proving; after a hash appears, Mail waits
+        spend 30 seconds or longer proving; after a hash appears, Chat waits
         separately for successful execution.
       </p>
     </div>

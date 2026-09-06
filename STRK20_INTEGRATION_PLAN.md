@@ -20,7 +20,7 @@ Wallet integration remains on `starknet@10.5.0`, discovery/wallet-standard `6.0.
 
 This historical app-code-only wiring slice did not establish audit evidence or make APP20 release-ready. `starknet@10.5.0` is the installed reviewed pin (the historical text below says 10.4.0); keep 10.5.0 and do not adopt 10.7.x or Wallet API 0.10.4 pre-releases in this slice.
 
-Canonical production product names are **App20Mail**, **App20Escrow**, and **App20Claim**. “VNext” is internal migration terminology only. The current localnet `ClaimTicket`, localnet escrow, and `MockErc20` remain historical/test fixtures; none is a Sepolia production artifact and `MockErc20` must never be included in a Sepolia deployment.
+Canonical production product names are **App20Chat**, **App20Escrow**, and **App20Claim**. “VNext” is internal migration terminology only. The current localnet `ClaimTicket`, localnet escrow, and `MockErc20` remain historical/test fixtures; none is a Sepolia production artifact and `MockErc20` must never be included in a Sepolia deployment.
 
 | Decision | Recorded conservative result |
 | --- | --- |
@@ -131,7 +131,7 @@ These are closed. Do not re-interview. Poker decisions are void.
 
 | Skill question | Decided answer |
 | --- | --- |
-| Builder type | Normal dapp: users connect Ready. The team also owns one helper, `App20Mail`. |
+| Builder type | Normal dapp: users connect Ready. The team also owns one helper, `App20Chat`. |
 | Privacy goal | Hide who mailed whom and the message body. Optional payment memo rides a private transfer. |
 | Not building | Poker, tables, chips-as-cards, trusted dealer, any gambling UI. |
 | Environment | `SN_MAIN` for scoring. Sepolia for day-to-day. Alchemy key in an env var, never committed. |
@@ -161,7 +161,7 @@ These are closed. Do not re-interview. Poker decisions are void.
 - Privacy goal: hide sender, recipient, and content; keep the fact+timing of a pool interaction public.
 - Environment: Sepolia daily; `SN_MAIN` against pool `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a` for three scoring txs.
 
-## 2. Historical chosen route: Privacy Wallet API via starknet.js + `App20Mail` helper
+## 2. Historical chosen route: Privacy Wallet API via starknet.js + `App20Chat` helper
 
 APP20 is a normal dapp. User-facing privacy goes through `WalletAccountV6`. Shield, unshield, and private transfers need no custom contract. Storing an encrypted payload on the existing ECDH channel needs our own helper. The pool already supplies key agreement, persistent channels, and sender anonymity via `InvokeExternal` (the pool is `msg.sender`).
 
@@ -203,7 +203,7 @@ Live APP20 helper/escrow constants are hard-coded to `0x0`; only the build-gated
 
 Historical status: code complete for wallet plumbing; poker branding and DEMO echo were removed in the pivot commit. The former plan listed manual Ready checks on Sepolia, but those live-network instructions are superseded by localnet-final and are not an active test or authorization. Do not deploy a helper, touch `strk20.json`, or perform public-network value actions without a newly approved scope.
 
-## 6. Phase 2 — compose + `App20Mail` invoke wiring ✅ code complete 2026-08-14
+## 6. Phase 2 — compose + `App20Chat` invoke wiring ✅ code complete 2026-08-14
 
 Historical status at that checkpoint: code-complete locally, with no helper deployment or live STRK20 transaction then recorded. Later one-off Sepolia proof deployments are denylisted separately and do not reopen this gate.
 
@@ -224,7 +224,7 @@ The Phase 2 mail private key is an app-specific x25519 key, not the STRK20 viewi
 
 ### 6.2 Landed helper
 
-`App20Mail` pins the authorized pool address in constructor storage and never trusts the calldata `pool_address` placeholder for authorization.
+`App20Chat` pins the authorized pool address in constructor storage and never trusts the calldata `pool_address` placeholder for authorization.
 
 - `privacy_invoke(token, pool_address, note_id, eph_pk, view_tag, nonce, ct) -> Span<OpenNoteDeposit>`
   - Only the configured pool caller succeeds.
@@ -262,7 +262,7 @@ contract and retains the upstream lifecycle: Bob registration, Alice's screened
 100-unit STRK deposit plus 50-unit private transfer, direct contract discovery,
 and Bob's 50-unit withdrawal.
 
-A second test now deploys the team-written `App20Mail` with that real pool
+A second test now deploys the team-written `App20Chat` with that real pool
 as its constructor authority, compiles the production `src/lib/mail.ts` and
 `src/lib/strk20.ts`, and submits `buildMailInvokeActions` through the vendored
 client's proving adapter. Localnet therefore exercises the same
@@ -270,7 +270,7 @@ client's proving adapter. Localnet therefore exercises the same
 required preceding `transfer(..., amount: "OPEN")`, that the client integration
 would use. The harness checks the following through the genuine pool contract:
 
-- the pool invokes `App20Mail` and the helper emits `MessagePosted` from its
+- the pool invokes `App20Chat` and the helper emits `MessagePosted` from its
   deployed address;
 - Bob decrypts the exact plaintext while an unrelated key discovers nothing;
 - replaying the same non-zero `action_id` produces an on-chain
@@ -296,7 +296,7 @@ batch can execute against the real pool.
 
 `npm run dev:localnet` turns the harness boundary into a filmable product demo.
 It checks the pinned vendor install, boots native Devnet, deploys the genuine
-`privacy_Privacy` class and `App20Mail`, starts a localhost wallet API, and
+`privacy_Privacy` class and `App20Chat`, starts a localhost wallet API, and
 serves Vite. The generated `.env.localnet.local` and process state are ignored
 and removed by `npm run localnet:stop`.
 
@@ -429,7 +429,7 @@ creation. No live Ready payment validation is authorized in the current scope.
 
 - Deposit screening is protocol-enforced. Never present APP20 as a workaround.
 - Selective disclosure exists. It is not automatic compliance.
-- The team owns review, audit, deploy, and maintenance of `App20Mail`.
+- The team owns review, audit, deploy, and maintenance of `App20Chat`.
 - No viewing keys, spending keys, or Alchemy keys in git.
 - Do not build a hosted inbox that accepts users’ viewing keys.
 

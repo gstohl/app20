@@ -159,7 +159,7 @@ async function main() {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_App20Mail.contract_class.json"),
+      join(artifactRoot, "app20_chat_App20Chat.contract_class.json"),
       "utf8",
     ),
   );
@@ -167,7 +167,7 @@ async function main() {
     readFileSync(
       join(
         artifactRoot,
-        "app20_mail_App20Mail.compiled_contract_class.json",
+        "app20_chat_App20Chat.compiled_contract_class.json",
       ),
       "utf8",
     ),

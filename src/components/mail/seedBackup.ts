@@ -11,7 +11,7 @@ export type RestoredMailSeed = {
 
 function assertMailSeed(seed: Uint8Array): void {
   if (seed.length !== MAIL_SEED_BYTES) {
-    throw new Error(`Mail seed must be exactly ${MAIL_SEED_BYTES} bytes.`);
+    throw new Error(`Chat seed must be exactly ${MAIL_SEED_BYTES} bytes.`);
   }
 }
 

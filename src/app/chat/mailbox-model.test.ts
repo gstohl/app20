@@ -148,9 +148,9 @@ function invoiceMessage(
   };
 }
 
-describe("localnet-final mailbox contract routing", () => {
+describe("localnet-final chat contract routing", () => {
   it.each([0, 2])(
-    "keeps Mail unavailable on live provider index %i",
+    "keeps Chat unavailable on live provider index %i",
     (providerIndex) => {
       expect(helperForNetwork(providerIndex)).toBeNull();
     },
@@ -164,7 +164,7 @@ describe("localnet-final mailbox contract routing", () => {
   );
 });
 
-describe("mailbox list model", () => {
+describe("chat list model", () => {
   it("sorts without mutating the input array", () => {
     const older = textMessage("older", { localCreatedAt: 1_000 });
     const newer = textMessage("newer", { localCreatedAt: 2_000 });
@@ -176,7 +176,7 @@ describe("mailbox list model", () => {
     expect(sorted).not.toBe(input);
   });
 
-  it("prefers sealed invoice mail over a payment-link projection of the same request", () => {
+  it("prefers sealed invoice messages over a payment-link projection of the same request", () => {
     const requestId = `0x${"22".repeat(32)}`;
     const merged = mergeMailMessages(
       [invoiceMessage(requestId, "payment_link")],
@@ -188,7 +188,7 @@ describe("mailbox list model", () => {
     expect(merged[0]?.id).toBe(`chain:${requestId}`);
   });
 
-  it("caps merged mail at the scan message budget", () => {
+  it("caps merged messages at the scan message budget", () => {
     const current = Array.from({ length: MAIL_SCAN_MAX_MESSAGES }, (_, index) =>
       textMessage(`keep-${index}`, { localCreatedAt: index }),
     );

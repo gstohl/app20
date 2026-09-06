@@ -7,8 +7,8 @@ The former executable helper-deployment command and script were removed. Mainnet
 Historical design facts retained for future review:
 
 - the canonical Mainnet STRK20 pool is `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a`;
-- App20Mail source takes one pinned pool constructor argument;
+- App20Chat source takes one pinned pool constructor argument;
 - any future Mainnet helper requires independent review, reproducible artifact/class-hash evidence, explicit deployment/value approval, real transaction verification, and a newly approved operational runbook;
-- no future approval for App20Mail would authorize canonical App20Escrow/App20Claim or production RFQ.
+- no future approval for App20Chat would authorize canonical App20Escrow/App20Claim or production RFQ.
 
 Do not reconstruct deployment commands from repository history without a new scoped security review and explicit human approval.

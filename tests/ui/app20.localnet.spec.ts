@@ -99,12 +99,12 @@ async function registerNewKey(
   expect(backup).toBe(expectedBackup);
   await screenshot(page, name, testInfo);
   const acknowledge = page.getByRole("button", {
-    name: "I saved the backup — open mailbox",
+    name: "I saved the backup — open chat",
   });
   await expect(acknowledge).toBeVisible({ timeout: 60_000 });
   await acknowledge.click();
   await expect(
-    page.getByRole("heading", { name: "Set up a mailbox key" }),
+    page.getByRole("heading", { name: "Set up a chat key" }),
   ).toHaveCount(0);
   return backup;
 }
@@ -116,7 +116,7 @@ async function restoreRegisteredKey(page: Page, backup: string) {
   await expect(setup).toBeVisible();
   await page.getByText("Restore from backup").click();
   await page.getByLabel("Backup value").fill(backup);
-  await page.getByRole("button", { name: "Restore mailbox key" }).click();
+  await page.getByRole("button", { name: "Restore chat key" }).click();
   await expect(setup).toHaveCount(0, { timeout: 60_000 });
 }
 
@@ -177,7 +177,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   });
   await expect(
     page.getByText(
-      "Create or restore this wallet's Mail identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.",
+      "Create or restore this wallet's Chat identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Chat signature.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -202,7 +202,7 @@ test("creates a standalone payment link without an on-chain action", async ({
   await navLink(page, "Pay").click();
   await expect(
     page.getByText(
-      "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.",
+      "Ready to create a Chat-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.",
       { exact: true },
     ),
   ).toBeVisible();
@@ -220,10 +220,10 @@ test("creates a standalone payment link without an on-chain action", async ({
     page.getByText("No transaction submitted", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Mail key signature verified", { exact: true }),
+    page.getByText("Chat key signature verified", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(/This Mail-key-signed request asks for\s+0\.125 STRK/),
+    page.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
   ).toBeVisible();
   const linkCode = page
     .locator("code")
@@ -251,25 +251,25 @@ test("creates a standalone payment link without an on-chain action", async ({
   ).toBeVisible();
   await expect(
     review.getByRole("heading", {
-      name: "Mail-key signature verified — person not verified",
+      name: "Chat-key signature verified — person not verified",
     }),
   ).toBeVisible();
   await expect(
-    review.getByText("MAIL SIGNATURE VERIFIED", { exact: true }),
+    review.getByText("MESSAGES SIGNATURE VERIFIED", { exact: true }),
   ).toBeVisible();
   const signatureLimitNotices = review.getByText(
-    "A valid Mail signature proves only that the exact displayed message was signed by the displayed Mail key. It does not prove who signed it or that they control the named wallet. APP20 currently cannot revoke a compromised Mail key, so anyone with the recovery phrase can create requests that pass this check. Confirm the person and wallet through a trusted channel before paying.",
+    "A valid Chat signature proves only that the exact displayed message was signed by the displayed Chat key. It does not prove who signed it or that they control the named wallet. APP20 currently cannot revoke a compromised Chat key, so anyone with the recovery phrase can create requests that pass this check. Confirm the person and wallet through a trusted channel before paying.",
     { exact: true },
   );
   await expect(signatureLimitNotices).toHaveCount(2);
   await expect(signatureLimitNotices.first()).toBeVisible();
   await expect(signatureLimitNotices.last()).toBeVisible();
   await expect(
-    review.getByText("Verified Mail signing key", { exact: true }),
+    review.getByText("Verified Chat signing key", { exact: true }),
   ).toBeVisible();
   await expect(review.getByText(signer.address, { exact: true })).toBeVisible();
   await expect(
-    review.getByText(/This Mail-key-signed request asks for\s+0\.125 STRK/),
+    review.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
   ).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
   await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
@@ -344,7 +344,7 @@ test("all APP20 localnet journeys", async ({
   if (!bobBackup)
     throw new Error("Bob backup was not captured during onboarding.");
 
-  await test.step("1b. Alice restores Contacts after local ciphertext loss through encrypted self-mail", async () => {
+  await test.step("1b. Alice restores Contacts after local ciphertext loss through encrypted self-messages", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
     await navLink(page, "Counterparties").click();
@@ -356,7 +356,7 @@ test("all APP20 localnet journeys", async ({
     await openMailboxRecovery(page);
 
     const backupContacts = page.getByRole("button", {
-      name: "Back up contacts to this mailbox",
+      name: "Back up contacts to this chat",
     });
     await expect(backupContacts).toBeEnabled({ timeout: 60_000 });
     await backupContacts.click();
@@ -378,7 +378,7 @@ test("all APP20 localnet journeys", async ({
     await loadExistingKey(page);
     await scanRecent(page);
     // Self-addressed backups file under the mailbox itself.
-    const self = conversationRow(page, "This mailbox");
+    const self = conversationRow(page, "This chat");
     await expect(self).toBeVisible({ timeout: 60_000 });
     await self.click();
     // Earlier runs on the same chain leave older backups above; the newest
@@ -589,16 +589,16 @@ test("all APP20 localnet journeys", async ({
     await wrongKeyPage.getByText("Restore from backup").click();
     await wrongKeyPage.getByLabel("Backup value").fill(WRONG_KEY_BACKUP);
     await wrongKeyPage
-      .getByRole("button", { name: "Restore mailbox key" })
+      .getByRole("button", { name: "Restore chat key" })
       .click();
     await expect(
       wrongKeyPage.getByText(
-        "This backup belongs to a different mailbox key. Nothing was replaced; use the backup registered to this wallet address.",
+        "This backup belongs to a different chat key. Nothing was replaced; use the backup registered to this wallet address.",
         { exact: true },
       ),
     ).toBeVisible({ timeout: 60_000 });
     await expect(
-      wrongKeyPage.getByRole("button", { name: "Check for new mail" }),
+      wrongKeyPage.getByRole("button", { name: "Check for new messages" }),
     ).toBeDisabled();
     await expect(wrongKeyPage.getByText(compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
@@ -703,7 +703,7 @@ test("all APP20 localnet journeys", async ({
       .click();
     await expect(payPage).toHaveURL(/\/chat$/);
     await expect(
-      payPage.getByRole("heading", { name: "Set up a mailbox key" }),
+      payPage.getByRole("heading", { name: "Set up a chat key" }),
     ).toBeVisible();
     // The imported request already files under its requester, before any key.
     await expect(
@@ -711,7 +711,7 @@ test("all APP20 localnet journeys", async ({
     ).toContainText("Needs action");
     await payPage.getByText("Restore from backup").click();
     await payPage.getByLabel("Backup value").fill(bobBackup);
-    await payPage.getByRole("button", { name: "Restore mailbox key" }).click();
+    await payPage.getByRole("button", { name: "Restore chat key" }).click();
     // The reviewed link is the record this device pays from; the sealed
     // copy Alice sent arrives with the post-payment mail check and carries
     // the outcome forward.
@@ -954,7 +954,7 @@ test("all APP20 localnet journeys", async ({
     expect(unnamedIconButtons).toEqual([]);
   });
 
-  await test.step("11. forget this device clears every sensitive local mailbox store", async () => {
+  await test.step("11. forget this device clears every sensitive local chat store", async () => {
     await page.getByText("Device safety", { exact: true }).click();
     page.once("dialog", (dialog) => dialog.accept());
     await page

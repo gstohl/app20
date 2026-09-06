@@ -25,10 +25,10 @@ const READY = {
 };
 
 describe("chat send readiness", () => {
-  it("blocks in the same order Mailbox's composer does", () => {
+  it("blocks in the same order Chat's composer does", () => {
     expect(chatSendBlocker({ ...READY, helperAddress: null })).toMatchObject({
       kind: "network",
-      message: expect.stringMatching(/Mail is unavailable on LOCALNET \(DEV\)/),
+      message: expect.stringMatching(/Chat is unavailable on LOCALNET \(DEV\)/),
     });
     expect(chatSendBlocker({ ...READY, connected: false })).toMatchObject({
       kind: "wallet",
@@ -43,14 +43,14 @@ describe("chat send readiness", () => {
     });
     expect(chatSendBlocker({ ...READY, keyReady: false })).toMatchObject({
       kind: "key",
-      message: expect.stringMatching(/mail key/),
+      message: expect.stringMatching(/chat key/),
     });
     expect(chatSendBlocker(READY)).toBeNull();
   });
 });
 
-describe("chat letter", () => {
-  it("builds a signed text envelope Mailbox can decode and verify", () => {
+describe("chat message", () => {
+  it("builds a signed text envelope Chat can decode and verify", () => {
     const letter = buildChatLetter({
       body: "Hello from the desk",
       documentId: DOCUMENT,
@@ -92,7 +92,7 @@ describe("chat letter", () => {
     ).toBe(false);
   });
 
-  it("threads a reply and stays unsigned without a mailbox seed", () => {
+  it("threads a reply and stays unsigned without a chat seed", () => {
     const letter = buildChatLetter({
       body: "Re: terms",
       documentId: DOCUMENT,
@@ -115,7 +115,7 @@ describe("chat letter", () => {
   });
 
   it("projects the same ciphertext budget for the stand-in and the real signature", () => {
-    const body = "A short letter about a quote.";
+    const body = "A short message about a quote.";
     const preview = previewChatLetterBudget(body, true);
     const real = chatLetterBudget(
       buildChatLetter({

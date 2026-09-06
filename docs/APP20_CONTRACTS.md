@@ -1,6 +1,6 @@
 # APP20 contract inventory and rollout gates
 
-**Nothing is configured or authorized for production deployment now.** APP20 currently has a build-gated localnet demonstration; configured Mainnet and Sepolia APP20 addresses remain `0x0`. “Source or historical proof exists” does not mean configured, audited, upgradeable, production-ready, or approved. Canonical production names are **App20Mail**, **App20Escrow**, and **App20Claim**; “VNext” is internal migration terminology only.
+**Nothing is configured or authorized for production deployment now.** APP20 currently has a build-gated localnet demonstration; configured Mainnet and Sepolia APP20 addresses remain `0x0`. “Source or historical proof exists” does not mean configured, audited, upgradeable, production-ready, or approved. Canonical production names are **App20Chat**, **App20Escrow**, and **App20Claim**; “VNext” is internal migration terminology only.
 
 The public fail-closed production template is `deployments/sepolia/deployment-manifest.template.json`; it remains `releaseReady: false` with zero canonical addresses/hashes, no audits, and no approvals. Separate [historical Sepolia proof records](evidence/historical-sepolia-proofs/) document one-off App20Mail and legacy escrow/ticket activity and are explicitly ineligible for runtime or production use.
 
@@ -18,7 +18,7 @@ The live Mainnet STRK20 pool is `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69
 
 ## Contracts currently in this repository
 
-### `App20Mail`
+### `App20Chat`
 
 - **Source:** `cairo/src/lib.cairo`
 - **Constructor:** one pinned STRK20 pool address.
@@ -28,7 +28,7 @@ The live Mainnet STRK20 pool is `0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69
 - **Status:** team-owned source with local tests; configured Mainnet and Sepolia addresses are `0x0`; no current independent audit or approved production deployment. An unaudited one-off App20Mail Sepolia proof deployment exists and is denylisted in the historical evidence index.
 - **Possible rollout:** none in the localnet-final scope. Any future Mainnet Mail/STRK scoring lane requires a new approved runbook and separate approval; the archived `docs/MAINNET_RUNBOOK.md` is not executable authority.
 
-The pre-release contract was renamed to `App20Mail`. This changes its class hash and artifact names; no previous deployment is treated as an APP20 deployment.
+The current messaging contract is `App20Chat` (previously `App20Mail`), in the `app20_chat` Cairo package. The interface is `IApp20Chat`; generated artifacts use the `app20_chat_App20Chat` prefix. Renaming changes artifact identities and can change class hashes, so fresh deployments must use the rebuilt artifacts. Existing deployments are not renamed. Historical proof records retain `App20Mail`. Entry points, events, storage fields and cryptographic domain tags are preserved for compatibility.
 
 Nonzero Mail action IDs use the pinned pool's proof-bound compute-and-invoke path. `privacy_compute` receives the pool-derived contract-specific identity key privately and returns only (1) a replay slot derived from the Mail domain, identity key, and action ID and (2) a commitment to the exact token, recovery note, encrypted record, and action ID. The later `privacy_invoke_with_computation` verifies that payload commitment before consuming the slot. Consequently, another pool user who copies a pending action ID or ciphertext derives a different slot and cannot reserve the intended sender's action. Plain `privacy_invoke` accepts only action ID zero, so it cannot bypass this binding. Re-encrypting a retry changes the payload commitment but deliberately retains the same identity/action slot.
 
@@ -100,8 +100,8 @@ APP20 does not generate these Cairo contracts under the STRK20 integration skill
 
 No step inherits approval from the previous one.
 
-1. **Localnet only:** continue `App20Mail`, localnet-v3 `App20Escrow`, `LockTicket`, retained legacy `ClaimTicket`, and `MockErc20` testing with ephemeral addresses.
-2. **Optional Mail scoring lane:** after explicit approval, independently review and deploy only `App20Mail` on Mainnet for tiny STRK Mail scoring evidence. RFQ remains disabled.
+1. **Localnet only:** continue `App20Chat`, localnet-v3 `App20Escrow`, `LockTicket`, retained legacy `ClaimTicket`, and `MockErc20` testing with ephemeral addresses.
+2. **Optional Mail scoring lane:** after explicit approval, independently review and deploy only `App20Chat` on Mainnet for tiny STRK Mail scoring evidence. RFQ remains disabled.
 3. **Future Sepolia RFQ candidate:** only after a new scope and separate authorization, deploy newly reviewed canonical `App20Escrow` plus `App20Claim`; run two independently administered makers and a bounded soak. The repository ships no execution pipeline, and those artifacts/selectors/class hashes do not exist.
 4. **Tiny Mainnet RFQ evidence:** only after audit acceptance, Sepolia soak, hard caps, recovery drills, configured-chain receipts, and a new explicit Mainnet approval.
 5. **Later contracts:** atomic crossing, recurring settlement, hidden terms, or agent policy each require their own specification, audit, deployment, and cap approvals.

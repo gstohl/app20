@@ -126,16 +126,16 @@ export default function PayPage() {
   let readinessMessage: string;
   if (!isConnected || !address || !chainId) {
     readinessMessage =
-      "No wallet is connected. Continue to Chat, connect a privacy-enabled wallet, and load or register its device mail key before paying.";
+      "No wallet is connected. Continue to Chat, connect a privacy-enabled wallet, and load or register its device chat key before paying.";
   } else if (!isStrk20Capable) {
     readinessMessage =
       "The connected wallet does not expose the dapp-facing STRK20 API APP20 requires. No private payment can be submitted.";
   } else if (mailVaultKind === "missing") {
     readinessMessage =
-      "This account is not onboarded in this browser. Continue to Chat to create or restore and register its device mail key before paying.";
+      "This account is not onboarded in this browser. Continue to Chat to create or restore and register its device chat key before paying.";
   } else {
     readinessMessage =
-      "A mailbox vault exists in this browser profile. If it is passphrase-wrapped, unlock it in Chat before paying. Clear the local mailbox when using a shared machine.";
+      "A chat key vault exists in this browser profile. If it is passphrase-wrapped, unlock it in Chat before paying. Clear the local chat data when using a shared machine.";
   }
 
   let creatorReadiness: string;
@@ -144,10 +144,10 @@ export default function PayPage() {
       "Connect the privacy-enabled wallet and network that should receive the private STRK payment.";
   } else if (isStrk20Capable && mailVaultKind === "missing") {
     creatorReadiness =
-      "Create or restore this wallet's Mail identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Mail signature.";
+      "Create or restore this wallet's Chat identity in Chat first. APP20 will not present a newly generated payment request as trustworthy without a Chat signature.";
   } else if (isStrk20Capable) {
     creatorReadiness =
-      "Ready to create a Mail-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
+      "Ready to create a Chat-signed request for the connected wallet. Generating and copying the link submits no transaction and costs no pool fee.";
   } else {
     creatorReadiness =
       "This wallet does not expose APP20's required dapp-facing STRK20 API. Link creation is disabled because the receiving account may not be ready for private STRK.";
@@ -207,12 +207,12 @@ export default function PayPage() {
       const vault = inspectMailVault(window.localStorage, chainId, address);
       if (vault.kind === "missing") {
         throw new Error(
-          "Create or restore this wallet's Mail identity in Chat before generating a signed link.",
+          "Create or restore this wallet's Chat identity in Chat before generating a signed link.",
         );
       }
       if (vault.kind === "passphrase" && !mailPassphrase) {
         throw new Error(
-          "Enter the mailbox vault passphrase to sign this link.",
+          "Enter the chat key vault passphrase to sign this link.",
         );
       }
       seed =
@@ -292,7 +292,7 @@ export default function PayPage() {
           <p>
             {hasFragment
               ? "APP20 verifies signed request terms in your browser. Legacy unsigned links remain visibly unverified. The URL fragment is not sent in an HTTP request."
-              : "Create a Mail-signed private payment request without sending mail or touching the pool. The recipient address, token, amount, memo, expiry, and Mail signing keys are visible to anyone who receives the link."}
+              : "Create a Chat-signed private payment request without sending a message or touching the pool. The recipient address, token, amount, memo, expiry, and Chat signing keys are visible to anyone who receives the link."}
           </p>
         </header>
 
@@ -304,12 +304,12 @@ export default function PayPage() {
             >
               <p className={styles.kicker}>
                 {linkAuthenticity.kind === "verified"
-                  ? "MAIL SIGNATURE VERIFIED"
+                  ? "CHAT SIGNATURE VERIFIED"
                   : "UNVERIFIED LEGACY LINK"}
               </p>
               <h2 id="payment-link-title" className={styles.cardTitle}>
                 {linkAuthenticity.kind === "verified"
-                  ? "Mail-key signature verified — person not verified"
+                  ? "Chat-key signature verified — person not verified"
                   : "Unsigned invoice — requester not verified"}
               </h2>
               <p
@@ -426,8 +426,8 @@ export default function PayPage() {
                 <strong>Requester address embedded in the link</strong>
                 <code>{address || "Connect a wallet"}</code>
                 <span>
-                  The Mail signature will cover this full address and every
-                  request term. It does not by itself prove that the Mail key
+                  The Chat signature will cover this full address and every
+                  request term. It does not by itself prove that the chat key
                   controls this wallet.
                 </span>
               </div>
@@ -487,7 +487,7 @@ export default function PayPage() {
               </label>
               {mailVaultKind === "passphrase" ? (
                 <label className={`${styles.field} ${styles.paymentLinkWide}`}>
-                  Mail vault passphrase
+                  Chat key vault passphrase
                   <input
                     value={mailPassphrase}
                     onChange={(event) => {
@@ -502,7 +502,7 @@ export default function PayPage() {
                     required
                   />
                   <small>
-                    Used only in this browser to unlock the Mail signing key;
+                    Used only in this browser to unlock the Chat signing key;
                     never included in the link.
                   </small>
                 </label>
@@ -560,7 +560,7 @@ export default function PayPage() {
                 <div className={styles.paymentLinkPreviewHeading}>
                   <div>
                     <p className={styles.kicker}>
-                      READY TO SHARE / MAIL SIGNATURE VERIFIED
+                      READY TO SHARE / CHAT SIGNATURE VERIFIED
                     </p>
                     <h2 id="payment-link-preview-title">Review your link</h2>
                   </div>

@@ -24,7 +24,7 @@ flowchart LR
 
   subgraph Starknet["Starknet / Cairo"]
     Pool[STRK20 pool]
-    Mail[App20Mail]
+    Mail[App20Chat]
     Avnu[AVNU / Ekubo]
     Inb[InboundAnonymizer]
     Out[OutboundAnonymizer]

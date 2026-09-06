@@ -222,7 +222,7 @@ export async function primeLocalnetMailSeed(
 
       const groups = backupValue.replaceAll(" ", "").match(/.{2}/g);
       if (!groups || groups.length !== 32) {
-        throw new Error("Localnet mailbox fixture seed must contain 32 bytes.");
+        throw new Error("Localnet chat fixture seed must contain 32 bytes.");
       }
       const seed = Uint8Array.from(groups, (group) =>
         Number.parseInt(group, 16),

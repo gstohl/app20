@@ -6,7 +6,7 @@ function seed(): Uint8Array {
   return Uint8Array.from({ length: 32 }, (_, index) => index);
 }
 
-describe("mail seed backup", () => {
+describe("messages seed backup", () => {
   it("restores the exported seed and derives the same keypair", () => {
     const original = seed();
     const backup = exportMailSeed(original);
@@ -19,7 +19,7 @@ describe("mail seed backup", () => {
     expect(restored.keypair).toEqual(deriveKeypair(original));
   });
 
-  it("accepts hexadecimal letter case without changing the seed", () => {
+  it("accepts hexadecimal message case without changing the seed", () => {
     const backup = exportMailSeed(new Uint8Array(32).fill(0xab)).toUpperCase();
     expect(restoreMailSeed(backup).seed).toEqual(new Uint8Array(32).fill(0xab));
   });

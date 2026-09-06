@@ -320,7 +320,7 @@ if (
 ) {
   fail("production template must remain blocked");
 }
-for (const name of ["App20Mail", "App20Escrow", "App20Claim"]) {
+for (const name of ["App20Chat", "App20Escrow", "App20Claim"]) {
   const contract = template.contracts?.[name];
   if (
     contract?.deploymentAllowed !== false ||

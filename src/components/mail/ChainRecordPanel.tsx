@@ -19,7 +19,8 @@ function isoBlockTimestamp(timestamp: number | undefined): string | null {
   }
 }
 
-export function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
+export function ChainRecordPanel({ message, embedded = false }: { message: LocalMailMessage; embedded?: boolean }) {
+  const Container = embedded ? "div" : "details";
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const { record } = message;
   const timestamp = isoBlockTimestamp(message.blockTimestamp);
@@ -40,11 +41,11 @@ export function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
   }
 
   return (
-    <details className={styles.chainDisclosure}>
-      <summary>
+    <Container className={embedded ? styles.chainEmbedded : styles.chainDisclosure}>
+      {embedded ? null : <summary>
         <span>What the chain sees</span>
         <span className={styles.chainToggleHint}>PUBLIC EVIDENCE</span>
-      </summary>
+      </summary>}
       <aside
         className={styles.chainRecord}
         aria-label={`Public on-chain record for message ${message.index}`}
@@ -175,6 +176,6 @@ export function ChainRecordPanel({ message }: { message: LocalMailMessage }) {
           recipient address appears anywhere in this MessagePosted record.
         </p>
       </aside>
-    </details>
+    </Container>
   );
 }

@@ -62,6 +62,7 @@ export function ChatRecordFull({
     const action = actions?.actionStates[`deal:${offer.dealId}`];
     return (
       <OfferCard
+        own={record.own}
         offer={offer}
         alias={findAliasByAddress(aliases, offer.offerer)?.label}
         status={deal?.status}

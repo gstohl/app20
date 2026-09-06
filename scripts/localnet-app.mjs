@@ -776,7 +776,7 @@ function runPrerequisites() {
   });
   if (!/^scarb 2\.18\./m.test(version)) {
     fail(
-      `App20Mail requires Scarb 2.18.x; ${scarb} reported ${version.split("\n")[0]}.`,
+      `App20Chat requires Scarb 2.18.x; ${scarb} reported ${version.split("\n")[0]}.`,
     );
   }
   execFileSync(scarb, ["build"], {
@@ -841,13 +841,13 @@ async function deployHelper(env, starknet) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_App20Mail.contract_class.json"),
+      join(artifactRoot, "app20_chat_App20Chat.contract_class.json"),
       "utf8",
     ),
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_App20Mail.compiled_contract_class.json"),
+      join(artifactRoot, "app20_chat_App20Chat.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -856,7 +856,7 @@ async function deployHelper(env, starknet) {
   await waitForSuccess(
     env.node,
     declaration.transaction_hash,
-    "App20Mail declaration",
+    "App20Chat declaration",
   );
   const deployment = await env.admin.deployContract({
     classHash: declaration.class_hash,
@@ -865,10 +865,10 @@ async function deployHelper(env, starknet) {
   await waitForSuccess(
     env.node,
     deployment.transaction_hash,
-    "App20Mail deployment",
+    "App20Chat deployment",
   );
   const helperAddress = deployment.contract_address ?? deployment.address;
-  if (!helperAddress) fail("App20Mail deployment returned no address.");
+  if (!helperAddress) fail("App20Chat deployment returned no address.");
   return {
     address: helperAddress,
     declareTransactionHash: declaration.transaction_hash,
@@ -880,13 +880,13 @@ async function deployLocalUsdc(env, starknet, recipient) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_MockErc20.contract_class.json"),
+      join(artifactRoot, "app20_chat_MockErc20.contract_class.json"),
       "utf8",
     ),
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_MockErc20.compiled_contract_class.json"),
+      join(artifactRoot, "app20_chat_MockErc20.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -919,13 +919,13 @@ async function deployEscrow(env, starknet) {
   const artifactRoot = join(ROOT, "cairo", "target", "dev");
   const ticketSierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_ClaimTicket.contract_class.json"),
+      join(artifactRoot, "app20_chat_ClaimTicket.contract_class.json"),
       "utf8",
     ),
   );
   const ticketCasm = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_ClaimTicket.compiled_contract_class.json"),
+      join(artifactRoot, "app20_chat_ClaimTicket.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -940,13 +940,13 @@ async function deployEscrow(env, starknet) {
   );
   const lockTicketSierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_LockTicket.contract_class.json"),
+      join(artifactRoot, "app20_chat_LockTicket.contract_class.json"),
       "utf8",
     ),
   );
   const lockTicketCasm = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_LockTicket.compiled_contract_class.json"),
+      join(artifactRoot, "app20_chat_LockTicket.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -962,13 +962,13 @@ async function deployEscrow(env, starknet) {
 
   const sierra = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_App20Escrow.contract_class.json"),
+      join(artifactRoot, "app20_chat_App20Escrow.contract_class.json"),
       "utf8",
     ),
   );
   const casm = starknet.json.parse(
     readFileSync(
-      join(artifactRoot, "app20_mail_App20Escrow.compiled_contract_class.json"),
+      join(artifactRoot, "app20_chat_App20Escrow.compiled_contract_class.json"),
       "utf8",
     ),
   );
@@ -3594,7 +3594,7 @@ try {
 
   currentStage = "APP20 helpers deployment";
   console.log(
-    "\n==> deploying App20Mail and App20Escrow against the real pool",
+    "\n==> deploying App20Chat and App20Escrow against the real pool",
   );
   const helper = await deployHelper(env, runtime.starknet);
   const escrow = await deployEscrow(env, runtime.starknet);
@@ -3780,7 +3780,7 @@ try {
   console.log(`  Inbox:              ${APP_URL}/inbox`);
   console.log(`  privacy_Privacy:    ${env.privacy.address}`);
   console.log(`  pool class hash:    ${poolClassHash}`);
-  console.log(`  App20Mail:      ${helper.address}`);
+  console.log(`  App20Chat:      ${helper.address}`);
   console.log(`  App20Escrow:    ${escrow.address}`);
   console.log(`  Market token USDC:  ${env.usdc}`);
   console.log("  Private market:     USDC ↔ STRK · 1 STRK = 2 USDC fixture");

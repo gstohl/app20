@@ -4,10 +4,10 @@ import {
   MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE,
 } from "./mail-authority-copy";
 
-describe("Mail key authority disclosures", () => {
+describe("Chat key authority disclosures", () => {
   it("states both powers conferred by the recovery phrase", () => {
     expect(MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE).toMatch(
-      /read your Mail correspondence/i,
+      /read your messages/i,
     );
     expect(MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE).toMatch(
       /create payment requests that display as verified from you/i,
@@ -17,9 +17,9 @@ describe("Mail key authority disclosures", () => {
     );
   });
 
-  it("limits what a verified Mail signature proves", () => {
+  it("limits what a verified Chat signature proves", () => {
     expect(MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE).toMatch(
-      /exact displayed message.*displayed Mail key/i,
+      /exact displayed message.*displayed Chat key/i,
     );
     expect(MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE).toMatch(
       /does not prove who signed it/i,
@@ -28,7 +28,7 @@ describe("Mail key authority disclosures", () => {
       /they control the named wallet/i,
     );
     expect(MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE).toMatch(
-      /cannot revoke a compromised Mail key/i,
+      /cannot revoke a compromised Chat key/i,
     );
   });
 });
