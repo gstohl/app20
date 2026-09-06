@@ -188,22 +188,6 @@ function V3FinalReview({
               : `${humanUnits(snapshot.shieldedBalance, terms.sellDecimals)} ${terms.sellSymbol} · ${snapshot.shieldedBalance.toString()} base units`}
           </dd>
         </div>
-        <div>
-          <dt>Balance snapshot</dt>
-          <dd>
-            {snapshot
-              ? `${snapshot.account} · ${snapshot.chainId} · read ${new Date(snapshot.observedAt * 1_000).toISOString()}`
-              : "Unavailable"}
-          </dd>
-        </div>
-        <div>
-          <dt>Settlement authority</dt>
-          <dd>
-            None yet. After submission, the exact on-chain Take record and the
-            lifecycle v3 authority reader must agree before this browser calls
-            it settled.
-          </dd>
-        </div>
       </dl>
 
       <h4>Privacy boundaries</h4>
@@ -236,6 +220,23 @@ function V3FinalReview({
       <details className={styles.finalReviewDetails}>
         <summary>Protocol details</summary>
         <dl>
+        <div>
+          <dt>Balance snapshot</dt>
+          <dd>
+            {snapshot
+              ? `${snapshot.account} · ${snapshot.chainId} · read ${new Date(snapshot.observedAt * 1_000).toISOString()}`
+              : "Unavailable"}
+          </dd>
+        </div>
+        <div>
+          <dt>Settlement authority</dt>
+          <dd>
+            None yet. After submission, the exact on-chain Take record and the
+            lifecycle v3 authority reader must agree before this browser calls
+            it settled.
+          </dd>
+        </div>
+
           <div>
             <dt>Exact sell</dt>
             <dd>

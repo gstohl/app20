@@ -15,6 +15,7 @@ import {
 import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import type { ChatRecord } from "./chat-model";
 import styles from "./chat.module.css";
+import mailStyles from "@/components/mail/mail.module.css";
 
 /**
  * The value actions a record can offer, exactly as the mailbox desk exposes
@@ -64,6 +65,7 @@ export function ChatRecordFull({
         offer={offer}
         alias={findAliasByAddress(aliases, offer.offerer)?.label}
         status={deal?.status}
+        operationState={deal?.acceptOperation?.state}
         settlementVerified={deal?.settlementVerified}
         unverifiedClaim={Boolean(
           deal?.counterpartyAcceptClaim || deal?.counterpartyReceiptClaim,
@@ -110,6 +112,7 @@ export function ChatRecordFull({
         request={request}
         alias={findAliasByAddress(aliases, request.requester)?.label}
         status={payment?.status}
+        operationState={payment?.paymentOperation?.state}
         paymentVerified={payment?.paymentVerified}
         unverifiedClaim={Boolean(payment?.counterpartyPaymentClaim)}
         busy={action?.pending}
@@ -221,7 +224,7 @@ export default function ChatRecordCard({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary>Full record</summary>
-        <div className={styles.recordFull}>
+        <div className={`${styles.recordFull} ${mailStyles.embeddedRecord}`}>
           <ChatRecordFull
             record={record}
             aliases={aliases}

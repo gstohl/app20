@@ -389,12 +389,12 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     >
       <div className={styles.cardNumber}>01</div>
       <div>
-        <p className={styles.kicker}>PUBLIC SETUP / DEVICE-BOUND KEY</p>
+        <p className={styles.kicker}>{vault.kind === "missing" ? "NEW MAILBOX" : "EXISTING MAILBOX"}</p>
         <h2 id="onboard-title" className={styles.cardTitle}>
-          Set up a mailbox key
+          {vault.kind === "missing" || pending ? "Set up a mailbox key" : "Open your mailbox"}
         </h2>
       </div>
-      {vault.kind === "passphrase" ? null : (
+      {vault.kind !== "missing" && !pending ? null : (
         <ol className={styles.setupSteps} aria-label="Mailbox setup progress">
           <li data-state={stepState(0)}>
             <span aria-hidden="true">1</span>Device
@@ -408,8 +408,9 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         </ol>
       )}
       <p className={styles.copy}>
-        Registration is a normal public Starknet transaction. It links this
-        wallet address to a public mailbox key in the on-chain directory.
+        {vault.kind === "missing"
+          ? "Create a device key and register its public key to receive encrypted mail. Registration is a public Starknet transaction."
+          : "Your mailbox key is saved on this device. Load it to read and send mail. We check its registration; no new transaction is needed when it already matches."}
       </p>
       {address && chainId ? null : (
         <p className={styles.notice}>
@@ -453,61 +454,64 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         </div>
       ) : (
         <>
-          <label className={styles.field}>
-            <span>
-              <input
-                type="checkbox"
-                checked={wrapExisting}
-                onChange={(event) => setWrapExisting(event.target.checked)}
-              />{" "}
-              Encrypt this mailbox on this browser (optional)
-            </span>
-            {wrapExisting ? (
-              <small>
-                scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its
-                signing key until you unlock this session, and never stores the
-                passphrase. A wallet signature cannot be the wrap key — Ready
-                signatures are not a stable secret.
-              </small>
-            ) : null}
-          </label>
-          {wrapExisting ? null : (
-            <p className={styles.actionWarning}>
-              Leaving this off stores the raw 32-byte mailbox seed in the clear
-              in this browser profile. Anyone with the profile can read your
-              Mail correspondence and create payment requests that display as
-              verified from you.
+          <details open={vault.kind === "missing" || undefined}>
+            <summary>Mailbox key protection and recovery</summary>
+            <label className={styles.field}>
+              <span>
+                <input
+                  type="checkbox"
+                  checked={wrapExisting}
+                  onChange={(event) => setWrapExisting(event.target.checked)}
+                />{" "}
+                Encrypt this mailbox on this browser (optional)
+              </span>
+              {wrapExisting ? (
+                <small>
+                  scrypt + AES-GCM wrap. Mail cannot open the mailbox or use its
+                  signing key until you unlock this session, and never stores the
+                  passphrase. A wallet signature cannot be the wrap key — Ready
+                  signatures are not a stable secret.
+                </small>
+              ) : null}
+            </label>
+            {wrapExisting ? null : (
+              <p className={styles.actionWarning}>
+                Leaving this off stores the raw 32-byte mailbox seed in the clear
+                in this browser profile. Anyone with the profile can read your
+                Mail correspondence and create payment requests that display as
+                verified from you.
+              </p>
+            )}
+            <p className={styles.finePrint}>
+              Your mailbox backup is the only recovery if
+              you clear this profile or forget the passphrase, and APP20 currently
+              cannot revoke the Mail key if that backup is compromised.
             </p>
-          )}
-          <p className={styles.finePrint}>
-            Either way, the eight-group backup in step 3 is the only recovery if
-            you clear this profile or forget the passphrase, and APP20 currently
-            cannot revoke the Mail key if that backup is compromised.
-          </p>
-          {wrapExisting ? (
-            <>
-              <label className={styles.field}>
-                New mailbox passphrase
-                <input
-                  type="password"
-                  value={passphrase}
-                  onChange={(event) => setPassphrase(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={8}
-                />
-              </label>
-              <label className={styles.field}>
-                Confirm passphrase
-                <input
-                  type="password"
-                  value={passphraseConfirm}
-                  onChange={(event) => setPassphraseConfirm(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={8}
-                />
-              </label>
-            </>
-          ) : null}
+            {wrapExisting ? (
+              <>
+                <label className={styles.field}>
+                  New mailbox passphrase
+                  <input
+                    type="password"
+                    value={passphrase}
+                    onChange={(event) => setPassphrase(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                  />
+                </label>
+                <label className={styles.field}>
+                  Confirm passphrase
+                  <input
+                    type="password"
+                    value={passphraseConfirm}
+                    onChange={(event) => setPassphraseConfirm(event.target.value)}
+                    autoComplete="new-password"
+                    minLength={8}
+                  />
+                </label>
+              </>
+            ) : null}
+          </details>
           <button
             className={styles.primaryButton}
             type="button"
@@ -516,7 +520,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           >
             {setup.kind === "pending"
               ? "Waiting…"
-              : "Load device key & register"}
+              : vault.kind === "plaintext" ? "Open mailbox" : "Create mailbox & register"}
           </button>
         </>
       )}

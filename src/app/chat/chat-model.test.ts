@@ -14,6 +14,7 @@ import {
   contactDisplayName,
   filterConversations,
   invoiceRecord,
+  offerRecord,
   namingTarget,
   rfqNamesContact,
   sealedConversationKey,
@@ -529,5 +530,36 @@ describe("contact context", () => {
     expect(withRfq.rfqs.at(-1)?.terms).toBe("100 STRK → USDC");
     const sealed = conversation(model, sealedConversationKey(id("dd")));
     expect(rfqNamesContact(rfq("quoted", "bob"), sealed.contact)).toBe(false);
+  });
+});
+
+
+describe("value actions report execution progress instead of reserved business status", () => {
+  it.each(["reserved", "submitted", "unknown"] as const)("keeps %s payments and accepts pending, including after expiry", (state) => {
+    const payment = invoiceRecord(carolRequest, {
+      requestId: carolRequest.requestId, request: carolRequest, status: "paid",
+      paymentOperation: { state, updatedAt: NOW }, updatedAt: NOW,
+    }, false, NOW + 7200);
+    expect(payment.facts.status).not.toContain("Paid");
+    expect(payment.facts.open).toBe(true);
+    expect(payment.needsAction).toBeTruthy();
+    const offer = offerRecord(incomingOffer, {
+      dealId: incomingOffer.dealId, offer: incomingOffer, status: "accepted",
+      acceptOperation: { state, updatedAt: NOW }, updatedAt: NOW,
+    }, false, NOW + 7200);
+    expect(offer.facts.status).not.toContain("Accepted");
+    expect(offer.facts.open).toBe(true);
+    expect(offer.needsAction).toBeTruthy();
+  });
+
+  it("shows a verified payment as complete only after confirmation", () => {
+    const payment = invoiceRecord(carolRequest, {
+      requestId: carolRequest.requestId, request: carolRequest, status: "paid",
+      paymentOperation: { state: "confirmed", updatedAt: NOW },
+      paymentVerified: true, updatedAt: NOW,
+    }, false, NOW);
+    expect(payment.facts.status).toBe("Paid · verified locally");
+    expect(payment.facts.open).toBe(false);
+    expect(payment.needsAction).toBeNull();
   });
 });

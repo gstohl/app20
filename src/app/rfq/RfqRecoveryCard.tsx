@@ -69,9 +69,13 @@ export default function RfqRecoveryCard({
       aria-busy={busy || undefined}
       data-load-state={loadState}
     >
-      <h3 id="rfq-recovery-title">{recovery.headline}</h3>
-      <p>{recovery.detail}</p>
-      <p>{recovery.context}</p>
+      <h3 id="rfq-recovery-title">{askForWallet ? "Connect your wallet to trade" : recovery.headline}</h3>
+      {askForWallet ? (
+        <p>Choose Alice or Bob, then connect the Localnet wallet. Saved requests
+          appear when you reconnect the same account and local runtime.</p>
+      ) : (
+        <><p>{recovery.detail}</p><p>{recovery.context}</p></>
+      )}
       {detail ? (
         <p>
           <small>Reported: {detail}</small>

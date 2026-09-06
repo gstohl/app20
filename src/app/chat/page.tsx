@@ -25,7 +25,7 @@ import * as constants from "@/utils/constants";
 import ChatComposer, { type ChatComposerStatus } from "./ChatComposer";
 import ChatContextPanel from "./ChatContextPanel";
 import ChatConversationRail from "./ChatConversationRail";
-import ChatMailboxTools from "./ChatMailboxTools";
+import ChatMailboxTools, { ChatNewConversation } from "./ChatMailboxTools";
 import type { ChatRecordActions } from "./ChatRecordCard";
 import ChatTimeline, {
   chatEntryDomId,
@@ -354,6 +354,7 @@ export default function ChatPage() {
       const container = scrollRef.current;
       const element = document.getElementById(chatEntryDomId(highlightId));
       if (!container || !element) return;
+      element.focus({ preventScroll: true });
       const containerBox = container.getBoundingClientRect();
       const elementBox = element.getBoundingClientRect();
       const top =
@@ -593,10 +594,21 @@ export default function ChatPage() {
     : null;
   const detailOpen = mobileDetailOpen || Boolean(composeDraft);
 
+  function openNewConversation() {
+    const form = document.getElementById("chat-new-conversation");
+    if (form instanceof HTMLDetailsElement) {
+      form.open = true;
+      form.scrollIntoView({ block: "nearest" });
+      form.querySelector<HTMLInputElement>("input")?.focus();
+    }
+  }
+
+
   return (
     <div className={styles.page}>
       <main
         aria-label="APP20 Chat"
+        data-empty={!conversation && !composeDraft}
         className={`${styles.workspace}${detailOpen ? ` ${styles.detailOpen}` : ""}${
           contextOpen ? ` ${styles.contextOpen}` : ""
         }`}
@@ -613,9 +625,14 @@ export default function ChatPage() {
           gate={gate}
           unattributedSent={model.unattributedSent}
           onSelect={selectConversation}
+          onNewConversation={openNewConversation}
+          newConversationForm={
+            <ChatNewConversation selfAddress={address} gate={gate}
+              onStartConversation={startConversation}
+              onNewDocument={(recipient) => openDocumentComposer(recipient)} />
+          }
         >
           <ChatMailboxTools
-            selfAddress={address}
             gate={gate}
             keyLoaded={Boolean(keypair)}
             seedLoaded={Boolean(mailSeed)}
@@ -631,8 +648,6 @@ export default function ChatPage() {
             onDeleteDraft={(draftId) => {
               desk.removeDraft(draftId);
             }}
-            onStartConversation={startConversation}
-            onNewDocument={(recipient) => openDocumentComposer(recipient)}
             actionStates={desk.actionStates}
             onContactBackup={() => void desk.handleContactBackup()}
             onRfqHistoryBackup={() => void desk.handleRfqHistoryBackup()}
@@ -659,9 +674,9 @@ export default function ChatPage() {
             <div>
               <p className={styles.kicker}>
                 {composeDraft
-                  ? "ENCRYPTED DOCUMENT · SEALED ON THIS DEVICE"
+                  ? "DOCUMENT DRAFT · STORED LOCALLY"
                   : conversation
-                    ? "ENCRYPTED RECORDS · NOT SETTLEMENT AUTHORITY"
+                    ? "CONVERSATION · STORED ON THIS DEVICE"
                     : "APP20 / CHAT / ENCRYPTED CORRESPONDENCE"}
               </p>
               <strong>
@@ -676,7 +691,7 @@ export default function ChatPage() {
                 ) : name ? (
                   <bdi>{name}</bdi>
                 ) : (
-                  "Private correspondence, one counterparty at a time"
+                  "Private messages"
                 )}
               </strong>
               {conversation && !composeDraft ? (
@@ -703,11 +718,12 @@ export default function ChatPage() {
               <button
                 type="button"
                 className={`${styles.headButton} ${styles.contextButton}`}
+                id="chat-context-toggle"
                 aria-controls="chat-context"
                 aria-expanded={contextOpen}
                 onClick={() => setContextOpen((open) => !open)}
               >
-                Context
+                {contextOpen ? "Hide contact details" : "Contact details"}
               </button>
             ) : null}
           </header>
@@ -781,13 +797,11 @@ export default function ChatPage() {
               >
                 <p className={styles.kicker}>APP20 / CHAT</p>
                 <h2 id="chat-welcome-title">
-                  Encrypted correspondence, one counterparty at a time.
+                  Connect your wallet to open Chat
                 </h2>
                 <p>
-                  Letters, offers, invoices and escrow announcements are sealed
-                  to a registered mailbox key and read back from the chain on
-                  this device. Chat is keyed to a wallet: connect one to open
-                  it.
+                  Send encrypted messages, offers and payment requests.
+                  Each wallet has its own mailbox.
                 </p>
                 {walletGateShown ? null : (
                   <div className={styles.connectAction}>
@@ -828,7 +842,7 @@ export default function ChatPage() {
                   Show all conversations
                 </button>
               </section>
-            ) : (
+            ) : gate === "key" ? null : (
               <section
                 className={styles.welcome}
                 aria-labelledby="chat-empty-title"
@@ -836,14 +850,12 @@ export default function ChatPage() {
                 <p className={styles.kicker}>APP20 / CHAT</p>
                 <h2 id="chat-empty-title">No conversations on this device yet.</h2>
                 <p>
-                  Check for mail to read what counterparties sent this wallet,
-                  write to a new address from the mailbox tools, or save a
-                  wallet under Counterparties. Each becomes a conversation
-                  here.
+                  Start with a wallet address or a saved counterparty.
+                  Expecting a message? Use Check for new mail in the sidebar.
                 </p>
                 <div className={styles.welcomeLinks}>
-                  <Link to="/contacts">Counterparties</Link>
-                  <Link to="/rfq">RFQ workspace</Link>
+                  <button type="button" onClick={openNewConversation}>Start a conversation</button>
+                  <Link to="/contacts">Saved counterparties</Link>
                 </div>
               </section>
             )}
@@ -874,7 +886,7 @@ export default function ChatPage() {
               <p className={styles.composerNote}>
                 {conversation.contact.kind === "self"
                   ? "Backups are posted from the mailbox tools; this mailbox does not write letters to itself."
-                  : "A sealed thread has no address to write to. Name its sender above to file it under a counterparty."}
+                  : "To reply, set the sender’s wallet address above. You can paste an address or choose a saved counterparty."}
               </p>
             )
           ) : null}
@@ -892,7 +904,10 @@ export default function ChatPage() {
             handoffsEnabled={handoffsEnabled}
             aliases={desk.displayAliases}
             actions={actions}
-            onClose={() => setContextOpen(false)}
+            onClose={() => {
+              setContextOpen(false);
+              document.getElementById("chat-context-toggle")?.focus();
+            }}
           />
         ) : (
           <aside className={styles.context} aria-label="Contact context" id="chat-context">

@@ -1,4 +1,4 @@
-import type { RfqLifecycleState } from "./rfq-lifecycle";
+import type { RfqEvidenceAuthority, RfqLifecycleRecord, RfqLifecycleState } from "./rfq-lifecycle";
 
 const LABELS: Readonly<Record<RfqLifecycleState, string>> = Object.freeze({
   draft: "Draft",
@@ -35,4 +35,17 @@ export function rfqStateLabel(
   mode: "v2" | "v3" = "v2",
 ): string {
   return mode === "v3" ? V3_LABELS[state] : LABELS[state];
+}
+
+/** Headline and authority strip describe the same current verification. */
+export function rfqRecordLabel(
+  record: RfqLifecycleRecord,
+  authorityStatus: RfqEvidenceAuthority["status"],
+): string {
+  if (authorityStatus === "authoritative") {
+    if (record.state === "settled") return record.mode === "v3"
+      ? "Received atomically · finalized locally" : "Received · finalized locally";
+    if (record.state === "refunded") return "Refunded · finalized locally";
+  }
+  return rfqStateLabel(record.state, record.mode);
 }

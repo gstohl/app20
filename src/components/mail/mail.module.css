@@ -3572,3 +3572,12 @@
   font-size: 12px;
   line-height: 1.45;
 }
+
+.embeddedRecord > .messageSheet { margin-top: 8px; padding: 0; border: 0; background: transparent; }
+.embeddedRecord .addressProof { padding: 10px 0; border: 0; border-block: 1px solid var(--shell-line); background: transparent; }
+.embeddedRecord .riskCopy { padding: 0; border: 0; background: transparent; }
+.embeddedRecord .actionWarning { padding: 0; border: 0; background: transparent; }
+.explanation { margin-top: 12px; color: var(--shell-muted); font-size: 12px; line-height: 1.55; }
+.explanation > summary { width: fit-content; padding-block: 8px; cursor: pointer; color: var(--shell-text); }
+.explanation > summary:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 3px; }
+.explanation p { margin-block: 8px; }

@@ -35,6 +35,10 @@ export default function SettlementEvidencePanel({
       (row.state === "settled" || row.state === "refunded") &&
       presentation.status === "authoritative",
   );
+  const locallyObservedTerminal = presented.some(({ row, presentation }) =>
+    (row.state === "settled" || row.state === "refunded") &&
+    presentation.status === "local-non-authoritative"
+  );
   const unresolved = presented.filter(
     ({ presentation }) => presentation.needsReconciliation,
   );
@@ -42,12 +46,16 @@ export default function SettlementEvidencePanel({
     ? "Authoritative receipt"
     : liveTerminal
       ? "Terminal lifecycle finalized locally"
-      : "No exportable receipt";
+      : locallyObservedTerminal
+        ? "Localnet execution observed · verification pending"
+        : "No exportable receipt";
   const reason = receiptAuthority
     ? receiptAuthority.reason
     : liveTerminal
       ? "Localnet-only modeled authority finalized the terminal lifecycle for this exact deal. No exportable receipt is available."
-      : "No live terminal lifecycle projection or exportable settlement receipt is available.";
+      : locallyObservedTerminal
+        ? "The local transaction completed. The configured verifier is checking the outcome; no exportable receipt is available."
+        : "No live terminal lifecycle projection or exportable settlement receipt is available.";
 
   return (
     <section className={styles.evidencePanel} aria-labelledby="evidence-title">

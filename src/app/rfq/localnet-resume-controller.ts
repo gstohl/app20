@@ -1,3 +1,4 @@
+import { rfqAuthorityPresentation } from "./rfq-authority";
 import { reservationReleaseReconciliationRoute } from "./localnet-release-recovery";
 import {
   rfqHasFundingEvidence,
@@ -86,7 +87,19 @@ export function localnetResumeDecision(
       "The exact request identity is retained; verify its idempotent request-wide release before starting another RFQ.",
     );
   }
-  if (record.evidenceAuthority.status !== "local-non-authoritative") {
+  const authority = rfqAuthorityPresentation(record);
+  if (
+    authority.status === "authoritative" &&
+    (record.state === "settled" || record.state === "refunded")
+  ) {
+    return decision(
+      "none",
+      "Complete",
+      "Finalized on the localnet chain. No further transaction is needed.",
+      true,
+    );
+  }
+  if (authority.blocksValueActions) {
     return decision(
       "none",
       "Authority reconciliation required",

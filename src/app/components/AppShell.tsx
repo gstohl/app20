@@ -30,9 +30,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           : "APP20";
 
   return (
-    <div
-      className={`app-shell${renderLocalnetTools ? " has-localnet-banner" : ""}`}
-    >
+    <div className="app-shell">
       <a className="skip-link" href="#route-content">
         Skip to route content
       </a>
@@ -73,12 +71,10 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           </Link>
         </nav>
         <div className="app-utilities">
+          {renderLocalnetTools?.()}
           <SessionControl />
         </div>
       </header>
-      {renderLocalnetTools ? (
-        <div className="localnet-banner">{renderLocalnetTools()}</div>
-      ) : null}
       <div id="route-content" className="app-content" tabIndex={-1}>
         <Outlet />
       </div>

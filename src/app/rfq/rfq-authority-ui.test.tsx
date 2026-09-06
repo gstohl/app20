@@ -1,3 +1,4 @@
+import { localnetResumeDecision } from "./localnet-resume-controller";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import RfqActiveCard from "./RfqActiveCard";
@@ -7,6 +8,7 @@ import SettlementEvidencePanel from "./SettlementEvidencePanel";
 import {
   RFQ_AUTHORITY_PROJECTION_SOURCE,
   refreshLiveRfqAuthority,
+  rfqIsInFlight,
   rfqAuthorityLabel,
   type RfqAuthorityStatus,
 } from "./rfq-authority";
@@ -254,6 +256,12 @@ describe("settlement evidence panel", () => {
       }),
     }) as RfqLifecycleRecord;
     const live = await refreshLiveRfqAuthority(terminal, runtimeEpoch);
+    expect(rfqIsInFlight(live)).toBe(false);
+    expect(localnetResumeDecision(live, NOW)).toMatchObject({action: "none", label: "Complete", disabled: true});
+    expect(renderToStaticMarkup(<RfqActiveCard record={live} now={NOW} />)).not.toContain("Authority reconciliation required");
+    const restored = JSON.parse(JSON.stringify(live)) as RfqLifecycleRecord;
+    expect(rfqIsInFlight(restored)).toBe(true);
+    expect(localnetResumeDecision(restored, NOW).label).toBe("Authority reconciliation required");
     const markup = renderToStaticMarkup(
       <SettlementEvidencePanel records={[live]} />,
     );
@@ -270,6 +278,9 @@ describe("settlement evidence panel", () => {
     expect(activityMarkup).toContain("Local reference · not settlement authority");
     expect(markup).not.toContain("No authoritative receipt");
     expect(markup).not.toContain("configured-chain verifier is unavailable");
+    vi.setSystemTime((NOW + 31) * 1000);
+    expect(rfqIsInFlight(live)).toBe(true);
+    expect(localnetResumeDecision(live, NOW + 31).label).toBe("Authority reconciliation required");
   });
 
   it("lists records that need reconciliation before any value action", () => {
@@ -306,7 +317,7 @@ describe("storage recovery", () => {
     // With no wallet at all, the card offers the wallet rather than a retry
     // that re-reads storage which cannot answer yet.
     expect(markup).toContain("Connect a wallet");
-    expect(markup).toContain("Saved RFQs are tied to one account");
+    expect(markup).toContain("reconnect the same account and local runtime");
   });
 
   it("stays silent when records loaded normally", () => {

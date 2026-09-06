@@ -117,6 +117,25 @@
   font-size: var(--text-xs, 11px);
 }
 
+.newConversation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 1px solid var(--shell-line);
+  padding: 8px 12px;
+  color: var(--shell-text);
+  background: var(--shell-inset);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.newConversation:hover:not(:disabled) { border-color: var(--shell-orange); }
+.newConversation:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 2px; }
+.newConversation:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .railSearch::placeholder {
   color: var(--shell-muted);
   letter-spacing: 0.04em;
@@ -1796,3 +1815,47 @@
     transition: none;
   }
 }
+
+/* Attached records share the message surface instead of nesting more cards. */
+.bubble:has(.recordCard) .recordCard { border: 0; background: transparent; padding: 0; box-shadow: none; }
+.bubble:has(.recordCard) .cardStack { border-top: 0; padding-top: 0; }
+.recordDetails > summary { min-height: 36px; font-size: 11px; }
+.recordDetails > summary:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 3px; }
+.recordCard:has(> .recordDetails[open]) > .recordTerms,
+.recordCard:has(> .recordDetails[open]) > .recordAction { display: none; }
+
+@media (min-width: 1181px) {
+  .workspace[data-empty="true"] { grid-template-columns: 320px minmax(0, 1fr); }
+  .workspace[data-empty="true"] > .context { display: none; }
+}
+.workspace[data-empty="true"] .welcome { max-width: 640px; margin: 36px auto; border: 0; background: transparent; }
+.welcomeLinks { align-items: center; }
+.welcomeLinks > button { margin: 0; }
+
+/* Conversation first; contact details are opened only when needed. */
+@media (min-width: 1180px) {
+  .workspace { grid-template-columns: 300px minmax(0, 1fr); }
+  .workspace > .context { display: none; }
+  .workspace.contextOpen:not([data-empty="true"]) { grid-template-columns: 300px minmax(0, 1fr) 310px; }
+  .workspace.contextOpen:not([data-empty="true"]) > .context { display: flex; }
+  .contextButton, .contextClose { display: inline-flex; align-items: center; justify-content: center; }
+}
+.letterBody, .composerInput { font-family: var(--font-body), system-ui, sans-serif; font-size: 16px; line-height: 1.55; }
+.composerInput { min-height: 64px; }
+.composerMeta { font-family: var(--font-body), system-ui, sans-serif; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.composerActions { gap: 8px; }
+.composerActions button { min-height: 40px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.sendDetails, .messageDetails { color: var(--shell-muted); font-family: var(--font-body), system-ui, sans-serif; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.sendDetails > summary, .messageDetails > summary { padding-block: 5px; cursor: pointer; width: fit-content; }
+.sendDetails p { margin: 4px 0; line-height: 1.5; }
+.messageDetails > div { display: grid; gap: 3px; padding: 5px 0; }
+.entryMeta { align-items: baseline; font-size: 11px; letter-spacing: 0.02em; }
+.railSearch { min-height: 38px; font-family: var(--font-body), system-ui, sans-serif; font-size: 14px; }
+.railFilter { min-height: 34px; font-size: 11px; letter-spacing: 0.02em; text-transform: none; }
+.contextButton:focus-visible, .contextClose:focus-visible,
+.sendDetails > summary:focus-visible, .messageDetails > summary:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 2px; }
+.railTools > .toolsDisclosure { border: 0; }
+.railTools > .toolsDisclosure:not([open]) { display: none; }
+.railTools > .toolsDisclosure > summary { padding: 6px 0; font-size: 11px; }
+.railTools .toolsForm { padding: 6px 0 10px; }
+.entry:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 4px; }

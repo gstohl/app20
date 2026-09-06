@@ -8,7 +8,7 @@ import {
   type StandardEventsOnMethod,
   type WalletWithStarknetFeatures,
 } from "@starknet-io/get-starknet-wallet-standard/features";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { setLocalnetRuntimeEpoch } from "./localnet-runtime-epoch";
 import styles from "./localnet-wallet.module.css";
@@ -330,16 +330,32 @@ export function LocalnetDevTools({
   variant = "sidebar",
 }: {
   wallet: App20LocalnetWallet;
-  variant?: "banner" | "sidebar";
+  variant?: "banner" | "sidebar" | "header";
 }) {
   const [selectedId, setSelectedId] = useState(wallet.selectedIdentity.id);
   const [copied, setCopied] = useState("");
+  const [notice, setNotice] = useState("");
+  const [switchError, setSwitchError] = useState(false);
   const connectedAddress = useStoreWallet((state) => state.address);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   function selectIdentity(identityId: IdentityId) {
-    wallet.selectIdentity(identityId);
-    setSelectedId(identityId);
-    setCopied("");
+    try {
+      wallet.selectIdentity(identityId);
+      setSwitchError(false);
+      setSelectedId(identityId);
+      setCopied("");
+      setNotice(wallet.isConnected
+        ? `Switched to ${wallet.selectedIdentity.label}.`
+        : `${wallet.selectedIdentity.label} selected. Connect the Localnet wallet to continue.`);
+    } catch {
+      setSwitchError(true);
+      setNotice("Finish the current wallet request before switching accounts.");
+    }
   }
 
   async function copyAddress(identity: LocalnetIdentity) {
@@ -357,10 +373,11 @@ export function LocalnetDevTools({
       data-testid="localnet-wallet-standard"
       data-dev-wallet-symbol={LOCALNET_DEV_WALLET_SENTINEL}
       data-variant={variant}
+      aria-label="Local demo account"
     >
-      <strong className={styles.mark}>LOCAL DEMO</strong>
-      <div className={styles.identities}>
-        <span>Act as</span>
+      {variant !== "header" ? <strong className={styles.mark}>LOCAL DEMO</strong> : null}
+      <div className={styles.identities} role="group" aria-label="Choose demo account">
+        {variant !== "header" ? <span>Act as</span> : null}
         {wallet.config.identities.map((identity) => (
           <button
             key={identity.id}
@@ -373,17 +390,19 @@ export function LocalnetDevTools({
           </button>
         ))}
       </div>
-      <span className={styles.address}>
+      {variant !== "header" ? <span className={styles.address}>
         {shortAddress(wallet.selectedIdentity.address)}
-      </span>
-      <span className={styles.meta}>
+      </span> : null}
+      {variant !== "header" ? <span className={styles.meta}>
         {connectedAddress
           ? "account change is live"
           : "connect Localnet (dev) after choosing an identity"}
-      </span>
+      </span> : null}
+      <span className={switchError ? styles.notice : styles.srNotice} role="status">{notice}</span>
       <details className={styles.runtimeDetails}>
-        <summary>Runtime details</summary>
+        <summary>{variant === "header" ? "Local demo" : "Runtime details"}</summary>
         <div className={styles.copies}>
+          <span>Switch between Alice and Bob to try both sides of a conversation.</span>
           <span>Runtime {wallet.config.runtimeEpoch.slice(0, 8)}</span>
           {wallet.config.identities.map((identity) => (
             <button
@@ -396,17 +415,14 @@ export function LocalnetDevTools({
                 : `Copy ${identity.label}`}
             </button>
           ))}
-          {copied === "error" ? <span>Clipboard denied.</span> : null}
+          <span role="status">{copied === "error" ? "Could not copy the address. Check clipboard permissions." : copied ? "Address copied." : ""}</span>
           <span>Pool {shortAddress(wallet.config.poolAddress)}</span>
           <span>Mail {shortAddress(wallet.config.helperAddress)}</span>
           <span>Escrow {shortAddress(wallet.config.escrowAddress)}</span>
           <button
             type="button"
-            onClick={() =>
-              void navigator.clipboard.writeText(
-                wallet.config.counterTokenAddress,
-              )
-            }
+            onClick={() => void navigator.clipboard.writeText(wallet.config.counterTokenAddress)
+              .then(() => setCopied("token"), () => setCopied("error"))}
           >
             Copy escrow leg-B
           </button>

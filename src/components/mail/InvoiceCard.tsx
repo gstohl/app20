@@ -1,3 +1,5 @@
+import { pendingValueLabel } from "@/lib/value-operation-presentation";
+import type { ValueOperationState } from "@/lib/otc";
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
@@ -30,6 +32,7 @@ type InvoiceCardProps = {
   status?: PaymentStatus;
   paymentVerified?: boolean;
   unverifiedClaim?: boolean;
+  operationState?: ValueOperationState;
   busy?: boolean;
   actionMessage?: string;
   actionStartedAt?: number;
@@ -53,6 +56,7 @@ export default function InvoiceCard({
   status = "requested",
   paymentVerified = false,
   unverifiedClaim = false,
+  operationState,
   busy = false,
   actionMessage,
   actionStartedAt,
@@ -65,6 +69,7 @@ export default function InvoiceCard({
   onPay,
   onPayPrivatelyWithStrk,
 }: InvoiceCardProps) {
+  const pendingLabel = pendingValueLabel(operationState, "Payment");
   const connectedChainId = useStoreWallet((state) => state.chain);
   const [ignored, setIgnored] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -247,7 +252,9 @@ export default function InvoiceCard({
             Payment request: {amount} {token.symbol}
           </span>
         </h3>
-        {mailSignatureVerified ? (
+        {pendingLabel ? (
+          <span className={styles.proofStamp} role="status">{pendingLabel}</span>
+        ) : mailSignatureVerified ? (
           <span className={styles.proofStamp}>Mail key signature verified</span>
         ) : unverifiedClaim || (status === "paid" && !paymentVerified) ? (
           <span className={styles.proofStamp}>
@@ -288,7 +295,8 @@ export default function InvoiceCard({
             : "Unverified: anyone can rewrite this address and issue a new checksum. Verify it out-of-band before paying."}
         </span>
         {linkAuthenticity.kind === "verified" ? (
-          <>
+          <details className={styles.explanation}>
+            <summary>Signature &amp; identity details</summary>
             <strong>Verified Mail signing key</strong>
             <code>{linkAuthenticity.authPublicKey}</code>
             <span>
@@ -296,7 +304,7 @@ export default function InvoiceCard({
               claims mailbox encryption key {linkAuthenticity.mailboxPublicKey};
               neither key proves a person or wallet identity.
             </span>
-          </>
+          </details>
         ) : null}
       </div>
       {mailSignatureVerified ? (

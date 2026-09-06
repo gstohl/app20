@@ -28,7 +28,6 @@ function draftPreview(draft: CompositeDraft): string {
 }
 
 export type ChatMailboxToolsProps = {
-  selfAddress: string;
   gate: "wallet" | "key" | null;
   keyLoaded: boolean;
   seedLoaded: boolean;
@@ -42,9 +41,6 @@ export type ChatMailboxToolsProps = {
   drafts: readonly CompositeDraft[];
   onOpenDraft: (draft: CompositeDraft) => void;
   onDeleteDraft: (draftId: string) => void;
-  onStartConversation: (address: string) => void;
-  /** Opens the document composer: terms, invoices, escrow, several recipients. */
-  onNewDocument: (recipient?: string) => void;
   actionStates: Readonly<Record<string, ThreadActionState>>;
   onContactBackup: () => void;
   onRfqHistoryBackup: () => void;
@@ -61,7 +57,6 @@ export type ChatMailboxToolsProps = {
  * counterparty.
  */
 export default function ChatMailboxTools({
-  selfAddress,
   gate,
   keyLoaded,
   seedLoaded,
@@ -75,8 +70,6 @@ export default function ChatMailboxTools({
   drafts,
   onOpenDraft,
   onDeleteDraft,
-  onStartConversation,
-  onNewDocument,
   actionStates,
   onContactBackup,
   onRfqHistoryBackup,
@@ -85,17 +78,10 @@ export default function ChatMailboxTools({
   onLock,
   onForget,
 }: ChatMailboxToolsProps) {
-  const [newAddress, setNewAddress] = useState("");
   const backupBusy =
     actionStates["contacts:backup"]?.pending ||
     actionStates["rfq-resume:backup"]?.pending;
 
-  function startConversation(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!newAddress.trim()) return;
-    onStartConversation(newAddress);
-    setNewAddress("");
-  }
 
   return (
     <div className={styles.tools} aria-label="Mailbox tools">
@@ -154,32 +140,6 @@ export default function ChatMailboxTools({
         ) : null}
       </section>
 
-      <details className={styles.toolsDisclosure}>
-        <summary>Write to a new address</summary>
-        <form className={styles.toolsForm} onSubmit={startConversation}>
-          <AddressBookField
-            selfAddress={selfAddress}
-            inputAriaLabel="New conversation address"
-            value={newAddress}
-            onChange={setNewAddress}
-            placeholder="0x… or saved label"
-            disabled={gate === "wallet"}
-            bookActions={false}
-          />
-          <div className={styles.toolsActions} data-variant="plain">
-            <button type="submit" disabled={gate === "wallet" || !newAddress.trim()}>
-              Open conversation
-            </button>
-            <button
-              type="button"
-              disabled={gate === "wallet"}
-              onClick={() => onNewDocument(newAddress.trim() || undefined)}
-            >
-              New document
-            </button>
-          </div>
-        </form>
-      </details>
 
       <details className={styles.toolsDisclosure}>
         <summary>
@@ -298,5 +258,51 @@ export default function ChatMailboxTools({
         </a>
       </p>
     </div>
+  );
+}
+
+
+export function ChatNewConversation({ selfAddress, gate, onStartConversation, onNewDocument }: {
+  selfAddress: string;
+  gate: "wallet" | "key" | null;
+  onStartConversation: (address: string) => void;
+  onNewDocument: (recipient?: string) => void;
+}) {
+  const [newAddress, setNewAddress] = useState("");
+  function startConversation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!newAddress.trim()) return;
+    onStartConversation(newAddress);
+    setNewAddress("");
+  }
+
+  return (
+      <details id="chat-new-conversation" className={styles.toolsDisclosure}>
+        <summary>Write to a new address</summary>
+        <form className={styles.toolsForm} onSubmit={startConversation}>
+          <AddressBookField
+            selfAddress={selfAddress}
+            inputAriaLabel="New conversation address"
+            value={newAddress}
+            onChange={setNewAddress}
+            placeholder="0x… or saved label"
+            disabled={gate === "wallet"}
+            bookActions={false}
+          />
+          <div className={styles.toolsActions} data-variant="plain">
+            <button type="submit" disabled={gate === "wallet" || !newAddress.trim()}>
+              Open conversation
+            </button>
+            <button
+              type="button"
+              disabled={gate === "wallet"}
+              onClick={() => onNewDocument(newAddress.trim() || undefined)}
+            >
+              New document
+            </button>
+          </div>
+        </form>
+      </details>
+
   );
 }

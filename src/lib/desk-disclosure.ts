@@ -13,7 +13,7 @@ export function deskLeakChips(venue: DeskVenue): readonly DeskLeakChip[] {
   if (venue === "inventory") {
     return [
       { id: "owner", label: "No public order-book request" },
-      { id: "size", label: "Invited makers see exact RFQ" },
+      { id: "size", label: "Invited makers see a size bucket" },
       { id: "venue", label: "No public book" },
     ];
   }
@@ -40,7 +40,7 @@ export function deskLeakChips(venue: DeskVenue): readonly DeskLeakChip[] {
 
 export function deskVenueCopy(venue: DeskVenue): string {
   if (venue === "inventory") {
-    return "Invited makers saw the exact RFQ. The request was not posted to a public book, but loopback timing and fanout remain observable. Legacy escrow terms and OPEN amounts can appear on-chain; this does not establish that activity cannot be correlated.";
+    return "Invited makers received the pair, side, and size bucket. Exact size and floor stay in this browser until Take. The request is not posted to a public book; request timing and fanout remain observable. Take publishes the selected exact fills on the localnet chain.";
   }
   if (venue === "public-route") {
     return "A public route exposes its market interaction and amount on-chain; it is a separate operation from this RFQ.";
@@ -48,7 +48,7 @@ export function deskVenueCopy(venue: DeskVenue): string {
   if (venue === "refused") {
     return "No invited maker reserved this clip. The RFQ was not published or routed elsewhere.";
   }
-  return "Swap and Block request signed inventory quotes from invited localnet fixture makers. Invitations and quote responses are plain request-scoped signed JSON; Block also binds the floor and expiry.";
+  return "Invited localnet makers receive signed bucket requests and return collateralized locked quotes. Exact size and floor remain in this browser until you approve Take.";
 }
 
 export function suggestsBlockSurface(input: {

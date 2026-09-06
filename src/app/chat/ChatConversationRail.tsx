@@ -60,6 +60,8 @@ type ChatConversationRailProps = {
   gate: "wallet" | "key" | null;
   unattributedSent: number;
   onSelect: (key: string) => void;
+  onNewConversation?: () => void;
+  newConversationForm?: ReactNode;
   /** The mailbox tools, rendered under the conversations. */
   children?: ReactNode;
 };
@@ -76,6 +78,8 @@ export default function ChatConversationRail({
   gate,
   unattributedSent,
   onSelect,
+  onNewConversation,
+  newConversationForm,
   children,
 }: ChatConversationRailProps) {
   const searching = search.trim().length > 0;
@@ -98,6 +102,18 @@ export default function ChatConversationRail({
       </header>
 
       <div className={styles.railTools}>
+        {onNewConversation ? (
+          <button
+            type="button"
+            className={styles.newConversation}
+            disabled={walletGate}
+            aria-controls="chat-new-conversation"
+            onClick={onNewConversation}
+          >
+            <span aria-hidden="true">＋</span> New conversation
+          </button>
+        ) : null}
+        {newConversationForm}
         <input
           type="search"
           className={styles.railSearch}
@@ -122,11 +138,10 @@ export default function ChatConversationRail({
       <div className={styles.railScroll}>
         {!walletGate && totalCount ? (
           <div className={styles.railNote}>
-            <strong>Encrypted records on this device</strong>
+            <strong>Conversations on this device</strong>
             <span>
-              Letters, offers, invoices and escrows grouped by counterparty.
-              The chain is read when you check for mail; nothing here is
-              settlement authority.
+              Check for new mail to update this list. Message history alone
+              does not verify a payment.
             </span>
           </div>
         ) : null}
@@ -215,8 +230,7 @@ export default function ChatConversationRail({
               <>
                 <strong>Wallet required</strong>
                 <span>
-                  Chat is keyed to a wallet and reads only this device&apos;s
-                  records for it. Connect one to open it.
+                  Connect a wallet to see its conversations on this device.
                 </span>
               </>
             ) : searching ? (

@@ -1653,6 +1653,10 @@
   background: var(--shell-bg);
 }
 
+.privateIntentDesk[data-expanded="true"] {
+  max-width: 1080px;
+}
+
 /* Sits in the flow at the top of the ticket. Nothing behind it goes inert and
    nothing is covered, so the wallet picker and the rest of the desk stay
    reachable while it is up. */
@@ -3293,6 +3297,22 @@
   list-style: none;
 }
 
+.v3QuoteList {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  align-items: start;
+}
+
+.v3QuoteComparison details > summary {
+  cursor: pointer;
+  color: var(--shell-muted);
+  font-size: 12px;
+  padding-block: 6px;
+}
+
+.v3QuoteComparison details[open] > summary {
+  margin-bottom: 8px;
+}
+
 .v3QuoteList > li,
 .v3RefusalList > li,
 .finalReviewFills > li {
@@ -3641,17 +3661,15 @@
   }
 
   .swapAssetStack {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr);
     gap: 7px;
   }
 
   .swapDirection {
-    position: absolute;
-    top: 50%;
-    left: 50%;
+    position: static;
     width: 32px;
     min-height: 32px;
-    transform: translate(-50%, -50%);
+    transform: none;
     border: 4px solid var(--shell-bg);
   }
 
@@ -4062,3 +4080,34 @@
     flex-direction: column;
   }
 }
+
+/* A single trade surface: supporting context uses rules, not nested panels. */
+@media (min-width: 901px) {
+  .privateIntentDesk { max-width: 900px; margin-inline: auto; }
+  .privateIntentDesk[data-expanded="true"] { max-width: 1080px; }
+  .privateIntentForm { padding: 18px 24px; gap: 14px; }
+  .privateIntentHeader { padding: 16px 24px; }
+  .privateWorkspace { padding-top: 20px; }
+}
+.operationsGate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; border: 0; border-bottom: 1px solid var(--shell-line); background: transparent; }
+.operationsGate > a { margin-left: auto; }
+.bucketNotice, .maturityEstimate { border: 0; background: transparent; padding-left: 0; }
+.privacyPreflight { border: 0; border-top: 1px solid var(--shell-line); background: transparent; padding: 12px 0 0; }
+.privacyPreflight > p { font-size: 13px; line-height: 1.5; }
+.preflightEvidence { border: 0; background: transparent; }
+.preflightEvidence > summary { min-height: 36px; }
+.infoTipButton { min-width: 28px; min-height: 28px; font-size: 12px; }
+.infoTipBubble { width: min(300px, calc(100vw - 40px)); font-size: 12px; line-height: 1.5; }
+.infoTip[data-dismissed="true"] .infoTipBubble { visibility: hidden; opacity: 0; }
+.infoTipButton:focus-visible, .preflightEvidence > summary:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 3px; }
+.finalReviewFills > li { border: 0; border-bottom: 1px solid var(--shell-line); background: transparent; padding-inline: 0; }
+.finalReviewHeadline, .finalReviewSummary { background: transparent; }
+.finalReviewDetails > summary { min-height: 36px; cursor: pointer; }
+.finalReviewDetails > summary:focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 3px; }
+.environmentBanner .infoTipBubble, .operationsGate .infoTipBubble { left: 0; right: auto; }
+
+.ticketPromise { display: flex; align-items: center; gap: 8px; color: var(--shell-muted); font-size: 13px; }
+.ticketPromise > span { white-space: nowrap; }
+.privateIntentHeader h3 { font-size: 22px; line-height: 1.2; }
+.infoTip:hover .infoTipBubble,
+.infoTip:focus-within .infoTipBubble { pointer-events: auto; }

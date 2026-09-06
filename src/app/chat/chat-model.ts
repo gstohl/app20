@@ -1,3 +1,4 @@
+import { pendingValueLabel } from "@/lib/value-operation-presentation";
 import { mailMessageTimestampMs } from "@/app/chat/mailbox-model";
 import type {
   RfqLifecycleRecord,
@@ -294,14 +295,20 @@ export function offerRecord(
 ): ChatRecord {
   const status = deal?.status ?? "offered";
   const expired = status === "expired" || offerIsExpired(offer, now);
-  const label =
-    status === "offered" && expired ? DEAL_STATUS.expired : DEAL_STATUS[status];
+  const operation = deal?.acceptOperation?.state;
+  const pendingLabel = pendingValueLabel(operation, "Transfer");
+  const label = pendingLabel ??
+    (status === "offered" && expired ? DEAL_STATUS.expired : DEAL_STATUS[status]);
   const open = !expired && (status === "offered" || status === "accepted");
   const unverifiedClaim = Boolean(
     deal?.counterpartyAcceptClaim || deal?.counterpartyReceiptClaim,
   );
   let needsAction: string | null = null;
-  if (!own && status === "offered" && !expired) {
+  if (!own && pendingLabel) {
+    needsAction = operation === "unknown"
+      ? "Verify the transfer outcome before taking any further action."
+      : "Transfer pending confirmation. Do not submit another transfer.";
+  } else if (!own && status === "offered" && !expired) {
     needsAction = "Accept or decline this offer.";
   } else if (
     !own &&
@@ -327,11 +334,11 @@ export function offerRecord(
       title: "Offer",
       terms: `${amountLabel(offer.give)} for ${amountLabel(offer.want)}`,
       status:
-        unverifiedClaim && !deal?.settlementVerified
+        unverifiedClaim && !deal?.settlementVerified && !pendingLabel
           ? `${label} · unverified claim`
           : label,
-      tone,
-      open,
+      tone: pendingLabel ? "accent" : tone,
+      open: Boolean(pendingLabel) || open,
       expiresAt: offer.expiresAt,
     },
     needsAction,
@@ -351,30 +358,29 @@ export function invoiceRecord(
   const expired =
     status === "expired" || paymentRequestIsExpired(request, now);
   const operation = payment?.paymentOperation?.state;
-  const inProgress =
-    operation === "awaiting-note-maturity" ||
-    operation === "reserved" ||
-    operation === "submitted";
-  const label =
+  const pendingLabel = pendingValueLabel(operation, "Payment");
+  const inProgress = Boolean(pendingLabel);
+  const label = pendingLabel ?? (
     status === "paid"
       ? payment?.paymentVerified
         ? "Paid · verified locally"
         : "Paid · unverified claim"
       : expired
         ? PAYMENT_STATUS.expired
-        : operation === "awaiting-note-maturity"
-          ? "Paying · awaiting note maturity"
-          : inProgress
-            ? "Payment in progress"
-            : own
-              ? PAYMENT_STATUS.requested
-              : "Payment requested from you";
-  const open = !expired && status === "requested";
+        : own
+          ? PAYMENT_STATUS.requested
+          : "Payment requested from you"
+  );
+  const open = inProgress || (!expired && status === "requested");
   let needsAction: string | null = null;
   if (!own && open && !inProgress) {
     needsAction = "Pay this request after verifying the requester.";
   } else if (!own && open && operation === "awaiting-note-maturity") {
     needsAction = `Complete the payment once the ${collapse(request.token.symbol) || "token"} note matures.`;
+  } else if (!own && inProgress) {
+    needsAction = operation === "unknown"
+      ? "Verify the payment outcome before taking any further action."
+      : "Payment pending confirmation. Do not submit another payment.";
   } else if (
     own &&
     payment?.counterpartyPaymentClaim &&
@@ -391,8 +397,9 @@ export function invoiceRecord(
       title: "Invoice",
       terms: memo ? `${amountLabel(request)} · ${memo}` : amountLabel(request),
       status: label,
-      tone:
-        status === "paid"
+      tone: inProgress
+        ? "accent"
+        : status === "paid"
           ? payment?.paymentVerified
             ? "live"
             : "deal"

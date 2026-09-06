@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useActiveStarknetSession } from "@/app/active-session";
 import { constants as snConstants, walletV6 } from "starknet";
 import SelectWallet from "@/app/components/client/WalletHandle/SelectWallet";
@@ -151,6 +151,27 @@ function NetworkToggle() {
 }
 
 export function SessionControlView({ session }: { session: SessionDisplay }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const copyScope = `${session.connected}:${session.network}:${session.rail}:${session.address}`;
+  const currentCopyScope = useRef(copyScope);
+  currentCopyScope.current = copyScope;
+  useEffect(() => setCopyState("idle"), [copyScope]);
+  useEffect(() => {
+    if (copyState !== "copied") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 4000);
+    return () => window.clearTimeout(timer);
+  }, [copyState]);
+
+  async function copyActiveAddress() {
+    if (!session.connected || !session.address) return;
+    const scope = copyScope;
+    try {
+      await navigator.clipboard.writeText(session.address);
+      if (currentCopyScope.current === scope) setCopyState("copied");
+    } catch {
+      if (currentCopyScope.current === scope) setCopyState("error");
+    }
+  }
   const accountLabel = session.address
     ? shortSessionAddress(session.address)
     : session.connected
@@ -179,7 +200,31 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
           <span className={styles.rail}>{fullLabel}</span>
           <span className={styles.address}>{accountLabel}</span>
         </span>
+        {session.connected && session.address ? (
+          <button
+            type="button"
+            className={styles.copyAddress}
+            aria-label="Copy active wallet address"
+            title="Copy active wallet address"
+            onClick={() => void copyActiveAddress()}
+          >
+            {copyState === "copied" ? "Copied" : "Copy"}
+          </button>
+        ) : null}
       </div>
+      <span className={styles.copyNotice} role="status" aria-live="polite">
+        {copyState === "copied" ? "Wallet address copied." : null}
+        {copyState === "error" ? "Could not copy. Select and copy your address below." : null}
+      </span>
+      {copyState === "error" ? (
+        <input
+          className={styles.copyFallback}
+          aria-label="Active wallet address"
+          value={session.address}
+          readOnly
+          onFocus={(event) => event.currentTarget.select()}
+        />
+      ) : null}
       <NetworkToggle />
       <div className={styles.walletAction}>
         <SelectWallet variant="nav" />

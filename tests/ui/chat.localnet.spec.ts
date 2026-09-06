@@ -2,6 +2,7 @@ import {
   activateLocalnet,
   connectLocalnetWallet,
   expect,
+  expectNoHorizontalOverflow,
   localnetIdentity,
   test,
   type LocalnetConfig,
@@ -99,20 +100,30 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(
       page.getByText(`No records with ${contactLabel} on this device yet.`),
     ).toBeVisible();
+    await expect(contextPanel(page)).toBeHidden();
+    await page.getByRole("button", { name: "Contact details", exact: true }).click();
     await expect(contextPanel(page)).toContainText(addressPattern(alice.address));
+    await contextPanel(page).getByRole("button", { name: "Close contact context" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(contextPanel(page)).toBeHidden();
+    await expect(page.getByRole("button", { name: "Contact details", exact: true })).toBeFocused();
+    await page.getByLabel(`Message to ${contactLabel}`).focus();
     await expect(page.getByLabel(`Message to ${contactLabel}`)).toBeFocused();
   });
 
   await test.step("3. Bob loads his key and sends an encrypted letter from the composer", async () => {
     const form = page.getByRole("form", { name: `Write to ${contactLabel}` });
-    await expect(form).toContainText("Set up a mailbox key");
+    await expect(form).toContainText("Open mailbox key tools");
     await loadExistingKey(page);
     const input = page.getByLabel(`Message to ${contactLabel}`);
     await input.fill(letter);
     await expect(form).toContainText(
-      /bytes · sealed on this device · 1 wallet approval/i,
+      /1 wallet approval · recipient count and timing are public/i,
     );
-    await page.getByRole("button", { name: "Send encrypted" }).click();
+    await form.locator("summary").filter({ hasText: "Sending details" }).click();
+    await expect(form).toContainText("Ctrl+Enter");
+    await input.focus();
+    await page.keyboard.press("Control+Enter");
     await expect(
       page.getByRole("status").filter({ hasText: /Sealed and confirmed in/ }),
     ).toBeVisible({ timeout: 180_000 });
@@ -139,9 +150,9 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(sealed).toContainText(/\d+ unread/);
     await sealed.click();
     await expect(entry(page, letter)).toContainText("Opened · record");
-    const naming = page.getByRole("form", { name: "Name this sender" });
-    await naming.getByLabel("Name this sender").fill(bob.address);
-    await naming.getByRole("button", { name: "Save name" }).click();
+    const naming = page.getByRole("form", { name: "Reply wallet address" });
+    await naming.getByLabel("Reply wallet address").fill(bob.address);
+    await naming.getByRole("button", { name: "Set reply wallet" }).click();
     await expect(
       page.getByRole("status").filter({ hasText: /Named on this device/ }),
     ).toBeVisible();
@@ -150,7 +161,7 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(row).toBeVisible();
     await row.click();
     await expect(entry(page, letter)).toBeVisible();
-    await expect(page.getByRole("form", { name: "Name this sender" })).toHaveCount(0);
+    await expect(page.getByRole("form", { name: "Reply wallet address" })).toHaveCount(0);
 
     await attachTerms(page);
     await expect(page.getByLabel(/^To/)).toHaveValue(addressPattern(bob.address));
@@ -204,6 +215,7 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(entry(page, offerBody)).toContainText("Opened · record");
 
     const context = contextPanel(page);
+    await page.getByRole("button", { name: "Contact details", exact: true }).click();
     await expect(context.getByRole("region", { name: "Open RFQs" })).toContainText(
       terms,
     );
@@ -218,6 +230,9 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
     await expect(conversation).toBeVisible();
     await context.getByRole("button", { name: "Show in conversation" }).click();
     await expect(conversation.locator('li[data-highlight="true"]')).toHaveCount(1);
+    await expect(conversation.locator('li[data-highlight="true"]')).toBeFocused();
+    await expect(context).toBeHidden();
+    await page.getByRole("button", { name: "Contact details", exact: true }).click();
     await context
       .getByRole("button", { name: `Back to ${contactLabel}` })
       .click();
@@ -243,5 +258,23 @@ test("chat carries a letter and an attached offer between two mailboxes", async 
       page.getByRole("button", { name: /Needs action only/ }),
     ).toHaveAttribute("aria-pressed", "false");
     await expect(conversationRow(page, contactLabel)).toBeVisible();
+    await context.getByRole("button", { name: "Close contact context" }).click();
+    for (const width of [1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expectNoHorizontalOverflow(page);
+      await entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" }).scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `artifacts/desktop-ux/chat-focus/offer-${width}.png`, animations: "disabled" });
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.screenshot({ path: "artifacts/desktop-ux/bob-offer.png", animations: "disabled" });
+  });
+
+  await test.step("6. Bob accepts once and confirms the local transfer and receipt", async () => {
+    await conversationRow(page, contactLabel).click();
+    const accept = entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" });
+    await accept.click();
+    await expect(page.getByText("Accept transfer and one-sided receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
+    await expect(accept).toHaveCount(0);
+    await page.screenshot({ path: "artifacts/desktop-ux/bob-accepted.png", animations: "disabled" });
   });
 });

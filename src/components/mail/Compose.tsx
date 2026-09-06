@@ -229,6 +229,18 @@ function AttachmentShell({
   );
 }
 
+export function quotedTokenAddressIssue(value: string): string | null {
+  if (!value.trim() || value.trim() === "0x") return "Enter a quoted token address.";
+  try {
+    if (!/^0x[0-9a-f]+$/i.test(value.trim())) throw new Error("Invalid address");
+    const address = validateAndParseAddress(value.trim());
+    if (BigInt(address) === 0n) return "Enter a non-zero quoted token address.";
+    return null;
+  } catch {
+    return "Enter a valid Starknet token address (0x followed by hexadecimal digits).";
+  }
+}
+
 function TradeFields({
   attachment,
   escrow,
@@ -238,6 +250,8 @@ function TradeFields({
   escrow: boolean;
   update: (fields: Partial<TradeDraftFields>) => void;
 }) {
+  const addressIssue = quotedTokenAddressIssue(attachment.wantAddress);
+  const addressIssueId = `quoted-token-${attachment.dealId}-error`;
   return (
     <div className={styles.dealFields}>
       <p className={styles.termsPreview}>
@@ -268,12 +282,15 @@ function TradeFields({
       <label className={styles.field}>
         <span>Quoted token address</span>
         <input
+          aria-invalid={Boolean(addressIssue)}
+          aria-describedby={addressIssue ? addressIssueId : undefined}
           value={attachment.wantAddress}
           onChange={(event) => update({ wantAddress: event.target.value })}
           placeholder="0x…"
           required
         />
       </label>
+      {addressIssue ? <p id={addressIssueId} className={styles.preflightIssue}>{addressIssue}</p> : null}
       <div className={styles.amountPair}>
         <label className={styles.field}>
           <span>Token decimals</span>
@@ -499,7 +516,9 @@ export default function Compose({
     if (!senderAddress) {
       throw new Error("Connect the wallet that owns this request or offer.");
     }
-    const decimals = Number(attachment.wantDecimals);
+    const addressIssue = quotedTokenAddressIssue(attachment.wantAddress);
+    if (addressIssue) throw new Error(addressIssue);
+    const decimals = attachment.wantDecimals.trim() ? Number(attachment.wantDecimals) : NaN;
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
       throw new Error(
         "Quoted token decimals must be an integer from 0 to 255.",
@@ -750,7 +769,7 @@ export default function Compose({
   ]);
 
   const sendDisabled =
-    Boolean(disabledReason) || sendPending || preflight?.fits === false;
+    Boolean(disabledReason) || sendPending || !preflight || Boolean(preflightIssue) || !preflight.fits;
   const sendButtonLabel = sendPending
     ? "Preparing private transaction…"
     : preflight?.valueMoves.length

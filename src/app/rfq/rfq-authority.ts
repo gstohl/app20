@@ -1,6 +1,7 @@
 import { fillsDigest } from "@app20/private-intents";
 import {
   applyRfqAuthoritySignal,
+  lifecycleMayForget,
   canonicalLocalRfqId,
   canonicalRfqAccount,
   canonicalRfqChainId,
@@ -29,7 +30,7 @@ const LABELS: Readonly<Record<RfqAuthorityStatus, string>> = Object.freeze({
 
 const DETAIL: Readonly<Record<RfqAuthorityStatus, string>> = Object.freeze({
   "local-non-authoritative":
-    "This browser watched the local devnet reach this outcome. No configured-chain verifier confirmed it, so it is not proof that value moved.",
+    "The browser saved this outcome without independent settlement verification. It is not proof that value moved on a production network.",
   authoritative:
     "A configured chain authority confirmed the finalized settlement events for this exact deal.",
   stale:
@@ -119,6 +120,15 @@ export function rfqAuthorityPresentation(
     revision: authority.revision,
     observedAt: authority.observedAt,
   });
+}
+
+/** Display scope is independent from permission to delete a saved record. */
+export function rfqIsInFlight(record: RfqLifecycleRecord): boolean {
+  if (lifecycleMayForget(record)) return false;
+  return !(
+    (record.state === "settled" || record.state === "refunded") &&
+    rfqAuthorityPresentation(record).status === "authoritative"
+  );
 }
 
 export type RfqAuthorityProjection = Readonly<{

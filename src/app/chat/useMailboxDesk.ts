@@ -1835,7 +1835,7 @@ export function useMailboxDesk() {
         setStorageNotice({
           kind: "ok",
           message:
-            "Sent copy saved in this browser profile (not encrypted at rest).",
+            "Message delivered. Sent copy saved in this browser profile (not encrypted at rest).",
         });
       } catch (error: unknown) {
         setStorageNotice({
@@ -2669,7 +2669,7 @@ export function useMailboxDesk() {
         draftId,
       );
       setDrafts(next);
-      setStorageNotice({
+      if (confirmDelete) setStorageNotice({
         kind: "ok",
         message: "Local draft deleted from this browser profile.",
       });

@@ -96,3 +96,14 @@ describe("localnet USDC invoice actions", () => {
     expect(markup).not.toContain("Pay privately with STRK");
   });
 });
+
+
+describe("invoice execution status", () => {
+  it.each(["reserved", "submitted", "unknown"] as const)("shows %s without a false completion or another Pay action", (operationState) => {
+    const html = renderToStaticMarkup(<InvoiceCard request={request} status="paid" operationState={operationState} onPay={() => undefined} />);
+    expect(html).not.toContain("Unverified counterparty claim");
+    expect(html).not.toContain("Payment verified locally");
+    expect(html).toMatch(/Preparing payment|awaiting confirmation|outcome unknown/);
+    expect(html).not.toMatch(/>Pay [^<]*<\/button>/);
+  });
+});

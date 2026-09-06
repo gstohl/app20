@@ -95,7 +95,7 @@ export async function scanRecent(page: Page) {
 /** Every page load starts with the key unloaded; this loads the persisted one. */
 export async function loadExistingKey(page: Page) {
   const button = page.getByRole("button", {
-    name: "Load device key & register",
+    name: "Open mailbox",
   });
   await expect(button).toBeVisible();
   await button.click();
@@ -108,7 +108,7 @@ export async function ensureMailboxKey(
   identity: LocalnetIdentityId,
 ) {
   const setup = page.getByRole("button", {
-    name: "Load device key & register",
+    name: /^(Create mailbox & register|Open mailbox)$/,
   });
   await expect(setup).toBeVisible();
   await primeLocalnetMailSeed(page, identity);
@@ -144,7 +144,7 @@ export async function ensureMailboxKey(
 
 /** Opens the document composer from the mailbox tools, optionally addressed. */
 export async function openNewDocument(page: Page, recipient?: string) {
-  await openTools(page, "Write to a new address");
+  await page.getByRole("button", { name: "New conversation", exact: true }).click();
   if (recipient !== undefined) {
     await page.getByLabel("New conversation address").fill(recipient);
   }

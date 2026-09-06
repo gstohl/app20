@@ -250,10 +250,6 @@ export default function SelectWallet({
     }
   }
 
-  const shortAddr = address
-    ? `${address.slice(0, 6)}…${address.slice(-4)}`
-    : "";
-
   const picker = pickerOpen ? (
     <div
       className={styles.modalOverlay}
@@ -335,8 +331,6 @@ export default function SelectWallet({
           aria-label="Disconnect wallet"
           title="Disconnect wallet"
         >
-          <span className={styles.addrDot} />
-          <span className={styles.addrAddress}>{shortAddr}</span>
           <span className={styles.addrDisconnect}>Disconnect</span>
         </button>
       );

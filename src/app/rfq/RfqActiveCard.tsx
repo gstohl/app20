@@ -4,7 +4,7 @@ import {
   type LocalnetResumeAction,
 } from "./localnet-resume-controller";
 import { rfqAuthorityPresentation } from "./rfq-authority";
-import { rfqStateLabel } from "./rfq-state-label";
+import { rfqRecordLabel } from "./rfq-state-label";
 import {
   RFQ_RESUME_AUTHORITY_LABEL,
   lifecycleMayForget,
@@ -134,7 +134,7 @@ export default function RfqActiveCard({
             ? `${record.terms.sellSymbol} → ${record.terms.buySymbol}`
             : "Quarantined legacy RFQ"}
         </h3>
-        <strong>{rfqStateLabel(record.state, record.mode)}</strong>
+        <strong>{rfqRecordLabel(record, authority.status)}</strong>
       </header>
       {record.terms ? (
         <div className={styles.recordAmounts}>

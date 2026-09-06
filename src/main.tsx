@@ -249,7 +249,7 @@ async function start() {
       const localnet = await import("@/dev/localnet-wallet");
       const wallet = await localnet.initializeLocalnetDevWallet();
       renderLocalnetTools = () => (
-        <localnet.LocalnetDevTools wallet={wallet} variant="banner" />
+        <localnet.LocalnetDevTools wallet={wallet} variant="header" />
       );
     } catch (error: unknown) {
       const message =

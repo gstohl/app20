@@ -5,6 +5,7 @@ import { envelopeByteLength } from "@/lib/envelope";
 import {
   COMPOSE_PREVIEW_SENDER_AUTH,
   composerInvoiceTokenOptions,
+  quotedTokenAddressIssue,
 } from "./Compose";
 
 function seed(fill: number): Uint8Array {
@@ -61,5 +62,16 @@ describe("compose ciphertext preflight", () => {
       });
     }
     expect(performance.now() - started).toBeLessThan(50);
+  });
+});
+
+
+describe("quoted token field validation", () => {
+  it.each(["", "0x", "bad-token", "123", "0x0"])("explains invalid input %s without exposing parser errors", (value) => {
+    expect(quotedTokenAddressIssue(value)).toMatch(/Enter a/);
+    expect(quotedTokenAddressIssue(value)).not.toMatch(/BigInt|convert/);
+  });
+  it("accepts a valid non-zero address", () => {
+    expect(quotedTokenAddressIssue("0x123")).toBeNull();
   });
 });

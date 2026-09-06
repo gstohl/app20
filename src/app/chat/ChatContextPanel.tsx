@@ -149,7 +149,11 @@ export default function ChatContextPanel({
   };
 
   return (
-    <aside className={styles.context} aria-label="Contact context" id="chat-context">
+    <aside className={styles.context} aria-label="Contact context" id="chat-context"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.stopPropagation(); onClose(); }
+      }}
+    >
       <header className={styles.contextHead}>
         <div>
           <p className={styles.kicker}>CONTACT CONTEXT</p>

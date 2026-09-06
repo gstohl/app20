@@ -117,28 +117,28 @@ function SenderNaming({
   return (
     <form
       className={styles.naming}
-      aria-label="Name this sender"
+      aria-label="Reply wallet address"
       onSubmit={(event) => {
         event.preventDefault();
         if (value.trim()) onAssign(target.id, value);
       }}
     >
       <p className={styles.namingNote}>
-        MessagePosted carries no sender. Name this thread on this device to
-        file it under a counterparty; the name applies to every record in the
-        thread and is never authentication.
+        Ask the sender for their wallet address through a trusted channel, or
+        choose a saved counterparty. This files the thread and sets your reply
+        destination on this device; it does not authenticate the sender.
       </p>
       <AddressBookField
         selfAddress={selfAddress}
-        inputAriaLabel="Name this sender"
-        label="Name this sender"
+        inputAriaLabel="Reply wallet address"
+        label="Reply wallet address"
         value={value}
         onChange={setValue}
         placeholder="0x… or saved label"
         bookActions={false}
       />
       <button type="submit" className={styles.namingSave}>
-        Save name
+        Set reply wallet
       </button>
     </form>
   );
@@ -163,7 +163,7 @@ function RecordProvenance({
     <div className={styles.entryProof}>
       {proof ? <p>{senderProofLabel(proof)}</p> : null}
       {fields.conversationId ? (
-        <span>Thread {fields.conversationId.slice(0, 18)}…</span>
+        <details><summary>Thread reference</summary><code>{fields.conversationId}</code></details>
       ) : null}
       {assigned && onProve ? (
         <button type="button" onClick={() => onProve(message.id, assigned)}>
@@ -311,6 +311,7 @@ export default function ChatTimeline({
               key={item.id}
               id={chatEntryDomId(item.id)}
               className={styles.entry}
+              tabIndex={-1}
               data-direction={item.direction}
               data-highlight={highlightId === item.id ? "true" : undefined}
             >
@@ -318,6 +319,9 @@ export default function ChatTimeline({
                 <b>{item.direction === "outgoing" ? "You" : name}</b>
                 <span>{item.label}</span>
                 <time dateTime={time.dateTime}>{time.label}</time>
+                <details className={styles.messageDetails}>
+                  <summary>Message details</summary>
+                  <div>
                 <span>{provenanceLabel(item)}</span>
                 {recipientCount !== undefined && !paymentLink ? (
                   <span>
@@ -330,6 +334,8 @@ export default function ChatTimeline({
                     {item.otherRecipients === 1 ? "" : "s"}
                   </span>
                 ) : null}
+                  </div>
+                </details>
               </div>
               {paymentLink ? (
                 <p className={styles.entryNotice} role="status">
@@ -349,8 +355,8 @@ export default function ChatTimeline({
               {message &&
               message.transactionHashes &&
               message.transactionHashes.length > 1 ? (
-                <aside className={styles.entrySubmissions}>
-                  <strong>Submission transactions</strong>
+                <details className={styles.entrySubmissions}>
+                  <summary>Submission transactions</summary>
                   {message.transactionHashes.map((transactionHash, index) => (
                     <code key={`${index}:${transactionHash}`}>
                       {index + 1}. {transactionHash}
@@ -360,7 +366,7 @@ export default function ChatTimeline({
                     Escrow funding and document delivery are separate because
                     the pool permits one external invoke per transaction.
                   </span>
-                </aside>
+                </details>
               ) : null}
               {message && !paymentLink && item.provenance !== "mailbox-record" ? (
                 <div className={styles.entryChain}>

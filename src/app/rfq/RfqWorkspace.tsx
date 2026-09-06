@@ -1,5 +1,7 @@
 "use client";
 
+import { useRfqPresentationClock } from "./ui/rfq-presentation-clock";
+
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { validatedRfqPair } from "@/app/routes";
@@ -107,7 +109,11 @@ const LocalnetPrivateIntentDesk = lazy(
 );
 
 import RfqRecoveryCard from "./RfqRecoveryCard";
-import { refreshLiveRfqAuthority } from "./rfq-authority";
+import {
+  refreshLiveRfqAuthority,
+  rfqIsInFlight,
+  rfqAuthorityPresentation,
+} from "./rfq-authority";
 import type { WorkspaceLoadState } from "./workspace-load-state";
 
 type View = "new" | "records" | "compatibility";
@@ -1137,10 +1143,11 @@ export default function RfqWorkspace() {
   }
 
   const executable = providerIndex === LOCALNET_PROVIDER_INDEX;
-  const activeRecords = useMemo(
-    () => records.filter((row) => !lifecycleMayForget(row)),
-    [records],
+  // Re-evaluate when a live verifier mark expires, even without a new row.
+  useRfqPresentationClock(
+    records.some((row) => rfqAuthorityPresentation(row).status === "authoritative"),
   );
+  const activeRecords = records.filter(rfqIsInFlight);
   const workspaceContextReady = deriveWorkspaceContextReady({
     providerIndex,
     address,
@@ -1260,7 +1267,7 @@ export default function RfqWorkspace() {
       ) : null}
       {view === "new" ? (
         <section ref={viewRegionRef} tabIndex={-1} aria-label="New RFQ request">
-          <h2 className={styles.viewHeading}>New request</h2>
+          <h2 className={styles.workspaceTitle}>New request</h2>
           {/* On a rail that cannot execute an RFQ at all, asking for the wallet
               bound to saved records promises something connecting cannot
               deliver. The environment's own notice below is the answer. */}
@@ -1283,6 +1290,7 @@ export default function RfqWorkspace() {
               {executable ? (
                 <Suspense fallback={<p>Loading local demo ticket…</p>}>
                   <LocalnetPrivateIntentDesk
+                    authorityRecords={records}
                     initialPairId={pairId}
                     onPairChange={setPairId}
                     onLifecycleRecord={replaceRecord}
@@ -1290,7 +1298,7 @@ export default function RfqWorkspace() {
                       workspaceContextReady &&
                       loadState !== "local-deal-read-failed"
                         ? sameMarketRequestFence(records, pairId)
-                        : "RFQ resume storage and unresolved-deal discovery must load successfully for the current account, wallet chain, and LOCAL provider before a new request."
+                        : "Connect your LOCAL wallet and wait for saved requests to load before requesting new quotes."
                     }
                   />
                 </Suspense>

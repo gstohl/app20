@@ -4,7 +4,7 @@ import CopyableId, {
   LOCALNET_VERIFIED_IDENTIFIER_AUTHORITY,
   LOCAL_IDENTIFIER_AUTHORITY,
 } from "./CopyableId";
-import { rfqStateLabel } from "./rfq-state-label";
+import { rfqRecordLabel } from "./rfq-state-label";
 import { lifecycleMayForget, type RfqLifecycleRecord } from "./rfq-lifecycle";
 import { RFQ_STORAGE_DISCLOSURE } from "./rfq-storage";
 import { AuthorityStrip } from "./RfqAuthorityStrip";
@@ -61,7 +61,7 @@ function RfqActivityRecord({
       aria-labelledby={`activity-${record.rfqId}-title`}
     >
       <h3 id={`activity-${record.rfqId}-title`}>
-        {heading} · {rfqStateLabel(record.state, record.mode)}
+        {heading} · {rfqRecordLabel(record, authority.status)}
       </h3>
       {record.terms ? (
         <p className={styles.recordAmountHuman}>
@@ -70,7 +70,8 @@ function RfqActivityRecord({
         </p>
       ) : null}
       {record.mode === "v3" ? (
-        <div className={styles.v3RecordSummary}>
+        <details className={styles.v3RecordSummary}>
+          <summary>Trade execution details</summary>
           <p><strong>RFQ v3 · bucket {activityBucket(record) ?? "unavailable"}</strong></p>
           {record.fills?.length ? (
             <ol aria-label="RFQ v3 fills">
@@ -82,7 +83,7 @@ function RfqActivityRecord({
             </ol>
           ) : null}
           <p>Take hash: <code>{record.takeTransactionHash ?? record.attempts.take?.transactionHash ?? "not submitted"}</code></p>
-        </div>
+        </details>
       ) : null}
       <AuthorityStrip presentation={authority} />
       <p className={styles.activityIds}>
@@ -150,9 +151,8 @@ export default function RfqActivity({
         Activity
       </h2>
       <p>
-        Every RFQ this browser saved for the connected wallet and chain.
-        Outcomes here are what this device watched happen, not a settlement
-        proof.
+        Saved RFQs for this wallet and chain. Each outcome shows its current
+        localnet verification status.
       </p>
       <RfqRecoveryCard
         loadState={loadState}

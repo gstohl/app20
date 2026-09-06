@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import styles from "./rfq.module.css";
 
 export type RfqInfoTipProps = Readonly<{
@@ -15,9 +15,16 @@ export default function RfqInfoTip({
   indicator = "i",
 }: RfqInfoTipProps) {
   const descriptionId = useId();
+  const [dismissed, setDismissed] = useState(false);
 
   return (
-    <span className={styles.infoTip}>
+    <span className={styles.infoTip} data-dismissed={dismissed}
+      onMouseEnter={() => setDismissed(false)}
+      onFocus={() => setDismissed(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { setDismissed(true); event.stopPropagation(); }
+      }}
+    >
       <button
         type="button"
         className={styles.infoTipButton}

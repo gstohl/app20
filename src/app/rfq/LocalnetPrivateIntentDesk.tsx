@@ -114,6 +114,7 @@ import { requestRfqHistoryAutoBackup } from "./ui/rfq-auto-backup";
 export type LocalnetMarketPairId = "STRK_USDC" | "USDC_STRK";
 
 export type LocalnetPrivateIntentDeskProps = Readonly<{
+  authorityRecords?: readonly RfqLifecycleRecord[];
   initialPairId?: LocalnetMarketPairId;
   swapOnly?: boolean;
   onPairChange?: (pairId: LocalnetMarketPairId) => void;
@@ -292,6 +293,7 @@ function LeakChips({ venue }: { venue: DeskVenue }) {
 export default function LocalnetPrivateIntentDesk({
   initialPairId = "STRK_USDC",
   swapOnly = false,
+  authorityRecords = [],
   onPairChange,
   onLifecycleRecord,
   requestBlockedReason,
@@ -1431,9 +1433,18 @@ export default function LocalnetPrivateIntentDesk({
     ? formatSizeBucketLabel(pair.sell.symbol, presentedBucket)
     : null;
 
+  const evidenceRecord = authorityRecords.find((record) =>
+    record.rfqId === lifecycleRecord?.rfqId &&
+    record.account === lifecycleRecord.account &&
+    record.chainId === lifecycleRecord.chainId &&
+    record.state === lifecycleRecord.state &&
+    record.evidenceAuthority.revision >= lifecycleRecord.evidenceAuthority.revision
+  ) ?? lifecycleRecord;
+
   return (
     <section
       className={styles.privateIntentDesk}
+      data-expanded={Boolean(quoted)}
       aria-label={swapOnly ? "Private swap" : undefined}
       aria-labelledby={swapOnly ? undefined : "local-private-intent-title"}
     >
@@ -1500,7 +1511,6 @@ export default function LocalnetPrivateIntentDesk({
       {swapOnly ? null : (
         <header className={styles.privateIntentHeader}>
           <div>
-            <span>APP20 / PRIVATE RFQ V3</span>
             <h3 id="local-private-intent-title">
               {invoice
                 ? "Pay invoice privately"
@@ -1509,19 +1519,23 @@ export default function LocalnetPrivateIntentDesk({
                   : "Block RFQ"}
             </h3>
           </div>
-          <strong>COLLATERALIZED · ATOMIC</strong>
+          <div className={styles.ticketPromise}>
+            <span>Atomic swap</span>
+            <RfqInfoTip label="About the RFQ venue">
+              Maker collateral is locked before you accept. Both assets exchange
+              in one transaction. {deskVenueCopy(venue)}
+            </RfqInfoTip>
+          </div>
         </header>
       )}
 
       <aside className={styles.operationsGate} role="status">
-        <strong>OPERATIONS · {operations.mode.toUpperCase()}</strong>
-        <span>
-          {operations.reason}{" "}
-          {requestGate.allowed
-            ? "New v3 requests may proceed."
-            : requestGate.reason}
-        </span>
-        <Link to="/rfq/operations">Open browser-safe operations</Link>
+        <strong>{requestGate.allowed ? "Quote service available" : `OPERATIONS · ${operations.mode.toUpperCase()}`}</strong>
+        {!requestGate.allowed ? <span>{requestGate.reason}</span> : null}
+        <RfqInfoTip label="About RFQ availability">
+          {operations.reason} {requestGate.allowed ? "New v3 requests may proceed." : requestGate.reason}
+        </RfqInfoTip>
+        <Link to="/rfq/operations">Operations</Link>
       </aside>
 
       {swapOnly || invoice ? null : (
@@ -1551,14 +1565,7 @@ export default function LocalnetPrivateIntentDesk({
 
       {swapOnly ? null : (
         <>
-          {venue === "idle" ? (
-            <div className={styles.deskVenueSummary}>
-              <span>Invited maker inventory · no public route</span>
-              <RfqInfoTip label="About the RFQ venue">
-                {deskVenueCopy(venue)}
-              </RfqInfoTip>
-            </div>
-          ) : (
+          {venue === "idle" ? null : (
             <>
               <LeakChips venue={venue} />
               <p className={styles.deskVenueCopy}>{deskVenueCopy(venue)}</p>
@@ -1569,7 +1576,7 @@ export default function LocalnetPrivateIntentDesk({
 
       {!swapOnly && !invoice && blockHint && surface === "swap" && !quoted ? (
         <p className={styles.deskHint} role="status">
-          This clip may benefit from a typed Block floor.
+          For this amount, consider setting your own minimum receive.
           <button type="button" onClick={() => setSurface("block")}>
             Open Block RFQ
           </button>
@@ -1695,8 +1702,8 @@ export default function LocalnetPrivateIntentDesk({
 
           <label className={styles.swapAssetCard}>
             <span className={styles.swapAssetHead}>
-              <b>{surface === "block" ? "Local floor" : "Policy floor"}</b>
-              <small>Never sent to makers</small>
+              <b>Minimum receive</b>
+              <small>{surface === "block" ? "Set by you" : "Calculated automatically"}</small>
             </span>
             <span className={styles.swapAssetControl}>
               {surface === "block" && !invoice ? (
@@ -1779,25 +1786,10 @@ export default function LocalnetPrivateIntentDesk({
                   </button>
                 </div>
               </header>
-              <p>Exact size and floor stay local.</p>
-              <div
-                className={styles.preflightSummary}
-                role="list"
-                aria-label="Privacy boundary summary"
-              >
-                <div role="listitem">
-                  <span>Local</span>
-                  <strong>Exact size + floor</strong>
-                </div>
-                <div role="listitem">
-                  <span>Makers</span>
-                  <strong>Bucket + timing</strong>
-                </div>
-                <div role="listitem">
-                  <span>On-chain Take</span>
-                  <strong>Exact fill amounts</strong>
-                </div>
-              </div>
+              <p aria-label="Privacy boundary summary">
+                Makers see a size bucket and timing. Exact size and floor stay local
+                until Take; <strong>exact fill amounts become public on-chain.</strong>
+              </p>
               {privacyPreflight ? (
                 <details className={styles.preflightEvidence}>
                   <summary>
@@ -1825,7 +1817,7 @@ export default function LocalnetPrivateIntentDesk({
               )}
             </aside>
 
-            <button
+            {!invitationReview ? <button
               type="button"
               onClick={prepareInvitationReview}
               disabled={
@@ -1837,7 +1829,7 @@ export default function LocalnetPrivateIntentDesk({
               }
             >
               Review what makers will see
-            </button>
+            </button> : null}
 
             {invitationReview && operations.status ? (
               <aside
@@ -1914,7 +1906,7 @@ export default function LocalnetPrivateIntentDesk({
             {requestBlockedReason ? (
               <p role="alert">{requestBlockedReason}</p>
             ) : null}
-            <button
+            {invitationReview ? <button
               className={styles.privateIntentQuoteButton}
               type="button"
               onClick={() => void runQuoteRequest()}
@@ -1929,7 +1921,7 @@ export default function LocalnetPrivateIntentDesk({
               }
             >
               {flow.kind === "working" ? "Requesting…" : "Request quotes"}
-            </button>
+            </button> : null}
             {waitForMaturity ? (
               <button
                 type="button"
@@ -2103,9 +2095,9 @@ export default function LocalnetPrivateIntentDesk({
             <strong>Authority stage:</strong> lifecycle v3 · Take transaction
             only
           </p>
-          <RfqAuthorityStrip record={lifecycleRecord} />
+          <RfqAuthorityStrip record={evidenceRecord!} />
           <SettlementEvidencePanel
-            records={[lifecycleRecord]}
+            records={[evidenceRecord!]}
             transactionHashes={
               lifecycleRecord.takeTransactionHash
                 ? [lifecycleRecord.takeTransactionHash]

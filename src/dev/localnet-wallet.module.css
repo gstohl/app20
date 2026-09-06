@@ -39,14 +39,14 @@
 }
 
 .identities button {
-  min-height: 24px;
+  min-height: 36px;
   border: 1px solid var(--shell-line);
   padding: 0 10px;
   color: var(--shell-muted);
   background: var(--shell-inset);
   cursor: pointer;
   font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -145,6 +145,72 @@
 .copies button:hover {
   color: var(--shell-text);
 }
+
+.notice:not(:empty) {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  border: 1px solid var(--shell-line);
+  padding: 10px 12px;
+  color: var(--shell-text);
+  background: var(--shell-panel);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.srNotice {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.banner button:focus-visible,
+.runtimeDetails summary:focus-visible {
+  outline: 2px solid var(--shell-orange);
+  outline-offset: 3px;
+}
+
+.banner[data-variant="header"] {
+  width: auto;
+  flex: none;
+  padding: 0;
+  gap: 2px;
+  flex-direction: column;
+  background: transparent;
+}
+
+.banner[data-variant="header"] .runtimeDetails {
+  order: -1;
+  margin: 0;
+}
+
+.banner[data-variant="header"] .runtimeDetails summary {
+  min-height: 24px;
+  border: 0;
+  font-size: 10px;
+  color: var(--shell-orange);
+}
+
+.banner[data-variant="header"] .copies {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(340px, 85vw);
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--shell-line);
+  background: var(--shell-panel);
+  box-shadow: 0 8px 24px #0008;
+  font-size: 12px;
+}
+
+.banner[data-variant="header"] .copies span,
+.banner[data-variant="header"] .copies button { font-size: 12px; }
+.banner[data-variant="header"] .copies button { min-height: 36px; }
 
 @media (max-width: 900px) {
   .banner {

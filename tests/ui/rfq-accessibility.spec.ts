@@ -272,6 +272,7 @@ test("RFQ and funding share one resolved localnet note-maturity poll", async ({
 
   await page.getByRole("link", { name: "Shield / unshield funding" }).click();
   await expect(page).toHaveURL(/\/funding$/);
+  await page.locator('details').filter({ has: page.getByRole('heading', { name: 'Note maturity', includeHidden: true }) }).locator('summary').click();
   const fundingMaturity = page
     .getByRole("heading", { name: "Note maturity" })
     .locator("+ p");
@@ -379,6 +380,7 @@ test("RFQ screen-reader shape, heading order, zoom reflow, and responsive hierar
     .evaluateAll((elements) =>
       elements
         .filter((element) => {
+          if (!(element instanceof HTMLElement) || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
           const bounds = element.getBoundingClientRect();
           return bounds.right > innerWidth + 0.5 || bounds.left < -0.5;
         })
@@ -472,7 +474,7 @@ test("authority and copy controls expose unambiguous text rather than colour-onl
     "value actions are blocked until this is reconciled",
   );
 
-  const copyControls = page.locator('button[aria-label^="Copy "]');
+  const copyControls = page.getByRole("main").locator('button[aria-label^="Copy "]');
   await expect(copyControls).toHaveCount(4);
   const copyNames = await copyControls.evaluateAll((buttons) =>
     buttons.map((button) => button.getAttribute("aria-label") ?? ""),

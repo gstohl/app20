@@ -1,3 +1,4 @@
+import RfqInfoTip from "./RfqInfoTip";
 import styles from "./rfq.module.css";
 
 export default function RfqEnvironmentBanner({
@@ -27,10 +28,10 @@ export default function RfqEnvironmentBanner({
       {providerIndex === 3 && shortEpoch ? (
         <>
           <span>Runtime {shortEpoch}</span>
-          <span className={styles.environmentDetail}>
+          <RfqInfoTip label="About the localnet runtime">
             A restarted local chain rotates this ID; prior-runtime records are
             intentionally isolated.
-          </span>
+          </RfqInfoTip>
         </>
       ) : null}
       <span>No automatic public fallback</span>

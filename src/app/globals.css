@@ -234,15 +234,6 @@ a {
   background: var(--danger);
 }
 
-/* Localnet demo tools render once at the top of the shell, on every page. */
-.localnet-banner {
-  flex: none;
-}
-
-.app-shell.has-localnet-banner {
-  --app-shell-offset: 128px;
-}
-
 /* APP20 execution desk. Route modules consume this one palette through
    semantic aliases; product surfaces must not redefine their own desk colors. */
 .app-shell {
@@ -388,9 +379,9 @@ a {
 .app-header {
   display: grid;
   min-height: 64px;
-  grid-template-columns: auto minmax(260px, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   border-bottom: 1px solid var(--shell-line);
   padding: 0 18px;
   color: var(--shell-text);
@@ -829,12 +820,20 @@ a {
   line-height: 1.5;
 }
 
+@media (min-width: 901px) and (max-width: 1200px) {
+  .app-shell { --app-shell-offset: 146px; }
+  .app-header {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 12px;
+    padding-block: 4px;
+  }
+  .app-utilities { grid-column: 2; grid-row: 1; }
+  .app-tabs { grid-column: 1 / -1; grid-row: 2; }
+}
+
 @media (max-width: 900px) {
   .app-shell {
     --app-shell-offset: 136px;
-  }
-  .app-shell.has-localnet-banner {
-    --app-shell-offset: 188px;
   }
   .app-header {
     grid-template-columns: auto minmax(0, 1fr);
@@ -843,6 +842,7 @@ a {
   }
   .app-utilities {
     min-width: 0;
+    flex-wrap: wrap;
   }
   .app-tabs {
     order: 3;
@@ -883,9 +883,6 @@ a {
 @media (max-width: 560px) {
   .app-shell {
     --app-shell-offset: 128px;
-  }
-  .app-shell.has-localnet-banner {
-    --app-shell-offset: 174px;
   }
   .signal-bar {
     min-height: 34px;

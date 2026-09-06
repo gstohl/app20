@@ -68,6 +68,8 @@ export default function QuoteComparison({
               ? "One signed lock covers the exact size and gives the best deterministic exact-size receive."
               : "No single winning lock covers the full exact size, so deterministic best-price depth is allocated across locks."}
           </p>
+          <details>
+            <summary>Selected fill details</summary>
           <ol>
             {selection.fills.map((fill) => (
               <li key={fill.quote.lockId}>
@@ -77,6 +79,7 @@ export default function QuoteComparison({
               </li>
             ))}
           </ol>
+          </details>
           <p>
             Total receive {humanUnits(selection.totalB, buyDecimals)}{" "}
             {buySymbol} · rule <code>{selection.rule}</code>
@@ -136,15 +139,19 @@ export default function QuoteComparison({
                   <dd>{outcomeLabel(row.outcome)}</dd>
                 </div>
                 <div>
-                  <dt>Open collateral lock</dt>
-                  <dd>
-                    <CopyableId value={quote.lockId} label="Lock ID" />
-                  </dd>
-                </div>
-                <div>
                   <dt>Lock expires</dt>
                   <dd>
                     <RfqCountdown expiresAt={quote.lockExpiresAt} />
+                  </dd>
+                </div>
+              </dl>
+              <details>
+                <summary>Lock, pricing and selection details</summary>
+                <dl>
+                <div>
+                  <dt>Open collateral lock</dt>
+                  <dd>
+                    <CopyableId value={quote.lockId} label="Lock ID" />
                   </dd>
                 </div>
                 <div>
@@ -153,12 +160,13 @@ export default function QuoteComparison({
                     {quote.spreadBps} bps · {quote.pricingProvenance}
                   </dd>
                 </div>
-              </dl>
+                </dl>
               <ul aria-label={`${row.makerId} selection rationale`}>
                 {row.rationale.map((reason) => (
                   <li key={reason}>{reason}</li>
                 ))}
               </ul>
+              </details>
             </li>
           );
         })}

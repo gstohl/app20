@@ -231,39 +231,9 @@ export function FundingReadinessPanelView({
         aria-labelledby="funding-readiness-title"
         style={{ margin: 16, padding: 16 }}
       >
-        <p style={{ marginTop: 0 }}>FUNDING READINESS · DECLARATIONS ONLY</p>
-        <h2 id="funding-readiness-title">Wallet and network readiness</h2>
-        <p>
-          This check uses wallet capability declarations and the reviewed token
-          registry. It never requests a private balance to discover features.
-        </p>
-
-        <dl
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 1,
-          }}
-        >
-          <div>
-            <dt>Connected wallet</dt>
-            <dd>{model.walletLabel}</dd>
-          </div>
-          <div>
-            <dt>Active network</dt>
-            <dd>{model.networkLabel}</dd>
-          </div>
-          <div>
-            <dt>STRK20 declaration</dt>
-            <dd>{model.capabilitySummary}</dd>
-          </div>
-          <div>
-            <dt>Readiness</dt>
-            <dd>
-              {model.ready ? "Ready for localnet demo funding" : "Unavailable"}
-            </dd>
-          </div>
-        </dl>
+        <h2 id="funding-readiness-title">Funding</h2>
+        <p>{model.walletLabel} · {model.networkLabel} · {model.ready ? "Ready for localnet demo funding" : "Unavailable"}</p>
+        <p>Shield deposits and unshield withdrawals expose their amount and timing publicly.</p>
 
         {model.blockers.length ? (
           <div role="status">
@@ -276,64 +246,70 @@ export function FundingReadinessPanelView({
           </div>
         ) : null}
 
-        <h3>Wallet-declared STRK20 action surface</h3>
-        <ul>
-          {FUNDING_ACTIONS.map((action) => (
-            <li key={action.specAction}>
-              <strong>{action.label}</strong> (<code>{action.specAction}</code>)
-              {" — "}
-              {model.actionDeclarationAvailable
-                ? `declared through the wallet's ≥ ${MIN_STRK20_WALLET_API} STRK20 spec surface`
-                : "not declared to APP20 on the reviewed capability surface"}
-            </li>
-          ))}
-        </ul>
-
-        <h3>Canonical STRK/USDC asset eligibility</h3>
-        {model.pair.eligible ? (
-          <dl>
-            {[model.pair.tokenA, model.pair.tokenB].map((token) => (
-              <div key={token.address}>
-                <dt>{token.symbol}</dt>
-                <dd>
-                  <code>{token.address}</code> · {token.decimals} decimals ·
-                  reviewed localnet demo identity
-                </dd>
-              </div>
+        <details>
+          <summary>Wallet capabilities and network details</summary>
+          <p>FUNDING READINESS · DECLARATIONS ONLY</p>
+          <p>This check uses wallet capability declarations and the reviewed token registry. It never requests a private balance to discover features.</p>
+          <p>{model.capabilitySummary}</p>
+          <h3>Wallet-declared STRK20 action surface</h3>
+          <ul>
+            {FUNDING_ACTIONS.map((action) => (
+              <li key={action.specAction}>
+                <strong>{action.label}</strong> (<code>{action.specAction}</code>)
+                {" — "}
+                {model.actionDeclarationAvailable
+                  ? `declared through the wallet's ≥ ${MIN_STRK20_WALLET_API} STRK20 spec surface`
+                  : "not declared to APP20 on the reviewed capability surface"}
+              </li>
             ))}
-          </dl>
-        ) : (
+          </ul>
+
+          <h3>Canonical STRK/USDC asset eligibility</h3>
+          {model.pair.eligible ? (
+            <dl>
+              {[model.pair.tokenA, model.pair.tokenB].map((token) => (
+                <div key={token.address}>
+                  <dt>{token.symbol}</dt>
+                  <dd>
+                    <code>{token.address}</code> · {token.decimals} decimals ·
+                    reviewed localnet demo identity
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p>
+              <strong>Unavailable.</strong> {model.pair.reason}
+            </p>
+          )}
+
+          <h3>Note maturity</h3>
           <p>
-            <strong>Unavailable.</strong> {model.pair.reason}
+            <strong>{model.noteMaturity.label}.</strong>{" "}
+            {model.noteMaturity.detail}
           </p>
-        )}
 
-        <h3>Note maturity</h3>
-        <p>
-          <strong>{model.noteMaturity.label}.</strong>{" "}
-          {model.noteMaturity.detail}
-        </p>
-
-        <h3>Public funding legs</h3>
-        <ul>
-          <li>
-            Shield is a public deposit; its amount and timing are public and
-            correlatable.
-          </li>
-          <li>
-            Unshield is a public withdrawal; its amount and timing are public
-            and correlatable.
-          </li>
-          <li>
-            Shield and unshield are separate wallet operations and are never
-            bundled with RFQ acceptance.
-          </li>
-        </ul>
-        <p role="note">
-          <strong>Funding does not prove settlement.</strong> Wallet state, this
-          readiness panel, and a funding transaction are not RFQ settlement
-          authority.
-        </p>
+          <h3>Public funding legs</h3>
+          <ul>
+            <li>
+              Shield is a public deposit; its amount and timing are public and
+              correlatable.
+            </li>
+            <li>
+              Unshield is a public withdrawal; its amount and timing are public
+              and correlatable.
+            </li>
+            <li>
+              Shield and unshield are separate wallet operations and are never
+              bundled with RFQ acceptance.
+            </li>
+          </ul>
+          <p role="note">
+            <strong>Funding does not prove settlement.</strong> Wallet state, this
+            readiness panel, and a funding transaction are not RFQ settlement
+            authority.
+          </p>
+        </details>
       </section>
 
       {model.ready ? children : null}

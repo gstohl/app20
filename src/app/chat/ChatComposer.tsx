@@ -67,30 +67,30 @@ export default function ChatComposer({
         id="chat-composer"
         className={styles.composerInput}
         value={value}
-        rows={3}
+        rows={2}
         maxLength={CHAT_LETTER_MAX_CHARS}
+        aria-describedby="chat-send-guidance"
+        aria-invalid={!budget.fits || undefined}
         placeholder={`Write an encrypted letter to ${contactName}…`}
         disabled={sending}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
       />
       <div className={styles.composerRow}>
-        <span className={styles.composerMeta}>
+        <span id="chat-send-guidance" className={styles.composerMeta}>
           {blocker ? (
             <>
               {blocker.message}
               {blocker.kind === "key" ? (
                 <>
                   {" "}
-                  <a href="#mailbox-key-setup">Set up a mailbox key</a>
+                  <a href="#mailbox-key-setup">Open mailbox key tools</a>
                 </>
               ) : null}
             </>
           ) : (
             <>
-              {budget.plaintextBytes} / {budget.maxPlaintextBytes} bytes ·
-              sealed on this device · 1 wallet approval · recipient count and
-              timing are public
+              1 wallet approval · recipient count and timing are public
             </>
           )}
         </span>
@@ -108,6 +108,16 @@ export default function ChatComposer({
           </button>
         </span>
       </div>
+      {!budget.fits ? (
+        <p className={styles.composerStatus} data-kind="error" role="alert">
+          Message is too large to send. Shorten it to fit {budget.maxPlaintextBytes} bytes.
+        </p>
+      ) : null}
+      <details className={styles.sendDetails}>
+        <summary>Sending details &amp; keyboard shortcut</summary>
+        <p>Encrypted on this device. {budget.plaintextBytes} / {budget.maxPlaintextBytes} bytes.
+          Press Ctrl+Enter or ⌘+Enter to send; Enter adds a new line.</p>
+      </details>
       {status ? (
         <p
           className={styles.composerStatus}

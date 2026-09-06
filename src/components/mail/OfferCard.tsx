@@ -1,3 +1,5 @@
+import { pendingValueLabel } from "@/lib/value-operation-presentation";
+import type { ValueOperationState } from "@/lib/otc";
 import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import {
   formatBaseUnits,
@@ -17,6 +19,7 @@ type OfferCardProps = {
   status?: DealStatus;
   settlementVerified?: boolean;
   unverifiedClaim?: boolean;
+  operationState?: ValueOperationState;
   busy?: boolean;
   actionMessage?: string;
   actionStartedAt?: number;
@@ -36,6 +39,7 @@ export default function OfferCard({
   status = "offered",
   settlementVerified = false,
   unverifiedClaim = false,
+  operationState,
   busy = false,
   actionMessage,
   actionStartedAt,
@@ -43,6 +47,7 @@ export default function OfferCard({
   onDecline,
   onPostReceipt,
 }: OfferCardProps) {
+  const pendingLabel = pendingValueLabel(operationState, "Transfer");
   const giveToken = normalizeTokenRef(offer.give.token);
   const wantToken = normalizeTokenRef(offer.want.token);
   const giveAmount = formatBaseUnits(offer.give.amount, giveToken.decimals);
@@ -68,7 +73,9 @@ export default function OfferCard({
             OTC offer: send {giveAmount} STRK
           </span>
         </h3>
-        {unverifiedClaim ||
+        {pendingLabel ? (
+          <span className={styles.proofStamp} role="status">{pendingLabel}</span>
+        ) : unverifiedClaim ||
         ((status === "accepted" || status === "closed") &&
           !settlementVerified) ? (
           <span className={styles.proofStamp}>
@@ -102,21 +109,22 @@ export default function OfferCard({
         ) : null}
         <span>verify this address out-of-band before accepting</span>
       </div>
-      <p className={styles.authWarning}>
-        Messages are not sender-authenticated in v1. The claimed payment address
-        above came from the encrypted offer payload.
-      </p>
-
       <p className={styles.riskCopy}>
-        <strong>{giveAmount} STRK moves now, privately.</strong> The{" "}
-        <bdi>{wantToken.symbol}</bdi> leg is NOT settled by Mail — you are
-        trusting the counterparty. Not an atomic swap.
+        <strong>{giveAmount} STRK {settlementVerified ? "transferred privately." : "will be sent privately when you accept."}</strong>{" "}
+        Mail does not settle the {wantToken.symbol} payment. You must trust the
+        counterparty to pay you. This is not an atomic swap.
       </p>
-      <p className={styles.actionWarning}>
-        Accepting requires 2 wallet approvals and 2 transactions: first the STRK
-        transfer plus accept memo, then a separate receipt. If receipt posting
-        fails, STRK has already moved; retry only “Post receipt.”
-      </p>
+      {active ? <p className={styles.actionWarning}>
+        Accepting requires 2 wallet approvals and 2 transactions.
+      </p> : null}
+      <details className={styles.explanation}>
+        <summary>Address verification &amp; receipt details</summary>
+        <p>Messages are not sender-authenticated in v1. The claimed payment address
+          above came from the encrypted offer payload.</p>
+        <p>The first transaction sends STRK with an accept memo. The second posts
+          a receipt. If receipt posting fails, STRK has already moved; retry only
+          “Post receipt.”</p>
+      </details>
       <p className={styles.sheetMeta}>
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…
       </p>
