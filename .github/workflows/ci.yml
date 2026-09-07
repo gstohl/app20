@@ -122,6 +122,8 @@ jobs:
           npx --no-install wrangler deploy --dry-run --outdir release-worker
           # Wrangler's README contains a generation timestamp and is not deployed.
           rm release-worker/README.md
+      - name: Install the browser required for production CSP checks
+        run: npx --no-install playwright install --with-deps chromium
       - name: Check production CSP
         run: npm run check:csp
       - name: Check same-runner build determinism
