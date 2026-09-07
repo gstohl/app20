@@ -335,6 +335,14 @@ export async function checkReleaseDeny(root = repositoryRoot) {
     }
   }
 
+  const confidentialPath = "src/lib/confidential-rfq-status.ts";
+  const confidentialText = await checkedSource(canonicalRoot, confidentialPath, failures);
+  if (confidentialText !== undefined) {
+    const parsed = sourceFile(confidentialPath, confidentialText, failures);
+    for (const name of ["CONFIDENTIAL_RFQ_MAINNET_ENABLED", "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED"])
+      assertExportedConst(parsed, confidentialPath, name, false, failures);
+  }
+
   const productionPath = "src/app/rfq/production-private-intents.ts";
   const productionText = await checkedSource(
     canonicalRoot,

@@ -166,10 +166,16 @@ The Worker serves the app and RPC/prover routes. Its API keys are not embedded i
 
 [Mainnet runbook](docs/MAINNET_RUNBOOK.md) · [Maker guide](docs/makers/README.md) · [Agent SDK](packages/agent-sdk/README.md)
 
+## Confidential RFQ development
+
+A new joint escrow exchanges both assets as encrypted STRK20 notes, with separate party approvals and independent timeout refunds. The Cairo contract, Node SDK and local browser workspace are implemented. Run `npm run dev:confidential` and open `http://127.0.0.1:5198/rfq/confidential`. See [the development guide](docs/CONFIDENTIAL_RFQ.md).
+
+Mainnet activation is disabled pending real STARK proofs, independent wallet integration and review. Local contract executions use simulated proof facts. The existing mainnet RFQ continues to expose funded trade terms; Chat encryption does not conceal settlement amounts. The new path still exposes escrow activity, timing and fees, and a hosted prover sees its witness.
+
 ## Hackathon demo
 
 Three real mainnet swaps each exchanged **0.01 shielded STRK for 0.001 shielded USDC**. Successful receipts, `QuoteFilled` events, traces through APP20 and STRK20, and deployed class hashes were checked. The same operator controlled maker and taker; these are settlement smoke tests. The test maker is now inactive with no remaining inventory. See [mainnet evidence](deployments/mainnet/smoke-test-2026-09-07.json).
 
 The three verified hashes are in `strk20.json`. Demo execution cost **35.863877034965690848 STRK** in network and pool fees; including the earlier deployment, fees total **63.910369825551435280 STRK**, below the 65 STRK ceiling. Another 0.5 STRK was exchanged for native USDC inventory, separately from fees.
 
-See [demo status and submission checklist](docs/HACKATHON_DEMO.md) and [Remotion recording instructions](tools/demo-video/README.md). The existing localnet and browser fixture recordings remain labelled rehearsals. A final published video URL is still required; `demo_video` remains empty.
+See [demo status and submission checklist](docs/HACKATHON_DEMO.md) and [Remotion recording instructions](tools/demo-video/README.md). The current 2:16 `app20-demo-v8-confidential.mp4` includes Liam narration from ElevenLabs, localnet Chat, the new local confidential escrow and refund flow, subtitles, a macOS window frame and maker/agent previews. Mainnet confidential activation remains pending. Each source is clearly labelled. A public video URL is still required; `demo_video` remains empty.

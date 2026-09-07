@@ -2067,6 +2067,16 @@
   white-space: nowrap;
 }
 
+.workspaceNotice {
+  margin: 12px 0 20px;
+  max-width: 880px;
+  color: var(--shell-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.workspaceNotice a { color: var(--shell-orange); }
+
 .page > section:focus-visible,
 .page h2:focus-visible {
   outline: 2px solid var(--shell-orange);

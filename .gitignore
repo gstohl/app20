@@ -20,16 +20,8 @@ ui-artifacts/
 .dev.vars
 .dev.vars.*
 
-# Local captures and render intermediates; retain public mainnet evidence.
-/artifacts/*
-!/artifacts/hackathon/
-/artifacts/hackathon/*
-!/artifacts/hackathon/verified-mainnet-transactions.json
-!/artifacts/private-settlement-mainnet/
-!/artifacts/mainnet-preparation/
-/artifacts/mainnet-preparation/*
-!/artifacts/mainnet-preparation/candidate.json
-!/artifacts/mainnet-preparation/App20Chat.abi.json
+# All local artifacts stay outside source control.
+/artifacts/
 
 # env — never commit keys
 .env

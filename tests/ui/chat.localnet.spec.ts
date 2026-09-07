@@ -67,10 +67,10 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
   // Unique per run: the chain keeps earlier runs' letters, and a fresh browser
   // context decrypts them all again.
   const runTag = Date.now().toString(36);
-  const quote = `0.01${String(Date.now() % 1_000).padStart(3, "0")}`;
+  const quote = demo ? "0.01394" : `0.01${String(Date.now() % 1_000).padStart(3, "0")}`;
   const terms = `0.25 STRK for ${quote} ETH`;
-  const letter = `Chat message ${runTag}: can you quote 0.25 STRK against ETH today?`;
-  const offerBody = `Offer ${runTag} attached from the conversation`;
+  const letter = demo ? "Hey Alice, can I swap 0.25 STRK for ETH? What would you offer?" : `Chat message ${runTag}: can you quote 0.25 STRK against ETH today?`;
+  const offerBody = demo ? "Hey Bob! I can offer 0.01394 ETH. Here are the details — take a look." : `Offer ${runTag} attached from the conversation`;
   const contactLabel = "Alice desk";
 
   if (recoveryRun) {
@@ -191,9 +191,11 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     // MessagePosted carries no sender: a first letter from an unknown
     // mailbox arrives sealed until Alice files it under Bob herself.
     const sealed = conversationRow(page, "Sealed sender").filter({
-      hasText: runTag,
+      hasText: demo ? letter : runTag,
     });
     await expect(sealed).toBeVisible({ timeout: 60_000 });
+    await demo?.mark("Incoming message found automatically");
+    await demo?.hold(5);
     await expect(sealed).toContainText(/\d+ unread/);
     await sealed.click();
     await expect(entry(page, letter)).toContainText("Opened · record");
@@ -222,7 +224,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
       .fill(config.counterTokenAddress);
     await page.getByLabel("Token decimals").fill("18");
     await page.getByLabel("Quoted amount").fill(quote);
-    await page.getByLabel("Note (optional)").fill("Chat offer");
+    await page.getByLabel("Note (optional)").fill(demo ? "This offer is good until tomorrow." : "Chat offer");
     await page.getByLabel(/Expiry in hours \(0 = none\)/).fill("24");
     await demo?.mark("Review fixed offer");
     await demo?.hold(5);

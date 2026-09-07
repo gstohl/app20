@@ -2,6 +2,7 @@
 
 interface ImportMetaEnv {
   readonly VITE_E2E_WALLET: boolean;
+  readonly VITE_CONFIDENTIAL_RFQ_LAB: boolean;
   readonly VITE_PRIVY_APP_ID?: string;
   readonly VITE_PRIVY_CLIENT_ID?: string;
   readonly VITE_PROVER_OHTTP_KEY_CONFIG?: string;

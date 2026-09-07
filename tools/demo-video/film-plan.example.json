@@ -1,0 +1,190 @@
+{
+  "output": "artifacts/hackathon/app20-demo-v8-confidential.mp4",
+  "workDirectory": "artifacts/hackathon/v8/edit",
+  "narrated": true,
+  "voice": "Liam - Energetic, Social Media Creator (Eleven v3)",
+  "clips": [
+    {
+      "file": "artifacts/hackathon/v6/product-tour.webm",
+      "label": "APP20 \u00b7 PRODUCT OVERVIEW",
+      "start": 0.7,
+      "sourceSeconds": 9,
+      "seconds": 11,
+      "title": "Private conversations. Clear trading terms.",
+      "caption": "Encrypted Chat, confidential escrow development, and the existing maker network.",
+      "narration": "APP twenty brings private conversations and trading to Starknet. Negotiate directly, or compare quotes from independent makers.",
+      "audioFile": "artifacts/hackathon/v5/audio/00.mp3",
+      "kind": "intro"
+    },
+    {
+      "file": "artifacts/hackathon/v7/chat-message-brief.mp4",
+      "label": "CHAT \u00b7 LOCALNET / MOCK PROVING",
+      "start": 0,
+      "sourceSeconds": 11,
+      "seconds": 13,
+      "title": "Bob sends an encrypted message",
+      "caption": "Chat stays unlocked across app navigation in this tab. Lock or disconnect to clear access.",
+      "narration": "Bob opens Alice's conversation and sends an encrypted message. Chat stays unlocked as he moves around the app, so he can continue without repeating setup. This segment runs on localnet.",
+      "crop": {
+        "x": 300,
+        "y": 90,
+        "width": 1140,
+        "height": 810
+      },
+      "audioFile": "artifacts/hackathon/v5/audio/01.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v7/chat-localnet-round.webm",
+      "label": "CHAT \u00b7 LOCALNET / MOCK PROVING",
+      "start": 107.18299999999999,
+      "sourceSeconds": 5,
+      "seconds": 11,
+      "title": "Alice receives the message automatically",
+      "caption": "Chat fetches messages after unlocking, then every 60 seconds while visible and online.",
+      "narration": "Bob's message appears automatically for Alice. While Chat is unlocked, visible, and online, it checks for new messages every sixty seconds.",
+      "crop": {
+        "x": 0,
+        "y": 90,
+        "width": 920,
+        "height": 470
+      },
+      "audioFile": "artifacts/hackathon/v5/audio/02.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v7/chat-offer-brief.mp4",
+      "label": "CHAT \u00b7 LOCALNET / MOCK PROVING",
+      "start": 0,
+      "sourceSeconds": 8,
+      "seconds": 10,
+      "title": "Agree on a fixed offer in Chat",
+      "caption": "Set the amount, asset and expiry. Keep the offer attached to the conversation.",
+      "narration": "Alice attaches a fixed offer, with an amount, an asset, and an expiry. The terms stay with the conversation.",
+      "audioFile": "artifacts/hackathon/v5/audio/03.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v7/chat-localnet-round.webm",
+      "label": "CHAT \u00b7 LOCALNET / MOCK PROVING",
+      "start": 195.68599999999998,
+      "sourceSeconds": 8,
+      "seconds": 11,
+      "title": "Review the terms in context",
+      "caption": "Chat payments are separate from atomic RFQ settlement; payment alone does not guarantee the other asset.",
+      "narration": "Bob can review the offer in context. Chat payments are separate; an atomic exchange of both assets uses RFQ.",
+      "crop": {
+        "x": 300,
+        "y": 170,
+        "width": 750,
+        "height": 570
+      },
+      "audioFile": "artifacts/hackathon/v5/audio/04.mp3"
+    },
+    {
+      "label": "CONFIDENTIAL RFQ \u00b7 LOCALNET / SIMULATED PROOFS",
+      "confidential": true,
+      "browserPath": "127.0.0.1:5198/rfq/confidential",
+      "start": 0,
+      "file": "artifacts/hackathon/v8/setup.mp4",
+      "sourceSeconds": 13,
+      "seconds": 15,
+      "title": "Agree on exact terms. Fund a shielded escrow.",
+      "caption": "Dedicated escrow \u00b7 each party signs independently \u00b7 separate encrypted funding.",
+      "narration": "Confidential RFQ takes a different route. Alice and Bob agree on exact terms and fund a shared escrow from their shielded balances. This is a local contract demonstration.",
+      "audioFile": "artifacts/hackathon/v8/audio/05.mp3",
+      "crop": {
+        "x": 184,
+        "y": 250,
+        "width": 1072,
+        "height": 650
+      }
+    },
+    {
+      "label": "CONFIDENTIAL RFQ \u00b7 LOCALNET / SIMULATED PROOFS",
+      "confidential": true,
+      "browserPath": "127.0.0.1:5198/rfq/confidential",
+      "start": 0,
+      "file": "artifacts/hackathon/v8/settlement.mp4",
+      "sourceSeconds": 11,
+      "seconds": 11,
+      "title": "Both approvals. Both assets. One settlement.",
+      "caption": "Real local contracts with simulated proof facts. This does not establish mainnet or STARK-proof verification.",
+      "narration": "Each side funds separately. Both then approve the same operation, so both assets are delivered together as encrypted notes.",
+      "audioFile": "artifacts/hackathon/v8/audio/06.mp3"
+    },
+    {
+      "label": "CONFIDENTIAL RFQ \u00b7 LOCALNET / SIMULATED PROOFS",
+      "confidential": true,
+      "browserPath": "127.0.0.1:5198/rfq/confidential",
+      "start": 0,
+      "file": "artifacts/hackathon/v8/refund.mp4",
+      "sourceSeconds": 7,
+      "seconds": 11,
+      "title": "Recover independently when a trade expires",
+      "caption": "Alice\u2019s STRK returns to Alice after the deadline. Bob\u2019s signature is not required for her refund.",
+      "narration": "If Bob does not fund his side, Alice can recover her asset after the deadline. She does not need Bob to sign the refund.",
+      "audioFile": "artifacts/hackathon/v8/audio/07.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v8/product-preview.webm",
+      "start": 7,
+      "sourceSeconds": 9,
+      "seconds": 12,
+      "crop": {
+        "x": 184,
+        "y": 280,
+        "width": 1072,
+        "height": 710
+      },
+      "browserPath": "app20.io/rfq/confidential \u00b7 local build",
+      "label": "CONFIDENTIAL RFQ \u00b7 DEVELOPMENT STATUS",
+      "title": "Private trade data, visible activity",
+      "caption": "Public shielding and unshielding still expose amounts. Hosted proving does not hide the witness from its provider.",
+      "narration": "In this local test, trade amounts and assets stay out of public settlement data. Activity and timing remain visible, and a hosted prover would see the private payload.",
+      "audioFile": "artifacts/hackathon/v8/audio/08.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v6/product-tour.webm",
+      "label": "PRODUCT PREVIEW \u00b7 READ-ONLY",
+      "start": 15.1,
+      "sourceSeconds": 7,
+      "seconds": 9,
+      "crop": {
+        "x": 255,
+        "y": 160,
+        "width": 930,
+        "height": 565
+      },
+      "title": "The existing maker network",
+      "caption": "The current mainnet maker network uses the earlier RFQ protocol. Confidential maker integration is pending.",
+      "narration": "Anyone can become a maker. Register your public key, fund inventory, and run a bot with your pricing.",
+      "audioFile": "artifacts/hackathon/v5/audio/09.mp3"
+    },
+    {
+      "file": "artifacts/hackathon/v8/product-preview.webm",
+      "label": "PRODUCT PREVIEW \u00b7 READ-ONLY",
+      "start": 20.5,
+      "sourceSeconds": 8,
+      "seconds": 9,
+      "title": "Node SDK: separate signing and durable recovery",
+      "caption": "Development SDK \u00b7 pinned contracts, private action review and recovery after an uncertain submission.",
+      "narration": "Agents can use the Node SDK directly, without the website. Signing stays with the agent's own wallet.",
+      "audioFile": "artifacts/hackathon/v5/audio/10.mp3",
+      "crop": {
+        "x": 245,
+        "y": 465,
+        "width": 950,
+        "height": 310
+      }
+    },
+    {
+      "kind": "closing",
+      "seconds": 13,
+      "label": "APP20 \u00b7 CURRENT STATUS",
+      "title": "Explore APP20 at app20.io",
+      "caption": "Confidential RFQ: local development. Real proofs, independent wallet support and review precede mainnet.",
+      "narration": "Explore APP twenty dot I O. Confidential settlement is available for local development. Real proofs, independent wallet support, and review come before mainnet.",
+      "audioFile": "artifacts/hackathon/v8/audio/11.mp3",
+      "confidential": true
+    }
+  ],
+  "transitions": true
+}

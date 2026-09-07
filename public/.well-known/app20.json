@@ -39,7 +39,8 @@
     "npmRegistryPublished": false,
     "bundledPrivacyProver": false,
     "mainnetChat": false,
-    "nodePrivacyWalletAdapter": true
+    "nodePrivacyWalletAdapter": true,
+    "confidentialDevelopment": true
   },
   "proving": {
     "transport": "https-json",
@@ -50,7 +51,8 @@
       "Starkscan/proving provider"
     ],
     "liveProofVerified": true,
-    "verifiedSubmissionRpc": "https://rpc.starknet.lava.build/rpc/v0_10"
+    "verifiedSubmissionRpc": "https://rpc.starknet.lava.build/rpc/v0_10",
+    "liveProofScope": "earlier-mainnet-private-swap-flow-only"
   },
   "liveFillVerification": {
     "date": "2026-09-07",
@@ -61,6 +63,30 @@
       "0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e",
       "0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171"
     ],
-    "browserWalletAcceptanceVerified": false
+    "browserWalletAcceptanceVerified": false,
+    "protocol": "App20PrivateSwap (public funded terms)"
+  },
+  "confidentialRfq": {
+    "status": "development-only",
+    "guide": "https://app20.io/agent-sdk.md",
+    "page": "https://app20.io/rfq/confidential",
+    "sdkEntrypoint": "@app20/agent-sdk/confidential",
+    "mainnetEnabled": false,
+    "realProofVerified": false,
+    "independentBrowserWalletsSupported": false,
+    "independentReviewComplete": false,
+    "localContractExecutionVerified": true,
+    "funding": "separate-encrypted-transfers-to-joint-escrow",
+    "settlement": "one-jointly-approved-encrypted-note-bundle",
+    "recovery": "independent-asset-bound-refunds-after-expiry",
+    "publicMetadata": [
+      "escrow activity",
+      "ephemeral signer public keys",
+      "deadline",
+      "timing",
+      "fees",
+      "ciphertext and proof sizes"
+    ],
+    "hostedProverSeesWitness": true
   }
 }

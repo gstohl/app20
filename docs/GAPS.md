@@ -1,5 +1,11 @@
 # APP20 gaps
 
+## Confidential RFQ development status (September 7, 2026)
+
+The separate `App20ConfidentialEscrow` contract is now part of the normal Cairo build. `@app20/agent-sdk/confidential` implements private action review, independent approvals, pinned deployment checks, one-bundle settlement, durable submission recovery and unilateral timeout refunds. `npm run dev:confidential` exposes the same implementation through a disposable local browser workspace; its controls are excluded from production builds.
+
+Local contract execution with simulated proof facts passes. Real STARK proofs for this escrow, independent wallet adapters, authenticated private negotiation/inventory reservations and independent review remain open. Mainnet is explicitly disabled. The existing mainnet RFQ and its public funded terms remain a separate protocol. See [the current development guide](CONFIDENTIAL_RFQ.md); older architecture and gap sections below retain their original protocol scope.
+
 Engineering work the product still needs before private RFQ can run on a public Starknet network. RFQ v3 is mounted and browser-tested only in the build-gated localnet; legacy v1 records retain additive recovery actions. Sepolia and Mainnet RFQ transport, publication, and settlement authority are hard-disabled.
 
 This register lists only things that must be built, wired, or configured in this repository. Release conditions that are not engineering work — independent maker operators, external audits, CI provenance and signing, a Sepolia soak, Mainnet approval, secret-handling assurance, relay-gate re-review, legal/data-protection acceptance, and licence disposition (formerly P0-14, P0-26, P0-28–P0-32, P0-34, P0-35) — are tracked in [`APP20_RELEASE_GATES.md`](APP20_RELEASE_GATES.md). IDs below are stable; code comments and evidence files reference them.

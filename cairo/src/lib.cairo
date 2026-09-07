@@ -289,6 +289,8 @@ pub mod App20Chat {
     }
 }
 pub mod claim_ticket;
+
+pub mod confidential_escrow;
 pub mod escrow;
 pub mod lock_ticket;
 
