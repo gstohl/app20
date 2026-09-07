@@ -141,11 +141,20 @@ try {
       if (!same(await provider.getNonceForAddress(accountAddress, 'pre_confirmed'), nonce)) throw Error('The account has an unconfirmed operation.');
       const details = { nonce, tip: 0n, skipValidate: false, ...(proofSubmission ? { version: '0x3', proof: proofSubmission.proof.data, proofFacts: proofSubmission.proof.proofFacts } : {}) };
       const calls = proofSubmission ? [...(feeApproval ? [feeApproval] : []), proofSubmission.call] : deployment.calls;
-      const estimate = stage.startsWith('declare-') ? await account.estimateDeclareFee(payload, details) : await account.estimateInvokeFee(calls, details);
+      const estimate = stage.startsWith('declare-') ? await account.estimateDeclareFee(payload, details) : await account.estimateInvokeFee(calls, proofSubmission ? { ...details, skipValidate: true } : details);
       const bounds = estimate.resourceBounds;
       const maximum = Object.values(bounds).reduce((sum, b) => sum + BigInt(b.max_amount) * BigInt(b.max_price_per_unit), 0n);
       const spent = ledger.transactions.reduce((sum, tx) => sum + BigInt(tx.actualFee) + BigInt(tx.poolFee ?? 0), 0n);
       if (maximum <= 0n || maximum > gasLimit || spent + maximum + protocolFee > releaseBudget || maximum + protocolFee > balance) throw Error('Fee estimate exceeds the release, per-transaction, or account balance limit.');
+      if (proofSubmission) {
+        // Fee discovery has zero bounds, which are rewritten by estimation. Validate
+        // the actual bounded signature and execution before recording any submission.
+        const simulated = await account.simulateTransaction([{ type: 'INVOKE', payload: calls }], { ...details, resourceBounds: bounds, skipValidate: false, skipExecute: false });
+        const results = simulated.simulated_transactions;
+        if (!Array.isArray(results) || results.length !== 1 || !results[0].transaction_trace?.validate_invocation || !results[0].transaction_trace?.execute_invocation || results[0].transaction_trace.execute_invocation.revert_reason) throw Error('Bounded proof transaction did not pass account validation and execution.');
+        const validity = await provider.callContract({ contractAddress: MAINNET_DEPLOYMENT.settlement.pool, entrypoint: 'get_proof_validity_blocks', calldata: [] });
+        if (validity.length !== 1 || BigInt(await provider.getBlockNumber()) > BigInt(proofSubmission.baseBlock.number) + BigInt(validity[0])) throw Error('Proof expired during transaction validation.');
+      }
       if (!same(await provider.getNonceForAddress(accountAddress), nonce)) throw Error('Account nonce changed during preparation.');
       ledger.pending = { stage, nonce, classHash: candidate.classHash, ...(stage.startsWith('deploy-') ? { address: deployment.addresses[0] } : {}), ...(proofSubmission ? { mode: proofSubmission.mode, proofId: proofSubmission.proofId } : {}), maximumFee: maximum.toString(), poolFee: protocolFee.toString(), hash: null };
       await save('ledger.json', ledger);
