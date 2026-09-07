@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import AddressBookField from "@/components/address-book/AddressBookField";
 import { ScanProgress } from "@/components/mail/OperationProgress";
@@ -84,30 +84,17 @@ export default function ChatMailboxTools({
 
 
   return (
-    <div className={styles.tools} aria-label="Chat tools">
-      <section className={styles.toolsSection} aria-labelledby="chat-scan-title">
-        <div className={styles.toolsHead}>
-          <strong id="chat-scan-title">Check for messages</strong>
-          <span className={styles.toolsKeyState}>
-            {gate === "wallet"
-              ? "NO WALLET"
-              : keyLoaded
-                ? "KEY LOADED"
-                : "KEY NOT LOADED"}
-          </span>
-        </div>
+    <details className={styles.tools} aria-label="Chat tools">
+      <summary className={styles.settingsSummary}>Chat settings{drafts.length ? ` · ${drafts.length} draft${drafts.length === 1 ? "" : "s"}` : ""}</summary>
+      <details className={styles.toolsDisclosure}>
+        <summary>Message history</summary>
+        <div className={styles.toolsBody}>
+        <p className={styles.toolsNote}>New messages are checked every 60 seconds while Chat is open and unlocked. You can also load earlier conversations here.</p>
         <div className={styles.toolsActions}>
           <button
             type="button"
-            onClick={() => onScan("newer")}
-            disabled={!keyLoaded || scanning}
-          >
-            {scanning ? "Checking…" : "Check for new messages"}
-          </button>
-          <button
-            type="button"
             onClick={() => onScan("older")}
-            disabled={!keyLoaded || scanning}
+            disabled={!keyLoaded || !helperConfigured || scanning}
           >
             Load older messages
           </button>
@@ -123,12 +110,10 @@ export default function ChatMailboxTools({
           <p className={styles.toolsNote}>
             {gate === "wallet"
               ? "Connect a wallet before checking for messages."
-              : "Load this device's chat key before checking for messages."}
+              : "Unlock Chat to check your messages."}
           </p>
         ) : null}
-        {scanCursorDescription ? (
-          <p className={styles.toolsNote}>{scanCursorDescription}</p>
-        ) : null}
+        {scanCursorDescription ? <details><summary>History details</summary><p className={styles.toolsNote}>{scanCursorDescription}</p></details> : null}
         {!scanning && scanMessage ? (
           <p
             className={styles.toolsNote}
@@ -138,7 +123,8 @@ export default function ChatMailboxTools({
             {scanMessage}
           </p>
         ) : null}
-      </section>
+        </div>
+      </details>
 
 
       <details className={styles.toolsDisclosure}>
@@ -187,11 +173,11 @@ export default function ChatMailboxTools({
         <summary>Encrypted chat recovery</summary>
         <div className={styles.toolsBody}>
           <p className={styles.toolsNote}>
-            Post authenticated contact or RFQ-history self-messages. Oversized
-            ciphertext uses a verified CID pointer. The same wallet locates it;
-            the chat recovery phrase decrypts it. Wallet alone is not enough.{" "}
-            {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}
+            Save an encrypted backup of your contacts or trading history.
+            Restoring needs this wallet and your chat recovery phrase.
+            Creating a backup needs wallet approval and network fees.
           </p>
+          <details><summary>Recovery phrase access</summary><p className={styles.toolsNote}>{MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE}</p></details>
           <button
             type="button"
             disabled={!keyLoaded || !seedLoaded || !helperConfigured || backupBusy}
@@ -227,7 +213,7 @@ export default function ChatMailboxTools({
               disabled={gate === "wallet"}
               onChange={(event) => onRfqAutoBackupChange(event.target.checked)}
             />{" "}
-            Automatically back up RFQ history after settlement (opt in)
+            Back up trading history after each settlement (uses gas)
           </label>
           <p className={styles.toolsNote}>
             Restore from the backups filed under <em>This chat</em> above.
@@ -239,11 +225,11 @@ export default function ChatMailboxTools({
         <summary>Device safety</summary>
         <div className={styles.toolsBody}>
           <p className={styles.toolsNote}>
-            Disconnecting is not logout: drafts, Sent copies, and aliases stay
-            in this browser profile.
+            Lock Chat when you step away. Your drafts, sent messages and contact
+            names stay in this browser until you choose Forget this device.
           </p>
           <button type="button" onClick={onLock}>
-            Lock chat this session
+            Lock Chat
           </button>
           <button type="button" className={styles.toolsDanger} onClick={onForget}>
             Forget this device
@@ -252,12 +238,9 @@ export default function ChatMailboxTools({
       </details>
 
       <p className={styles.railFooter}>
-        <Link to="/contacts">Counterparties</Link> keeps the labels;{" "}
-        <a href="https://github.com/gstohl/app20" target="_blank" rel="noreferrer">
-          GitHub ↗
-        </a>
+        <Link to="/contacts">Manage contacts</Link>
       </p>
-    </div>
+    </details>
   );
 }
 
@@ -265,19 +248,22 @@ export default function ChatMailboxTools({
 export function ChatNewConversation({ selfAddress, gate, onStartConversation, onNewDocument }: {
   selfAddress: string;
   gate: "wallet" | "key" | null;
-  onStartConversation: (address: string) => void;
+  onStartConversation: (address: string) => boolean;
   onNewDocument: (recipient?: string) => void;
 }) {
   const [newAddress, setNewAddress] = useState("");
+  const formRef = useRef<HTMLDetailsElement>(null);
   function startConversation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!newAddress.trim()) return;
-    onStartConversation(newAddress);
-    setNewAddress("");
+    if (onStartConversation(newAddress)) {
+      setNewAddress("");
+      if (formRef.current) formRef.current.open = false;
+    }
   }
 
   return (
-      <details id="chat-new-conversation" className={styles.toolsDisclosure}>
+      <details ref={formRef} id="chat-new-conversation" className={styles.toolsDisclosure}>
         <summary>Write to a new address</summary>
         <form className={styles.toolsForm} onSubmit={startConversation}>
           <AddressBookField

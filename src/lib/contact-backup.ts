@@ -85,7 +85,7 @@ function normalizeChainId(value: string): string {
 function normalizeFingerprint(value: string): string {
   const normalized = value.trim().toLowerCase();
   if (!MAILBOX_KEY_HEX.test(normalized)) {
-    throw new Error("The contact backup mailbox fingerprint is invalid.");
+    throw new Error("The contact backup chat fingerprint is invalid.");
   }
   return normalized;
 }
@@ -179,7 +179,7 @@ function deriveMacKey(
   context: SnapshotContext,
 ): Uint8Array {
   if (mailboxSeed.length !== 32) {
-    throw new Error("Unlock the mailbox with its 32-byte recovery seed first.");
+    throw new Error("Unlock the chat with its 32-byte recovery seed first.");
   }
   return hkdf(
     sha256,
@@ -321,7 +321,7 @@ export function verifyContactSnapshot(
     parsed.mailboxFingerprint !== expectedContext.mailboxFingerprint
   ) {
     throw new Error(
-      "This contact backup belongs to a different wallet, network, helper, or mailbox key.",
+      "This contact backup belongs to a different wallet, network, helper, or chat key.",
     );
   }
   const body: SnapshotBody = {

@@ -104,7 +104,7 @@ test("forwards and returns opaque OHTTP bytes unchanged with stripped client hea
     gate,
     fetch: async (input, init) => {
       assert.equal(String(input), UPSTREAM_CANARY);
-      assert.equal(init?.redirect, "error");
+      assert.equal(init?.redirect, "manual");
       const headers = new Headers(init?.headers);
       assert.deepEqual([...headers.keys()].sort(), [
         "accept",
@@ -141,7 +141,7 @@ test("generic redirect failure exposes no plaintext, secret, URL, auth, or upstr
       now: NOW,
       gate: new SharedGate(),
       fetch: async (_input, init) => {
-        assert.equal(init?.redirect, "error");
+        assert.equal(init?.redirect, "manual");
         throw new TypeError(
           `${PLAINTEXT_CANARY} ${SECRET_CANARY} ${UPSTREAM_CANARY}`,
         );
@@ -508,4 +508,45 @@ test("RPC rejects unsupported methods and forwards allowed JSON bytes unchanged"
   assert.equal(allowed.status, 200);
   assert.equal(forwarded, allowedBody);
   assert.equal(gate.active, 0);
+});
+
+
+test("RPC and OHTTP reject upstream redirects without following or exposing their target", async () => {
+  const requests = [
+    new Request("https://app.invalid/api/starknet/mainnet", {
+      method: "POST", headers: { origin: "https://app.invalid", "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_chainId", params: [] }),
+    }),
+    await ohttpRequest(await sessionCookie()),
+  ];
+  for (const request of requests) {
+    const gate = new SharedGate();
+    let calls = 0;
+    const handler = createRelayHandler({ now: NOW, gate, fetch: async (_input, init) => {
+      calls++;
+      assert.equal(init?.redirect, "manual");
+      return new Response("upstream body canary", { status: 302, headers: { location: UPSTREAM_CANARY } });
+    } });
+    const response = await handler(request, env());
+    assert.equal(response.status, 502);
+    assert.equal(calls, 1);
+    assert.equal(gate.active, 0);
+    assert.equal(response.headers.has("location"), false);
+    assert.equal((await response.text()).includes(UPSTREAM_CANARY), false);
+  }
+});
+
+
+test("default native fetch is not invoked with the dependency container as its receiver", async (t) => {
+  t.mock.method(globalThis, "fetch", async function (this: unknown) {
+    assert.ok(this === undefined || this === globalThis);
+    return Response.json({ jsonrpc: "2.0", id: 1, result: "0x534e5f4d41494e" });
+  });
+  const handler = createRelayHandler({ gate: new SharedGate() });
+  const response = await handler(new Request("https://app.invalid/api/starknet/mainnet", {
+    method: "POST", headers: { origin: "https://app.invalid", "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "starknet_chainId", params: [] }),
+  }), env());
+  assert.equal(response.status, 200);
+  assert.equal((await response.json() as { result: string }).result, "0x534e5f4d41494e");
 });

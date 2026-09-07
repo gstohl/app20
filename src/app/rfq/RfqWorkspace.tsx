@@ -28,11 +28,13 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
 import DeskMarketBoard from "./DeskMarketBoard";
+import IndependentMakers from "./IndependentMakers";
+import MainnetTradeWorkspace from "./MainnetTradeWorkspace";
+import { mainnetOnly } from "@/utils/constants";
 import type { LocalnetMarketPairId } from "./LocalnetPrivateIntentDesk";
 import {
   abandonLocalnetFunding,
@@ -281,6 +283,10 @@ function localTerms(record: RfqLifecycleRecord) {
 }
 
 export default function RfqWorkspace() {
+  return mainnetOnly ? <MainnetTradeWorkspace /> : <LegacyRfqWorkspace />;
+}
+
+function LegacyRfqWorkspace() {
   const providerIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex,
   );
@@ -1310,13 +1316,14 @@ export default function RfqWorkspace() {
                   <h3>Private RFQ unavailable</h3>
                   <p>
                     {providerIndex === 2
-                      ? "Production contracts, a governed maker directory, custody, the chain verifier, operators, funding, audit and rollout evidence are not in place on this rail, so no maker request can be sent."
+                      ? "Private settlement is not deployed on this network. Independent maker price discovery is available separately below when configured."
                       : "No maker request was sent, and there is no automatic public fallback."}
                   </p>
                 </section>
               )}
             </aside>
           </section>
+          <IndependentMakers />
           {/* Public context is a reference, not a quote: the board's own labels
               say non-executable, it needs an opt-in that discloses your IP, and
               it used to occupy the top half of the page above the ticket. It

@@ -8,9 +8,9 @@ export default function PrivyRecoveryPage() {
   return (
     <PrivyRailGate>
       <SecondaryRailShell
-        boundary="Recovery · not RFQ execution"
-        title="Privy Sepolia recovery"
-        summary="Recovery is a separate wallet operation on its own rail. It never proves RFQ settlement and cannot fund, fill, claim, or refund a maker trade."
+        boundary="Shielded wallet and recovery"
+        title="Privy wallet"
+        summary="Register, shield, transfer and withdraw with your Privy account. Proving uses HTTPS: APP20/Cloudflare and the provider can access proving payloads."
       >
         <Suspense fallback={<p>Loading recovery…</p>}>
           <PrivySepoliaVault />

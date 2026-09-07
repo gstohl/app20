@@ -1,0 +1,17 @@
+import type { Call, ProviderInterface } from 'starknet';
+export type Token = { address: string; symbol: string; decimals: number };
+export type Deployment = { rpcUrl: string; address: string; classHash: string; chainId: string; fromBlock: number; sellToken: Token; buyToken: Token; settlement: { address: string; classHash: string; pool: string; poolClassHash: string } };
+export type Head = { block: string; number: number; timestamp: number };
+export type Maker = { address: string; revision: number; validUntil: number; key: JsonWebKey };
+export type Scope = { chainId: string; book: string; id: string; maker: string; taker: string; revision: number; expiresAt: number };
+export type Terms = { sellToken: string; buyToken: string; sellAmount: string; minBuyAmount: string };
+export type Quote = { kind: 'executable'; buyAmount: string; expiresAt: number; settlement: string; quoteId: string; commitment: string };
+export type PrivateAction = { type: 'withdraw'; token: string; amount: string; recipient: string } | { type: 'transfer'; token: string; amount: 'OPEN'; recipient: string } | { type: 'invoke'; contract: string; calldata: string[] };
+export type Attempt = { status: 'prepared' | 'submitted' | 'confirmed' | 'reverted'; transactionHash?: string };
+export type OperatorInput = { account: string; reverse: boolean; price: string; spread: number; maxSell: string; maxBuy: string; priceHours: number; maxFee: string; totalFees: string; keyValidUntil: number };
+export type OperatorConfig = { rpcUrl: string; chainId: string; address: string; classHash: string; fromBlock: number; account: string; stateFile: string; keyValidUntil: number; maxResponses: number; maxFeePerTransaction: string; maxTotalFees: string; markets: { sellToken: string; buyToken: string; numerator: string; denominator: string; maxSellAmount: string; maxBuyAmount: string; spreadBps: number; validUntil: number }[]; settlement: Deployment['settlement']; quoteTtlSeconds: number; indicativeTtlSeconds?: number; maxActiveReservations?: number; responseCooldownSeconds?: number; reservationCooldownSeconds?: number; inventoryFunding?: { token: string; amount: string }; inventoryWithdrawal?: { token: string; amount: string } };
+export type MakerCommand = 'check' | 'register' | 'run' | 'deactivate' | 'fund' | 'withdraw' | 'release' | 'reconcile';
+export type RunMakerOptions = { configFile: string; command: MakerCommand; cwd?: string; signingKey?: string; transportKeyFile?: string; signal?: AbortSignal };
+export type PublicExecutor = { address: string; chainId: string; execute: (calls: Call[]) => Promise<{ transaction_hash: string }> };
+export type PrivacyExecutor = { address: string; chainId: string; execute: (actions: PrivateAction[]) => Promise<{ transaction_hash: string }> };
+export type ClientOptions = { rpcUrl?: string; provider?: ProviderInterface };

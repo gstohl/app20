@@ -4,7 +4,6 @@ import {
   assertSettlementReceipt,
   canonicalSettlementReceipt,
   digestSettlementReceipt,
-  invalidateVerifiedChainSettlementReceipt,
   settlementReceiptAuthority,
   verifyChainSettlementReceipt,
   type ChainSettlementReceipt,

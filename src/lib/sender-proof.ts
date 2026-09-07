@@ -47,12 +47,12 @@ export function evaluateSenderProof(input: {
 export function senderProofLabel(proof: SenderProof): string {
   switch (proof.kind) {
     case "unbound_signature":
-      return "Valid signature from an unregistered Mail auth key. It does not prove a mailbox or wallet address.";
+      return "Valid signature from an unregistered Chat auth key. It does not prove a chat or wallet address.";
     case "invalid_signature":
-      return "This letter claims a mailbox signature, but the signature is invalid.";
+      return "This message claims a chat signature, but the signature is invalid.";
     case "assignment_only":
       return `Assigned on this device to ${proof.address}. That is a local label, not a proof.`;
     default:
-      return "Sealed letter. No sender is present unless a later letter is signed.";
+      return "Sealed message. No sender is present unless a later message is signed.";
   }
 }

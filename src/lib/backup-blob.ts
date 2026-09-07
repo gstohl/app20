@@ -121,7 +121,7 @@ function infoString(input: {
 
 function deriveKey(mailboxSeed: Uint8Array, info: string): Uint8Array {
   if (mailboxSeed.length !== 32) {
-    throw new Error("Unlock the mailbox with its 32-byte recovery seed first.");
+    throw new Error("Unlock the chat with its 32-byte recovery seed first.");
   }
   return hkdf(
     sha256,
@@ -238,7 +238,7 @@ function authenticatePointer(
   context: BackupSnapshotContext,
 ): string {
   if (mailboxSeed.length !== 32) {
-    throw new Error("Unlock the mailbox with its 32-byte recovery seed first.");
+    throw new Error("Unlock the chat with its 32-byte recovery seed first.");
   }
   const info = textEncoder.encode(pointerMacInfo(pointer, context));
   const key = hkdf(

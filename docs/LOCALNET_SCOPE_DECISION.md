@@ -1,6 +1,8 @@
-# APP20 localnet-final scope decision
+# APP20 localnet-final scope decision — historical
 
 Decision date: 2026-08-26
+
+On 2026-09-06 the user reopened mainnet preparation. The current preparation work and remaining execution requirements are in [MAINNET_RUNBOOK.md](MAINNET_RUNBOOK.md). This document records the earlier scope; it does not prohibit the newly requested preparation.
 
 APP20 is returning to a **localnet-only APP20 Mail/escrow/RFQ** product scope. Mainnet retains only the Ready STRK20 functionality exposed by the app (public transfer is unavailable); Sepolia retains Ready plus the optional Privy recovery rail. The build-gated development wallet, Mail fixtures, and private RFQ run only on localnet. Production RFQ transport, RFQ publication/value execution, and authoritative browser receipts remain disabled.
 
@@ -19,12 +21,12 @@ The historical Sepolia transactions are one-off deployability evidence, not runt
 | #153 deployment candidate validation | **Completed for the recorded proof fixtures** | The offline evidence index pins source/artifact digests, class hashes, transactions, deployed identities, and canonical-vs-legacy labels. The records cannot configure runtime. |
 | #154 funding/deployment handoff | **Deferred/out of scope** | The one-off deployer paid fees, but no funding transaction, custody restoration result, custody handoff, or approval attestation is recorded. |
 | #155 reproducibility checkpoint approval | **Deferred/out of scope** | Artifact digests exist, but there is no independent reproduction, bundle digest, two-builder record, or approval. `releaseReady` remains false. |
-| #156 reviewed deployable contracts | **Deferred/out of scope** | App20Chat proof was unaudited; deployed escrow/ticket classes are legacy; canonical production App20Escrow/App20Claim do not exist. |
+| #156 reviewed deployable contracts | **Deferred/out of scope** | App20Mail proof was unaudited; deployed escrow/ticket classes are legacy; canonical production App20Escrow/App20Claim do not exist. |
 
 ## Historical Sepolia facts and deny policy
 
-- The deployer account was publicly observed as `ACCEPTED_ON_L1`; the retained proof does not separately attest its execution status. App20Chat declaration and deployment were publicly observed as `ACCEPTED_ON_L1` and `SUCCEEDED`.
-- App20Chat proof address `0x0204ce7efff77e4bef8f05ea4ee0e810c51cd1f1532ec0c04da3fdcb662fe545` has recorded class hash `0x05f066234003eb6f9104e7730c88f50dab82113ad5e9dbbc0db3f75972d586ca`.
+- The deployer account was publicly observed as `ACCEPTED_ON_L1`; the retained proof does not separately attest its execution status. App20Mail declaration and deployment were publicly observed as `ACCEPTED_ON_L1` and `SUCCEEDED`.
+- App20Mail proof address `0x0204ce7efff77e4bef8f05ea4ee0e810c51cd1f1532ec0c04da3fdcb662fe545` has recorded class hash `0x05f066234003eb6f9104e7730c88f50dab82113ad5e9dbbc0db3f75972d586ca`.
 - Historical/localnet `App20Escrow` proof address `0x06a9ea8288df876d1e174db1e0b8d58bc8bc4641b3ed9f592fb56003f69712a4` was publicly observed as `ACCEPTED_ON_L2` and `SUCCEEDED`, with legacy class hash `0x0638d8554dc095f63f253c8dd32ac09a3e9ffedd5a308b0d0f188e5fca6c8c3b`.
 - Historical `ClaimTicket` was declared with class hash `0x07619ea7dcb8615874fb9d29b217f649e9b7b596f01d47d673e4e37132b17196` and pinned by that legacy escrow. No standalone ticket instance is claimed.
 - None of these values may be copied into application constants, build variables, the production manifest, or `strk20.json`. Legacy `App20Escrow`/`ClaimTicket` are never canonical production `App20Escrow`/`App20Claim`.

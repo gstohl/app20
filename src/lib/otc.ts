@@ -458,7 +458,7 @@ export function paymentRequestIsExpired(
 export function assertSettlesStrk(offer: OfferPayload): void {
   if (!isCanonicalStrkToken(offer.give.token)) {
     throw new Error(
-      "Mail can settle only STRK with canonical metadata on the give leg.",
+      "Chat can settle only STRK with canonical metadata on the give leg.",
     );
   }
   if (!hasConsistentTokenMetadata(offer.want.token)) {
@@ -480,7 +480,7 @@ export function resolvePaymentRequestTokenForChain(
     !feltEquals(chainId, LOCALNET_CHAIN_ID)
   ) {
     throw new Error(
-      "Mail can pay only STRK with canonical invoice metadata on public networks.",
+      "Chat can pay only STRK with canonical invoice metadata on public networks.",
     );
   }
   const resolved = resolveCanonicalToken("localnet", request.token.address);
@@ -492,7 +492,7 @@ export function resolvePaymentRequestTokenForChain(
     request.token.decimals !== resolved.token.decimals
   ) {
     throw new Error(
-      "Mail can pay only the registry-resolved localnet USDC token or canonical STRK.",
+      "Chat can pay only the registry-resolved localnet USDC token or canonical STRK.",
     );
   }
   return {

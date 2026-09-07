@@ -15,6 +15,7 @@ export function rpcRelayUrl(
 export const LOCALNET_CHAIN_ID = "0x51554945544c494e455f4c4f43414c";
 export const LOCALNET_PROVIDER_INDEX = 3;
 export const localnetWalletEnabled = import.meta.env.VITE_E2E_WALLET === true;
+export const mainnetOnly = import.meta.env.PROD && !localnetWalletEnabled;
 
 // Indices follow the starter's convention: Mainnet = 0, Sepolia = 2. The
 // localnet provider is appended only in an explicitly flagged dev build.

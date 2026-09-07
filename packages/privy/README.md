@@ -1,3 +1,5 @@
+> APP20 mainnet update: the app now uses `starkscanProver` and direct contract discovery. This is authenticated HTTPS JSON, not the OHTTP configuration shown in the generic examples below. APP20/Cloudflare and the upstream prover can access proving payloads. Browser/Node journals preserve complete one-time results. Live Privy activation requires the project credentials and a real-wallet acceptance test; none has been completed yet.
+
 # @app20/privy
 
 Reusable TypeScript integration for browser-owned and server-side Privy Starknet wallets with the STRK20 privacy pool.

@@ -133,7 +133,7 @@ export function saveSentMail(
     recipients: uniqueCanonicalAddresses(message.recipients ?? []),
   });
   if (!parsed)
-    throw new Error("Confirmed sent mail could not be indexed locally.");
+    throw new Error("Confirmed sent message could not be indexed locally.");
   const messages = loadSentMail(storage, chainId, address).filter(
     (item) => item.documentId !== parsed.documentId,
   );

@@ -44,7 +44,7 @@ function hexToBytes(value: string, label: string): Uint8Array {
 
 export function deriveMailAuthKeypair(seed32: Uint8Array): MailAuthKeypair {
   if (seed32.length !== 32) {
-    throw new Error("Mail auth key requires the 32-byte mailbox seed.");
+    throw new Error("Chat auth key requires the 32-byte chat seed.");
   }
   const privateKey = hkdf(
     sha256,
@@ -132,8 +132,4 @@ export function verifyMailSenderAuth(
 
 export function mailboxPublicKeyHex(publicKey: Uint8Array): string {
   return bytesToHex(publicKey);
-}
-
-export function mailboxKeysEqual(leftHex: string, right: Uint8Array): boolean {
-  return leftHex.toLowerCase() === bytesToHex(right);
 }

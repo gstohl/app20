@@ -153,5 +153,3 @@ export function v3RequestMaturityGate(
     blocksRemaining: latestPending.blocksRemaining,
   });
 }
-
-export const maturityGateForV3Request = v3RequestMaturityGate;

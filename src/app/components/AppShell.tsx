@@ -2,13 +2,27 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import SessionControl from "@/app/components/SessionControl";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useWalletMode } from "@/app/rfq/walletMode";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { clearChatSession } from "@/app/chat/chat-session";
+import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 
 type AppShellProps = {
   renderLocalnetTools: (() => ReactNode) | null;
 };
 
 export default function AppShell({ renderLocalnetTools }: AppShellProps) {
+  useEffect(() => {
+    const wallet = useStoreWallet.subscribe((next, previous) => {
+      if (next.address !== previous.address || next.chain !== previous.chain || next.isConnected !== previous.isConnected) clearChatSession();
+    });
+    const rail = useWalletMode.subscribe((next, previous) => {
+      if (next.mode !== previous.mode) clearChatSession();
+    });
+    const network = useFrontendProvider.subscribe((next, previous) => {
+      if (next.currentFrontendProviderIndex !== previous.currentFrontendProviderIndex) clearChatSession();
+    });
+    return () => { wallet(); rail(); network(); clearChatSession(); };
+  }, []);
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -27,7 +41,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
         ? "COUNTERPARTIES"
         : rfqActive
           ? "RFQ WORKSPACE"
-          : "APP20";
+          : pathname === "/agents" ? "AGENTS" : "APP20";
 
   return (
     <div className="app-shell">
@@ -41,7 +55,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
         />
         {/* Live session state for the module you are actually in. */}
         {connected
-          ? `${moduleName} · WALLET CONNECTED · PUBLIC-NETWORK RFQ DISABLED`
+          ? `${moduleName} · WALLET CONNECTED`
           : `${moduleName} · NO WALLET CONNECTED`}
       </div>
       <header className="app-header">
@@ -69,6 +83,7 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
           <Link to="/pay" aria-current={payActive ? "page" : undefined}>
             Pay
           </Link>
+          <Link to="/agents" aria-current={pathname === "/agents" ? "page" : undefined}>Agents</Link>
         </nav>
         <div className="app-utilities">
           {renderLocalnetTools?.()}

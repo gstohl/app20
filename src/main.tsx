@@ -1,3 +1,5 @@
+import MakerPage from './app/rfq/MakerPage';
+import AgentsPage from './app/agents/page';
 import { createRoot } from "react-dom/client";
 import { lazy, Suspense, type ReactNode } from "react";
 import {
@@ -126,6 +128,10 @@ const rfqRoute = createRoute({
   component: RfqPage,
 });
 
+const makerSetupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/maker", component: MakerPage });
+
+const agentsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/agents", component: AgentsPage });
+
 const rfqOperationsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/rfq/operations",
@@ -218,6 +224,8 @@ const router = createRouter({
     legacyPoolCreationRoute,
     rfqRoute,
     rfqOperationsRoute,
+    agentsRoute,
+    makerSetupRoute,
     legacyVaultRoute,
     mailRoute,
     legacyInboxRoute,

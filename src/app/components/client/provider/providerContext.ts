@@ -1,6 +1,6 @@
 "use client";
 import { create } from "zustand";
-import { localnetWalletEnabled } from "@/utils/constants";
+import { localnetWalletEnabled, mainnetOnly } from "@/utils/constants";
 
 // StarknetChainId
 //   0  SN_MAIN = "0x534e5f4d41494e",
@@ -13,6 +13,7 @@ const NETWORK_TOGGLE_STORAGE_KEY = "app20/network-toggle/v1";
 // requires an explicit click, and network policy is enforced at submit time,
 // so restoring this display state cannot route value to the wrong network.
 function readInitialProviderIndex(): number {
+  if (mainnetOnly) return 0;
   try {
     const raw = globalThis.localStorage?.getItem(NETWORK_TOGGLE_STORAGE_KEY);
     if (raw === "0" || raw === "2") return Number(raw);
@@ -46,6 +47,7 @@ interface FrontEndProviderState {
 export const useFrontendProvider = create<FrontEndProviderState>()((set) => ({
   currentFrontendProviderIndex: readInitialProviderIndex(),
   setCurrentFrontendProviderIndex: (currentFrontendProviderIndex: number) => {
+    if (mainnetOnly && currentFrontendProviderIndex !== 0) return;
     set((state) => {
       if (state.currentFrontendProviderIndex === currentFrontendProviderIndex) {
         return state;

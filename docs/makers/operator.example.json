@@ -1,0 +1,40 @@
+{
+  "rpcUrl": "https://api.cartridge.gg/x/starknet/sepolia",
+  "chainId": "0x534e5f5345504f4c4941",
+  "address": "REPLACE_WITH_DEPLOYED_BOOK",
+  "classHash": "REPLACE_WITH_VERIFIED_CLASS_HASH",
+  "fromBlock": 0,
+  "account": "REPLACE_WITH_YOUR_MAKER_ACCOUNT",
+  "stateFile": "/absolute/private/path/maker-state.json",
+  "keyValidUntil": 0,
+  "maxResponses": 10,
+  "maxFeePerTransaction": "100000000000000000",
+  "maxTotalFees": "1000000000000000000",
+  "markets": [
+    {
+      "sellToken": "REPLACE_WITH_SELL_TOKEN",
+      "buyToken": "REPLACE_WITH_BUY_TOKEN",
+      "numerator": "1",
+      "denominator": "1",
+      "maxSellAmount": "1",
+      "maxBuyAmount": "1",
+      "spreadBps": 50,
+      "validUntil": 0
+    }
+  ],
+  "settlement": {
+    "address": "REPLACE_WITH_PRIVATE_SWAP",
+    "classHash": "REPLACE_WITH_VERIFIED_SWAP_CLASS",
+    "pool": "REPLACE_WITH_PRIVACY_POOL",
+    "poolClassHash": "REPLACE_WITH_VERIFIED_POOL_CLASS"
+  },
+  "quoteTtlSeconds": 1200,
+  "inventoryFunding": {
+    "token": "REPLACE_WITH_BUY_TOKEN",
+    "amount": "1"
+  },
+  "inventoryWithdrawal": {
+    "token": "REPLACE_WITH_SELL_TOKEN",
+    "amount": "1"
+  }
+}

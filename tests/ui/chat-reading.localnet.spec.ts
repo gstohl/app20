@@ -20,13 +20,13 @@ test('Chat setup choices and reading position survive newly arriving and older m
     `) });
   });
   await openLocalnetPage(page, '/chat');
-  await page.getByRole('button', { name: 'Restore chat access', exact: true }).click();
-  await expect(page.getByLabel('Backup value')).toBeVisible();
+  await page.getByText('Restore from backup', { exact: true }).click();
+  await expect(page.getByLabel('Chat recovery phrase')).toBeVisible();
   await page.screenshot({ path: 'artifacts/desktop-ux/four-steps/restore.png' });
   await expect(page.getByRole('button', { name: 'Enable encrypted chat' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Set up Chat', exact: true }).click();
+  await page.getByText('Restore from backup', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Enable encrypted chat' })).toBeVisible();
-  await expect(page.getByLabel('Backup value')).toBeHidden();
+  await expect(page.getByLabel('Chat recovery phrase')).toBeHidden();
   const bob = localnetIdentity(localnetConfig, 'bob');
   const makeMessage = (index: number) => ({
     id: `reading-${index}`, index: String(index), direction: 'incoming', assignedAddress: bob.address,

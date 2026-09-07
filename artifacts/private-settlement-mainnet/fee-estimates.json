@@ -1,0 +1,71 @@
+{
+  "at": "2026-09-06T21:54:54.591Z",
+  "results": [
+    {
+      "label": "Declare maker book",
+      "estimate": {
+        "resourceBounds": {
+          "l2_gas": {
+            "max_amount": "512071200",
+            "max_price_per_unit": "44128236717"
+          },
+          "l1_gas": {
+            "max_amount": "0",
+            "max_price_per_unit": "126990964610871"
+          },
+          "l1_data_gas": {
+            "max_amount": "288",
+            "max_price_per_unit": "49905672180"
+          }
+        },
+        "overall_fee": "22596813502391838240",
+        "unit": "FRI"
+      },
+      "maximumFeeSTRK": 22.596813502391836
+    },
+    {
+      "label": "Declare private settlement",
+      "estimate": {
+        "resourceBounds": {
+          "l2_gas": {
+            "max_amount": "969557280",
+            "max_price_per_unit": "44128236717"
+          },
+          "l1_gas": {
+            "max_amount": "0",
+            "max_price_per_unit": "126990964610871"
+          },
+          "l1_data_gas": {
+            "max_amount": "288",
+            "max_price_per_unit": "49905672180"
+          }
+        },
+        "overall_fee": "42784867535364237600",
+        "unit": "FRI"
+      },
+      "maximumFeeSTRK": 42.784867535364235
+    },
+    {
+      "label": "Deploy both contracts",
+      "estimate": {
+        "resourceBounds": {
+          "l2_gas": {
+            "max_amount": "3634800",
+            "max_price_per_unit": "44128236717"
+          },
+          "l1_gas": {
+            "max_amount": "0",
+            "max_price_per_unit": "126990964610871"
+          },
+          "l1_data_gas": {
+            "max_amount": "768",
+            "max_price_per_unit": "49905672180"
+          }
+        },
+        "overall_fee": "160435642375185840",
+        "unit": "FRI"
+      },
+      "maximumFeeSTRK": 0.16043564237518584
+    }
+  ]
+}

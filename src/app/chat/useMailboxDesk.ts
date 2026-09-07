@@ -3,6 +3,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
+import { startChatRefresh } from "./chat-refresh";
+import { clearChatSession, rememberChatSession, restoreChatSession } from "./chat-session";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { loadReadMessageIds, saveReadMessageIds } from "@/lib/mail-read-state";
@@ -216,6 +218,7 @@ export function useMailboxDesk() {
     (state) => state.currentFrontendProviderIndex,
   );
   const address = useStoreWallet((state) => state.address);
+  const isConnected = useStoreWallet((state) => state.isConnected);
   const chainId = useStoreWallet((state) => state.chain);
   const walletAccount = useStoreWallet((state) => state.myWalletAccount);
   const selectedWallet = useStoreWallet((state) => state.StarknetWalletObject);
@@ -269,6 +272,9 @@ export function useMailboxDesk() {
     Record<string, ThreadActionState>
   >({});
   const [scanning, setScanning] = useState(false);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const scanBusyRef = useRef<string | null>(null);
+  const keyScopeRef = useRef<string | null>(null);
   const [scanKind, setScanKind] = useState<ScanKind>("idle");
   const [scanMessage, setScanMessage] = useState("");
   const [scanProgress, setScanProgress] = useState({
@@ -444,9 +450,15 @@ export function useMailboxDesk() {
     escrowRefreshRef.current += 1;
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
+    scanBusyRef.current = null;
+    keyScopeRef.current = null;
+    setLastCheckedAt(null);
     setScanning(false);
-    setKeypair(null);
-    setMailSeed(null);
+    const restored = isConnected && address && chainId && helperAddress
+      ? restoreChatSession(`${providerIndex}:${chainId}:${address}`) : null;
+    setKeypair(restored?.keypair ?? null);
+    setMailSeed(restored?.seed ?? null);
+    keyScopeRef.current = restored?.scope ?? null;
     setMessages([]);
     setDrafts([]);
     setScanKind("idle");
@@ -504,7 +516,7 @@ export function useMailboxDesk() {
       escrowRefreshRef.current += 1;
       cancelActiveScanWorker();
     };
-  }, [address, chainId, providerIndex]);
+  }, [address, chainId, providerIndex, isConnected]);
 
   useEffect(() => {
     try {
@@ -931,10 +943,13 @@ export function useMailboxDesk() {
   }
 
   function handleKeyReady(nextKeypair: MailKeypair, nextSeed?: Uint8Array) {
+    keyScopeRef.current = `${providerIndex}:${chainId}:${address}`;
     scanGenerationRef.current += 1;
     escrowRefreshRef.current += 1;
     cancelActiveScanWorker();
     recentLoadedRef.current = false;
+    scanBusyRef.current = null;
+    setLastCheckedAt(null);
     setScanning(false);
     setMessages(
       address && chainId
@@ -961,12 +976,12 @@ export function useMailboxDesk() {
     setScanMessage("");
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setKeypair(nextKeypair);
-    setMailSeed(
-      nextSeed ??
+    const seed = nextSeed ??
         (address && chainId
           ? loadPersistedMailSeed(window.localStorage, chainId, address)
-          : null),
-    );
+          : null);
+    setMailSeed(seed);
+    if (seed) rememberChatSession({ scope: `${providerIndex}:${chainId}:${address}`, keypair: nextKeypair, seed });
     // A counterparty can advance an escrow while this mailbox is inactive.
     // Refresh contract state when its device key is loaded so maker actions
     // (notably Claim after Fill) do not remain stuck on a stale local snapshot.
@@ -974,9 +989,10 @@ export function useMailboxDesk() {
   }
 
   async function scanInbox(requested: "newer" | "older" = "newer") {
+    if (scanBusyRef.current === scanIdentity) return;
     if (!keypair) {
       setScanKind("error");
-      setScanMessage("Load this device's chat key before scanning.");
+      setScanMessage("Unlock Chat to check your messages.");
       return;
     }
     if (!helperAddress) {
@@ -986,10 +1002,11 @@ export function useMailboxDesk() {
     }
     if (!address || !chainId || !keyFingerprint) {
       setScanKind("error");
-      setScanMessage("Connect the chat account before scanning.");
+      setScanMessage("Connect your wallet to check messages.");
       return;
     }
 
+    scanBusyRef.current = scanIdentity;
     const generation = ++scanGenerationRef.current;
     cancelActiveScanWorker();
     const identity = scanIdentity;
@@ -1003,8 +1020,8 @@ export function useMailboxDesk() {
     setScanProgress({ pages: 0, events: 0, maxPages: MAIL_SCAN_MAX_PAGES });
     setScanMessage(
       requested === "older"
-        ? "Planning a bounded older-message scan…"
-        : "Planning a bounded recent-message scan…",
+        ? "Loading earlier messages…"
+        : "Checking for new messages…",
     );
 
     try {
@@ -1028,16 +1045,17 @@ export function useMailboxDesk() {
       );
       if (!range) {
         setScanKind("ok");
+        setLastCheckedAt(Date.now());
         setScanMessage(
           requested === "older"
-            ? "The persisted chat cursor has reached genesis."
-            : "No newer blocks are available; the bounded recent scan is current.",
+            ? "You’ve reached the start of your message history."
+            : "You’re up to date.",
         );
         return;
       }
 
       setScanMessage(
-        `Scanning ${range.direction} blocks ${range.fromBlock}–${range.toBlock} in bounded pages…`,
+        requested === "older" ? "Looking for earlier messages…" : "Checking for new messages…",
       );
       const parsed: ParsedMailEvent[] = [];
       const seenTokens = new Set<string>();
@@ -1088,14 +1106,14 @@ export function useMailboxDesk() {
       }
 
       setScanMessage(
-        `Decrypting ${parsed.length} public record${parsed.length === 1 ? "" : "s"} locally…`,
+        "Opening your encrypted messages on this device…",
       );
       const decrypted = await decryptMailRecords(
         privateKey,
         parsed.map((event) => event.record),
       );
       if (!isCurrentScan()) return;
-      setScanMessage("Loading public timestamps…");
+      setScanMessage("Updating conversations…");
 
       // Fetch every processed public event block so timestamp requests do not
       // reveal which bounded records matched this device's private key.
@@ -1162,26 +1180,46 @@ export function useMailboxDesk() {
       setMessages((current) => mergeMailMessages(current, localMessages));
       mergeLocalDealState(localMessages);
       setScanKind("ok");
+      setLastCheckedAt(Date.now());
+      const knownIds = new Set(messages.map(message => message.id));
+      const added = localMessages.filter(message => !knownIds.has(message.id)).length;
       setScanMessage(
-        `Decrypted ${localMessages.length} of ${parsed.length} valid ciphertext event${
-          parsed.length === 1 ? "" : "s"
-        } across ${pages} bounded page${pages === 1 ? "" : "s"}.${
+        `${added ? `${added} ${requested === "older" ? "earlier" : "new"} message${added === 1 ? "" : "s"}.` : "You’re up to date."}${
           continuationToken
-            ? " Page budget reached; scan again to resume the persisted continuation token."
-            : " Cursor saved."
+            ? " More messages will load on the next check."
+            : ""
         }`,
       );
     } catch (error: unknown) {
       if (isCurrentScan()) {
         setScanKind("error");
         setScanMessage(
-          error instanceof Error ? error.message : "Chat scan failed.",
+          error instanceof Error ? error.message : "Couldn’t check messages. We’ll try again automatically.",
         );
       }
     } finally {
-      if (isCurrentScan()) setScanning(false);
+      if (isCurrentScan()) {
+        scanBusyRef.current = null;
+        setScanning(false);
+      }
     }
   }
+
+  const refreshChatRef = useRef(scanInbox);
+  refreshChatRef.current = scanInbox;
+  useEffect(() => {
+    if (!keyFingerprint || !helperAddress || !address || !chainId) return;
+    const identity = scanIdentity;
+    return startChatRefresh({
+      refresh: () => refreshChatRef.current("newer"),
+      canRefresh: () => scanIdentityRef.current === identity && scanBusyRef.current !== identity &&
+        useStoreWallet.getState().isConnected &&
+        keyScopeRef.current === `${providerIndex}:${chainId}:${address}` &&
+        document.visibilityState === "visible" && navigator.onLine !== false,
+      visibility: document,
+      connectivity: window,
+    });
+  }, [scanIdentity, keyFingerprint, helperAddress, providerIndex, address, chainId]);
 
   async function readLocalBackupConfig(): Promise<Record<string, unknown>> {
     const controller = new AbortController();
@@ -2688,6 +2726,14 @@ export function useMailboxDesk() {
   }
 
   function lockMailboxSession() {
+    clearChatSession();
+    keyScopeRef.current = null;
+    scanGenerationRef.current += 1;
+    scanIdentityRef.current = "";
+    scanBusyRef.current = null;
+    cancelActiveScanWorker();
+    setScanning(false);
+    setLastCheckedAt(null);
     mailSeed?.fill(0);
     keypair?.privateKey.fill(0);
     setMailSeed(null);
@@ -2709,6 +2755,8 @@ export function useMailboxDesk() {
     }
     try {
       const removed = clearLocalMailboxStorage(window.localStorage);
+      clearChatSession();
+      keyScopeRef.current = null;
       try {
         window.sessionStorage.removeItem(PENDING_PAYMENT_STORAGE_KEY);
       } catch {
@@ -2819,7 +2867,7 @@ export function useMailboxDesk() {
 
   /* What is actually blocking this mailbox, answered once for every pane. */
   const mailboxGate: "wallet" | "key" | null =
-    !address || !chainId ? "wallet" : keypair ? null : "key";
+    !isConnected || !address || !chainId ? "wallet" : keypair ? null : "key";
 
   const clearFocusRequest = useCallback(() => setFocusRequest(null), []);
 
@@ -2849,6 +2897,7 @@ export function useMailboxDesk() {
     readMessageIds,
     markMessagesRead,
     scanning,
+    lastCheckedAt,
     scanKind,
     scanMessage,
     scanProgress,

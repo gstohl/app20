@@ -64,7 +64,7 @@ function assertConfiguredHelper(address: string): void {
   try {
     if (BigInt(address) === 0n) throw new Error();
   } catch {
-    throw new Error("A deployed mail helper is required before sending.");
+    throw new Error("A deployed message helper is required before sending.");
   }
 }
 
@@ -83,13 +83,13 @@ function buildMailInvokeAction({
   record,
   tokenAddress = addrSTRK,
   actionId = "0x0",
-}: MailInvokeBatchInput):
+}: MailInvokeBatchInput, noteId: string = OPEN_NOTE_ID_PLACEHOLDER):
   | WALLET_API.STRK20_INVOKE_ACTION
   | Strk20ComputeAndInvokeAction {
   assertConfiguredHelper(helperAddress);
   const payloadCalldata: WALLET_API.STRK20_CALLDATA_ITEM[] = [
     tokenAddress,
-    OPEN_NOTE_ID_PLACEHOLDER,
+    noteId,
     record.ephemeralPub[0],
     record.ephemeralPub[1],
     num.toHex(record.viewTag),
@@ -151,6 +151,21 @@ export function buildMailInvokeActions(
     buildRecoveryOpenNoteAction(token, input.recoveryAddress),
     buildMailInvokeAction({ ...input, tokenAddress: token }),
   ];
+}
+
+/**
+ * Message-only candidate for real wallets: the helper emits ciphertext and
+ * returns no deposits. No asset withdrawal, recovery note or public pre-call
+ * is needed. Pool/network fees still apply. Keep runtime activation separate
+ * until the selected wallet's compute_and_invoke path is verified.
+ */
+export function buildMessageOnlyChatActions(
+  input: Omit<MailInvokeBatchInput, "helperFundingAmount" | "recoveryAddress"> & { actionId: string },
+): App20Strk20Action[] {
+  if (!/^0x[0-9a-fA-F]+$/.test(input.actionId) || BigInt(input.actionId) === 0n) {
+    throw new Error("Message-only Chat requires a nonzero replay-protected action ID.");
+  }
+  return [buildMailInvokeAction({ ...input, recoveryAddress: "0x0", helperFundingAmount: 0n }, "0x0")];
 }
 
 /** Builds private transfer, helper funding, recovery OPEN note, then Mail invoke. */
@@ -432,7 +447,7 @@ export class Strk20SubmissionCallbackError extends Error {
 
   constructor(transactionHash: string, cause: unknown) {
     super(
-      `Transaction ${transactionHash} succeeded, but Mail could not persist its submitted state. Local verification remains false; reconcile the transaction before retrying.`,
+      `Transaction ${transactionHash} succeeded, but Chat could not persist its submitted state. Local verification remains false; reconcile the transaction before retrying.`,
       { cause },
     );
     this.name = "Strk20SubmissionCallbackError";

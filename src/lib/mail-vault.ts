@@ -47,7 +47,7 @@ export function mailVaultKey(chainId: string, address: string): string {
 
 export function seedToHex(seed: Uint8Array): string {
   if (seed.length !== SEED_BYTES) {
-    throw new Error("Mail seed must be exactly 32 bytes.");
+    throw new Error("Chat seed must be exactly 32 bytes.");
   }
   return Array.from(seed, (byte) => byte.toString(16).padStart(2, "0")).join(
     "",
@@ -166,7 +166,7 @@ export function persistPlaintextSeed(
   const encoded = JSON.stringify(record);
   storage.setItem(mailVaultKey(chainId, address), encoded);
   if (storage.getItem(mailVaultKey(chainId, address)) !== encoded) {
-    throw new Error("Mail could not persist the device mail key.");
+    throw new Error("Chat could not persist the device chat key.");
   }
 }
 
@@ -234,7 +234,7 @@ export async function unwrapMailSeed(
       ?.map((byte) => Number.parseInt(byte, 16)) ?? [],
   );
   if (ciphertext.length < SEED_BYTES + 16) {
-    throw new Error("Wrapped mailbox vault is truncated.");
+    throw new Error("Wrapped chat key backup is truncated.");
   }
   const wrapKey = await deriveWrapKey(passphrase, salt, {
     N: record.N,
@@ -257,11 +257,11 @@ export async function unwrapMailSeed(
       ),
     );
     if (seed.length !== SEED_BYTES) {
-      throw new Error("Unwrapped mailbox seed has the wrong length.");
+      throw new Error("Unwrapped chat seed has the wrong length.");
     }
     return seed;
   } catch {
-    throw new Error("That passphrase does not open this mailbox vault.");
+    throw new Error("That passphrase does not open this chat key backup.");
   } finally {
     wrapKey.fill(0);
   }
@@ -277,7 +277,7 @@ export function persistVaultRecord(
     record.kind === "plaintext" ? record.seed : JSON.stringify(record);
   storage.setItem(mailVaultKey(chainId, address), encoded);
   if (storage.getItem(mailVaultKey(chainId, address)) !== encoded) {
-    throw new Error("Mail could not persist the mailbox vault.");
+    throw new Error("Chat could not persist the chat key backup.");
   }
 }
 

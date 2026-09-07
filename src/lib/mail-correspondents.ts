@@ -148,7 +148,7 @@ export function describeMailScanCursor(cursor: {
     cursor.newestScannedBlock === null &&
     cursor.oldestScannedBlock === null
   ) {
-    return "No inbox check has completed on this device for this mailbox yet.";
+    return "Messages have not been checked on this device yet.";
   }
   return `Last completed range: blocks ${cursor.oldestScannedBlock ?? "—"}–${cursor.newestScannedBlock ?? "—"}.`;
 }

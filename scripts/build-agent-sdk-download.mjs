@@ -1,0 +1,10 @@
+import { execFileSync } from 'node:child_process';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+execFileSync(process.execPath, ['packages/agent-sdk/build.mjs'], { stdio: 'inherit' });
+await mkdir('public/downloads', { recursive: true });
+const packed = JSON.parse(execFileSync('npm', ['pack', './packages/agent-sdk', '--ignore-scripts', '--json', '--pack-destination', 'public/downloads'], { encoding: 'utf8' }))[0];
+const bytes = await readFile('public/downloads/' + packed.filename);
+await writeFile('public/downloads/' + packed.filename.replace(/\.tgz$/, '.sha256'), createHash('sha256').update(bytes).digest('hex') + '  ' + packed.filename + '\n');
+await copyFile('packages/agent-sdk/README.md', 'public/agent-sdk.md');
+console.log('Packed installable agent SDK: ' + packed.filename);

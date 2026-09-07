@@ -110,7 +110,7 @@ function normalizeChainId(value: string): string {
 function normalizeFingerprint(value: string): string {
   const normalized = value.trim().toLowerCase();
   if (!MAILBOX_FINGERPRINT_HEX.test(normalized)) {
-    throw new Error("The backup mailbox fingerprint is invalid.");
+    throw new Error("The backup chat fingerprint is invalid.");
   }
   return normalized;
 }
@@ -244,7 +244,7 @@ function deriveMacKey(
   seq: number,
 ): Uint8Array {
   if (mailboxSeed.length !== 32) {
-    throw new Error("Unlock the mailbox with its 32-byte recovery seed first.");
+    throw new Error("Unlock the chat with its 32-byte recovery seed first.");
   }
   return hkdf(
     sha256,
@@ -374,7 +374,7 @@ export function verifyBackupSnapshot(
     (input.seq !== undefined && parsed.seq !== input.seq)
   ) {
     throw new Error(
-      "This backup belongs to a different wallet, network, helper, mailbox key, kind, or sequence.",
+      "This backup belongs to a different wallet, network, helper, chat key, kind, or sequence.",
     );
   }
   const body: BackupSnapshotBody = {

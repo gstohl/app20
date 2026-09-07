@@ -1,0 +1,301 @@
+[
+  {
+    "type": "impl",
+    "name": "App20ChatImpl",
+    "interface_name": "app20_chat::IApp20Chat"
+  },
+  {
+    "type": "struct",
+    "name": "app20_chat::OpenNoteDeposit",
+    "members": [
+      {
+        "name": "note_id",
+        "type": "core::felt252"
+      },
+      {
+        "name": "token",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "amount",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::array::Span::<app20_chat::OpenNoteDeposit>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<app20_chat::OpenNoteDeposit>"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "app20_chat::IApp20Chat",
+    "items": [
+      {
+        "type": "function",
+        "name": "prepare_funding",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "privacy_compute",
+        "inputs": [
+          {
+            "name": "identity_key",
+            "type": "core::felt252"
+          },
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "note_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "eph_pk",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "view_tag",
+            "type": "core::integer::u8"
+          },
+          {
+            "name": "nonce",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "ct",
+            "type": "core::array::Array::<core::felt252>"
+          },
+          {
+            "name": "action_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "(core::felt252, core::felt252)"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "privacy_invoke_with_computation",
+        "inputs": [
+          {
+            "name": "replay_slot",
+            "type": "core::felt252"
+          },
+          {
+            "name": "payload_commitment",
+            "type": "core::felt252"
+          },
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "pool_address",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "note_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "eph_pk",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "view_tag",
+            "type": "core::integer::u8"
+          },
+          {
+            "name": "nonce",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "ct",
+            "type": "core::array::Array::<core::felt252>"
+          },
+          {
+            "name": "action_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::array::Span::<app20_chat::OpenNoteDeposit>"
+          }
+        ],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "privacy_invoke",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "pool_address",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "note_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "eph_pk",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "view_tag",
+            "type": "core::integer::u8"
+          },
+          {
+            "name": "nonce",
+            "type": "(core::felt252, core::felt252)"
+          },
+          {
+            "name": "ct",
+            "type": "core::array::Array::<core::felt252>"
+          },
+          {
+            "name": "action_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::array::Span::<app20_chat::OpenNoteDeposit>"
+          }
+        ],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "register_pubkey",
+        "inputs": [
+          {
+            "name": "pk",
+            "type": "(core::felt252, core::felt252)"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_pubkey",
+        "inputs": [
+          {
+            "name": "addr",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "(core::felt252, core::felt252)"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "message_count",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::integer::u64"
+          }
+        ],
+        "state_mutability": "view"
+      }
+    ]
+  },
+  {
+    "type": "constructor",
+    "name": "constructor",
+    "inputs": [
+      {
+        "name": "pool",
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::array::Span::<core::felt252>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<core::felt252>"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::App20Chat::MessagePosted",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "index",
+        "type": "core::integer::u64",
+        "kind": "key"
+      },
+      {
+        "name": "eph_pk",
+        "type": "(core::felt252, core::felt252)",
+        "kind": "data"
+      },
+      {
+        "name": "view_tag",
+        "type": "core::integer::u8",
+        "kind": "data"
+      },
+      {
+        "name": "nonce",
+        "type": "(core::felt252, core::felt252)",
+        "kind": "data"
+      },
+      {
+        "name": "ct",
+        "type": "core::array::Span::<core::felt252>",
+        "kind": "data"
+      },
+      {
+        "name": "action_id",
+        "type": "core::felt252",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::App20Chat::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "MessagePosted",
+        "type": "app20_chat::App20Chat::MessagePosted",
+        "kind": "nested"
+      }
+    ]
+  }
+]

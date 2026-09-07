@@ -1,0 +1,249 @@
+{
+  "verifiedAt": "2026-09-07T08:18:22.367Z",
+  "chainId": "0x534e5f4d41494e",
+  "transactions": [
+    {
+      "hash": "0x1e364ca1c778fd304fae9506dabade0f2c958e0e867465db9a7ceb0f13af36d",
+      "blockNumber": 14496051,
+      "blockHash": "0x37324bea69e466bd11ecebfb9c5e366dde730245e342eb9407cbaf7f04c434d",
+      "finality": "ACCEPTED_ON_L2",
+      "pool": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "appContract": "0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642",
+      "quoteId": "0x6af0a94502147ec4cf3c0f8fdd8d705946ec5168dbeb39975a434f9eaad1",
+      "maker": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+      "sellAmount": "10000000000000000",
+      "buyAmount": "1000",
+      "networkFee": {
+        "amount": "0x23b85961fd001580",
+        "unit": "FRI"
+      },
+      "explorer": "https://voyager.online/tx/0x1e364ca1c778fd304fae9506dabade0f2c958e0e867465db9a7ceb0f13af36d"
+    },
+    {
+      "hash": "0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e",
+      "blockNumber": 14496125,
+      "blockHash": "0x402b29d87e5f691093be2d5d17f4b08f5b7438289d1e064de78db91adf31f28",
+      "finality": "ACCEPTED_ON_L2",
+      "pool": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "appContract": "0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642",
+      "quoteId": "0x40c4af5b0896165bb9031b55e784334d13c255e90dfe63e23fc6abb60034",
+      "maker": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+      "sellAmount": "10000000000000000",
+      "buyAmount": "1000",
+      "networkFee": {
+        "amount": "0x228be163d97b5940",
+        "unit": "FRI"
+      },
+      "explorer": "https://voyager.online/tx/0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e"
+    },
+    {
+      "hash": "0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171",
+      "blockNumber": 14496197,
+      "blockHash": "0x101a3a2d564e84701f3ee08a1b9fe374345da864ee8bb8113127018c5dd0e4f",
+      "finality": "ACCEPTED_ON_L2",
+      "pool": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "appContract": "0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642",
+      "quoteId": "0x84e78f4152e2eafa820c468132e5b19629d120bf7ebce2af26fc303f6c6d",
+      "maker": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+      "sellAmount": "10000000000000000",
+      "buyAmount": "1000",
+      "networkFee": {
+        "amount": "0x22112e3b42e2ca40",
+        "unit": "FRI"
+      },
+      "explorer": "https://voyager.online/tx/0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171"
+    }
+  ],
+  "kind": "operator-controlled-mainnet-settlement-smoke-test",
+  "maker": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+  "taker": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+  "independentParticipants": false,
+  "sellToken": {
+    "address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    "symbol": "STRK",
+    "decimals": 18
+  },
+  "buyToken": {
+    "address": "0x033068f6539f8e6e6b131e6b2b814e6c34a5224bc66947c47dab9dfee93b35fb",
+    "symbol": "USDC",
+    "decimals": 6
+  },
+  "shieldTransaction": "0x148a01681771f16d60d7b36ef53e827512822564f782110dbed90b245142265",
+  "cleanupTransaction": "0x1eb7b3a03c2405a9341ac25228f7665bc959a6ff0cc1a43f69358e32541256",
+  "makerInactive": true,
+  "remainingMakerInventory": {
+    "STRK": "0",
+    "USDC": "0"
+  },
+  "shieldedBalanceVerification": {
+    "method": "Local viewing-key note discovery against the live pool; keys and note identifiers excluded",
+    "STRK": "0",
+    "USDC": "3000",
+    "usdcNoteCount": 3
+  },
+  "publicBalanceVerification": {
+    "block": 14496335,
+    "STRK": "445589630174448564720",
+    "USDC": "12442"
+  },
+  "fees": {
+    "unit": "STRK base units",
+    "demoNetwork": "11863877034965690848",
+    "demoPool": "24000000000000000000",
+    "demoTotal": "35863877034965690848",
+    "earlierDeployment": "28046492790585744432",
+    "deploymentAndDemoTotal": "63910369825551435280",
+    "combinedCeiling": "65000000000000000000"
+  },
+  "inventoryPurchase": {
+    "sellToken": "STRK",
+    "sellAmount": "500000000000000000",
+    "buyToken": "USDC",
+    "buyAmount": "15442",
+    "transactionHash": "0x111024ec1c69e87d1419560102374dc073ec40e789a3139dbb9c5769783a870"
+  },
+  "allDemoTransactions": [
+    {
+      "stage": "shield",
+      "hash": "0x531a0c2b5f648b1f7c6db56004b75e40573b40e3218352c9efef4f200225b4a",
+      "blockNumber": 14495377,
+      "success": true,
+      "networkFee": "45188357204782576",
+      "poolFee": "0"
+    },
+    {
+      "stage": "refresh-shield",
+      "hash": "0x148a01681771f16d60d7b36ef53e827512822564f782110dbed90b245142265",
+      "blockNumber": 14495848,
+      "success": true,
+      "networkFee": "2511269252064420048",
+      "poolFee": "6000000000000000000"
+    },
+    {
+      "stage": "acquire-usdc",
+      "hash": "0x111024ec1c69e87d1419560102374dc073ec40e789a3139dbb9c5769783a870",
+      "blockNumber": 14495973,
+      "success": true,
+      "networkFee": "241447049741946336",
+      "poolFee": "0"
+    },
+    {
+      "stage": "maker-setup",
+      "hash": "0x6e47e1c25ae52d9940e30e27e7f9d522a1a5cf5f0e838acad22de0ba31fd3aa",
+      "blockNumber": 14495984,
+      "success": true,
+      "networkFee": "274819423920480960",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-1",
+      "hash": "0x3f555b3cc09cfed3b0a8b1d03d0177fcba1cf3bfb51719031d6feb78e9573f0",
+      "blockNumber": 14496000,
+      "success": true,
+      "networkFee": "117254903620116000",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-1",
+      "hash": "0x7a260ff38df3ec82999a086ccbdf5c28ae496ad603a2e86781661d596f9f7ff",
+      "blockNumber": 14496006,
+      "success": true,
+      "networkFee": "227917903931196928",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-1",
+      "hash": "0x148498137c6d93daa30b1858df5331361a0bf5c49c1752e98ffe731ef43ca1b",
+      "blockNumber": 14496013,
+      "success": true,
+      "networkFee": "45065520718243456",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-1",
+      "hash": "0x1e364ca1c778fd304fae9506dabade0f2c958e0e867465db9a7ceb0f13af36d",
+      "blockNumber": 14496051,
+      "success": true,
+      "networkFee": "2573905464433579392",
+      "poolFee": "6000000000000000000"
+    },
+    {
+      "stage": "trade-2",
+      "hash": "0xf62cfc1b8856d85d335c4989cbd77b8f2a4bb1d0eb70966836df527b149e22",
+      "blockNumber": 14496077,
+      "success": true,
+      "networkFee": "117254817360395712",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-2",
+      "hash": "0x7dc26ba65ba96b72994d871639497f21054b809b989ba132392e9b005f7a8e5",
+      "blockNumber": 14496083,
+      "success": true,
+      "networkFee": "221292633890174208",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-2",
+      "hash": "0x6c0d55ca0dfa02ee8d42c76019489f3f44d9d87f9e430bf7842b24348c6e66f",
+      "blockNumber": 14496090,
+      "success": true,
+      "networkFee": "45065661436986656",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-2",
+      "hash": "0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e",
+      "blockNumber": 14496125,
+      "success": true,
+      "networkFee": "2489331038019082560",
+      "poolFee": "6000000000000000000"
+    },
+    {
+      "stage": "trade-3",
+      "hash": "0x50852e2782adaef6c8df1d710d3c86cf02f665ab4fd6fa5b6682092cb814c3c",
+      "blockNumber": 14496144,
+      "success": true,
+      "networkFee": "116641847496851552",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-3",
+      "hash": "0x3d111b7aff20c5eb57d379dc364b376b9b1cd1c9a911982878179f1bbc2c25c",
+      "blockNumber": 14496152,
+      "success": true,
+      "networkFee": "228143988231836928",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-3",
+      "hash": "0x7662007162e53e1c200e2ed2d91a8b26f48ced67e4f4b1656344db516452f1e",
+      "blockNumber": 14496160,
+      "success": true,
+      "networkFee": "44738255532474720",
+      "poolFee": "0"
+    },
+    {
+      "stage": "trade-3",
+      "hash": "0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171",
+      "blockNumber": 14496197,
+      "success": true,
+      "networkFee": "2454794103953738304",
+      "poolFee": "6000000000000000000"
+    },
+    {
+      "stage": "cleanup",
+      "hash": "0x1eb7b3a03c2405a9341ac25228f7665bc959a6ff0cc1a43f69358e32541256",
+      "blockNumber": 14496229,
+      "success": true,
+      "networkFee": "109746813409384512",
+      "poolFee": "0"
+    }
+  ],
+  "limitations": [
+    "The same operator wallet controlled maker and taker; this is not independent trading volume.",
+    "The real executor was the Node SDK. Ready/Privy browser acceptance is not established by these transactions.",
+    "Proving used the documented HTTPS relay; relay and proving operators can access proving payloads.",
+    "The published demo video URL remains pending."
+  ]
+}

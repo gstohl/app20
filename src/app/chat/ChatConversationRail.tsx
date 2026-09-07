@@ -35,7 +35,7 @@ export function chatTimeLabel(
 function contactNote(conversation: ChatConversation): string {
   const { contact } = conversation;
   if (contact.kind === "self") return "Backups and self-addressed copies";
-  if (contact.kind === "sealed") return "Unnamed thread · name it to file it";
+  if (contact.kind === "sealed") return "Add a reply address to respond";
   if (contact.label && contact.address) return shortenFelt(contact.address);
   switch (contact.nameSource) {
     case "address-book":
@@ -62,6 +62,7 @@ type ChatConversationRailProps = {
   onSelect: (key: string) => void;
   onNewConversation?: () => void;
   newConversationForm?: ReactNode;
+  syncStatus?: ReactNode;
   /** The mailbox tools, rendered under the conversations. */
   children?: ReactNode;
 };
@@ -80,6 +81,7 @@ export default function ChatConversationRail({
   onSelect,
   onNewConversation,
   newConversationForm,
+  syncStatus,
   children,
 }: ChatConversationRailProps) {
   const searching = search.trim().length > 0;
@@ -118,7 +120,7 @@ export default function ChatConversationRail({
           type="search"
           className={styles.railSearch}
           value={search}
-          placeholder="Search counterparties and records"
+          placeholder="Search chats and messages"
           aria-label="Search conversations"
           disabled={walletGate}
           onChange={(event) => onSearchChange(event.target.value)}
@@ -135,16 +137,10 @@ export default function ChatConversationRail({
         </button>
       </div>
 
+      {syncStatus}
+
       <div className={styles.railScroll}>
-        {!walletGate && totalCount ? (
-          <div className={styles.railNote}>
-            <strong>Conversations on this device</strong>
-            <span>
-              Check for new messages to update this list. Message history alone
-              does not verify a payment.
-            </span>
-          </div>
-        ) : null}
+        {!walletGate && totalCount ? <p className={styles.recentLabel}>Most recent first</p> : null}
 
         {conversations.length ? (
           <ol className={styles.conversationList}>
@@ -155,7 +151,7 @@ export default function ChatConversationRail({
               const time = chatTimeLabel(latest?.at);
               const preview = latest
                 ? latest.preview
-                : "No records with this counterparty on this device yet.";
+                : "Start the conversation.";
               return (
                 <li key={contact.key}>
                   <button
@@ -253,9 +249,7 @@ export default function ChatConversationRail({
               <>
                 <strong>No conversations yet</strong>
                 <span>
-                  Check for messages, write to a new address below, or save a
-                  wallet under Counterparties. Each becomes a conversation
-                  here.
+                  {gate === "key" ? "Unlock Chat to load your messages." : "Start a chat with a wallet address or a saved contact. Incoming messages appear automatically."}
                 </span>
               </>
             )}
@@ -270,8 +264,8 @@ export default function ChatConversationRail({
           </p>
         ) : null}
 
-        {children}
       </div>
+      {!walletGate ? children : null}
     </section>
   );
 }

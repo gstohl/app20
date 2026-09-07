@@ -292,4 +292,8 @@ pub mod claim_ticket;
 pub mod escrow;
 pub mod lock_ticket;
 
+pub mod maker_book;
+
 pub mod mock_erc20;
+
+pub mod private_swap;

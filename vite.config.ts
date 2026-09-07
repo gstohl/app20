@@ -96,6 +96,15 @@ export default defineConfig(({ command, mode }) => {
     },
     plugins: [
       react(),
+      {
+        name: "app20-hpke-browser-crypto",
+        enforce: "pre",
+        resolveId(source, importer) {
+          if ((source === "crypto" || source === "node:crypto") && importer?.includes("/node_modules/@hpke/")) {
+            return fileURLToPath(new URL("./src/lib/browser-webcrypto.ts", import.meta.url));
+          }
+        },
+      },
       devStarknetRelay(),
       {
         name: "app20-bundle-budget",

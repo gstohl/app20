@@ -1,3 +1,4 @@
+import { MAINNET_DEPLOYMENT } from '../../../src/lib/mainnet-deployment.ts';
 import { PrivyClient } from "@privy-io/node";
 import { RelayHttpError } from "./errors.ts";
 import { requireSameOrigin } from "./origin.ts";
@@ -171,9 +172,12 @@ export async function handlePrivacyBootstrap(
   const origin = requestOrigin(request);
   return Response.json(
     {
-      network: "sepolia",
-      rpcUrl: `${origin}/api/starknet/sepolia`,
-      poolAddress: required(env.SEPOLIA_POOL_ADDRESS),
+      network: env.PRIVY_MAINNET_ENABLED === "true" ? "mainnet" : "sepolia",
+      rpcUrl: `${origin}/api/starknet/${env.PRIVY_MAINNET_ENABLED === "true" ? "mainnet" : "sepolia"}`,
+      poolAddress: env.PRIVY_MAINNET_ENABLED === "true" ? MAINNET_DEPLOYMENT.settlement.pool : required(env.SEPOLIA_POOL_ADDRESS),
+      poolClassHash: env.PRIVY_MAINNET_ENABLED === "true" ? MAINNET_DEPLOYMENT.settlement.poolClassHash : undefined,
+      provingTransport: env.PRIVY_MAINNET_ENABLED === "true" ? "https-json" : "ohttp",
+      provingUrl: `${origin}/api/privacy/prove`,
       readyClassHash: required(env.READY_ACCOUNT_CLASS_HASH),
       strkToken: required(env.SEPOLIA_STRK_TOKEN_ADDRESS),
       submissionMode:

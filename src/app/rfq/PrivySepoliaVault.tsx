@@ -1,3 +1,4 @@
+import { browserProofJournal } from '@/lib/proof-journal';
 "use client";
 
 import { PrivyProvider, usePrivy, useWallets } from "@privy-io/react-auth";
@@ -18,6 +19,8 @@ import {
   computeBrowserAccountAddress,
   serviceDiscovery,
   serviceProver,
+  contractDiscovery,
+  starkscanProver,
   type BrowserStrk20Session,
 } from "@app20/privy/browser";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -54,7 +57,10 @@ type BootstrapWallet = {
 };
 
 type BootstrapPayload = {
-  network: "sepolia";
+  network: "sepolia" | "mainnet";
+  provingTransport?: "https-json" | "ohttp";
+  provingUrl: string;
+  poolClassHash?: string;
   rpcUrl: string;
   poolAddress: string;
   readyClassHash: string;
@@ -224,8 +230,8 @@ function PrivySepoliaVaultContent() {
       });
       if (!response.ok) throw new Error("Privacy bootstrap failed.");
       const payload = (await response.json()) as BootstrapPayload;
-      if (payload.network !== "sepolia") {
-        throw new Error("Privy is restricted to Sepolia.");
+      if (!["mainnet", "sepolia"].includes(payload.network)) {
+        throw new Error("Unsupported Privy network.");
       }
       return payload;
     },
@@ -237,11 +243,17 @@ function PrivySepoliaVaultContent() {
     try {
       return {
         client: new BrowserStrk20Client({
-          network: "sepolia",
+          network: payload.network,
           rpcUrl: payload.rpcUrl,
           poolAddress: payload.poolAddress,
           readyClassHash: payload.readyClassHash,
-          prover: serviceProver({
+          prover: payload.provingTransport === "https-json" ? starkscanProver({
+            relayUrl: payload.provingUrl,
+            accessToken: async () => (await getAccessToken()) ?? "",
+            journal: browserProofJournal(`mainnet:${identityKey}`),
+            poolClassHash: payload.poolClassHash,
+            submittable: payload.submissionMode === "live",
+          }) : serviceProver({
             url: payload.ohttp.prover.gatewayUrl,
             requestTimeoutMs: 180_000,
             submittable: payload.submissionMode === "live",
@@ -250,7 +262,7 @@ function PrivySepoliaVaultContent() {
               publicKeyConfig: decodePinnedKey(PROVER_KEY_CONFIG, "prover"),
             },
           }),
-          discovery: serviceDiscovery(payload.ohttp.discovery.gatewayUrl, {
+          discovery: payload.provingTransport === "https-json" ? contractDiscovery() : serviceDiscovery(payload.ohttp.discovery.gatewayUrl, {
             ohttp: {
               relayUrl: payload.ohttp.discovery.relayUrl,
               publicKeyConfig: decodePinnedKey(
@@ -401,7 +413,8 @@ function PrivySepoliaVaultContent() {
   async function scanPrivate(announce = true) {
     if (!selected) return undefined;
     assertNetworkPolicy({
-      network: "sepolia",
+      network: bootstrapQuery.data?.network ?? "mainnet",
+      privyMainnetEnabled: bootstrapQuery.data?.network === "mainnet",
       adapter: "privy",
       operation: "private-read",
       submissionMode: bootstrapQuery.data?.submissionMode ?? "build-only",
@@ -465,7 +478,8 @@ function PrivySepoliaVaultContent() {
           ? "private-transfer"
           : action;
     assertNetworkPolicy({
-      network: "sepolia",
+      network: bootstrapQuery.data?.network ?? "mainnet",
+      privyMainnetEnabled: bootstrapQuery.data?.network === "mainnet",
       adapter: "privy",
       operation,
       submissionMode: bootstrapQuery.data?.submissionMode ?? "build-only",
@@ -585,7 +599,7 @@ function PrivySepoliaVaultContent() {
       <section className={styles.statePanel} aria-live="polite">
         <div className={styles.stateTopline}>
           <span className={styles.stateDot} aria-hidden="true" />
-          <span>SEPOLIA RECOVERY DESK</span>
+          <span>MAINNET RECOVERY DESK</span>
         </div>
         <div className={styles.stateCopy}>
           <p className={styles.eyebrow}>PRIVY SIGNER INITIALIZATION</p>
@@ -598,11 +612,11 @@ function PrivySepoliaVaultContent() {
         <dl className={styles.stateFacts}>
           <div>
             <dt>NETWORK</dt>
-            <dd>SEPOLIA ONLY</dd>
+            <dd>MAINNET ONLY</dd>
           </div>
           <div>
             <dt>SUBMISSION</dt>
-            <dd>BUILD-ONLY BY DEFAULT</dd>
+            <dd>AUTHORIZATION REQUIRED</dd>
           </div>
           <div>
             <dt>FALLBACK</dt>
@@ -621,15 +635,14 @@ function PrivySepoliaVaultContent() {
       >
         <header className={styles.loginHeader}>
           <div>
-            <p className={styles.eyebrow}>SEPOLIA / PRIVY SIGNER</p>
-            <h2 id="privy-login-title">Open the testnet recovery vault.</h2>
+            <p className={styles.eyebrow}>MAINNET / PRIVY SIGNER</p>
+            <h2 id="privy-login-title">Open your Privy wallet.</h2>
             <p className={styles.loginLead}>
-              A separate recovery desk for browser-owned Sepolia accounts. It
-              never selects a Ready account and cannot request a Mainnet
-              signature, proof, discovery scan, or submission.
+              Use your Privy account to register, shield, transfer and withdraw.
+              Sign in first; each transaction requires your wallet authorization.
             </p>
           </div>
-          <span className={styles.safetyPill}>TESTNET ONLY</span>
+          <span className={styles.safetyPill}>PRIVY WALLET</span>
         </header>
 
         <div className={styles.loginBody}>
@@ -644,11 +657,11 @@ function PrivySepoliaVaultContent() {
             </div>
             <div>
               <dt>NETWORK RAIL</dt>
-              <dd>Hard-bound to Starknet Sepolia; Ready is not a fallback.</dd>
+              <dd>Uses the configured Starknet network; Ready is a separate account.</dd>
             </div>
             <div>
               <dt>PROVER TRUST</dt>
-              <dd>The final remote prover sees the witness after OHTTP.</dd>
+              <dd>APP20/Cloudflare and the proving provider can read proving payloads.</dd>
             </div>
           </dl>
           <div className={styles.loginAction}>
@@ -656,7 +669,7 @@ function PrivySepoliaVaultContent() {
             <strong>Identity first. Private scan only when requested.</strong>
             <p>
               The bootstrap receives public account metadata. The relay sees
-              OHTTP ciphertext, not recovered notes or viewing keys.
+              HTTPS proving requests. APP20/Cloudflare and the provider can access their contents.
             </p>
             <button
               className={styles.primaryAction}
@@ -695,11 +708,11 @@ function PrivySepoliaVaultContent() {
     <div className={styles.layout}>
       <aside
         className={`${styles.panel} ${styles.accountRail}`}
-        aria-label="Privy Sepolia accounts"
+        aria-label="Privy Mainnet accounts"
       >
         <header className={styles.sectionHeader}>
           <div>
-            <span className={styles.sectionKicker}>PRIVY / SEPOLIA</span>
+            <span className={styles.sectionKicker}>PRIVY / MAINNET</span>
             <strong className={styles.sectionTitle}>Recovery accounts</strong>
           </div>
           <span className={styles.sectionMeta}>{wallets.length} ON FILE</span>
@@ -745,7 +758,7 @@ function PrivySepoliaVaultContent() {
           {!wallets.length && !bootstrapQuery.isLoading ? (
             <div className={styles.emptyAccounts}>
               <strong>NO STARKNET ACCOUNTS</strong>
-              <span>Create a user-only Sepolia wallet to begin recovery.</span>
+              <span>Create a user-only Mainnet wallet to begin recovery.</span>
             </div>
           ) : null}
           {bootstrapQuery.isLoading ? (
@@ -777,7 +790,7 @@ function PrivySepoliaVaultContent() {
 
       <section
         className={styles.workspace}
-        aria-label="Sepolia vault workspace"
+        aria-label="Mainnet vault workspace"
       >
         <section
           className={`${styles.panel} ${styles.metrics}`}
@@ -788,7 +801,7 @@ function PrivySepoliaVaultContent() {
             <strong className={styles.metricValue}>
               {formatUnits(accountQuery.data?.balance, 18, 5)}
             </strong>
-            <small className={styles.metricMeta}>VISIBLE ON SEPOLIA</small>
+            <small className={styles.metricMeta}>VISIBLE ON MAINNET</small>
           </article>
           <article className={`${styles.metric} ${styles.privateMetric}`}>
             <span className={styles.metricLabel}>SHIELDED STRK</span>
@@ -819,7 +832,7 @@ function PrivySepoliaVaultContent() {
           <header className={styles.sectionHeader}>
             <div className={styles.addressHeading}>
               <span className={styles.sectionKicker}>
-                STARKNET ACCOUNT / SEPOLIA
+                STARKNET ACCOUNT / MAINNET
               </span>
               <strong className={styles.sectionTitle} id="privy-account-title">
                 Active recovery account
@@ -1040,25 +1053,25 @@ function PrivySepoliaVaultContent() {
             <span className={styles.sectionKicker}>RECOVERY BOUNDARY</span>
             <strong className={styles.sectionTitle}>Trust state</strong>
           </div>
-          <span className={styles.testnetMarker}>SEP</span>
+          <span className={styles.testnetMarker}>PRIVY</span>
         </header>
 
         <dl className={styles.trustList}>
           <div className={styles.trustRow}>
             <dt>NETWORK</dt>
-            <dd className={styles.goodState}>SEPOLIA ONLY</dd>
+            <dd className={styles.goodState}>MAINNET ONLY</dd>
           </div>
           <div className={styles.trustRow}>
             <dt>SUBMISSION</dt>
-            <dd>{buildOnly ? "BUILD-ONLY" : "LIVE / SEPOLIA"}</dd>
+            <dd>{buildOnly ? "BUILD-ONLY" : "LIVE / MAINNET"}</dd>
           </div>
           <div className={styles.trustRow}>
             <dt>RELAY</dt>
-            <dd>OHTTP CIPHERTEXT</dd>
+            <dd>HTTPS · PAYLOAD VISIBLE TO RELAY</dd>
           </div>
           <div className={styles.trustRow}>
             <dt>APP BACKEND</dt>
-            <dd>NO WITNESS</dd>
+            <dd>CAN ACCESS PROVING PAYLOAD</dd>
           </div>
           <div className={styles.trustRow}>
             <dt>REMOTE PROVER</dt>
@@ -1080,8 +1093,8 @@ function PrivySepoliaVaultContent() {
         </button>
 
         <p className={styles.disclosure}>
-          The remote prover sees the decrypted witness after OHTTP
-          decapsulation. Mail plaintext is separately encrypted before proving.
+          APP20/Cloudflare and the remote prover can read proving payloads.
+          This connection uses HTTPS, not OHTTP.
         </p>
 
         {busy ? (
@@ -1110,7 +1123,7 @@ function PrivySepoliaVaultContent() {
               {activity.transactionHash ? (
                 <a
                   className={styles.activityLink}
-                  href={`https://sepolia.voyager.online/tx/${activity.transactionHash}`}
+                  href={`https://voyager.online/tx/${activity.transactionHash}`}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -1137,7 +1150,7 @@ export default function PrivySepoliaVault() {
       >
         <header className={styles.unconfiguredHeader}>
           <div>
-            <p className={styles.eyebrow}>SEPOLIA / PRIVY RECOVERY</p>
+            <p className={styles.eyebrow}>MAINNET / PRIVY RECOVERY</p>
             <h2 id="privy-unconfigured-title">
               Recovery vault not configured.
             </h2>
@@ -1146,7 +1159,7 @@ export default function PrivySepoliaVault() {
         </header>
         <p className={styles.unconfiguredLead}>
           This rail stays unavailable until the public Privy application IDs and
-          reviewed OHTTP key pins are configured. APP20 will not fall back to a
+          the mainnet proving relay is configured. APP20 will not fall back to a
           different Ready account.
         </p>
         <dl className={styles.configChecklist}>
@@ -1172,11 +1185,11 @@ export default function PrivySepoliaVault() {
           </div>
           <div>
             <dt>NETWORK</dt>
-            <dd>SEPOLIA ONLY</dd>
+            <dd>MAINNET ONLY</dd>
           </div>
           <div>
             <dt>MAINNET ACCESS</dt>
-            <dd>NOT AVAILABLE</dd>
+            <dd>REQUIRES CONFIGURATION</dd>
           </div>
         </dl>
         <p className={styles.unconfiguredNote}>
@@ -1191,7 +1204,12 @@ export default function PrivySepoliaVault() {
     <PrivyProvider
       appId={PRIVY_APP_ID}
       clientId={PRIVY_CLIENT_ID}
-      config={{ embeddedWallets: { ethereum: { createOnLogin: "off" } } }}
+      config={{
+        embeddedWallets: { ethereum: { createOnLogin: "off" } },
+        // Privy supplies embedded Starknet accounts; Ready has its own connector.
+        appearance: { walletList: [] },
+        externalWallets: { disableAllExternalWallets: true, walletConnect: { enabled: false } },
+      }}
     >
       <PrivySepoliaVaultContent />
     </PrivyProvider>

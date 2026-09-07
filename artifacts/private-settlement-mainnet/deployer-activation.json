@@ -1,0 +1,23 @@
+{
+  "network": "SN_MAIN",
+  "status": "deployer-activated-app-contracts-not-declared",
+  "deployer": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+  "activation": {
+    "label": "Activate deployer",
+    "maximumFee": "144858246729250176",
+    "hash": "0x6a297e181defbd6b592bc322d366f468f06f56548ef91faf27da14df49deba5",
+    "actualFee": {
+      "amount": "0xe1061b53b1f410",
+      "unit": "FRI"
+    },
+    "blockNumber": 14474127
+  },
+  "actualFeeSTRK": 0.06333858419795253,
+  "feeCeilingBaseUnits": "5000000000000000000",
+  "remainingWork": [
+    "Approve revised deployment fee budget and fund deployer",
+    "Declare maker book and settlement",
+    "Deploy and verify contracts",
+    "Live privacy-wallet rehearsal"
+  ]
+}

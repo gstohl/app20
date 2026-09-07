@@ -262,7 +262,7 @@ function splitHex32(value: string): { low: string; high: string } {
 export function normalizeWalletMailBindingStatement(
   value: unknown,
 ): WalletMailBindingStatementV1 {
-  const statement = record(value, "Wallet-to-Mail binding statement");
+  const statement = record(value, "Wallet-to-Chat binding statement");
   assertExactKeys(
     statement,
     [
@@ -277,16 +277,16 @@ export function normalizeWalletMailBindingStatement(
       "nonce",
       "revocationId",
     ],
-    "Wallet-to-Mail binding statement",
+    "Wallet-to-Chat binding statement",
   );
   if (
     statement.domain !== WALLET_MAIL_BINDING_DOMAIN ||
     statement.version !== 1
   ) {
-    throw new Error("Wallet-to-Mail binding domain or version is invalid.");
+    throw new Error("Wallet-to-Chat binding domain or version is invalid.");
   }
   if (typeof statement.chainId !== "string" || !statement.chainId.trim()) {
-    throw new Error("Wallet-to-Mail binding chain id is invalid.");
+    throw new Error("Wallet-to-Chat binding chain id is invalid.");
   }
   const issuedAt = timestamp(statement.issuedAt, "Binding issue time");
   const expiresAt = timestamp(statement.expiresAt, "Binding expiry");
@@ -294,7 +294,7 @@ export function normalizeWalletMailBindingStatement(
     expiresAt <= issuedAt ||
     expiresAt - issuedAt > CHANNEL_MAX_BINDING_LIFETIME_MS
   ) {
-    throw new Error("Wallet-to-Mail binding lifetime is invalid.");
+    throw new Error("Wallet-to-Chat binding lifetime is invalid.");
   }
   return {
     domain: WALLET_MAIL_BINDING_DOMAIN,
@@ -303,9 +303,9 @@ export function normalizeWalletMailBindingStatement(
     chainId: statement.chainId.trim(),
     mailboxPublicKey: bareHex32(
       statement.mailboxPublicKey,
-      "Mailbox public key",
+      "Chat public key",
     ),
-    authPublicKey: bareHex32(statement.authPublicKey, "Mail auth public key"),
+    authPublicKey: bareHex32(statement.authPublicKey, "Chat auth public key"),
     issuedAt,
     expiresAt,
     nonce: hex32(statement.nonce, "Binding nonce"),
@@ -386,7 +386,7 @@ export function createWalletMailBindingCertificate(
 ): WalletMailBindingCertificateV1 {
   const statement = normalizeWalletMailBindingStatement(value);
   if (signature.length === 0 || signature.length > 8) {
-    throw new Error("Wallet-to-Mail binding signature is invalid.");
+    throw new Error("Wallet-to-Chat binding signature is invalid.");
   }
   const normalizedSignature = signature.map((felt) => {
     try {
@@ -394,7 +394,7 @@ export function createWalletMailBindingCertificate(
       if (parsed < 0n || parsed >= 1n << 252n) throw new Error();
       return `0x${parsed.toString(16)}`;
     } catch {
-      throw new Error("Wallet-to-Mail binding signature felt is invalid.");
+      throw new Error("Wallet-to-Chat binding signature felt is invalid.");
     }
   });
   return {
@@ -412,14 +412,14 @@ export function createWalletMailBindingCertificate(
 function normalizeBindingCertificate(
   value: unknown,
 ): WalletMailBindingCertificateV1 {
-  const certificate = record(value, "Wallet-to-Mail binding certificate");
+  const certificate = record(value, "Wallet-to-Chat binding certificate");
   assertExactKeys(
     certificate,
     ["version", "statement", "statementDigest", "messageHash", "signature"],
-    "Wallet-to-Mail binding certificate",
+    "Wallet-to-Chat binding certificate",
   );
   if (certificate.version !== 1 || !Array.isArray(certificate.signature)) {
-    throw new Error("Wallet-to-Mail binding certificate is invalid.");
+    throw new Error("Wallet-to-Chat binding certificate is invalid.");
   }
   const rebuilt = createWalletMailBindingCertificate(
     normalizeWalletMailBindingStatement(certificate.statement),
@@ -431,7 +431,7 @@ function normalizeBindingCertificate(
     String(certificate.messageHash).toLowerCase() !==
       rebuilt.messageHash.toLowerCase()
   ) {
-    throw new Error("Wallet-to-Mail binding certificate digest is invalid.");
+    throw new Error("Wallet-to-Chat binding certificate digest is invalid.");
   }
   return rebuilt;
 }
@@ -456,7 +456,7 @@ export async function verifyWalletMailBindingCertificate(
     now > certificate.statement.expiresAt ||
     input.revokedIds.has(certificate.statement.revocationId)
   ) {
-    throw new Error("Wallet-to-Mail binding is not currently valid.");
+    throw new Error("Wallet-to-Chat binding is not currently valid.");
   }
   if (
     !(await input.verifySignature(
@@ -465,7 +465,7 @@ export async function verifyWalletMailBindingCertificate(
       certificate.signature,
     ))
   ) {
-    throw new Error("Wallet-to-Mail binding signature is invalid.");
+    throw new Error("Wallet-to-Chat binding signature is invalid.");
   }
   const verified = deepFreeze({
     [VERIFIED_BINDING]: true as const,
@@ -619,7 +619,7 @@ export function signRelationshipChannelInvitation(
 ): SignedRelationshipChannelInvitationV1 {
   if (mailboxSeed.length !== 32) {
     throw new Error(
-      "Channel invitation signing requires the 32-byte mailbox seed.",
+      "Channel invitation signing requires the 32-byte chat seed.",
     );
   }
   const invitation = normalizeRelationshipChannelInvitation(value);
@@ -810,7 +810,7 @@ export function signRelationshipChannelEpoch(
 ): SignedRelationshipChannelEpochV1 {
   if (input.initiatorSeed.length !== 32 || input.responderSeed.length !== 32) {
     throw new Error(
-      "Channel epoch signing requires two 32-byte mailbox seeds.",
+      "Channel epoch signing requires two 32-byte chat seeds.",
     );
   }
   const epoch = normalizeRelationshipChannelEpoch(value);

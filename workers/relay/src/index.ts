@@ -1,3 +1,4 @@
+import { relayStarkscanProof } from './starkscan-prover.ts';
 import { bootstrapQuotaSubject, handlePrivacyBootstrap } from "./bootstrap.ts";
 import { errorResponse } from "./errors.ts";
 import { DurableAtomicGate, RelayGateDurableObject } from "./gate.ts";
@@ -44,6 +45,7 @@ async function serveAsset(request: Request, env: RelayEnv): Promise<Response> {
     privyFrameOrigins: configuredOrigins(env.PRIVY_FRAME_ORIGINS),
     privyConnectOrigins: configuredOrigins(env.PRIVY_CONNECT_ORIGINS),
     ipfsOrigins: env.IPFS_ORIGINS,
+    makerRpcOrigins: env.MAKER_RPC_ORIGINS,
   })) {
     headers.set(name, value);
   }
@@ -60,7 +62,7 @@ export function createRelayHandler(overrides: Partial<RelayDependencies> = {}) {
     env: RelayEnv,
   ): Promise<Response> {
     const dependencies: RelayDependencies = {
-      fetch: overrides.fetch ?? fetch,
+      fetch: overrides.fetch ?? ((input, init) => fetch(input, init)),
       now: overrides.now,
       gate: overrides.gate,
       privyDirectory: overrides.privyDirectory,
@@ -106,6 +108,7 @@ export function createRelayHandler(overrides: Partial<RelayDependencies> = {}) {
       }
       const gateForRequest = () =>
         dependencies.gate ?? new DurableAtomicGate(env.RELAY_GATE);
+      if (path === "/api/privacy/prove" || path.startsWith("/api/privacy/prove/")) return await relayStarkscanProof(request, env, dependencies, gateForRequest());
       if (path === "/api/ohttp/prover") {
         return await relayOhttp(
           request,

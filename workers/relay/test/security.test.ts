@@ -111,3 +111,11 @@ test("SPA headers deny framing/sniffing/referrers and use reviewed Privy origins
     }),
   );
 });
+
+test('independent maker RPC origins are explicit HTTPS CSP additions', () => {
+  const headers = spaSecurityHeaders({ privyFrameOrigins: [], privyConnectOrigins: [], makerRpcOrigins: 'https://api.cartridge.gg' });
+  assert.match(headers.get('content-security-policy')!, /connect-src[^;]*https:\/\/api\.cartridge\.gg/);
+  for (const origin of ['http://rpc.example', 'https://rpc.example/path', 'https://*.example']) {
+    assert.throws(() => spaSecurityHeaders({ privyFrameOrigins: [], privyConnectOrigins: [], makerRpcOrigins: origin }));
+  }
+});

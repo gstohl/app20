@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -291,38 +290,10 @@ async function main() {
     );
   }
 
-  const server = createServer(async (request, response) => {
-    try {
-      const workerResponse = await handler(
-        new Request(`https://app20.invalid${request.url ?? "/"}`, {
-          method: request.method,
-          headers: request.headers,
-        }),
-        env,
-      );
-      for (const [name, value] of workerResponse.headers) {
-        response.setHeader(name, value);
-      }
-      const body = Buffer.from(await workerResponse.arrayBuffer());
-      response
-        .writeHead(workerResponse.status, workerResponse.statusText)
-        .end(body);
-    } catch (error) {
-      response
-        .writeHead(500)
-        .end(error instanceof Error ? error.message : "Server error");
-    }
-  });
-
-  await new Promise((resolveListen, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveListen);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Static server did not bind TCP.");
-  }
-  const origin = `http://127.0.0.1:${address.port}`;
+  // Serve the local build through the shipping Worker under the production
+  // browser origin. Privy's iframe and API reject arbitrary localhost origins.
+  // Every APP20 request is intercepted; this never serves or changes the live site.
+  const origin = "https://app20.io";
   const failures = [];
   const observedViolations = [];
   let browser;
@@ -331,6 +302,24 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     for (const route of routes) {
       const page = await browser.newPage();
+      await page.route(`${origin}/**`, async (requestRoute) => {
+        const request = requestRoute.request();
+        const workerResponse = await handler(
+          new Request(request.url(), {
+            method: request.method(),
+            headers: request.headers(),
+            ...(["GET", "HEAD"].includes(request.method())
+              ? {}
+              : { body: request.postDataBuffer() }),
+          }),
+          env,
+        );
+        await requestRoute.fulfill({
+          status: workerResponse.status,
+          headers: Object.fromEntries(workerResponse.headers),
+          body: Buffer.from(await workerResponse.arrayBuffer()),
+        });
+      });
       const pageFailures = [];
       let coinGeckoRequestCount = 0;
       page.on("console", (message) => {
@@ -386,8 +375,10 @@ async function main() {
         const publicMarketSummary = publicMarketDisclosure.locator(
           '> summary[aria-label="Public market context"]',
         );
-        if (!(await publicMarketSummary.isVisible())) {
-          pageFailures.push("public market context disclosure is not visible");
+        const hasPublicContext = await publicMarketSummary.isVisible();
+        if (!hasPublicContext) {
+          await page.getByRole("region", { name: "Private swap", exact: true }).waitFor();
+          if (coinGeckoRequestCount !== 0) pageFailures.push("Private RFQ loaded unsolicited public price data");
         } else if (!(await publicMarketDisclosure.getAttribute("open"))) {
           await publicMarketSummary.click();
         }
@@ -395,7 +386,7 @@ async function main() {
         const loadPublicContext = page.getByRole("button", {
           name: "Load CoinGecko context",
         });
-        if (await loadPublicContext.isVisible()) {
+        if (hasPublicContext && await loadPublicContext.isVisible()) {
           const requestsBeforeOptIn = coinGeckoRequestCount;
           await loadPublicContext.click();
           await page
@@ -408,7 +399,7 @@ async function main() {
               afterOptIn: coinGeckoRequestCount,
             }),
           );
-        } else {
+        } else if (hasPublicContext) {
           pageFailures.push(
             "opt-in CoinGecko price-history control is not visible",
           );
@@ -445,7 +436,7 @@ async function main() {
         if (await switchRail.isVisible()) {
           await switchRail.click();
           await page
-            .getByRole("heading", { name: "Recovery vault not configured." })
+            .getByRole("heading", { name: /^(Recovery vault not configured\.|Open your Privy wallet\.)$/ })
             .waitFor();
         }
       }
@@ -463,7 +454,6 @@ async function main() {
     }
   } finally {
     await browser?.close();
-    await new Promise((resolveClose) => server.close(resolveClose));
   }
 
   const reconciliation = reconcileViolations(

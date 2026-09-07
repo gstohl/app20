@@ -10,6 +10,7 @@ import { useWalletMode, type WalletMode } from "@/app/rfq/walletMode";
 import {
   isStrk20Chain,
   localnetWalletEnabled,
+  mainnetOnly,
   providerIndexForChain,
   Strk20Networks,
 } from "@/utils/constants";
@@ -77,7 +78,7 @@ function NetworkToggle() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
 
-  if (mode === "privy") return null;
+  if (mainnetOnly || mode === "privy") return null;
 
   async function choose(target: 0 | 2 | 3) {
     setNotice("");
@@ -177,7 +178,7 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
     : session.connected
       ? "IDENTITY CONNECTED"
       : "NO ACTIVE ACCOUNT";
-  const fullLabel = `${session.network} / ${session.rail}`;
+  const fullLabel = mainnetOnly ? session.rail : `${session.network} / ${session.rail}`;
 
   return (
     <section
@@ -227,7 +228,7 @@ export function SessionControlView({ session }: { session: SessionDisplay }) {
       ) : null}
       <NetworkToggle />
       <div className={styles.walletAction}>
-        <SelectWallet variant="nav" />
+        {session.rail === "PRIVY" ? <a href="/recovery/privy">Open Privy wallet</a> : <SelectWallet variant="nav" />}
       </div>
     </section>
   );

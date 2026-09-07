@@ -40,6 +40,10 @@ export interface RelayEnv {
   TRUST_FORWARDED_ORIGIN?: "true";
   TRUST_CLIENT_IP_HEADERS?: "true";
 
+  STARKSCAN_API_KEY?: string;
+  PROOF_CAPABILITY_SECRET?: string;
+  PROVER_AGENT_TOKEN_HASHES?: string;
+  PRIVY_MAINNET_ENABLED?: "true";
   PROVER_UPSTREAM_URL: string;
   DISCOVERY_UPSTREAM_URL: string;
   STARKNET_SEPOLIA_RPC_URL: string;
@@ -70,6 +74,7 @@ export interface RelayEnv {
   PRIVY_FRAME_ORIGINS?: string;
   PRIVY_CONNECT_ORIGINS?: string;
   IPFS_ORIGINS?: string;
+  MAKER_RPC_ORIGINS?: string;
 }
 
 export interface GateAcquireRequest {
