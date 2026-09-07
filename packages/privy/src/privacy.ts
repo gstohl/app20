@@ -5,8 +5,8 @@ import type {
 } from "./coordination.js";
 import {
   ConfigError,
-  PrivacySdkMissingError,
   PrivacyTransactionRevertedError,
+  PublicSettlementDisabledError,
   SequencingError,
   UnsubmittableProofError,
 } from "./errors.js";
@@ -233,7 +233,6 @@ export interface PrivacyClientOptions {
 export class PrivacyClient {
   private transfers?: PrivateTransfers;
   private readyPromise?: Promise<PrivateTransfers>;
-  private sdkModule?: PrivacySdkModule;
   private readonly sequencing: PrivacySequencingState;
 
   constructor(private readonly options: PrivacyClientOptions) {
@@ -283,7 +282,6 @@ export class PrivacyClient {
           poolAddress: this.poolAddress,
         }),
       ]);
-      this.sdkModule = sdk;
       this.transfers = sdk.createPrivateTransfers({
         account: this.options.account,
         viewingKeyProvider: this.options.viewingKeyProvider,
@@ -552,7 +550,7 @@ export class PrivacyClient {
         .with(token, (t) => {
           t.transfer({ recipient: input.recipient, amount: input.amount });
         })
-        .surplusTo(this.address)
+        .surplusTo(this.address, false)
         .execute({ provingBlockId: block }),
     );
   }
@@ -594,101 +592,22 @@ export class PrivacyClient {
     );
   }
 
-  async invoke(input: {
+  /** @deprecated The earlier external settlement exposes amounts and assets. */
+  async invoke(_input: {
     tokenIn: string;
     amountIn: bigint;
     tokenOut: string;
     executor: string;
     calldata: (args: Record<string, unknown>) => unknown;
   }): Promise<PrivacyExecuteResult> {
-    return this.invokeExternal({
-      funding: {
-        token: input.tokenIn,
-        recipient: input.executor,
-        amount: input.amountIn,
-      },
-      recovery: { token: input.tokenOut },
-      calldata: input.calldata,
-    });
+    throw new PublicSettlementDisabledError();
   }
 
+  /** @deprecated Public funding and OPEN recovery cannot provide confidential settlement. */
   async invokeExternal(
-    input: PrivacyInvokeInput,
+    _input: PrivacyInvokeInput,
   ): Promise<PrivacyExecuteResult> {
-    if (input.funding.amount <= 0n) {
-      throw new Error("External invoke funding must be greater than zero.");
-    }
-    for (const transfer of input.transfers ?? []) {
-      if (transfer.amount <= 0n) {
-        throw new Error(
-          "External invoke transfer amounts must be greater than zero.",
-        );
-      }
-    }
-
-    type Group = {
-      token: string;
-      transfers: PrivacyInvokeTransfer[];
-      fundings: Array<{ recipient: string; amount: bigint }>;
-      openRecipients: string[];
-    };
-    const groups = new Map<string, Group>();
-    const groupFor = (token: string): Group => {
-      const key = BigInt(token).toString(16);
-      const existing = groups.get(key);
-      if (existing) return existing;
-      const created: Group = {
-        token,
-        transfers: [],
-        fundings: [],
-        openRecipients: [],
-      };
-      groups.set(key, created);
-      return created;
-    };
-
-    for (const transfer of input.transfers ?? []) {
-      groupFor(transfer.token).transfers.push(transfer);
-    }
-    groupFor(input.funding.token).fundings.push({
-      recipient: input.funding.recipient,
-      amount: input.funding.amount,
-    });
-    groupFor(input.recovery.token).openRecipients.push(
-      input.recovery.recipient ?? this.address,
-    );
-
-    return this.executeBuilder(async (transfers, block) => {
-      const Open = this.sdkModule?.Open;
-      if (!Open) {
-        throw new PrivacySdkMissingError(
-          "Installed privacy SDK does not export Open; cannot create an open note.",
-        );
-      }
-      const builder = transfers.build({
-        autoSetup: true,
-        autoSelectNotes: "all",
-        autoDiscover: { notes: "refresh", channels: "refresh" },
-      });
-      for (const group of groups.values()) {
-        builder.with(group.token, (tokenBuilder) => {
-          for (const transfer of group.transfers) {
-            tokenBuilder.transfer({
-              recipient: transfer.recipient,
-              amount: transfer.amount,
-            });
-          }
-          for (const funding of group.fundings) {
-            tokenBuilder.withdraw(funding);
-          }
-          for (const recipient of group.openRecipients) {
-            tokenBuilder.transfer({ recipient, amount: Open });
-          }
-          tokenBuilder.surplusTo(this.address, false);
-        });
-      }
-      return builder.invoke(input.calldata).execute({ provingBlockId: block });
-    });
+    throw new PublicSettlementDisabledError();
   }
 
   async balances(tokens?: string[]): Promise<ShieldedBalance[]> {

@@ -80,7 +80,7 @@ async function registerNewKey(
   testInfo: TestInfo,
 ) {
   const setup = page.getByRole("button", {
-    name: "Load device key & register",
+    name: /^(Enable encrypted chat|Open chat)$/,
   });
   await expect(setup).toBeVisible();
   const expectedBackup = await primeLocalnetMailSeed(page, identity);
@@ -92,7 +92,7 @@ async function registerNewKey(
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
-  await expect(backupHeading).toBeVisible();
+  await expect(backupHeading).toBeVisible({ timeout: 120_000 });
   const backup = (
     await backupHeading.locator("..").locator("code").innerText()
   ).trim();
@@ -103,26 +103,33 @@ async function registerNewKey(
   });
   await expect(acknowledge).toBeVisible({ timeout: 60_000 });
   await acknowledge.click();
-  await expect(
-    page.getByRole("heading", { name: "Set up a chat key" }),
-  ).toHaveCount(0);
+  await expect(page.locator("#mailbox-key-setup")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check for new messages" })).toBeEnabled({ timeout: 60_000 });
   return backup;
 }
 
 async function restoreRegisteredKey(page: Page, backup: string) {
   const setup = page.getByRole("button", {
-    name: "Load device key & register",
+    name: /^(Enable encrypted chat|Open chat)$/,
   });
   await expect(setup).toBeVisible();
   await page.getByText("Restore from backup").click();
   await page.getByLabel("Chat recovery phrase").fill(backup);
   await page.getByRole("button", { name: "Restore chat key" }).click();
-  await expect(setup).toHaveCount(0, { timeout: 60_000 });
+  // Opening Restore hides the setup button immediately; wait for actual key loading.
+  await expect(page.locator("#mailbox-key-setup")).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Check for new messages" })).toBeEnabled({ timeout: 60_000 });
 }
 
-/** The chain panel every decrypted or sent record carries. */
+/** Chat embeds chain evidence directly inside the message disclosure. */
 async function openChainPanel(record: Locator) {
-  await record.getByText("What the chain sees", { exact: true }).click();
+  const summary = record.getByText("Message details", { exact: true });
+  if ((await summary.locator("..").getAttribute("open")) === null) {
+    await summary.click();
+  }
+  await expect(record.getByRole("complementary", {
+    name: /^Public on-chain record for message /,
+  })).toBeVisible();
 }
 
 const STRK_SCALE = 10n ** 18n;
@@ -223,7 +230,7 @@ test("creates a standalone payment link without an on-chain action", async ({
     page.getByText("Chat key signature verified", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
+    page.getByRole("article", { name: /^Payment request: 0\.125 STRK$/ }).getByText("0.125 STRK", { exact: true }),
   ).toBeVisible();
   const linkCode = page
     .locator("code")
@@ -255,7 +262,7 @@ test("creates a standalone payment link without an on-chain action", async ({
     }),
   ).toBeVisible();
   await expect(
-    review.getByText("MESSAGES SIGNATURE VERIFIED", { exact: true }),
+    review.getByText("CHAT SIGNATURE VERIFIED", { exact: true }),
   ).toBeVisible();
   const signatureLimitNotices = review.getByText(
     "A valid Chat signature proves only that the exact displayed message was signed by the displayed Chat key. It does not prove who signed it or that they control the named wallet. APP20 currently cannot revoke a compromised Chat key, so anyone with the recovery phrase can create requests that pass this check. Confirm the person and wallet through a trusted channel before paying.",
@@ -264,12 +271,13 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(signatureLimitNotices).toHaveCount(2);
   await expect(signatureLimitNotices.first()).toBeVisible();
   await expect(signatureLimitNotices.last()).toBeVisible();
+  await review.getByText("Signature & identity details", { exact: true }).click();
   await expect(
     review.getByText("Verified Chat signing key", { exact: true }),
   ).toBeVisible();
   await expect(review.getByText(signer.address, { exact: true })).toBeVisible();
   await expect(
-    review.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
+    review.getByRole("article", { name: /^Payment request: 0\.125 STRK$/ }).getByText("0.125 STRK", { exact: true }),
   ).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
   await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
@@ -302,7 +310,6 @@ test("all APP20 localnet journeys", async ({
   // fresh browser context decrypts them all again.
   const runTag = Date.now().toString(36);
   const compositeBody = `Composite production test ${runTag}: payment, invoice, and offer in one private document.`;
-  const escrowBody = `Escrow browser lifecycle ${runTag}`;
   const draftBody = `Draft ${runTag} survives navigation and resumes`;
   const multiBody = `Two recipients decrypt private circular ${runTag}`;
 
@@ -401,8 +408,9 @@ test("all APP20 localnet journeys", async ({
 
   await test.step("2. shield STRK and observe truthful progress", async () => {
     await switchIdentity(page, config, "alice");
-    await navLink(page, "RFQ").click();
-    await page.getByRole("link", { name: "Shield / unshield funding" }).click();
+    // Funding remains a separate public wallet boundary, outside settlement.
+    await page.goto("/funding");
+    await connectLocalnetWallet(page);
     await expect(page).toHaveURL(/\/funding$/);
     await expect(
       page.getByRole("heading", { name: "Shield / unshield" }),
@@ -442,13 +450,13 @@ test("all APP20 localnet journeys", async ({
       timeout: 60_000,
     });
 
-    // Bob needs STRK for the later offer acceptance and invoice payment.
-    // The identity switch stays in the dev-only localnet bar. Return through
-    // RFQ's explicit separate-operation link to the canonical funding surface.
+    // Bob needs existing shielded STRK for the later private invoice payment.
+    // The fixed offer remains review-only. Funding is a separate operation.
     await navLink(page, "Chat").click();
     await switchIdentity(page, config, "bob");
-    await navLink(page, "RFQ").click();
-    await page.getByRole("link", { name: "Shield / unshield funding" }).click();
+    // Funding remains a separate public wallet boundary, outside settlement.
+    await page.goto("/funding");
+    await connectLocalnetWallet(page);
     await expect(page).toHaveURL(/\/funding$/);
     const bobBefore = parseDisplayedStrk(
       await shieldedBalanceLabel(walletRegion),
@@ -564,7 +572,7 @@ test("all APP20 localnet journeys", async ({
       received.getByText("PRIVATE PAYMENT MEMO", { exact: true }),
     ).toBeVisible();
     await expect(
-      received.getByText("OTC OFFER / ONE-SIDED V1", { exact: true }),
+      received.getByText("SWAP OFFER", { exact: true }),
     ).toBeVisible();
     await expect(
       received.getByText("PAYMENT REQUEST / ONE-SIDED V1", { exact: true }),
@@ -597,43 +605,67 @@ test("all APP20 localnet journeys", async ({
         { exact: true },
       ),
     ).toBeVisible({ timeout: 60_000 });
+    // The live sync control is absent while locked; history remains disabled.
     await expect(
       wrongKeyPage.getByRole("button", { name: "Check for new messages" }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
+    await openTools(wrongKeyPage, "Message history");
+    await expect(wrongKeyPage.getByRole("button", { name: "Load older messages" }))
+      .toBeDisabled();
     await expect(wrongKeyPage.getByText(compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
     await unrelated.close();
   });
 
-  await test.step("5. accept the offer exactly once", async () => {
-    const accept = entry(page, compositeBody).getByRole("button", {
-      name: "Accept & send 0.25 STRK",
+  await test.step("5. review the offer without a one-sided payment", async () => {
+    const offer = entry(page, compositeBody).getByRole("article", {
+      name: /^OTC offer:/,
     });
-    await expect(accept).toBeVisible();
-    await accept.click();
-    await expect(
-      page.getByRole("status").filter({ hasText: /STRK transfer submitted/i }),
-    ).toBeVisible({ timeout: 120_000 });
-    await screenshot(page, "11-offer-accept-progress", testInfo);
-    await expect(
-      page.getByText("Accept transfer and one-sided receipt confirmed.", {
-        exact: true,
-      }),
-    ).toBeVisible({ timeout: 180_000 });
-    await expect(accept).toHaveCount(0);
-    const { local } = await readStorageSnapshot(page);
-    const otcStorage = Object.entries(local).find(
-      ([key]) =>
-        key.startsWith("app20/otc/v1/") &&
-        key.toLowerCase().includes(bob.address.slice(2).toLowerCase()),
-    )?.[1];
-    expect(otcStorage).toContain('"status":"closed"');
-    expect(otcStorage).toContain('"settlementVerified":true');
-    await screenshot(page, "12-offer-accepted-once", testInfo);
+    const settlementRequests: string[] = [];
+    const observeRequest = (request: { url(): string }) => {
+      if (/\/__app20_localnet_wallet\/(?:invoke|privacy)(?:\?|$)/.test(request.url())) {
+        settlementRequests.push(request.url());
+      }
+    };
+    page.on("request", observeRequest);
+    try {
+      await expect(offer).toBeVisible();
+      await expect(offer.getByText("0.25 STRK", { exact: true })).toBeVisible();
+      await expect(offer.getByText("0.01 ETH", { exact: true })).toBeVisible();
+      await expect(offer).toContainText("Both assets require confidential escrow settlement");
+      await expect(offer).toContainText("compatible wallet support is still pending");
+      await expect(offer.getByRole("button", { name: /Accept.*send/i })).toHaveCount(0);
+      await expect(offer.getByRole("button", { name: /Post receipt/i })).toHaveCount(0);
+      await expect(offer.getByRole("link", { name: /Confidential swap availability/ }))
+        .toHaveAttribute("href", "/rfq/confidential");
+      await offer.getByText("Address verification & receipt details", { exact: true }).click();
+      await expect(offer).toContainText("approval from both sides");
+      await screenshot(page, "11-offer-confidential-settlement-required", testInfo);
+      expect(settlementRequests).toHaveLength(0);
+    } finally {
+      page.off("request", observeRequest);
+    }
   });
 
   await test.step("6. share, review, and explicitly pay an invoice from a fresh context", async () => {
     const invoiceEntry = entry(page, compositeBody);
+    const invoiceHeadingId = await invoiceEntry
+      .getByRole("heading", { name: "Payment request: 0.2 STRK", exact: true })
+      .getAttribute("id");
+    expect(invoiceHeadingId).toMatch(/^invoice-[0-9a-f]{64}$/);
+    const requestId = invoiceHeadingId?.replace(/^invoice-/, "0x") ?? "";
+    const { local: chatStorage } = await readStorageSnapshot(page);
+    const originalRequests = Object.entries(chatStorage)
+      .filter(([key, value]) => key.startsWith("app20/otc/v1/") && value)
+      .flatMap(([, value]) => {
+        const request = JSON.parse(value as string).payments?.[requestId]?.request;
+        return request ? [request] : [];
+      });
+    expect(originalRequests.length).toBeGreaterThan(0);
+    for (const request of originalRequests) {
+      // The encrypted original is network-bound before any URL adds metadata.
+      expect(request.chainId).toBe(config.chainId);
+    }
     await invoiceEntry
       .getByRole("button", { name: "Share payment link" })
       .click();
@@ -679,7 +711,7 @@ test("all APP20 localnet journeys", async ({
       ),
     ).toBeVisible();
     await expect(
-      payPage.getByRole("heading", { name: "Verified signed invoice" }),
+      payPage.getByRole("heading", { name: "Chat-key signature verified — person not verified" }),
     ).toHaveCount(0);
     await expect(
       payPage.getByRole("button", {
@@ -703,23 +735,29 @@ test("all APP20 localnet journeys", async ({
       .click();
     await expect(payPage).toHaveURL(/\/chat$/);
     await expect(
-      payPage.getByRole("heading", { name: "Set up a chat key" }),
+      payPage.getByRole("heading", { name: "Set up encrypted chat" }),
     ).toBeVisible();
     // The imported request already files under its requester, before any key.
     await expect(
       conversationRowByAddress(payPage, alice.address),
     ).toContainText("Needs action");
-    await payPage.getByText("Restore from backup").click();
-    await payPage.getByLabel("Chat recovery phrase").fill(bobBackup);
-    await payPage.getByRole("button", { name: "Restore chat key" }).click();
-    // The reviewed link is the record this device pays from; the sealed
-    // copy Alice sent arrives with the post-payment mail check and carries
-    // the outcome forward.
-    const pay = payPage.getByRole("button", { name: "Pay 0.2 STRK privately" });
+    await restoreRegisteredKey(payPage, bobBackup);
+    // Discovery replaces the imported message with the original document.
+    // Bind payment to the reviewed request's full ID, not another same-price
+    // invoice left on this localnet by an earlier run.
+    const discovered = entry(payPage, compositeBody);
+    await expect(discovered).toBeVisible({ timeout: 60_000 });
+    const reviewedInvoice = discovered.locator(
+      `article[aria-labelledby="${invoiceHeadingId}"]`,
+    );
+    await expect(reviewedInvoice).toContainText(
+      "Unverified legacy link imported for local review. No payment was submitted.",
+    );
+    const pay = reviewedInvoice.getByRole("button", { name: "Pay 0.2 STRK privately" });
     await expect(pay).toBeVisible();
     await pay.click();
     await expect(
-      payPage
+      reviewedInvoice
         .getByRole("status")
         .filter({ hasText: /Preparing one private STRK payment/i }),
     ).toBeVisible();
@@ -743,82 +781,21 @@ test("all APP20 localnet journeys", async ({
     await fresh.close();
   });
 
-  await test.step("7. fund, fill, and claim contract-backed escrow", async () => {
+  await test.step("7. new public escrow funding is unavailable in Chat", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
     await conversationRow(page, bobLabel).click();
     await attachTerms(page);
-    await page.getByLabel(/^To/).fill(bob.address);
-    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(escrowBody);
-    await page
-      .getByRole("button", { name: "+ Escrow fund", exact: true })
-      .click();
-    await page.getByLabel("Leg A STRK to deposit").fill("0.3");
-    await page.getByLabel("Quoted token symbol").fill("ETH");
-    await page
-      .getByLabel("Quoted token address")
-      .fill(config.counterTokenAddress);
-    await page.getByLabel("Token decimals").fill("18");
-    await page.getByLabel("Quoted amount").fill("0.01");
-    await page.getByLabel("Note (optional)").fill("Localnet full lifecycle");
-    await page.getByLabel("Fill deadline in hours").fill("24");
-    await screenshot(page, "17-escrow-compose", testInfo);
-    await expect(
-      page.getByText(/2 wallet approvals · 2 transactions/),
-    ).toBeVisible();
-    await expect(
-      page.getByText(
-        /0\.3 STRK \(300000000000000000 base units\) deposited into escrow/,
-      ),
-    ).toBeVisible();
-    await page
-      .getByRole("button", { name: "Approve 1 value move in 2 transactions" })
-      .click();
-    await expect(page.getByText("Step 1 of 2", { exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("status").filter({ hasText: /funding escrow/i }),
-    ).toBeVisible();
-    await screenshot(page, "18-escrow-fund-progress", testInfo);
-    const submission = page
-      .getByText("Submission transactions", { exact: true })
-      .locator("..");
-    await expect(submission).toBeVisible({ timeout: 180_000 });
-    await expect(submission.locator("code")).toHaveCount(2);
-    await screenshot(page, "19-escrow-funded-and-sent", testInfo);
-
-    await switchIdentity(page, config, "bob");
-    await loadExistingKey(page);
-    await scanRecent(page);
-    await conversationRowByAddress(page, alice.address).click();
-    await expect(entry(page, escrowBody)).toBeVisible({ timeout: 60_000 });
-    const fill = page.getByRole("button", {
-      name: "Deposit 0.01 ETH & receive leg A",
-    });
-    await expect(fill).toBeVisible({ timeout: 60_000 });
-    await fill.click();
-    await expect(
-      page.getByText(/Fill confirmed: leg A was released/),
-    ).toBeVisible({
-      timeout: 180_000,
-    });
-    await screenshot(page, "20-escrow-filled", testInfo);
-
-    await switchIdentity(page, config, "alice");
-    await loadExistingKey(page);
-    await conversationRow(page, bobLabel).click();
-    await expect(entry(page, escrowBody)).toBeVisible();
-    const claim = page.getByRole("button", { name: "Claim ETH leg" });
-    await expect(claim).toBeVisible({ timeout: 60_000 });
-    await claim.click();
-    await expect(
-      page.getByText("Localnet claim confirmed: the maker received leg B.", {
-        exact: true,
-      }),
-    ).toBeVisible({ timeout: 180_000 });
-    await expect(
-      page.getByText("Settled on-chain", { exact: true }).first(),
-    ).toBeVisible();
-    await screenshot(page, "21-escrow-settled", testInfo);
+    await expect(page.getByRole("button", { name: "+ Escrow fund", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Leg A STRK to deposit")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Approve .*value move/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Private payment/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /OTC offer/ })).toBeVisible();
+    await screenshot(page, "17-chat-private-only-attachments", testInfo);
+    // Removing this empty draft keeps the subsequent draft-recovery check isolated.
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Delete draft…", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(0);
   });
 
   await test.step("8. persist, resume, and send a device-private draft", async () => {
@@ -920,8 +897,7 @@ test("all APP20 localnet journeys", async ({
         await conversationRow(page, bobLabel).click();
         await expect(timeline(page)).toBeVisible();
         const context = page.getByRole("button", {
-          name: "Context",
-          exact: true,
+          name: /^(Contact details|Hide contact details)$/,
         });
         await expect(context).toHaveAttribute("aria-expanded", "false");
         await context.click();
@@ -955,7 +931,7 @@ test("all APP20 localnet journeys", async ({
   });
 
   await test.step("11. forget this device clears every sensitive local chat store", async () => {
-    await page.getByText("Device safety", { exact: true }).click();
+    await openTools(page, "Device safety");
     page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", {

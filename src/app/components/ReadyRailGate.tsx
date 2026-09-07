@@ -46,8 +46,8 @@ export default function ReadyRailGate({
           Switch explicitly to Ready
         </button>
         <small>
-          Return to RFQ to review the selected account, network, signer, and
-          available privacy capability before authorizing an operation.
+          After switching, review the wallet, network, and available privacy
+          capability on this page before authorizing an operation.
         </small>
       </section>
     </main>

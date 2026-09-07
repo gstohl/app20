@@ -1,6 +1,6 @@
 import { formatBaseUnits, type ReceiptPayload } from "@/lib/otc";
 import { shortenFelt } from "./correspondent";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type ReceiptCardProps = {
   receipt: ReceiptPayload;

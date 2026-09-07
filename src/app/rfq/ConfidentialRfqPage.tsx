@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Link } from '@tanstack/react-router';
-import { RfqNavigation } from './MainnetTradeWorkspace';
+import { RfqNavigation } from './RfqNavigation';
 import styles from './confidential-rfq.module.css';
 
 const LocalLab = import.meta.env.DEV && import.meta.env.VITE_CONFIDENTIAL_RFQ_LAB
@@ -10,7 +10,7 @@ export default function ConfidentialRfqPage() {
   return <main className={styles.page} aria-label="Confidential RFQ">
     <div className={styles.eyebrow}>ENCRYPTED TERMS · JOINT APPROVAL</div>
     <h1>Confidential RFQ</h1>
-    <RfqNavigation confidential />
+    <RfqNavigation />
     {LocalLab ? <Suspense fallback={<p>Opening the local workspace…</p>}><LocalLab /></Suspense> : <>
       <section className={styles.intro}>
         <span className={styles.badge}>Development release</span>
@@ -20,7 +20,7 @@ export default function ConfidentialRfqPage() {
         <p><strong>Mainnet and browser-wallet activation are pending.</strong> The Node SDK and local workspace implement this flow; real STARK proofs, wallet support and independent review are still required.</p>
         <p><Link to="/agents">Node SDK and development guide →</Link></p>
       </section>
-      <section className={styles.disclosure}><h2>What remains visible</h2><p>Escrow activity, timing and fees remain public. Shielding and unshielding expose their public token amounts. Counterparties know their own trade, and a hosted prover can access its private payload.</p><p>The current <Link to="/rfq">mainnet RFQ</Link> uses the earlier settlement path, whose funded trade amounts and assets are public.</p></section>
+      <section className={styles.disclosure}><h2>Private settlement is required</h2><p>This applies to RFQ swaps, Chat offers and Chat payments. Payments use encrypted notes; swaps require both parties to approve the confidential escrow. If the wallet or network cannot support the required path, settlement is unavailable.</p><p>The earlier public settlement route and one-sided Chat offer acceptance are disabled. <Link to="/rfq/maker">Recover earlier maker inventory →</Link></p><h2>What remains visible</h2><p>Escrow activity, timing and fees remain public. Shielding and unshielding expose their public token amounts. Counterparties know their own trade, and a hosted prover can access its private payload.</p><p><Link to="/funding">Check separate wallet funding support →</Link></p></section>
     </>}
   </main>;
 }

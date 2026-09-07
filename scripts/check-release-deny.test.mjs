@@ -13,6 +13,10 @@ afterEach(async () => {
 });
 
 const validFiles = {
+  "packages/domain/src/settlement-privacy.ts": `
+    export const PUBLIC_SETTLEMENT_ENABLED = false;
+    export const CHAT_ONE_SIDED_ACCEPT_ENABLED = false;
+  `,
   "src/lib/confidential-rfq-status.ts": `
     export const CONFIDENTIAL_RFQ_MAINNET_ENABLED = false;
     export const CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED = false;
@@ -269,6 +273,15 @@ test("confidential mainnet and real-proof declarations cannot be enabled before 
   for (const name of ["CONFIDENTIAL_RFQ_MAINNET_ENABLED", "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED"]) {
     const root = await fixture();
     await overwrite(root, "src/lib/confidential-rfq-status.ts", validFiles["src/lib/confidential-rfq-status.ts"].replace(`${name} = false`, `${name} = true`));
+    assert((await checkReleaseDeny(root)).some(failure => failure.includes(name)));
+  }
+});
+
+test("public RFQ and one-sided Chat activation remain forbidden", async () => {
+  for (const name of ["PUBLIC_SETTLEMENT_ENABLED", "CHAT_ONE_SIDED_ACCEPT_ENABLED"]) {
+    const root = await fixture();
+    const path = "packages/domain/src/settlement-privacy.ts";
+    await overwrite(root, path, validFiles[path].replace(`${name} = false`, `${name} = true`));
     assert((await checkReleaseDeny(root)).some(failure => failure.includes(name)));
   }
 });

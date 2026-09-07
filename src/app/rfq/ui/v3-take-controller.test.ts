@@ -1,4 +1,3 @@
-import { verifyTakeSignature } from "@app20/private-intents";
 import { describe, expect, it } from "vitest";
 import {
   createRfqLifecycleRecord,
@@ -60,40 +59,10 @@ function reviewing() {
 }
 
 describe("RFQ v3 signed Take actions", () => {
-  it("signs the exact persisted fill order and places r/s before the fill span", () => {
+  it("rejects a new public Take even for a valid persisted earlier review", () => {
     const record = reviewing();
-    const signed = buildSignedV3TakeActions(record, "0xabc", "0x99", "0x1");
-    expect(
-      verifyTakeSignature(
-        record.takerCommitment!,
-        signed.authorization.message,
-        signed.signature.r,
-        signed.signature.s,
-      ),
-    ).toBe(true);
-    const invoke = signed.actions[2];
-    expect(invoke?.type).toBe("compute_and_invoke");
-    if (!invoke || invoke.type !== "compute_and_invoke")
-      throw new Error("missing authenticated invoke");
-    expect(invoke.compute_calldata).toEqual(["0x77"]);
-    expect(invoke.invoke_calldata).toEqual([
-      "0x5",
-      "0x1",
-      "0x2",
-      signed.signature.r,
-      signed.signature.s,
-      "0x2",
-      "0x41",
-      "0x64",
-      "0x42",
-      "0x96",
-      "0x77",
-      "${poolAddress}",
-      "${openNoteIds[0]}",
-    ]);
-    expect(JSON.stringify(signed.actions)).not.toContain(
-      record.takerSigningKey,
-    );
+    expect(() => buildSignedV3TakeActions(record, "0xabc", "0x99", "0x1"))
+      .toThrow(/Confidential settlement is required/);
   });
 
   it("cannot sign after the RFQ becomes terminal", () => {

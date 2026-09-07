@@ -1,3 +1,4 @@
+import { PUBLIC_SETTLEMENT_ENABLED } from "@app20/domain";
 import { pendingValueLabel } from "@/lib/value-operation-presentation";
 import type { ValueOperationState } from "@/lib/otc";
 import { useEffect, useState } from "react";
@@ -24,7 +25,7 @@ import {
 } from "@/lib/payment-link";
 import { sanitizeUntrustedText } from "@/lib/text";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type InvoiceCardProps = {
   request: PaymentRequestPayload;
@@ -136,11 +137,12 @@ export default function InvoiceCard({
     !expired &&
     !networkMismatch &&
     tokenAllowed &&
-    (isStrk || (isLocalnetUsdc && maturity?.mature === true)) &&
+    (isStrk || (isLocalnetUsdc && (!maturity || maturity.mature))) &&
     claimedPaymentAddress !== null &&
     !ignored &&
     Boolean(onPay);
   const canStartPrivateRfq =
+    PUBLIC_SETTLEMENT_ENABLED &&
     status === "requested" &&
     !expired &&
     !networkMismatch &&
@@ -304,7 +306,7 @@ export default function InvoiceCard({
       <p className={styles.riskCopy}>
         <strong>
           {isLocalnetUsdc && maturity === undefined
-            ? "Private STRK can first be exchanged for the requested localnet USDC."
+            ? "Pay from existing shielded USDC. Automatic conversion through the earlier RFQ route is disabled."
             : `${amount} ${token.symbol} moves only after explicit wallet approval.`}
         </strong>{" "}
         Chat coordinates the invoice but does not authenticate the person behind
@@ -437,7 +439,7 @@ export default function InvoiceCard({
                 ? "Waiting for wallet…"
                 : isLocalnetUsdc
                   ? "Complete payment"
-                  : `Pay ${amount} STRK privately`}
+                  : `Pay ${amount} ${token.symbol} privately`}
             </button>
           ) : null}
           {canStartPrivateRfq ? (

@@ -11,9 +11,9 @@ import {
   type RfqLifecycleRecord,
 } from "@/app/rfq/rfq-lifecycle";
 import { createIndexedDbRfqStorage } from "@/app/rfq/rfq-storage";
-import Compose, { type SentEnvelope } from "@/components/mail/Compose";
-import Onboard from "@/components/mail/Onboard";
-import { shortenFelt } from "@/components/mail/correspondent";
+import Compose, { type SentEnvelope } from "@/components/chat/Compose";
+import Onboard from "@/components/chat/Onboard";
+import { shortenFelt } from "@/components/chat/correspondent";
 import type { AddressBookEntry } from "@/lib/address-book";
 import { canonicalizeStarknetAddress, feltEquals } from "@/lib/addresses";
 import { isBlankDraft, type CompositeDraft } from "@/lib/drafts";

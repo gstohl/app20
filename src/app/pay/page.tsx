@@ -4,8 +4,8 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import Strk20CapabilityDiagnostic from "@/app/components/client/WalletHandle/Strk20CapabilityDiagnostic";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
-import InvoiceCard from "@/components/mail/InvoiceCard";
-import styles from "@/components/mail/mail.module.css";
+import InvoiceCard from "@/components/chat/InvoiceCard";
+import styles from "@/components/chat/chat.module.css";
 import { deriveKeypair } from "@/lib/mail";
 import {
   MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE,

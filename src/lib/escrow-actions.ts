@@ -1,4 +1,5 @@
 import type { PriceSchedule } from "@app20/private-intents";
+import { rejectPublicSettlement } from "@app20/domain";
 import type { WALLET_API } from "@starknet-io/types-js";
 import { num } from "starknet";
 import {
@@ -194,6 +195,7 @@ export function buildEscrowFundActions({
   counterAmount,
   deadline,
 }: EscrowFundBatchInput): WALLET_API.STRK20_ACTION[] {
+  rejectPublicSettlement();
   assertConfiguredEscrow(escrowAddress);
   felt(ticketAddress, "Ticket address");
   assertNonZeroFelt(recoveryAddress, "Recovery address");
@@ -228,6 +230,7 @@ export function buildEscrowFillActions({
   amount,
   payoutToken,
 }: EscrowFillBatchInput): WALLET_API.STRK20_ACTION[] {
+  rejectPublicSettlement();
   assertConfiguredEscrow(escrowAddress);
   assertNonZeroFelt(recoveryAddress, "Recovery address");
   assertNonZeroFelt(token, "Fill token");
@@ -338,6 +341,7 @@ export function buildEscrowLockActions({
   expiry,
   schedule,
 }: EscrowLockBatchInput): WALLET_API.STRK20_ACTION[] {
+  rejectPublicSettlement();
   assertConfiguredEscrow(escrowAddress);
   assertNonZeroFelt(recoveryAddress, "Recovery address");
   assertNonZeroFelt(lockTicketAddress, "Lock ticket address");
@@ -373,6 +377,7 @@ export function buildEscrowTakeActions({
   signatureS,
   fills,
 }: EscrowTakeBatchInput): App20Strk20Action[] {
+  rejectPublicSettlement();
   assertConfiguredEscrow(escrowAddress);
   assertNonZeroFelt(recoveryAddress, "Recovery address");
   assertDistinctTokens(tokenA, tokenB);

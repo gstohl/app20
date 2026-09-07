@@ -26,6 +26,7 @@ import {
   receiptForTransfer,
   recordDealEvent,
   recordPaymentRequest,
+  recordPaymentLinkRequest,
   recordUnverifiedPaymentClaim,
   releaseOtcAccept,
   releasePayment,
@@ -542,6 +543,56 @@ describe("payment request idempotency", () => {
     ).toBe(request.amount);
   });
 
+  it("merges an older unbound invoice with its reviewed bound link only in the same scope", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "0x534e5f5345504f4c4941", "0xb0b"] as const;
+    const bound = { ...request, chainId: "SN_SEPOLIA" };
+    const inputSnapshot = structuredClone(bound);
+    recordPaymentLinkRequest(...scope, bound, { kind: "unsigned" }, 1_900_000_000);
+    recordPaymentRequest(...scope, request, 1_900_000_001);
+    expect(loadOtcState(...scope).payments[request.requestId]).toMatchObject({
+      request: bound, origin: "payment_link", linkAuthenticity: { kind: "unsigned" },
+    });
+    expect(claimPayment(...scope, request, 1_900_000_002)).toMatchObject({
+      request: bound, status: "paid", paymentPending: true,
+    });
+    expect(bound).toEqual(inputSnapshot);
+    expect(request).not.toHaveProperty("chainId");
+  });
+
+  it("rejects explicitly wrong-chain invoices even when both records share that wrong chain", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    const wrong = { ...request, chainId: "SN_MAIN" };
+    expect(() => recordPaymentRequest(...scope, wrong, 1_900_000_000)).toThrow(/another Starknet network/i);
+    expect(loadOtcState(...scope).payments).toEqual({});
+    // A record saved by an earlier client cannot bypass the execution boundary.
+    storage.setItem(otcStorageKey(scope[1], scope[2]), JSON.stringify({
+      version: 1, deals: {}, payments: { [wrong.requestId]: {
+        requestId: wrong.requestId, request: wrong, status: "requested", updatedAt: 1_900_000_000,
+      } },
+    }));
+    const before = storage.getItem(otcStorageKey(scope[1], scope[2]));
+    expect(() => claimPayment(...scope, wrong, 1_900_000_001)).toThrow(/locally reviewed record/i);
+    expect(() => claimPayment(...scope, request, 1_900_000_001)).toThrow(/locally reviewed record/i);
+    expect(storage.getItem(otcStorageKey(scope[1], scope[2]))).toBe(before);
+  });
+
+  it.each([
+    { amount: "2000000000000000" },
+    { token: usdc },
+    { requester: "0x9876" },
+    { memo: "Altered invoice" },
+    { expiresAt: 2_000_000_001 },
+    { chainId: "SN_MAIN" },
+  ])("keeps exact term checks when an older envelope inherits its mailbox chain: %j", change => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentLinkRequest(...scope, { ...request, chainId: "SN_SEPOLIA" }, { kind: "unsigned" }, 1_900_000_000);
+    expect(() => claimPayment(...scope, { ...request, ...change }, 1_900_000_001)).toThrow(/locally reviewed record/i);
+    expect(loadOtcState(...scope).payments[request.requestId]).toMatchObject({ status: "requested" });
+  });
+
   it("moves payment reserved to submitted to confirmed, never verifying unknown", () => {
     const storage = new MemoryStorage();
     const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
@@ -590,6 +641,20 @@ describe("payment request idempotency", () => {
     expect(stored.status).toBe("requested");
     expect(stored.paymentTxHash).toBeUndefined();
     expect(stored.receipt).toBeUndefined();
+  });
+
+  it("keeps a payment fenced across reload when the wallet loses its response", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    const claimed = claimPayment(...scope, request, 1_900_000_001);
+    markPaymentOutcome(...scope, request.requestId, undefined, "unknown", 1_900_000_002);
+    releasePayment(...scope, request.requestId, 1_900_000_003);
+    expect(loadOtcState(...scope).payments[request.requestId]).toMatchObject({
+      status: "paid", paymentPending: true, paymentVerified: false,
+      paymentOperation: {state: "unknown", attemptId: claimed.paymentOperation?.attemptId},
+    });
+    expect(() => claimPayment(...scope, request, 1_900_000_004)).toThrow(/no second transfer/i);
   });
 
   it("releases a reserved payment without leaving a reserved operation fence", () => {

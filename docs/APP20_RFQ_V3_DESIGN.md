@@ -320,7 +320,7 @@ export type MakerIndicativeMidV1 = Readonly<{
 - `rfq-v3-invoice.ts` estimates a STRK bucket from verified mids and computes the minimum selected schedule allocations that reach the exact USDC target. The desk consumes the account/chain-scoped `InvoiceDeskHandoff`, records the settled Take, and returns to Mail for maturity-gated completion.
 - `rfq-history-backup.ts` implements authenticated `exportRfqHistory` / `importRfqHistory` payload v2. It exports bounded portable tombstones, recursively strips signing secrets, authenticates before ranking, rejects rollback/equivocation and ambiguous collisions, and durably stamps all restored v3 rows local/non-authoritative/`restoredFromBackup` so they remain verify-only across reload and re-export. A settled Take queues the opt-in auto-backup.
 
-### 5.2 Mail, invoices, backup, IPFS (`src/lib`, `src/app/inbox`, `src/components/mail`, `workers/relay`)
+### 5.2 Mail, invoices, backup, IPFS (`src/lib`, `src/app/inbox`, `src/components/chat`, `workers/relay`)
 
 - Nonzero Mail action IDs compile to the pinned pool's proof-bound `compute_and_invoke` path. Cairo derives an identity/action replay slot without exposing the raw identity key and separately verifies a commitment to the exact encrypted payload; plain `privacy_invoke` remains available only for repeatable zero-ID messages. This is a local shim over pool support, not a claim that the published Wallet API 0.10 action union or production wallets support the variant.
 - `envelope.ts`: new types `backup_snapshot = 0x0d` and `backup_pointer = 0x0e`.

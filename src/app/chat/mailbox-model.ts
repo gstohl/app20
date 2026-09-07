@@ -1,7 +1,7 @@
 "use client";
 
 import { validateAndParseAddress } from "starknet";
-import type { LocalMailMessage } from "@/components/mail/message";
+import type { LocalMailMessage } from "@/components/chat/message";
 import { parseCompositePayload } from "@/lib/composite";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
 import {

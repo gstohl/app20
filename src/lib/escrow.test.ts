@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ec, num } from "starknet";
-import { exportMailSeed, restoreMailSeed } from "@/components/mail/seedBackup";
+import { exportMailSeed, restoreMailSeed } from "@/components/chat/seedBackup";
 import {
   ESCROW_CLAIM_KEY_LABEL,
   STARK_CURVE_SCALAR_ORDER,

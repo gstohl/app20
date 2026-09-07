@@ -5,8 +5,8 @@ import type {
   RfqLifecycleState,
 } from "@/app/rfq/rfq-lifecycle";
 import { rfqStateLabel } from "@/app/rfq/rfq-state-label";
-import type { LocalMailMessage } from "@/components/mail/message";
-import { shortenFelt } from "@/components/mail/correspondent";
+import type { LocalMailMessage } from "@/components/chat/message";
+import { shortenFelt } from "@/components/chat/correspondent";
 import type { AddressBookEntry } from "@/lib/address-book";
 import { canonicalizeStarknetAddress, feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
@@ -309,7 +309,7 @@ export function offerRecord(
       ? "Verify the transfer outcome before taking any further action."
       : "Transfer pending confirmation. Do not submit another transfer.";
   } else if (!own && status === "offered" && !expired) {
-    needsAction = "Accept or decline this offer.";
+    needsAction = "Review or decline. Confidential swap support is pending.";
   } else if (
     !own &&
     status === "accepted" &&

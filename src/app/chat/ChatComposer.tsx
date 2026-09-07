@@ -1,5 +1,5 @@
 import type { FormEvent, KeyboardEvent } from "react";
-import { ProvingProgress } from "@/components/mail/OperationProgress";
+import { ProvingProgress } from "@/components/chat/OperationProgress";
 import {
   CHAT_LETTER_MAX_CHARS,
   type ChatLetterBudget,

@@ -12,13 +12,8 @@ it('binds authorization to native chain and settlement deployment', () => {
   expect(settlementCommitment('0x1', '0x7', secret)).not.toBe(commitment);
   expect(() => settlementCommitment('0x1', '0x6', '0x0')).toThrow();
 });
-it('constructs only standard atomic wallet actions with shielded output', () => {
-  expect(buildPrivateSettlementActions(scope, terms, answer, secret, scope.taker)).toEqual([
-    { type: 'withdraw', token: '0x10', amount: '0x28', recipient: '0x6' },
-    { type: 'transfer', token: '0x11', amount: 'OPEN', recipient: '0x5' },
-    { type: 'invoke', contract: '0x6', calldata: ['0x3', '0x12', '${openNoteIds[0]}'] },
-  ]);
-  expect(() => buildPrivateSettlementActions(scope, terms, answer, '0x13', scope.taker)).toThrow();
+it('refuses the former public settlement batch even with valid authorization', () => {
+  expect(() => buildPrivateSettlementActions(scope, terms, answer, secret, scope.taker)).toThrow(/Confidential settlement is required/);
 });
 it('rejects wrong deployment, commitment, request, expiry and minimum', () => {
   expect(decodeExecutableAnswer(answer, scope, terms, deployment, commitment, 1800)).toEqual(answer);

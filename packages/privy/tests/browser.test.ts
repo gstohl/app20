@@ -6,9 +6,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   BrowserPrivySigner,
   BrowserStrk20Client,
+  BrowserStrk20Session,
   computeBrowserAccountAddress,
 } from "../src/browser.js";
-import { PrivyError } from "../src/errors.js";
+import { PrivyError, PublicSettlementDisabledError } from "../src/errors.js";
 
 const PRIVATE_KEY = "0x123456789";
 const fullPublicKey = ec.starkCurve.getPublicKey(PRIVATE_KEY);
@@ -50,6 +51,23 @@ describe("BrowserPrivySigner", () => {
 });
 
 describe("BrowserStrk20Client", () => {
+  it("rejects external settlement before initializing a browser privacy wallet", async () => {
+    const client = new BrowserStrk20Client({ rpcUrl: "https://rpc.example.invalid" });
+    const session = new BrowserStrk20Session(
+      client,
+      client.resolveWallet({ publicKey: PUBLIC_KEY, privyAddress: PRIVY_ADDRESS }),
+      {} as never,
+      false,
+      {},
+    );
+    const initialize = vi.spyOn(session, "privacy").mockImplementation(() => {
+      throw new Error("privacy initialization entered");
+    });
+
+    await expect(session.invokeExternal({} as never)).rejects.toBeInstanceOf(PublicSettlementDisabledError);
+    expect(initialize).not.toHaveBeenCalled();
+  });
+
   it("derives and validates the Ready account address locally", () => {
     const client = new BrowserStrk20Client({
       rpcUrl: "https://rpc.example.invalid",

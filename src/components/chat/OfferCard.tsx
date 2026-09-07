@@ -1,4 +1,5 @@
 import { pendingValueLabel } from "@/lib/value-operation-presentation";
+import { CHAT_ONE_SIDED_ACCEPT_ENABLED } from "@app20/domain";
 import type { ValueOperationState } from "@/lib/otc";
 import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import {
@@ -11,7 +12,7 @@ import {
   type OfferPayload,
 } from "@/lib/otc";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type OfferCardProps = {
   offer: OfferPayload;
@@ -70,7 +71,7 @@ export default function OfferCard({
     >
       <div className={styles.sheetHeading}>
         <h3 id={headingId} className={styles.sheetType}>
-          <span aria-hidden="true">OTC OFFER / ONE-SIDED V1</span>
+          <span aria-hidden="true">SWAP OFFER</span>
           <span className={styles.srOnly}>
             OTC offer: send {giveAmount} STRK
           </span>
@@ -97,7 +98,7 @@ export default function OfferCard({
           <dd>{giveAmount} STRK</dd></div>
         <div><dt>{own ? "You offer" : "You’re offered"}</dt>
           <dd>{wantAmount} <bdi>{wantToken.symbol}</bdi></dd>
-          <small>Separate payment · not guaranteed by Chat</small></div>
+          <small>Both assets require confidential escrow settlement</small></div>
       </dl>
       <div className={styles.addressProof}>
         <strong>Claimed payment address</strong>
@@ -113,9 +114,9 @@ export default function OfferCard({
         <summary>Address verification &amp; receipt details</summary>
         <p>Messages are not sender-authenticated in v1. The claimed payment address
           above came from the encrypted offer payload.</p>
-        <p>The first transaction sends STRK with an accept memo. The second posts
-          a receipt. If receipt posting fails, STRK has already moved; retry only
-          “Post receipt.”</p>
+        <p>New swaps require the confidential escrow and approval from both sides.
+          For an earlier payment whose receipt is missing, “Post receipt” only sends
+          the encrypted receipt and never repeats the payment.</p>
       </details>
       <p className={styles.sheetMeta}>
         {expiryLabel(offer.expiresAt)} · Deal {offer.dealId.slice(0, 12)}…
@@ -154,16 +155,15 @@ export default function OfferCard({
       )}
 
       <p className={styles.riskCopy}>
-        <strong>{giveAmount} STRK {settlementVerified ? "transferred privately." : own ? "is requested from the counterparty." : "will be sent privately when you accept."}</strong>{" "}
-        Chat does not settle the {wantToken.symbol} payment. The offered payment is not guaranteed. This is not an atomic swap.
+        {settlementVerified ? "An earlier one-sided STRK payment was verified locally; it does not prove that both assets were exchanged." : "This offer is for review. Settlement requires a confidential atomic swap; compatible wallet support is still pending."}
       </p>
       {active ? <p className={styles.actionWarning}>
-        Accepting requires 2 wallet approvals and 2 transactions.
+        <a href="/rfq/confidential">Confidential swap availability →</a>
       </p> : null}
 
       {active && (onAccept || onDecline) ? (
         <div className={styles.sheetActions}>
-          {onAccept ? (
+          {onAccept && CHAT_ONE_SIDED_ACCEPT_ENABLED ? (
             <button
               className={styles.primaryButton}
               type="button"

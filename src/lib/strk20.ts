@@ -5,6 +5,7 @@ import { hash, num, TransactionExecutionStatus, walletV6 } from "starknet";
 import type { EncryptedMailRecord } from "./mail";
 import { assertSettlesStrk, type OfferPayload } from "./otc";
 import { addrSTRK } from "../utils/constants";
+import { assertEncryptedPaymentActions, rejectOneSidedChatSwap } from "@app20/domain";
 
 export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
@@ -168,28 +169,29 @@ export function buildMessageOnlyChatActions(
   return [buildMailInvokeAction({ ...input, recoveryAddress: "0x0", helperFundingAmount: 0n }, "0x0")];
 }
 
-/** Builds private transfer, helper funding, recovery OPEN note, then Mail invoke. */
+/** Encrypted payment plus an unfunded, replay-protected memo. No public token leg. */
 export function buildMemoTransferActions({
   recipient,
   amount,
   ...mail
 }: MemoTransferBatchInput): App20Strk20Action[] {
   const token = mail.tokenAddress ?? addrSTRK;
-  return [
+  const actions: App20Strk20Action[] = [
     {
       type: "transfer",
       token,
       amount: baseUnitAmountHex(amount),
       recipient,
     },
-    buildHelperFundingAction(
-      token,
-      mail.helperAddress,
-      mail.helperFundingAmount,
-    ),
-    buildRecoveryOpenNoteAction(token, mail.recoveryAddress),
-    buildMailInvokeAction({ ...mail, tokenAddress: token }),
+    ...buildMessageOnlyChatActions({
+      ...mail,
+      // This unused public helper argument is identical for every payment asset.
+      tokenAddress: addrSTRK,
+      actionId: mail.actionId ?? computeActionId("encrypted-payment", JSON.stringify(mail.record)),
+    }),
   ];
+  assertEncryptedPaymentActions(actions);
+  return actions;
 }
 
 /** OTC v1 always transfers the offered STRK give leg to the offerer. */
@@ -197,6 +199,7 @@ export function buildOtcAcceptActions({
   offer,
   ...mail
 }: OtcAcceptBatchInput): App20Strk20Action[] {
+  rejectOneSidedChatSwap();
   assertSettlesStrk(offer);
   return buildMemoTransferActions({
     ...mail,
@@ -612,7 +615,14 @@ export async function submitActions(
   actions: App20Strk20Action[],
   options: SubmitActionsOptions,
 ): Promise<{ transactionHash: string; receipt: unknown }> {
+  // Callbacks may await or mutate their inputs. Validate and submit an owned
+  // snapshot so the reviewed amount, recipient and memo cannot change underneath us.
+  let submittedActions: App20Strk20Action[];
   try {
+    submittedActions = structuredClone(actions);
+    if (submittedActions.some(action => action.type === "transfer" && action.amount !== "OPEN")) {
+      assertEncryptedPaymentActions(submittedActions);
+    }
     options.policy();
   } catch (error: unknown) {
     throw new Strk20NotSubmittedError(error);
@@ -633,13 +643,21 @@ export async function submitActions(
       throw new Strk20WalletSubmissionUnknownError(error);
     }
   }
-  let submitted: { transaction_hash: string };
+  let transactionHash: string;
   try {
     // Remove this cast when the published Wallet API union includes the
     // proof-bound compute_and_invoke action already supported by the pool.
-    submitted = await account.strk20InvokeTransaction(
-      actions as WALLET_API.STRK20_ACTION[],
+    const submitted = await account.strk20InvokeTransaction(
+      submittedActions as WALLET_API.STRK20_ACTION[],
     );
+    const returnedHash = submitted?.transaction_hash;
+    if (typeof returnedHash !== "string" || !/^0x[0-9a-f]+$/i.test(returnedHash) ||
+        BigInt(returnedHash) <= 0n || BigInt(returnedHash) >= 2n ** 251n + 17n * 2n ** 192n + 1n) {
+      // The wallet was entered. A missing or malformed response does not prove
+      // that it failed to broadcast; keep the payer's original attempt fenced.
+      throw new Error("The wallet did not return a valid transaction hash. Check wallet activity before retrying.");
+    }
+    transactionHash = returnedHash;
   } catch (error: unknown) {
     const deterministicReason = deterministicPreSubmissionReason(error);
     if (deterministicReason) {
@@ -650,8 +668,6 @@ export async function submitActions(
     }
     throw new Strk20WalletSubmissionUnknownError(error);
   }
-  const { transaction_hash: transactionHash } = submitted;
-
   let submissionCallbackError: unknown;
   try {
     await options.onSubmitted?.(transactionHash);

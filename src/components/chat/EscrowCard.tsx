@@ -2,7 +2,7 @@ import { canonicalizeStarknetAddress } from "@/lib/addresses";
 import { formatBaseUnits, normalizeTokenRef } from "@/lib/otc";
 import type { EscrowContractStatus, EscrowFundPayload } from "@/lib/escrow";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type EscrowCardProps = {
   fund: EscrowFundPayload;

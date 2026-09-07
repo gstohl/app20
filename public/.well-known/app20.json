@@ -9,11 +9,13 @@
   "contracts": {
     "App20MakerBook": {
       "address": "0x9df86f7e74cf096c3788a5bf2c51945de50a13602a4383b93bbd64f39fe051",
-      "classHash": "0x20abd2d11d44bdf3fbe34e775d84c76ff72c8eea47398614be0a0cd1ed94a81"
+      "classHash": "0x20abd2d11d44bdf3fbe34e775d84c76ff72c8eea47398614be0a0cd1ed94a81",
+      "status": "historical-public-term-protocol-recovery-only-in-current-clients"
     },
     "App20PrivateSwap": {
       "address": "0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642",
-      "classHash": "0x254bbd706cfd89a774d0e88c46c6223d7bb22d555eeca87367bf8742b3c4846"
+      "classHash": "0x254bbd706cfd89a774d0e88c46c6223d7bb22d555eeca87367bf8742b3c4846",
+      "status": "historical-public-term-protocol-recovery-only-in-current-clients"
     }
   },
   "pool": {
@@ -25,7 +27,12 @@
   "fromBlock": 14474272,
   "chat": {
     "status": "not-deployed-on-mainnet",
-    "address": null
+    "address": null,
+    "localPaymentSettlement": "encrypted-transfer-and-unfunded-encrypted-message",
+    "mainnetPaymentsEnabled": false,
+    "offerSwapAcceptanceEnabled": false,
+    "invoiceSwapConversionEnabled": false,
+    "paymentMemoPublicToken": "fixed-STRK-helper-argument-not-payment-asset"
   },
   "liveWalletFillVerified": true,
   "operatorDownload": "https://app20.io/downloads/app20-maker.mjs",
@@ -40,7 +47,9 @@
     "bundledPrivacyProver": false,
     "mainnetChat": false,
     "nodePrivacyWalletAdapter": true,
-    "confidentialDevelopment": true
+    "confidentialDevelopment": true,
+    "legacySettlementExecutorEnabled": false,
+    "legacyNewQuoteSubmissionEnabled": false
   },
   "proving": {
     "transport": "https-json",
@@ -64,7 +73,8 @@
       "0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171"
     ],
     "browserWalletAcceptanceVerified": false,
-    "protocol": "App20PrivateSwap (public funded terms)"
+    "protocol": "App20PrivateSwap (public funded terms)",
+    "currentClientExecutionEnabled": false
   },
   "confidentialRfq": {
     "status": "development-only",
@@ -87,6 +97,40 @@
       "fees",
       "ciphertext and proof sizes"
     ],
-    "hostedProverSeesWitness": true
-  }
+    "hostedProverSeesWitness": true,
+    "defaultRfqPage": "https://app20.io/rfq",
+    "chatSwapIntegrationReady": false
+  },
+  "settlementPolicy": {
+    "mode": "private-only",
+    "appliesTo": [
+      "rfq",
+      "chat-payments",
+      "chat-invoices",
+      "chat-offers"
+    ],
+    "publicTradeLegsEnabled": false,
+    "openSettlementNotesEnabled": false,
+    "oneSidedChatSwapEnabled": false,
+    "legacyClientTradingEnabled": false,
+    "legacyMakerRegistrationEnabled": false,
+    "legacyInventoryFundingEnabled": false,
+    "historicalRecoveryEnabled": true,
+    "historicalRecoveryIsPublic": true,
+    "legacyContractsRemainCallableOnChain": true,
+    "recoveryCommands": [
+      "check",
+      "reconcile",
+      "release",
+      "withdraw",
+      "deactivate"
+    ],
+    "disabledMakerCommands": [
+      "register",
+      "fund",
+      "run"
+    ],
+    "shieldingAndUnshielding": "separate-public-wallet-boundaries"
+  },
+  "liveWalletFillVerifiedScope": "historical-public-funded-terms-protocol-only"
 }

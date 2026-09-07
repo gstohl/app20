@@ -13,7 +13,7 @@ import {
 } from "@/lib/mail";
 import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
 import { randomConversationId } from "@/lib/mail-thread";
-import type { SentEnvelope } from "@/components/mail/Compose";
+import type { SentEnvelope } from "@/components/chat/Compose";
 import {
   APP20_HELPER_FUNDING_BASE_UNITS,
   assertPrivateStrk20BatchBalance,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { paymentLinkToLocal } from "@/app/chat/mailbox-model";
 import type { RfqLifecycleRecord } from "@/app/rfq/rfq-lifecycle";
-import type { LocalMailMessage } from "@/components/mail/message";
+import type { LocalMailMessage } from "@/components/chat/message";
 import { feltEquals } from "@/lib/addresses";
 import { decodeEnvelope, encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
 import type { EscrowState } from "@/lib/escrow";
@@ -290,7 +290,7 @@ describe("chat conversations", () => {
     expect(bob.items[1].records[0].needsAction).toMatch(/claims to have settled/);
     expect(bob.items[3].provenance).toBe("mailbox-record");
     expect(bob.items[3].records[0].own).toBe(false);
-    expect(bob.items[3].needsAction).toMatch(/Accept or decline/);
+    expect(bob.items[3].needsAction).toMatch(/Review or decline/);
   });
 
   it("keeps an unnamed thread sealed and exposes the record that names it", () => {

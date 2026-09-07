@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
 import type { LocalMailMessage } from "./message";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 const CIPHERTEXT_PREVIEW_FELTS = 4;
 

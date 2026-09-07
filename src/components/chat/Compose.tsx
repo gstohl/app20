@@ -1,4 +1,5 @@
 "use client";
+import { rejectPublicSettlement } from "@app20/domain";
 
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +52,7 @@ import {
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
+import { normalizePaymentLinkChainId } from "@/lib/payment-chain";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { randomConversationId } from "@/lib/mail-thread";
 import {
@@ -80,7 +82,7 @@ import {
   strk20PoolForProviderIndex,
 } from "@/utils/constants";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 export type SentEnvelope = {
   documentId: string;
@@ -606,6 +608,9 @@ export default function Compose({
         };
         attachments.push({ type: "payment", payload: payment });
       } else if (attachment.type === "payment_request") {
+        if (!chainId) {
+          throw new Error("Connect a supported network before creating an invoice.");
+        }
         const token = invoiceTokenOptions.find(
           (option) => option.symbol === attachment.token,
         );
@@ -616,6 +621,7 @@ export default function Compose({
         }
         const payload: PaymentRequestPayload = {
           requestId: attachment.requestId,
+          chainId: normalizePaymentLinkChainId(chainId),
           token,
           amount: parseDecimalToBaseUnits(attachment.amount, token.decimals),
           requester: validateAndParseAddress(senderAddress),
@@ -810,6 +816,7 @@ export default function Compose({
       const escrowAttachment = draft.attachments.find(
         (attachment) => attachment.type === "escrow_fund",
       );
+      if (escrowAttachment) rejectPublicSettlement();
       const ticketAddress = escrowAttachment
         ? await ensureLocalnetMailEscrowTicket(escrowAttachment.dealId)
         : undefined;
@@ -846,7 +853,7 @@ export default function Compose({
       setSendState({
         kind: "lookup",
         message: document.payment
-          ? "Checking private STRK for the payment plus chat service funding…"
+          ? "Checking the shielded STRK payment balance…"
           : "Checking private STRK for chat service funding…",
         step: 1,
         totalSteps: 1,
@@ -855,7 +862,7 @@ export default function Compose({
         walletAccount,
         addrSTRK,
         document.payment
-          ? [document.payment.transfer.amount, APP20_HELPER_FUNDING_BASE_UNITS]
+          ? [document.payment.transfer.amount]
           : [APP20_HELPER_FUNDING_BASE_UNITS],
       );
       if (document.payment && poolAddress) {
@@ -1265,7 +1272,7 @@ export default function Compose({
             </header>
             <div className={styles.attachmentButtons}>
               {(
-                ["payment", "offer", "payment_request", "escrow_fund"] as const
+                ["payment", "offer", "payment_request"] as const
               ).map((type) => {
                 const attached = draft.attachments.some(
                   (attachment) => attachment.type === type,

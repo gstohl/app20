@@ -18064,6 +18064,11 @@ function filterEventsByAddress(events, contractAddress) {
 }
 var export_TypedDataRevision = api_exports3.TypedDataRevision;
 
+// packages/domain/src/settlement-privacy.ts
+function rejectPublicSettlement() {
+  throw new Error("Confidential settlement is required. The earlier RFQ route exposes trade amounts and assets and is disabled. Use the confidential escrow when your wallet and network support it.");
+}
+
 // node_modules/@hpke/common/esm/src/errors.js
 var HpkeError = class extends Error {
   constructor(e) {
@@ -20437,6 +20442,7 @@ async function verifySettlement(provider2, config4, deployment, requireOutputNot
 
 // scripts/starknet-maker.mjs
 var [configPath, mode = "--check"] = process.argv.slice(2);
+if (["--register", "--run", "--fund"].includes(mode)) rejectPublicSettlement();
 if (configPath === "--init-key") {
   if (!mode || mode.startsWith("--")) throw new Error("Usage: node app20-maker.mjs --init-key ./maker-key.json");
   const path = resolve(mode);

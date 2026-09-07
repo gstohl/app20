@@ -1,4 +1,5 @@
 import { RpcProvider, type Call, type ProviderInterface } from 'starknet';
+import { rejectPublicSettlement } from '@app20/domain';
 import { open as openFile, readFile, rename, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ export type * from './types.js';
 
 // Copy so a consumer cannot change the pins used by a client through this export.
 export const MAINNET: Deployment = structuredClone(MAINNET_DEPLOYMENT);
-export const capabilities: Readonly<{ maker: true; encryptedRfq: true; chat: false; bundledPrivacyProver: false }> = Object.freeze({ maker: true, encryptedRfq: true, chat: false, bundledPrivacyProver: false });
+export const capabilities = Object.freeze({ maker: false, encryptedRfq: false, chat: false, bundledPrivacyProver: false, confidentialDevelopment: true, mainnetSettlement: false, historicalRecovery: true });
 export function units(value: string, decimals: number): string {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 18) throw new Error('Decimals must be between 0 and 18.');
   return makerUnits(value, decimals);
@@ -41,6 +42,7 @@ export async function createTransportKey(path: string): Promise<JsonWebKey> {
 export async function runMaker(options: RunMakerOptions): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   const allowed = ['check', 'register', 'run', 'deactivate', 'fund', 'withdraw', 'release', 'reconcile'];
   if (!allowed.includes(options.command)) throw new Error('Unsupported maker command.');
+  if (['register', 'run', 'fund'].includes(options.command)) rejectPublicSettlement();
   // Never inherit unrelated operator keys or NODE_OPTIONS from the parent process.
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: process.env.TMPDIR };
   if (options.command !== 'check') {
@@ -83,11 +85,13 @@ export class App20Client {
     return readMakerPage(this.provider, this.deployment, offset);
   }
   async registrationCall(key: JsonWebKey, days: number): Promise<Call> {
+    rejectPublicSettlement();
     const head = await verifyMakerBook(this.provider, this.deployment);
     return makerRegistration(JSON.stringify(key), days, head.timestamp);
   }
   async inventoryCalls(action: 'fund' | 'withdraw', token: string, humanAmount: string): Promise<Call[]> {
     if (!['fund', 'withdraw'].includes(action)) throw new Error('Unsupported inventory action.');
+    if (action === 'fund') rejectPublicSettlement();
     await verifySettlement(this.provider, this.deployment, this.deployment.settlement, action === 'fund');
     return makerInventoryCalls(action, token, humanAmount);
   }
@@ -105,6 +109,7 @@ export class App20Client {
   }
   /** Save reply keys and settlement secret BEFORE exposing the request for submission. */
   async prepareQuote(input: { file: string; maker: string; taker: string; terms: Terms; ttlSeconds?: number }): Promise<{ id: string; call: Call; expiresAt: number }> {
+    rejectPublicSettlement();
     validateTerms(input.terms);
     const ttl = input.ttlSeconds ?? 1800;
     if (!Number.isSafeInteger(ttl) || ttl < 1 || ttl > 1800) throw new Error('Quote TTL must be 1–1800 seconds.');
@@ -126,6 +131,7 @@ export class App20Client {
     if (felt(executor.address) !== felt(record.scope.taker) || felt(executor.chainId) !== felt(record.scope.chainId)) throw new Error('Executor does not match the request account and chain.');
   }
   async submitRequest(file: string, executor: PublicExecutor): Promise<string> {
+    rejectPublicSettlement();
     return locked(file, async () => {
       const record = await this.load(file);
       this.assertExecutor(record, executor);
@@ -152,6 +158,7 @@ export class App20Client {
   }
   /** Executor must submit ALL actions atomically using a compatible privacy wallet, never Account.execute. */
   async settle(file: string, executor: PrivacyExecutor, maxPoolFee: string): Promise<string> {
+    rejectPublicSettlement();
     if (!/^(0|[1-9][0-9]*)$/.test(maxPoolFee)) throw new Error('Set a pool fee cap in STRK base units.');
     return locked(file, async () => {
       const record = await this.load(file);

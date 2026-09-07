@@ -5,10 +5,13 @@ import {
   confirmPayment,
   loadOtcState,
   markPaymentSubmitted,
+  markPaymentOutcome,
   receiptForTransfer,
+  recordPaymentRequest,
   type PaymentRequestPayload,
 } from "./otc";
-import { createPaymentLink, encodePaymentLinkFragment } from "./payment-link";
+import { createPaymentLink, createSignedPaymentLinkFragment, decodePaymentLink, encodePaymentLinkFragment } from "./payment-link";
+import { deriveKeypair } from "./mail";
 import { importPendingPaymentIntoMailbox } from "./payment-link-handoff";
 import { loadPendingPayment, storePendingPayment } from "./pending-payment";
 
@@ -123,6 +126,45 @@ describe("payment-link mailbox handoff", () => {
     expect(() =>
       claimPayment(local, chainId, payer, request, 1_900_000_005),
     ).toThrow(/already paid; no second transfer/i);
+  });
+
+  it.each(["link-first", "document-first", "document-reserved-first", "document-unknown-first"])("preserves the verified signed request with %s reconciliation", order => {
+    const seed = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+    const mailbox = deriveKeypair(seed);
+    try {
+      const fragment = createSignedPaymentLinkFragment(request, seed, mailbox.publicKey);
+      const session = new MemoryStorage();
+      const local = new MemoryStorage();
+      const scope = [local, "0x534e5f5345504f4c4941", "0xb0b"] as const;
+      const historical = { ...request };
+      delete historical.chainId;
+      if (order !== "link-first") recordPaymentRequest(...scope, historical, 1_900_000_000);
+      const alreadyAttempted = order === "document-reserved-first" || order === "document-unknown-first";
+      if (alreadyAttempted) claimPayment(...scope, historical, 1_900_000_000);
+      if (order === "document-unknown-first") markPaymentOutcome(...scope, request.requestId, undefined, "unknown", 1_900_000_000);
+      const priorOperation = loadOtcState(...scope).payments[request.requestId]?.paymentOperation;
+      storePendingPayment(session, fragment);
+      const pending = loadPendingPayment(session)!;
+      const reviewed = structuredClone(pending);
+      expect(pending.authenticity.kind).toBe("verified");
+      importPendingPaymentIntoMailbox(session, ...scope, 1_900_000_000);
+      recordPaymentRequest(...scope, historical, 1_900_000_001);
+      const stored = loadOtcState(...scope).payments[request.requestId];
+      expect(stored.request).toEqual(reviewed.request);
+      expect(stored.linkAuthenticity).toEqual(reviewed.authenticity);
+      if (alreadyAttempted) {
+        expect(stored).toMatchObject({ status: "paid", paymentPending: true, paymentOperation: priorOperation });
+        expect(() => claimPayment(...scope, historical, 1_900_000_002)).toThrow(/no second transfer/i);
+      } else {
+        expect(claimPayment(...scope, historical, 1_900_000_002).request).toEqual(reviewed.request);
+      }
+      expect(pending).toEqual(reviewed);
+      expect(decodePaymentLink(fragment)).toEqual(reviewed);
+      expect(request.chainId).toBe("SN_SEPOLIA");
+    } finally {
+      seed.fill(0);
+      mailbox.privateKey.fill(0);
+    }
   });
 
   it("keeps the tab handoff until the wallet is on the bound network", () => {

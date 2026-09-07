@@ -1,5 +1,5 @@
 import { formatBaseUnits, type AcceptPayload, type DeclinePayload } from "@/lib/otc";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 export type MemoCardProps =
   | { kind: "accept"; accept: AcceptPayload; isPayment: boolean }

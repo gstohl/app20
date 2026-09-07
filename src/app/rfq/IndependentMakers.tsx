@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { rejectPublicSettlement, PUBLIC_SETTLEMENT_ENABLED } from '@app20/domain';
 import { RpcProvider } from 'starknet';
 import { defaultMakerConfig } from '@/lib/mainnet-maker-config';
 import { useStoreWallet } from '@/app/components/Wallet/walletContext';
@@ -111,6 +112,7 @@ export default function IndependentMakers() {
     return { scope, terms, replyKey: keys, status: 'prepared', comparisonId: group, stage: firm ? 'reservation' : 'comparison', ...(firm ? { settlementSecret: randomRequestId() } : {}) };
   }
   async function broadcast(epoch: number, rows: SavedMakerRequest[], selected: RegisteredMaker[], reserveGroup?: string) {
+    rejectPublicSettlement();
     const calls = [];
     for (const row of rows) {
       const replyKey = await crypto.subtle.exportKey('jwk', row.replyKey.publicKey);
@@ -162,6 +164,7 @@ export default function IndependentMakers() {
     await broadcast(epoch, rows, selected, direct ? group : undefined);
   }
   async function reserve(provider: RpcProvider, epoch: number, preliminary: SavedMakerRequest) {
+    rejectPublicSettlement();
     assertWallet(epoch);
     if (!config!.settlement || !preliminary.comparisonId || !preliminary.indicativeAnswer) throw new Error('A current preliminary quote is required.');
     decodeAnswer(preliminary.indicativeAnswer, preliminary.scope, preliminary.terms, Math.floor(Date.now() / 1000));
@@ -228,6 +231,7 @@ export default function IndependentMakers() {
     if (epoch === generation.current) setAnswers(previous => ({ ...previous, [row.scope.id]: answer }));
   }
   async function accept(provider: RpcProvider, epoch: number, original: SavedMakerRequest) {
+    rejectPublicSettlement();
     assertWallet(epoch);
     const row = (await loadMakerRequests()).find(value => value.scope.id === original.scope.id);
     if (!row?.settlementSecret || !row.executableAnswer || !config!.settlement || !capable || !useStoreWallet.getState().isStrk20Capable) throw new Error('A funded quote and privacy-enabled wallet are required.');
@@ -281,12 +285,13 @@ export default function IndependentMakers() {
     return () => clearTimeout(timer);
   }, [connected, busy, comparisonId, saved, address, chain]);
   return <section className={`${desk.privateIntentDesk} ${styles.swapDesk}`} aria-label="Private swap">
-    <header className={desk.privateIntentHeader}>
+    <p role="status">Earlier public RFQ records only. New swaps require confidential escrow settlement.</p>
+    {PUBLIC_SETTLEMENT_ENABLED && <header className={desk.privateIntentHeader}>
       <div><h3>Compare & swap</h3></div>
       <div className={desk.ticketPromise}><span>Atomic swap</span></div>
-    </header>
+    </header>}
     {!config ? <p className={styles.notice} role="status">{configurationError ? 'Maker deployment configuration is invalid.' : 'The maker contract has not been configured for this build.'} A verified maker-book and settlement deployment are required to trade.</p> : <>
-      <form className={desk.privateIntentForm} onSubmit={event => { event.preventDefault(); void run(request); }}>
+      {PUBLIC_SETTLEMENT_ENABLED && <form className={desk.privateIntentForm} onSubmit={event => { event.preventDefault(); void run(request); }}>
         <div className={desk.swapAssetStack}>
           <label className={desk.swapAssetCard}>
             <span className={desk.swapAssetHead}><b>You sell</b><small>Shielded balance</small></span>
@@ -318,7 +323,7 @@ export default function IndependentMakers() {
         <button className={desk.privateIntentQuoteButton} disabled={busy || !connected || (direct && !makerAddress) || pendingSettlement}>{busy ? 'Working…' : direct ? 'Request fixed offer' : 'Get quotes'} · gas required</button>
         {pendingSettlement && <p>Check your pending settlement before requesting another trade.</p>}
         {!connected && <p className={styles.hint}>Connect your privacy-enabled wallet to request a quote.</p>}
-      </form>
+      </form>}
       {groupRequests.length > 0 && <section className={styles.comparison} aria-label="Quote comparison">
         <h3>{selectedReservation ? 'Funded offer requested' : ranked.length ? 'Best offer received' : groupRequests.every(row => row.replyRejected || now >= row.scope.expiresAt) ? 'No eligible offers' : 'Waiting for quotes'}</h3>
         <p>{ranked.length} valid {ranked.length === 1 ? 'reply' : 'replies'} from {groupRequests.length} contacted {groupRequests.length === 1 ? 'maker' : 'makers'}. Preliminary prices do not reserve funds.</p>
@@ -326,11 +331,11 @@ export default function IndependentMakers() {
           <strong className={styles.bestAmount}>{humanUnits(BigInt(ranked[0].indicativeAnswer.buyAmount), tokenFor(ranked[0].terms.buyToken)?.decimals ?? 18)} {tokenFor(ranked[0].terms.buyToken)?.symbol}</strong>
           <p>For {humanUnits(BigInt(ranked[0].terms.sellAmount), tokenFor(ranked[0].terms.sellToken)?.decimals ?? 18)} {tokenFor(ranked[0].terms.sellToken)?.symbol}. Minimum: {humanUnits(BigInt(ranked[0].terms.minBuyAmount), tokenFor(ranked[0].terms.buyToken)?.decimals ?? 18)} {tokenFor(ranked[0].terms.buyToken)?.symbol}.</p>
           <p>Ranked by receive amount. Pool and wallet/network fees are additional and shown at review.</p>
-          {!selectedReservation && <button disabled={busy || !connected || pendingSettlement || !config.settlement} onClick={() => void run((p, e) => reserve(p, e, ranked[0]!))}>Request funded offer</button>}
+          {PUBLIC_SETTLEMENT_ENABLED && !selectedReservation && <button disabled={busy || !connected || pendingSettlement || !config.settlement} onClick={() => void run((p, e) => reserve(p, e, ranked[0]!))}>Request funded offer</button>}
           <details><summary>Compare replies</summary><ol>{ranked.map(row => <li key={row.scope.id}><code>{row.scope.maker.slice(0, 12)}…</code> · {humanUnits(BigInt(row.indicativeAnswer.buyAmount), tokenFor(row.terms.buyToken)?.decimals ?? 18)} {tokenFor(row.terms.buyToken)?.symbol} · expires {new Date(row.indicativeAnswer.expiresAt * 1000).toLocaleTimeString()}</li>)}</ol></details>
         </>}
         {!selectedReservation && <button className={styles.refreshReplies} disabled={busy || !connected} onClick={() => void run(async (provider, epoch) => { for (const row of groupRequests) { try { await check(provider, epoch, row); } catch (error) { if (epoch === generation.current) setNotice(error instanceof Error ? error.message : 'Could not check a reply.'); } } })}>Refresh replies</button>}
-        {!selectedReservation && <p>Only the selected maker will reserve funds. Review its final price before swapping; it can differ from this estimate.</p>}
+        {!selectedReservation && <p>Earlier comparison only. New funded offers through this route are disabled.</p>}
         {selectedReservation && <p>Check the funded offer in Swap records below. No other maker in this comparison will be asked to reserve funds.</p>}
       </section>}
       <section id="records" className={styles.records} aria-labelledby="swap-records-title">
@@ -340,12 +345,12 @@ export default function IndependentMakers() {
         const answer = answers[row.scope.id] ?? row.executableAnswer ?? row.indicativeAnswer;
         const unresolved = Boolean(row.settlementAttempt && row.settlementAttempt.status !== 'reverted');
         const confirmed = row.settlementAttempt?.status === 'confirmed';
-        const canAccept = answer?.kind === 'executable' && !unresolved && connected && capable && now < answer.expiresAt && poolFee !== undefined;
+        const canAccept = PUBLIC_SETTLEMENT_ENABLED && answer?.kind === 'executable' && !unresolved && connected && capable && now < answer.expiresAt && poolFee !== undefined;
         return <li key={row.scope.id}>
           <span>{humanUnits(BigInt(row.terms.sellAmount), tokenFor(row.terms.sellToken)?.decimals ?? 18)} {tokenFor(row.terms.sellToken)?.symbol ?? row.terms.sellToken} → {tokenFor(row.terms.buyToken)?.symbol ?? row.terms.buyToken}</span><small>{row.settlementSecret ? 'Funded offer' : 'Quote request'}</small><details><summary>Request details</summary><p>Maker: <code>{row.scope.maker}</code></p><p>Request: <code>{row.scope.id}</code></p></details>
           {answer && <p>{confirmed ? 'Received' : answer.kind === 'executable' ? 'Reserved receive' : 'Indicative receive'}: {humanUnits(BigInt(answer.buyAmount), tokenFor(row.terms.buyToken)?.decimals ?? 18)} {tokenFor(row.terms.buyToken)?.symbol ?? row.terms.buyToken}. {confirmed ? '' : now >= answer.expiresAt ? 'Expired.' : `Expires ${new Date(answer.expiresAt * 1000).toLocaleTimeString()}.`}</p>}
           {confirmed ? <p role="status">Swap settled · receive asset shielded</p> : <button disabled={busy} onClick={() => void run((p, e) => check(p, e, row))}>{unresolved ? 'Check settlement' : 'Check quote'}</button>}
-          {answer?.kind === 'executable' && !unresolved && <>
+          {PUBLIC_SETTLEMENT_ENABLED && answer?.kind === 'executable' && !unresolved && <>
             {!capable && <p>Connect a privacy-enabled wallet to accept this quote.</p>}
             {reviewId !== row.scope.id ? <button disabled={busy || !canAccept} onClick={() => setReviewId(row.scope.id)}>Review swap</button> : <div className={styles.review} aria-label="Review private swap">
               {row.expectedBuyAmount && row.expectedBuyAmount !== answer.buyAmount && <p role="status">The funded price differs from the preliminary quote. Review the updated amounts below; your minimum still applies.</p>}
@@ -364,10 +369,6 @@ export default function IndependentMakers() {
       </section>
     </>}
     {notice && <p className={styles.notice} role="status" aria-live="polite">{notice}</p>}
-    <footer className={styles.details}>
-      <p><a href="/chat">Negotiate in Chat</a> · Agree fixed amounts directly, then use Advanced to request a funded offer from that maker. Chat offer attachments remain separate from atomic RFQ settlement.</p>
-      <details><summary>Privacy & fees</summary><p>Your payment and receive asset use shielded notes. Funded quote amounts, maker balances and settlement activity are public. Account addresses, the selected maker and timing are public. Each contacted maker can read its request. Comparison prices are encrypted; funded terms are public. Requests and replies are encrypted; their recipient keys and quote recovery are saved in this browser. Clearing storage removes your reply keys. Each request costs gas, and settlement also pays the pool fee shown before approval.</p></details>
-      <details><summary>Run a maker</summary><p>Independent makers supply their own wallet, encryption key and price limits. The bot reserves its own inventory only for a funded offer and receives the sell asset when it fills. It needs only Starknet RPC and local storage. Spreads are not guaranteed profit.</p><p><a href="/rfq/maker">Become a maker</a> · <a href="/agents">Agent guide</a></p></details>
-    </footer>
+    <footer className={styles.details}><p>Earlier funded quotes exposed amounts and assets. New settlement through this route is disabled.</p><p><a href="/rfq/confidential">Confidential settlement availability</a> · <a href="/rfq/maker">Recover maker inventory</a></p></footer>
   </section>;
 }

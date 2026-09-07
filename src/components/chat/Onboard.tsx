@@ -17,7 +17,7 @@ import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type OnboardProps = {
   helperAddress: string | null;
@@ -382,8 +382,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
 
   if (!helperAddress) return <section id="mailbox-key-setup" className={styles.card} aria-labelledby="onboard-title">
     <h2 id="onboard-title" className={styles.cardTitle}>Chat isn’t available on this network yet</h2>
-    <p className={styles.copy}>The Chat contract still needs to be deployed. Trading and wallet funding are available.</p>
-    <Link to="/rfq" className={styles.primaryButton}>Go to trading</Link>
+    <p className={styles.copy}>The Chat contract still needs to be deployed. Confidential swaps are also awaiting wallet and network support.</p>
+    <Link to="/rfq" className={styles.primaryButton}>View confidential RFQ</Link>
   </section>;
 
   return (

@@ -18,6 +18,7 @@ export {
   InsufficientBalanceError,
   PrivacySdkMissingError,
   PrivacyTransactionRevertedError,
+  PublicSettlementDisabledError,
   UnsubmittableProofError,
   PrivyError,
   SequencingError,

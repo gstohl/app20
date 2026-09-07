@@ -1,3 +1,4 @@
+import { PUBLIC_SETTLEMENT_ENABLED } from "@app20/domain";
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { RpcProvider, type Call } from 'starknet';
@@ -14,7 +15,7 @@ type Pending = { label: string; hash?: string };
 const tokens = [config.sellToken, config.buyToken];
 export default function MakerSetup() {
   const address = useStoreWallet(s => s.address), chain = useStoreWallet(s => s.chain), wallet = useStoreWallet(s => s.myWalletAccount);
-  const [step, setStep] = useState<'register' | 'inventory' | 'bot'>('register');
+  const [step, setStep] = useState<'register' | 'inventory' | 'bot'>('inventory');
   const [key, setKey] = useState(''), [days, setDays] = useState(7);
   const [token, setToken] = useState(config.buyToken.address), [quantity, setQuantity] = useState('');
   const [inventory, setInventory] = useState<Record<string, string>>({});
@@ -103,13 +104,13 @@ export default function MakerSetup() {
     } catch (e) { setNotice(e instanceof Error ? e.message : 'Check your settings.'); }
   }
   const sell = reverse ? config.buyToken : config.sellToken, buy = reverse ? config.sellToken : config.buyToken;
-  return <section className={styles.panel} aria-label="Become a maker">
-    <header><h2>Become a maker</h2><p>Anyone can register, fund quotes and run a bot. No approval from APP20 is needed.</p><Link to="/agents">Agent guide and bot download →</Link></header>
+  return <section className={styles.panel} aria-label="Maker recovery">
+    <header><h2>Earlier maker inventory</h2><p>New public quotes and funding are disabled. Check pending transactions, deactivate your old registration, or withdraw available inventory. Withdrawals use the earlier public contract and remain public.</p><Link to="/agents">Agent guide and bot download →</Link></header>
     {!connected && <p role="status">Connect the wallet you want to use as your maker account.</p>}
-    <nav aria-label="Maker setup steps">{(['register', 'inventory', 'bot'] as const).map((value, i) => <button key={value} aria-pressed={step === value} onClick={() => setStep(value)}>{i + 1}. {value === 'register' ? 'Register' : value === 'inventory' ? 'Inventory' : 'Run bot'}</button>)}</nav>
+    <nav aria-label="Maker setup steps">{(['inventory'] as const).map((value) => <button key={value} aria-pressed={step === value} onClick={() => setStep(value)}>Recover inventory</button>)}</nav>
     <button disabled={!connected || busy} onClick={() => void run(refresh)}>Refresh maker status</button>
     {revision > 0 && <p>Key revision {revision} · {keyExpiry * 1000 > Date.now() ? `registered until ${new Date(keyExpiry * 1000).toLocaleString()}` : 'registration inactive'}</p>}
-    {step === 'register' && <div className={styles.section}>
+    {PUBLIC_SETTLEMENT_ENABLED && step === 'register' && <div className={styles.section}>
       <h3>Register your bot’s public key</h3><p>Create the encryption key on the machine running your bot. Paste only the public JSON printed by <code>node app20-maker.mjs --init-key ./maker-key.json</code>.</p>
       <label>Public P-256 key<textarea value={key} onChange={e => setKey(e.target.value)} placeholder={'{"kty":"EC","crv":"P-256","x":"…","y":"…"}'} spellCheck={false} /></label>
       <label>Registration days<input type="number" min="1" max="30" value={days} onChange={e => setDays(Number(e.target.value))} /></label>
@@ -118,15 +119,15 @@ export default function MakerSetup() {
       {revision > 0 && <button disabled={!connected || busy || !!pending} onClick={() => void run((p, e) => submit(p, e, 'Deactivate maker', [{ contractAddress: config.address, entrypoint: 'deactivate', calldata: [] }]))}>Deactivate new requests</button>}
     </div>}
     {step === 'inventory' && <div className={styles.section}>
-      <h3>Fund quotes or withdraw proceeds</h3><p>Inventory is public. Fund the token your customer receives. Reserved quotes cannot be withdrawn until filled or expired.</p>
+      <h3>Recover available inventory</h3><p>Reserved inventory remains locked until its quote expires or settles. The recovery CLI can release expired reservations.</p>
       <dl>{tokens.map(t => <div key={t.address}><dt>Available {t.symbol}</dt><dd>{inventory[t.address] === undefined ? 'Refresh to load' : humanUnits(BigInt(inventory[t.address]), t.decimals)}</dd></div>)}</dl>
       <label>Token<select value={token} onChange={e => setToken(e.target.value)}>{tokens.map(t => <option key={t.address} value={t.address}>{t.symbol}</option>)}</select></label>
       <label>Amount<input inputMode="decimal" value={quantity} onChange={e => setQuantity(e.target.value)} /></label>
-      <p>Funding approves and deposits this exact amount in one transaction. Withdrawals go to your connected maker wallet. Your wallet shows network fees.</p>
-      <button disabled={!connected || busy || !!pending || !quantity} onClick={() => void run((p, e) => submit(p, e, 'Fund inventory', makerInventoryCalls('fund', token, quantity)))}>Review funding in wallet</button>
+      <p>Withdrawals go to your connected maker wallet. Your wallet shows the public amount and network fees.</p>
+
       <button disabled={!connected || busy || !!pending || !quantity} onClick={() => void run((p, e) => submit(p, e, 'Withdraw inventory', makerInventoryCalls('withdraw', token, quantity)))}>Review withdrawal in wallet</button>
     </div>}
-    {step === 'bot' && <div className={styles.section}>
+    {PUBLIC_SETTLEMENT_ENABLED && step === 'bot' && <div className={styles.section}>
       <h3>Set your quoting limits</h3><p>The bot runs on your machine or server. Leaving this page does not start or stop it. Prices are your inputs; they are not refreshed by an oracle.</p>
       <label>Customer sells<select value={reverse ? 'reverse' : 'forward'} onChange={e => { setReverse(e.target.value === 'reverse'); setPrice(''); setMaxSell(''); setMaxBuy(''); }}><option value="forward">STRK → USDC</option><option value="reverse">USDC → STRK</option></select></label>
       <label>{buy.symbol} per 1 {sell.symbol}, before spread<input inputMode="decimal" value={price} onChange={e => setPrice(e.target.value)} /></label>
@@ -140,6 +141,7 @@ export default function MakerSetup() {
       <p>Keep <code>maker-state.json</code> between restarts to retain fee accounting and pending-transaction recovery. No profit is guaranteed.</p>
       <Link to="/agents">Download the bot and follow the run commands →</Link>
     </div>}
+    {revision > 0 && <button disabled={!connected || busy || !!pending} onClick={() => void run((p, e) => submit(p, e, 'Deactivate maker', [{ contractAddress: config.address, entrypoint: 'deactivate', calldata: [] }]))}>Deactivate earlier registration</button>}
     {pending && <aside role="status"><p>{pending.label}: {pending.hash ?? 'wallet outcome unknown'}</p><button disabled={busy || !connected} onClick={() => void run(reconcile)}>Check transaction</button></aside>}
     {notice && <p role="status" aria-live="polite">{notice}</p>}
   </section>;

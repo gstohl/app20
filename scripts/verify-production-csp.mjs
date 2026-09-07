@@ -377,8 +377,8 @@ async function main() {
         );
         const hasPublicContext = await publicMarketSummary.isVisible();
         if (!hasPublicContext) {
-          await page.getByRole("region", { name: "Private swap", exact: true }).waitFor();
-          if (coinGeckoRequestCount !== 0) pageFailures.push("Private RFQ loaded unsolicited public price data");
+          await page.getByRole("main", { name: "Confidential RFQ", exact: true }).waitFor();
+          if (coinGeckoRequestCount !== 0) pageFailures.push("Confidential RFQ loaded unsolicited public price data");
         } else if (!(await publicMarketDisclosure.getAttribute("open"))) {
           await publicMarketSummary.click();
         }
@@ -428,6 +428,11 @@ async function main() {
             );
           }
         }
+      }
+      if (route === "/mail/inbox") {
+        // The legacy bookmark redirects to the lazy Chat route. Wait for its
+        // actual content so blocked route scripts cannot pass as a loading state.
+        await page.getByRole("main", { name: "APP20 Chat", exact: true }).waitFor();
       }
       if (route === "/recovery/privy") {
         const switchRail = page.getByRole("button", {

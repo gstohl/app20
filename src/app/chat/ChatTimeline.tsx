@@ -1,9 +1,9 @@
 import { useState } from "react";
 import AddressBookField from "@/components/address-book/AddressBookField";
-import { ChainRecordPanel } from "@/components/mail/ChainRecordPanel";
-import ContactSnapshotCard from "@/components/mail/ContactSnapshotCard";
-import MemoCard, { type MemoCardProps } from "@/components/mail/MemoCard";
-import type { LocalMailMessage } from "@/components/mail/message";
+import { ChainRecordPanel } from "@/components/chat/ChainRecordPanel";
+import ContactSnapshotCard from "@/components/chat/ContactSnapshotCard";
+import MemoCard, { type MemoCardProps } from "@/components/chat/MemoCard";
+import type { LocalMailMessage } from "@/components/chat/message";
 import type { AliasRecord } from "@/lib/aliases";
 import { MAIL_SIGNATURE_VERIFICATION_LIMIT_NOTICE } from "@/lib/mail-authority-copy";
 import { publicRecipientCount } from "@/lib/mail-recipient-count";
