@@ -75,7 +75,7 @@ export async function openTools(page: Page, title: string) {
   const settings = page.getByRole("group", { name: "Chat tools", exact: true });
   if (await settings.count()) await settings.evaluate(element => { (element as HTMLDetailsElement).open = true; });
   await page
-    .locator("details", { has: page.locator("summary", { hasText: title }) })
+    .locator("details", { has: page.locator(":scope > summary", { hasText: title }) })
     .first()
     .evaluate((element) => {
       (element as HTMLDetailsElement).open = true;

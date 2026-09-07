@@ -643,13 +643,21 @@ export async function submitActions(
       throw new Strk20WalletSubmissionUnknownError(error);
     }
   }
-  let submitted: { transaction_hash: string };
+  let transactionHash: string;
   try {
     // Remove this cast when the published Wallet API union includes the
     // proof-bound compute_and_invoke action already supported by the pool.
-    submitted = await account.strk20InvokeTransaction(
+    const submitted = await account.strk20InvokeTransaction(
       submittedActions as WALLET_API.STRK20_ACTION[],
     );
+    const returnedHash = submitted?.transaction_hash;
+    if (typeof returnedHash !== "string" || !/^0x[0-9a-f]+$/i.test(returnedHash) ||
+        BigInt(returnedHash) <= 0n || BigInt(returnedHash) >= 2n ** 251n + 17n * 2n ** 192n + 1n) {
+      // The wallet was entered. A missing or malformed response does not prove
+      // that it failed to broadcast; keep the payer's original attempt fenced.
+      throw new Error("The wallet did not return a valid transaction hash. Check wallet activity before retrying.");
+    }
+    transactionHash = returnedHash;
   } catch (error: unknown) {
     const deterministicReason = deterministicPreSubmissionReason(error);
     if (deterministicReason) {
@@ -660,8 +668,6 @@ export async function submitActions(
     }
     throw new Strk20WalletSubmissionUnknownError(error);
   }
-  const { transaction_hash: transactionHash } = submitted;
-
   let submissionCallbackError: unknown;
   try {
     await options.onSubmitted?.(transactionHash);

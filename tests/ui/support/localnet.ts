@@ -300,7 +300,8 @@ export async function connectLocalnetWallet(
   options: { auditFocusReturn?: boolean } = {},
 ) {
   const trigger = page.getByRole("button", { name: "Connect wallet" });
-  const disconnect = page.getByRole("button", { name: "Disconnect wallet" });
+  const disconnect = page.getByRole("region", { name: "Wallet session", exact: true })
+    .getByRole("button", { name: "Disconnect wallet" });
   if ((await disconnect.count()) > 0) {
     await expect(disconnect).toBeVisible();
     return;

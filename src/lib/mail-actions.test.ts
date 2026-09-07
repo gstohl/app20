@@ -13,6 +13,7 @@ import {
   Strk20WaitTimeoutError,
   submitMail,
   submitActions,
+  transactionStateFromError,
   submitOtcAccept,
 } from "./strk20";
 import {
@@ -208,6 +209,21 @@ describe("mail STRK20 actions", () => {
     expect(invoke).toHaveBeenCalledWith(reviewed);
     expect(actions).not.toEqual(reviewed);
   });
+
+  it.each([undefined, null, {}, {transaction_hash: ""}, {transaction_hash: "0x0"}, {transaction_hash: "0x" + "f".repeat(64)}])(
+    "treats malformed wallet response %j as an unknown payment outcome", async response => {
+      const invoke = vi.fn(async () => response);
+      const wait = vi.fn();
+      const onSubmitted = vi.fn();
+      const actions = buildMemoTransferActions({helperAddress: "0x123", recoveryAddress: "0xb0b", tokenAddress: addrSTRK, recipient: "0xa11ce", amount: "1000", record, helperFundingAmount: 7n});
+      const error = await submitActions({strk20InvokeTransaction: invoke} as unknown as WalletAccountV6,
+        {waitForTransaction: wait} as unknown as ProviderInterface, actions,
+        {policy: () => undefined, onSubmitted}).catch(error => error);
+      expect(transactionStateFromError(error)).toBe("unknown");
+      expect(invoke).toHaveBeenCalledOnce();
+      expect(wait).not.toHaveBeenCalled();
+      expect(onSubmitted).not.toHaveBeenCalled();
+    });
 
   it("submits historical mail once and refuses one-sided offer acceptance", async () => {
     const batches: App20Strk20Action[][] = [];

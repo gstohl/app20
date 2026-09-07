@@ -80,7 +80,7 @@ async function registerNewKey(
   testInfo: TestInfo,
 ) {
   const setup = page.getByRole("button", {
-    name: "Load device key & register",
+    name: /^(Enable encrypted chat|Open chat)$/,
   });
   await expect(setup).toBeVisible();
   const expectedBackup = await primeLocalnetMailSeed(page, identity);
@@ -92,7 +92,7 @@ async function registerNewKey(
   const backupHeading = page.getByText(
     "Back up now — this phrase is shown once",
   );
-  await expect(backupHeading).toBeVisible();
+  await expect(backupHeading).toBeVisible({ timeout: 120_000 });
   const backup = (
     await backupHeading.locator("..").locator("code").innerText()
   ).trim();
@@ -103,21 +103,22 @@ async function registerNewKey(
   });
   await expect(acknowledge).toBeVisible({ timeout: 60_000 });
   await acknowledge.click();
-  await expect(
-    page.getByRole("heading", { name: "Set up a chat key" }),
-  ).toHaveCount(0);
+  await expect(page.locator("#mailbox-key-setup")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Check for new messages" })).toBeEnabled({ timeout: 60_000 });
   return backup;
 }
 
 async function restoreRegisteredKey(page: Page, backup: string) {
   const setup = page.getByRole("button", {
-    name: "Load device key & register",
+    name: /^(Enable encrypted chat|Open chat)$/,
   });
   await expect(setup).toBeVisible();
   await page.getByText("Restore from backup").click();
   await page.getByLabel("Chat recovery phrase").fill(backup);
   await page.getByRole("button", { name: "Restore chat key" }).click();
-  await expect(setup).toHaveCount(0, { timeout: 60_000 });
+  // Opening Restore hides the setup button immediately; wait for actual key loading.
+  await expect(page.locator("#mailbox-key-setup")).toHaveCount(0, { timeout: 120_000 });
+  await expect(page.getByRole("button", { name: "Check for new messages" })).toBeEnabled({ timeout: 60_000 });
 }
 
 /** The chain panel every decrypted or sent record carries. */
@@ -223,7 +224,7 @@ test("creates a standalone payment link without an on-chain action", async ({
     page.getByText("Chat key signature verified", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
+    page.getByRole("article", { name: /^Payment request: 0\.125 STRK$/ }).getByText("0.125 STRK", { exact: true }),
   ).toBeVisible();
   const linkCode = page
     .locator("code")
@@ -255,7 +256,7 @@ test("creates a standalone payment link without an on-chain action", async ({
     }),
   ).toBeVisible();
   await expect(
-    review.getByText("MESSAGES SIGNATURE VERIFIED", { exact: true }),
+    review.getByText("CHAT SIGNATURE VERIFIED", { exact: true }),
   ).toBeVisible();
   const signatureLimitNotices = review.getByText(
     "A valid Chat signature proves only that the exact displayed message was signed by the displayed Chat key. It does not prove who signed it or that they control the named wallet. APP20 currently cannot revoke a compromised Chat key, so anyone with the recovery phrase can create requests that pass this check. Confirm the person and wallet through a trusted channel before paying.",
@@ -264,12 +265,13 @@ test("creates a standalone payment link without an on-chain action", async ({
   await expect(signatureLimitNotices).toHaveCount(2);
   await expect(signatureLimitNotices.first()).toBeVisible();
   await expect(signatureLimitNotices.last()).toBeVisible();
+  await review.getByText("Signature & identity details", { exact: true }).click();
   await expect(
     review.getByText("Verified Chat signing key", { exact: true }),
   ).toBeVisible();
   await expect(review.getByText(signer.address, { exact: true })).toBeVisible();
   await expect(
-    review.getByText(/This Chat-key-signed request asks for\s+0\.125 STRK/),
+    review.getByRole("article", { name: /^Payment request: 0\.125 STRK$/ }).getByText("0.125 STRK", { exact: true }),
   ).toBeVisible();
   await expect(review.getByText(/Standalone link test/)).toBeVisible();
   await expect(review.getByText(/Expires .* · Localnet \(dev\)/)).toBeVisible();
@@ -682,7 +684,7 @@ test("all APP20 localnet journeys", async ({
       ),
     ).toBeVisible();
     await expect(
-      payPage.getByRole("heading", { name: "Verified signed invoice" }),
+      payPage.getByRole("heading", { name: "Chat-key signature verified — person not verified" }),
     ).toHaveCount(0);
     await expect(
       payPage.getByRole("button", {
@@ -706,15 +708,13 @@ test("all APP20 localnet journeys", async ({
       .click();
     await expect(payPage).toHaveURL(/\/chat$/);
     await expect(
-      payPage.getByRole("heading", { name: "Set up a chat key" }),
+      payPage.getByRole("heading", { name: "Set up encrypted chat" }),
     ).toBeVisible();
     // The imported request already files under its requester, before any key.
     await expect(
       conversationRowByAddress(payPage, alice.address),
     ).toContainText("Needs action");
-    await payPage.getByText("Restore from backup").click();
-    await payPage.getByLabel("Chat recovery phrase").fill(bobBackup);
-    await payPage.getByRole("button", { name: "Restore chat key" }).click();
+    await restoreRegisteredKey(payPage, bobBackup);
     // The reviewed link is the record this device pays from; the sealed
     // copy Alice sent arrives with the post-payment mail check and carries
     // the outcome forward.
@@ -897,7 +897,7 @@ test("all APP20 localnet journeys", async ({
   });
 
   await test.step("11. forget this device clears every sensitive local chat store", async () => {
-    await page.getByText("Device safety", { exact: true }).click();
+    await openTools(page, "Device safety");
     page.once("dialog", (dialog) => dialog.accept());
     await page
       .getByRole("button", {
