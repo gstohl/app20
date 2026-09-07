@@ -13,6 +13,7 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const localnetBuildInputs = [
     "VITE_E2E_WALLET",
+    "VITE_CONFIDENTIAL_RFQ_LAB",
     "VITE_LOCALNET_WALLET_URL",
     "VITE_LOCALNET_RPC_URL",
     "VITE_LOCALNET_POOL_ADDRESS",
@@ -31,6 +32,8 @@ export default defineConfig(({ command, mode }) => {
   const e2eWalletEnabled =
     command === "serve" &&
     (process.env.VITE_E2E_WALLET ?? env.VITE_E2E_WALLET) === "true";
+  const confidentialLabEnabled = command === "serve" &&
+    (process.env.VITE_CONFIDENTIAL_RFQ_LAB ?? env.VITE_CONFIDENTIAL_RFQ_LAB) === "true";
   const walletTarget =
     process.env.APP20_LOCALNET_BACKEND_TARGET ??
     env.APP20_LOCALNET_BACKEND_TARGET;
@@ -130,6 +133,7 @@ export default defineConfig(({ command, mode }) => {
     // gated dynamic import and emits no localnet-wallet chunk.
     define: {
       "import.meta.env.VITE_E2E_WALLET": JSON.stringify(e2eWalletEnabled),
+      "import.meta.env.VITE_CONFIDENTIAL_RFQ_LAB": JSON.stringify(confidentialLabEnabled),
     },
     server: {
       proxy,

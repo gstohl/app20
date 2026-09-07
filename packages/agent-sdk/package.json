@@ -8,6 +8,10 @@
     "node": ">=24"
   },
   "exports": {
+    "./confidential": {
+      "types": "./dist/confidential.d.ts",
+      "import": "./dist/confidential.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"

@@ -17,6 +17,7 @@ import ChatPage from "@/app/chat/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
+import ConfidentialRfqPage from "@/app/rfq/ConfidentialRfqPage";
 import OperationsDashboard from "@/app/rfq/OperationsDashboard";
 import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
@@ -129,6 +130,7 @@ const rfqRoute = createRoute({
 });
 
 const makerSetupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/maker", component: MakerPage });
+const confidentialRfqRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/confidential", component: ConfidentialRfqPage });
 
 const agentsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/agents", component: AgentsPage });
 
@@ -223,6 +225,7 @@ const router = createRouter({
     marketProposalRoute,
     legacyPoolCreationRoute,
     rfqRoute,
+    confidentialRfqRoute,
     rfqOperationsRoute,
     agentsRoute,
     makerSetupRoute,

@@ -13,6 +13,10 @@ afterEach(async () => {
 });
 
 const validFiles = {
+  "src/lib/confidential-rfq-status.ts": `
+    export const CONFIDENTIAL_RFQ_MAINNET_ENABLED = false;
+    export const CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED = false;
+  `,
   "src/utils/constants.ts": `
     export const mailHelperSepolia = "0x0";
     export const mailHelperMainnet = "0x0";
@@ -258,4 +262,13 @@ test("lstat rejects present, dangling, and checked-source symlinks", async () =>
     (await checkReleaseDeny(sourceRoot)).join("\n"),
     /must not be a symbolic link/,
   );
+});
+
+
+test("confidential mainnet and real-proof declarations cannot be enabled before release review", async () => {
+  for (const name of ["CONFIDENTIAL_RFQ_MAINNET_ENABLED", "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED"]) {
+    const root = await fixture();
+    await overwrite(root, "src/lib/confidential-rfq-status.ts", validFiles["src/lib/confidential-rfq-status.ts"].replace(`${name} = false`, `${name} = true`));
+    assert((await checkReleaseDeny(root)).some(failure => failure.includes(name)));
+  }
 });

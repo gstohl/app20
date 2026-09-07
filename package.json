@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "dev:localnet": "node scripts/localnet-app.mjs",
+    "dev:confidential": "PATH=\"$PWD/vendor/bin:$PATH\" node scripts/confidential-rfq-lab.mjs",
     "localnet:stop": "node scripts/localnet-app.mjs --stop",
     "localnet:reset-runtime": "node scripts/localnet-app.mjs --reset-runtime --confirm-delete-localnet-runtime",
     "build": "npm run check:release-deny && npm run build:maker && npm run build:agent-sdk && npm run build:packages && npm run typecheck && npm run typecheck:packages && vite build && npm run check:browser-leaks && npm run check:release-deny",
@@ -49,7 +50,9 @@
     "test:e2e:settlement:browser": "node scripts/e2e-maker-browser.mjs --settlement",
     "build:maker": "node scripts/build-maker-download.mjs",
     "test:e2e:maker-setup": "node scripts/e2e-maker-setup.mjs",
-    "build:agent-sdk": "node scripts/build-agent-sdk-download.mjs"
+    "build:agent-sdk": "node scripts/build-agent-sdk-download.mjs",
+    "check:confidential-contract": "node scripts/check-confidential-contract.mjs",
+    "test:confidential:browser": "node scripts/e2e-confidential-browser.mjs"
   },
   "dependencies": {
     "@app20/domain": "0.1.0",

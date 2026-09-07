@@ -8,14 +8,16 @@ export async function presentation(page,name){
  const session={page,x:90,y:120};sessions.set(page,session);
  await page.addInitScript(()=>{
   const mount=()=>{
+   const protection=document.createElement('style');
+   protection.textContent='#mailbox-key-setup code, #mail-seed-backup { filter: blur(12px) !important; user-select: none !important; }';
+   document.documentElement.append(protection);
    const cursor=document.createElement('div');cursor.id='app20-demo-pointer';
-   cursor.style.cssText='position:fixed;left:90px;top:120px;width:30px;height:38px;z-index:2147483647;pointer-events:none;filter:drop-shadow(0 2px 3px #000)';
-   cursor.innerHTML='<svg width="30" height="38" viewBox="0 0 30 38"><path d="M3 2L3 29L10 22L16 35L22 32L16 19L27 19Z" fill="white" stroke="#131313" stroke-width="2"/></svg>';
+   cursor.style.cssText='position:fixed;left:90px;top:120px;width:22px;height:28px;z-index:2147483647;pointer-events:none;filter:drop-shadow(0 2px 2px #0009);transition:opacity 180ms;will-change:left,top';
+   cursor.innerHTML='<svg width="22" height="28" viewBox="0 0 24 30"><path d="M2 2V24L8.1 18.2L12.5 27.2L17 25L12.5 16H21Z" fill="#111111" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/></svg>';
    document.documentElement.append(cursor);
    document.addEventListener('mousemove',event=>{cursor.style.left=event.clientX+'px';cursor.style.top=event.clientY+'px';},true);
    document.addEventListener('pointerdown',event=>{
-    const ring=document.createElement('div');ring.style.cssText=`position:fixed;left:${event.clientX-22}px;top:${event.clientY-22}px;width:44px;height:44px;border:3px solid #ff8b46;border-radius:50%;pointer-events:none;z-index:2147483646;background:#ff8b4633`;
-    document.documentElement.append(ring);ring.animate([{transform:'scale(.5)',opacity:1},{transform:'scale(1.5)',opacity:0}],{duration:750}).finished.then(()=>ring.remove());
+    cursor.animate([{transform:'scale(1)'},{transform:'scale(.9)'},{transform:'scale(1)'}],{duration:180});
    },true);
   };
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',mount,{once:true});else mount();
@@ -31,7 +33,10 @@ export async function presentation(page,name){
   if(scrolled)await page.waitForTimeout(1100);
   const b=await locator.boundingBox();if(!b)return;
   const x=b.x+b.width/2,y=b.y+b.height/2,fromX=session.x,fromY=session.y;
-  for(let i=1;i<=24;i++){const t=i/24,e=t*t*(3-2*t);await page.mouse.move(fromX+(x-fromX)*e,fromY+(y-fromY)*e);await page.waitForTimeout(18);}
+  const dx=x-fromX,dy=y-fromY,distance=Math.hypot(dx,dy);
+  const steps=Math.max(24,Math.min(48,Math.round(distance/18)));
+  const bend=Math.min(52,distance*.09),nx=-dy/(distance||1),ny=dx/(distance||1);
+  for(let i=1;i<=steps;i++){const t=i/steps,e=t*t*t*(t*(t*6-15)+10),arc=Math.sin(Math.PI*e)*bend;await page.mouse.move(fromX+dx*e+nx*arc,fromY+dy*e+ny*arc);await page.waitForTimeout(16);}
   session.x=x;session.y=y;
   await page.waitForTimeout(350);
  }

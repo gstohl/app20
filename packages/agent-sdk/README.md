@@ -166,4 +166,40 @@ await app.settle('./quote-001.json', wallet.executor, yourMaxPoolFeeInStrkBaseUn
 
 Use a deployed account with gas. `createPrivacyWallet` uses the official privacy SDK, contract discovery, and the APP20 authenticated HTTPS proof relay. APP20 issues a separate relay token; it is not the provider API key. Private state and proofs stay in owner-only local files. Preserve the state directory and viewing key. `wallet.reconcile()` checks known pending transaction hashes; unknown broadcast/delivery outcomes remain fenced. A crash may leave a lock file; inspect the corresponding journal and account before removing it. Gas spending is recorded conservatively at estimated maximum bounds, including allowance transactions. Deleting state resets local budget accounting, not chain activity.
 
-The included executor accepts APP20's three-action private swap batch only. It is not a general arbitrary-invoke endpoint. No live mainnet wallet/proof acceptance test has been completed by APP20 yet.
+The included executor accepts APP20's three-action private swap batch only. It is not a general arbitrary-invoke endpoint. The earlier mainnet settlement flow was exercised through this executor on September 7, 2026; those receipts do not verify the new confidential escrow protocol.
+
+
+## Confidential escrow SDK (development)
+
+The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The existing `App20Client.settle` and maker bot continue to use the earlier mainnet protocol. **Confidential mainnet activation is disabled; real proofs and wallet integration/review are pending.**
+
+```js
+import {
+  createConfidentialAgreement, confidentialConstructor,
+  createConfidentialClient, createConfidentialJournal,
+  confidentialCapabilities, confidentialContract,
+} from '@app20/agent-sdk/confidential';
+
+// Retain the agreement and escrow-only viewing material in secure wallet storage.
+// proposalInput contains chain/pool/class pins, two public signer keys, deadline,
+// and private terms: tokenA/B, amountA/B (positive u128 base units), partyA/B, salt.
+// Generate salt using a cryptographically secure 248-bit random value for every quote.
+const proposal = createConfidentialAgreement(proposalInput);
+const constructorCalldata = confidentialConstructor(proposal); // public commitment, no terms
+// A reviewed deployment adapter declares confidentialContract and deploys these arguments.
+const agreement = createConfidentialAgreement({ ...proposalInput, address: deployedAddress });
+const client = await createConfidentialClient({
+  agreement, provider,
+  viewingKeyProvider: escrowOnlyKeyProvider,
+  proofProvider, // official SDK proving-provider interface; hosted services see the witness
+  journal: await createConfidentialJournal('./wallet-state/escrow-001'),
+  submit: budgetedProofSubmitter, // public call/proof only; must enforce network fee limits
+});
+const snapshot = await client.inspect();
+```
+
+See [examples/confidential-session.mjs](examples/confidential-session.mjs) for separate peer approvals, independent funding and timeout refunds. `client.approve` supplies the exact terms, destinations, chain, deadline and digest to that role's signing callback. Send a prepared operation to the peer only over authenticated encrypted transport; it contains escrow-private inputs. Ordinary browser wallets are not asked to export viewing keys. There is no implicit online peer transport or wallet signing fallback.
+
+The client pins deployed code/configuration, rejects public value actions in proof output, requires proof bytes on non-simulated runs and preserves uncertain submissions across restarts. It does **not** locally verify a STARK cryptographic proof; the chain must accept that proof. `simulatedProofs: true` is restricted to loopback devnet and never enables mainnet. Keep the metadata journal and separate secure wallet state; an unknown submission outcome blocks retries until investigated. Refunds use fresh discovered notes after the actual chain deadline, with only the original asset owner's signature.
+
+From the source checkout, `npm run dev:confidential` opens the real local-contract workspace at `http://127.0.0.1:5198/rfq/confidential`. The browser controls two disposable wallets and simulates proving. [Protocol, privacy limits and reproduction guide](../../docs/CONFIDENTIAL_RFQ.md).

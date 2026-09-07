@@ -63,6 +63,16 @@ Other commands: --register, --deactivate, --fund, --withdraw, --release, --recon
 
 Preserve maker-state.json and the private transport key across restarts. Do not run multiple processes sharing the same state. An unresolved submission stops the bot; use --reconcile with a known transaction hash. If no hash was returned, inspect account activity before manually clearing a pending record or stale process lock. Never blindly resubmit. Gas accounting persists and conservatively charges maximum bounds; deleting the state resets that local accounting, not on-chain balances. Expired quote release always credits its maker.
 
+## Confidential RFQ development
+
+The Node package exports `@app20/agent-sdk/confidential` for joint escrow setup, separate encrypted funding, exact dual-party settlement approvals and independent timeout refunds. Run `npm run dev:confidential` in the source checkout for the actual local-contract browser workspace at `http://127.0.0.1:5198/rfq/confidential`. It controls two disposable wallets and simulates proving. Mainnet activation, real proofs, independent wallet integration and review are pending.
+
+Both parties keep their own signing keys and share only newly created escrow viewing material. Ordinary wallet viewing keys never go to a peer. Prepared operations and terms remain private: use authenticated encrypted transport and secure wallet storage. The metadata-only SDK journal preserves unknown broadcast outcomes; never blindly retry or clear it. A successful local execution is not a verified cryptographic STARK proof.
+
+The existing mainnet maker bot, public inventory and MakerBook request/reply traffic belong to the earlier protocol. Do not mix them into the confidential path or silently fall back. The new path hides trade amounts/assets from public settlement data in local tests, while escrow activity, timing, fees and ciphertext shapes remain visible. A hosted prover sees its witness. The earlier three mainnet swap receipts prove only the earlier protocol.
+
+See `/agent-sdk.md` for the new API and adapter example; `/rfq/confidential` describes current availability. No mainnet confidential escrow address or public confidential quote endpoint exists yet.
+
 ## How to chat
 
 Mainnet Chat is not active. The deployed maker book only carries RFQ protocol ciphertext; it is not a general chat service.

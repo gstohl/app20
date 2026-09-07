@@ -1,5 +1,39 @@
 # STRK20 Privacy Integration Plan — APP20
 
+## Active request — confidential RFQ settlement (2026-09-07)
+
+### Approved implementation follow-through
+
+The user approved implementation after the 26-case joint escrow experiment. This authorizes the new Cairo policy, reusable Node SDK workflow, development UI and matching documentation; it does not turn simulated facts into cryptographic proofs or approve spending on a public chain. The implementation promotes the contract into `cairo/src/confidential_escrow.cairo`, adds independently signed operations and recovery under `packages/agent-sdk/src/confidential*.ts`, exercises the shared implementation through the pool harness and a local UI, and updates the RFQ/agent pages, downloads, demo script and submission notes. Production activation remains unavailable until real proofs, wallet support and independent review are evidenced. Public transaction hashes remain evidence of the deployed older settlement protocol.
+
+The SDK must verify the deployed account configuration and pool class, review each private action before requesting either signature, reject a prover output for another escrow/mode, serialize uncertain submissions in a durable journal, and rebuild refunds from discovered notes. Ordinary browser wallets never disclose viewing keys. A local UI may operate disposable controlled test accounts and must label simulated proofs explicitly.
+
+The user now requests confidential RFQ settlement, including hidden trade amounts and funded terms. This supersedes earlier product-scope descriptions below where they conflict with that objective. It does not authorize a mainnet deployment, new spending, or unqualified claims of production privacy. The deployed mainnet MakerBook/PrivateSwap and three verified swaps remain the current execution path; the older “localnet-final” sections are historical and do not describe today's mainnet deployment.
+
+**Current status:** the new Cairo contract, independent-signature Node SDK, durable submission recovery, local browser workflow and matching product/agent documentation are implemented. The shared SDK passed settlement and restart/refund tests against the exact mainnet pool class deployed locally; the browser passed setup, separate funding, settlement, independent refund and cross-origin rejection. Mainnet activation remains disabled. The alternative jointly authorized escrow passed a local execution test against the exact mainnet pool class: one action message settled both encrypted assets, and either party could independently recover its original asset after expiry. The isolated Cairo policy rejects one-sided settlement, changed terms/recipients, OPEN outputs, callback bypasses and unsafe signature fallbacks. Funding is separate and precedes settlement. This is simulated devnet proof-fact evidence, not a generated STARK proof or a production integration. The local node rejects storage-proof requests, so the real-proof gate remains open. See [the joint escrow experiment](pool-harness/JOINT_ESCROW.md).
+
+The existing withdraw/helper/OPEN-output swap remains the deployed path and is not amount-confidential. The earlier two-proof candidate failed against both the development pool and the exact mainnet class deployed locally: each call requires a different singleton message in the same transaction-wide proof facts. That regression stays intact; the joint escrow is a different funding and authorization protocol.
+
+The concrete replacement requirements, rejected candidate, experiment findings and release gates are in [CONFIDENTIAL_RFQ_DESIGN.md](docs/CONFIDENTIAL_RFQ_DESIGN.md). Reproduction commands are in [the harness notes](pool-harness/CONFIDENTIAL_RFQ.md). The escrow still needs real proofs, independent protocol review, wallet support and durable recovery before UI integration. Sending two independent transfers is not an atomic fallback.
+
+### Current verified pins and drift
+
+APP20 uses React/Vite, `starknet@10.5.0`, get-starknet discovery/wallet-standard `6.0.3`, wallet API types `0.10.3`, the vendored privacy SDK `0.14.3-rc.5`, Scarb/Starknet `2.18.0`, and snforge `0.63.0`. The skill's freshness check found discovery `6.0.4`, wallet-standard `6.0.5`, and the upstream shadow-account package rename; those are not evidence of confidential atomic swaps. No dependencies were upgraded. Wallet API stable remains `0.10.3`; `0.10.4-rc.1` is pre-release.
+
+### Scope of the intended privacy claim
+
+- Hidden from public chain observers: exact negotiated pair/direction/amount/floor, funded terms, losing quotes and per-trade inventory; encrypted transfer notes must not be replaced by public OPEN notes.
+- Counterparties necessarily know their own trade terms. Invited makers know requests addressed to them; a selected maker knows the accepted trade.
+- Pool interactions, timing, proof/nullifier/ciphertext shapes, initial shielding/final unshielding and any public fee movements can remain observable. Public hedging and timing/size correlations are residual risks.
+- Hiding witnesses from the hosted proving provider requires a separate verified local/self-controlled proving route. OHTTP protects transport/intermediaries, not the prover endpoint that executes the witness. It does not by itself hide funded terms or token movements on-chain.
+
+**Approval (2026-09-07):** the user explicitly approved implementing the local prototype, including new Cairo contracts, overriding the integration skill's app-code-only restriction. This approval covers the local experiment; mainnet deployment and a new fee budget remain separate.
+
+**Execution status:** an isolated two-wallet SDK experiment and test-only Cairo forwarding probe now exercise the pool's proof-composition gate. No new RFQ wallet flow or production settlement capability is enabled. See the design's prototype findings and `pool-harness/CONFIDENTIAL_RFQ.md` for the reproducible test and its limitations.
+
+---
+
+
 > Historical Mail implementation remains below. The approved 2026-08-25 programme expands APP20 into a bookless invited-maker RFQ venue. A later explicit pre-release namespace reset renamed the active contracts, storage and cryptographic domains, environment variables, runtime paths, and artifacts to APP20; pre-reset data is not silently migrated. APP20 routing, Cloudflare relay, Privy Sepolia support, and Mainnet Ready-only policy remain defined in `docs/APP20_ARCHITECTURE.md`. Never restore browser RPC credentials or the former `VITE_PROVIDER_URL` design from this document.
 
 ## Current operative decision: localnet-final
