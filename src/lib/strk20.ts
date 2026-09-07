@@ -11,8 +11,10 @@ export const MIN_STRK20_WALLET_API = "0.10";
 export const STRK20_WAIT_TIMEOUT_MS = 20 * 60 * 1_000;
 export const POOL_ADDRESS_PLACEHOLDER = "${poolAddress}";
 export const OPEN_NOTE_ID_PLACEHOLDER = "${openNoteIds[0]}";
-/** Reviewed amount atomically withdrawn to App20Chat and returned to the OPEN note. */
+/** Historical funded-helper amount; normal Chat submissions never use it. */
 export const APP20_HELPER_FUNDING_BASE_UNITS = 7n;
+/** Encrypted self-transfer that gives the pool its required note replay fence. */
+export const CHAT_REPLAY_NOTE_BASE_UNITS = 1n;
 
 /**
  * Local shim for the pool's proof-bound compute/invoke action. Wallet API 0.10
@@ -50,12 +52,18 @@ export function computeActionId(kind: string, id: string): string {
   return num.toHex(hash.starknetKeccak(`app20/action/v1/${kind}/${id}`));
 }
 
-export type MemoTransferBatchInput = MailInvokeBatchInput & {
+export type MessageOnlyChatInput = Omit<MailInvokeBatchInput, "helperFundingAmount" | "recoveryAddress"> & {
+  /** Accepted for compatibility only; message-only submissions ignore these. */
+  helperFundingAmount?: string | bigint;
+  recoveryAddress?: string;
+};
+
+export type MemoTransferBatchInput = MessageOnlyChatInput & {
   recipient: string;
   amount: string | bigint;
 };
 
-export type OtcAcceptBatchInput = MailInvokeBatchInput & {
+export type OtcAcceptBatchInput = MessageOnlyChatInput & {
   offer: OfferPayload;
   /** Payer-owned random attempt nullifier, persisted before wallet submission. */
   actionId: string;
@@ -138,7 +146,7 @@ function buildRecoveryOpenNoteAction(
   return { type: "transfer", token, amount: "OPEN", recipient };
 }
 
-/** Message-only envelopes fund the helper, then create the recovery OPEN note. */
+/** Historical funded-helper builder, retained for earlier contract regressions only. */
 export function buildMailInvokeActions(
   input: MailInvokeBatchInput,
 ): App20Strk20Action[] {
@@ -155,18 +163,38 @@ export function buildMailInvokeActions(
 }
 
 /**
- * Message-only candidate for real wallets: the helper emits ciphertext and
- * returns no deposits. No asset withdrawal, recovery note or public pre-call
- * is needed. Pool/network fees still apply. Keep runtime activation separate
- * until the selected wallet's compute_and_invoke path is verified.
+ * Message-only Chat privately transfers one base unit back to the sender, giving
+ * the pool its mandatory note replay fence, then posts encrypted ciphertext.
+ * Private balance is unchanged; there is no withdrawal, OPEN note or helper funding.
  */
 export function buildMessageOnlyChatActions(
-  input: Omit<MailInvokeBatchInput, "helperFundingAmount" | "recoveryAddress"> & { actionId: string },
+  input: Omit<MailInvokeBatchInput, "helperFundingAmount" | "recoveryAddress"> & { actionId: string; senderAddress: string },
 ): App20Strk20Action[] {
+  assertConfiguredHelper(input.senderAddress);
+  return [
+    { type: "transfer", token: addrSTRK, recipient: input.senderAddress, amount: "0x1" },
+    buildUnfundedMessageAction(input),
+  ];
+}
+
+function buildUnfundedMessageAction(
+  input: Omit<MailInvokeBatchInput, "helperFundingAmount" | "recoveryAddress"> & { actionId: string },
+): App20Strk20Action {
   if (!/^0x[0-9a-fA-F]+$/.test(input.actionId) || BigInt(input.actionId) === 0n) {
     throw new Error("Message-only Chat requires a nonzero replay-protected action ID.");
   }
-  return [buildMailInvokeAction({ ...input, recoveryAddress: "0x0", helperFundingAmount: 0n }, "0x0")];
+  return buildMailInvokeAction({ ...input, tokenAddress: addrSTRK, recoveryAddress: "0x0", helperFundingAmount: 0n }, "0x0");
+}
+
+/** Stable fallback for callers without a persisted semantic document/attempt ID. */
+export function messageActionId(record: EncryptedMailRecord): string {
+  const canonical = [
+    record.ephemeralPub.map(value => num.toHex(value)),
+    num.toHex(record.viewTag),
+    record.nonce.map(value => num.toHex(value)),
+    record.ciphertextFelts.map(value => num.toHex(value)),
+  ];
+  return computeActionId("chat-record", JSON.stringify(canonical));
 }
 
 /** Encrypted payment plus an unfunded, replay-protected memo. No public token leg. */
@@ -183,7 +211,7 @@ export function buildMemoTransferActions({
       amount: baseUnitAmountHex(amount),
       recipient,
     },
-    ...buildMessageOnlyChatActions({
+    buildUnfundedMessageAction({
       ...mail,
       // This unused public helper argument is identical for every payment asset.
       tokenAddress: addrSTRK,
@@ -690,7 +718,7 @@ export async function submitActions(
   return { transactionHash, receipt };
 }
 
-export type SubmitMailInput = MailInvokeBatchInput & {
+export type SubmitMailInput = MessageOnlyChatInput & {
   account: WalletAccountV6;
   provider: ProviderInterface;
   policy: () => void;
@@ -708,18 +736,20 @@ export type SubmitOtcAcceptInput = OtcAcceptBatchInput & {
   policy: () => void;
 };
 
-/** Submits one recovery-open-note + invoke batch for non-payment envelopes. */
+/** Submits a private self-transfer and unfunded, replay-protected message. */
 export function submitMail(
   { account, provider, policy, ...batch }: SubmitMailInput,
   options: SubmitLifecycleOptions = {},
 ): Promise<{ transactionHash: string; receipt: unknown }> {
-  return submitActions(account, provider, buildMailInvokeActions(batch), {
+  return submitActions(account, provider, buildMessageOnlyChatActions({
+    ...batch, senderAddress: account.address, tokenAddress: addrSTRK, actionId: batch.actionId ?? messageActionId(batch.record),
+  }), {
     ...options,
     policy,
   });
 }
 
-/** Submits one wallet batch containing a transfer, recovery note, and memo. */
+/** Submits one wallet batch containing an encrypted transfer and unfunded memo. */
 export function submitMemoTransfer(
   { account, provider, policy, ...batch }: SubmitMemoTransferInput,
   options: SubmitLifecycleOptions = {},

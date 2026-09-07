@@ -15,9 +15,9 @@ import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
 import { randomConversationId } from "@/lib/mail-thread";
 import type { SentEnvelope } from "@/components/chat/Compose";
 import {
-  APP20_HELPER_FUNDING_BASE_UNITS,
-  assertPrivateStrk20BatchBalance,
   computeActionId,
+  CHAT_REPLAY_NOTE_BASE_UNITS,
+  assertPrivateStrk20BatchBalance,
   strk20ErrorMessage,
   submitMail,
   transactionHashFromError,
@@ -29,8 +29,8 @@ import { addrSTRK } from "@/utils/constants";
 
 /**
  * The chat composer sends exactly what the document composer sends for a body-only
- * document: one encrypted `text` envelope to one registered mailbox, funded by
- * the same fixed helper deposit, through the same wallet policy. Every step
+ * document: one encrypted `text` envelope and a private replay-note self-transfer,
+ * with no helper funding, through the same wallet policy. Every step
  * below is the Compose step it mirrors; Chat never gets a looser path.
  */
 
@@ -316,10 +316,8 @@ export async function sendChatLetter(
   let pendingLetter: PendingChatLetter | undefined;
   try {
     policy();
-    input.onPhase?.("checking", "Checking private STRK for chat service funding…");
-    await assertPrivateStrk20BatchBalance(context.walletAccount, addrSTRK, [
-      APP20_HELPER_FUNDING_BASE_UNITS,
-    ]);
+    input.onPhase?.("checking", "Checking your private STRK note for the message…");
+    await assertPrivateStrk20BatchBalance(context.walletAccount, addrSTRK, [CHAT_REPLAY_NOTE_BASE_UNITS]);
 
     input.onPhase?.("lookup", "Looking up the counterparty's registered chat key…");
     const registered = await context.provider.callContract({
@@ -344,11 +342,9 @@ export async function sendChatLetter(
         account: context.walletAccount,
         provider: context.provider,
         helperAddress: context.helperAddress,
-        recoveryAddress: context.senderAddress,
         tokenAddress: addrSTRK,
         record,
         actionId: computeActionId("composite-document", letter.documentId),
-        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         policy,
       },
       {

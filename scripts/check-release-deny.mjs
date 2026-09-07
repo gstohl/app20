@@ -296,12 +296,16 @@ export async function checkReleaseDeny(root = repositoryRoot) {
     const parsed = sourceFile(constantsPath, constantsText, failures);
     for (const name of [
       "mailHelperSepolia",
-      "mailHelperMainnet",
       "escrowHelperSepolia",
       "escrowHelperMainnet",
     ]) {
       assertExportedConst(parsed, constantsPath, name, "0x0", failures);
     }
+  }
+
+  if (constantsText !== undefined) {
+    assertExportedConst(sourceFile(constantsPath, constantsText, failures), constantsPath,
+      "mailHelperMainnet", "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4", failures);
   }
 
   const relayPath = "workers/relay/src/index.ts";
@@ -346,8 +350,8 @@ export async function checkReleaseDeny(root = repositoryRoot) {
   const confidentialText = await checkedSource(canonicalRoot, confidentialPath, failures);
   if (confidentialText !== undefined) {
     const parsed = sourceFile(confidentialPath, confidentialText, failures);
-    for (const name of ["CONFIDENTIAL_RFQ_MAINNET_ENABLED", "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED"])
-      assertExportedConst(parsed, confidentialPath, name, false, failures);
+    assertExportedConst(parsed, confidentialPath, "CONFIDENTIAL_RFQ_MAINNET_ENABLED", true, failures);
+    assertExportedConst(parsed, confidentialPath, "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", false, failures);
   }
 
   const productionPath = "src/app/rfq/production-private-intents.ts";
@@ -485,7 +489,7 @@ export function printReleaseDenyResult(failures) {
     return false;
   }
   console.log(
-    "APP20 release-deny policy passed: public RFQ, live helpers, VNext execution, and Mainnet tooling remain disabled.",
+    "APP20 release policy passed: deployed Chat and confidential SDK are enabled; public settlement remains disabled.",
   );
   return true;
 }

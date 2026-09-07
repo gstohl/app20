@@ -2,6 +2,7 @@ import { CallData, ec, hash, type Call, type RpcProvider } from 'starknet';
 import { loadPrivacySdk, loadPrivacyPoolAbi } from '../../privy/src/sdk';
 import { contractDiscovery } from '../../privy/src/discovery';
 import { MAINNET_DEPLOYMENT } from '../../../src/lib/mainnet-deployment';
+import { MAINNET_PROOF_FORMAT, realProofConfigHash } from '../../../src/lib/mainnet-proof-format';
 import { CONFIDENTIAL_RFQ_CONTRACT } from '../../../src/lib/confidential-rfq-deployment';
 import { CONFIDENTIAL_RFQ_STATUS } from '../../../src/lib/confidential-rfq-status';
 import {
@@ -11,7 +12,6 @@ import {
 } from './confidential-protocol.js';
 import type { ConfidentialAgreement, ConfidentialApproval, ConfidentialInvocation, ConfidentialMode, ConfidentialPrepared, ConfidentialReview, ConfidentialRole } from './confidential-protocol.js';
 export * from './confidential-protocol.js';
-export { createConfidentialJournal } from './confidential-journal.js';
 export const confidentialCapabilities = CONFIDENTIAL_RFQ_STATUS;
 export const confidentialContract = Object.freeze({ ...CONFIDENTIAL_RFQ_CONTRACT });
 
@@ -41,6 +41,7 @@ export interface ConfidentialClientOptions {
   /** Accepted exclusively on a loopback devnet. Never enables a public network. */
   simulatedProofs?: boolean;
 }
+export type ConfidentialProofClientOptions = Omit<ConfidentialClientOptions, 'submit' | 'simulatedProofs'>;
 export type ConfidentialSnapshot = Readonly<{ block: number; timestamp: number; settled: boolean; registered: boolean; balanceA: string; balanceB: string; status: 'setup' | 'funding' | 'ready' | 'settled' | 'refundable' | 'closed'; pending?: ConfidentialAttempt }>;
 type RuntimeToken = { setup(recipient: string): RuntimeToken; surplusTo(recipient: string, withdraw: boolean): RuntimeToken; transfer(value: { recipient: string; amount: bigint }): RuntimeToken };
 type RuntimeBuilder = { register(): RuntimeBuilder; setup(recipient: string): RuntimeBuilder; with(token: string, fn: (token: RuntimeToken) => void): RuntimeBuilder; computeAndInvoke(fn: () => unknown): RuntimeBuilder; createProofInvocation(): Promise<{ invocation: ConfidentialInvocation }> };
@@ -67,15 +68,30 @@ export async function inspectConfidentialDeployment(provider: RpcProvider, agree
 }
 
 export async function createConfidentialClient(options: ConfidentialClientOptions) {
+  return createClient(options, false);
+}
+
+/** Mainnet proof rehearsal only. No funding or transaction submission API is exposed. */
+export async function createConfidentialProofClient(options: ConfidentialProofClientOptions) {
+  if ((options as ConfidentialClientOptions).simulatedProofs) throw new Error('Proof rehearsal requires real cryptographic proofs.');
+  const client = await createClient({ ...options, simulatedProofs: false, submit: async () => { throw new Error('Proof rehearsal cannot submit transactions.'); } }, true);
+  const { agreement, inspect, prepare, approve, prove } = client;
+  return Object.freeze({ agreement, inspect, prepare, approve, prove });
+}
+
+async function createClient(options: ConfidentialClientOptions, proofOnly: boolean) {
   const a = normalizeConfidentialAgreement(options.agreement), provider = options.provider;
+  const simulatedProofs = options.simulatedProofs === true;
   const chain = await provider.getChainId();
-  if (sameFelt(chain, MAINNET_DEPLOYMENT.chainId) || sameFelt(a.chainId, MAINNET_DEPLOYMENT.chainId)) throw new Error('Confidential RFQ mainnet activation awaits real proofs and independent review.');
+  const mainnet = sameFelt(chain, MAINNET_DEPLOYMENT.chainId) || sameFelt(a.chainId, MAINNET_DEPLOYMENT.chainId);
+  if (mainnet && simulatedProofs) throw new Error('Mainnet requires real cryptographic proofs.');
   if (!sameFelt(chain, a.chainId)) throw new Error('Wrong confidential RFQ network.');
-  if (options.simulatedProofs) {
+  if (mainnet && !sameFelt(a.pool, MAINNET_DEPLOYMENT.settlement.pool)) throw new Error('Mainnet requires the canonical privacy pool.');
+  if (simulatedProofs) {
     const url = (provider as unknown as { channel?: { nodeUrl?: string } }).channel?.nodeUrl;
     if (!url || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname)) throw new Error('Simulated proofs are confined to loopback devnet.');
   }
-  if (![MAINNET_DEPLOYMENT.settlement.poolClassHash, ...(options.simulatedProofs ? [DEV_POOL_CLASS] : [])].some(value => sameFelt(value, a.poolClassHash))) throw new Error('Unreviewed pool class.');
+  if (![MAINNET_DEPLOYMENT.settlement.poolClassHash, ...(simulatedProofs ? [DEV_POOL_CLASS] : [])].some(value => sameFelt(value, a.poolClassHash))) throw new Error('Unreviewed pool class.');
   await inspectConfidentialDeployment(provider, a);
   const viewingKey = await options.viewingKeyProvider.getViewingKey();
   if (viewingKey <= 0n || viewingKey > ec.starkCurve.CURVE.n / 2n) throw new Error('Canonical escrow viewing material required.');
@@ -148,11 +164,11 @@ export async function createConfidentialClient(options: ConfidentialClientOption
   }
   function verifyProof(proof: ConfidentialProof, mode: ConfidentialMode): ConfidentialSubmission {
     if (!Array.isArray(proof.output) || proof.output.length < 2 || !sameFelt(proof.output[0]!, a.poolClassHash) || proof.additionalData != null) throw new Error('Unexpected proof output or screening payload.');
-    if (!options.simulatedProofs && (typeof proof.data !== 'string' || proof.data.length === 0)) throw new Error('Cryptographic proof bytes are required.');
+    if (!simulatedProofs && (typeof proof.data !== 'string' || proof.data.length === 0)) throw new Error('Cryptographic proof bytes are required.');
     const facts = proof.proofFacts;
-    if (!Array.isArray(facts) || facts.length !== 9 || !sameFelt(facts[0]!, domain('PROOF0')) || !sameFelt(facts[1]!, domain('VIRTUAL_SNOS')) || !sameFelt(facts[3]!, domain('VIRTUAL_SNOS0')) || !sameFelt(facts[7]!, 1) || !sameFelt(facts[8]!, poseidon([a.pool, 0, proof.output.length, ...proof.output]))) throw new Error('Proof facts do not bind this pool action bundle.');
-    if (!sameFelt(facts[2]!, VIRTUAL_PROGRAM_HASH)) throw new Error('Unsupported virtual proof program.');
-    const configHash = hash.computeHashOnElements([domain('StarknetOsConfig3'), a.chainId, MAINNET_DEPLOYMENT.sellToken.address]);
+    if (!Array.isArray(facts) || facts.length !== 9 || !sameFelt(facts[0]!, domain(simulatedProofs ? 'PROOF0' : MAINNET_PROOF_FORMAT.version)) || !sameFelt(facts[1]!, domain('VIRTUAL_SNOS')) || !sameFelt(facts[3]!, domain('VIRTUAL_SNOS0')) || !sameFelt(facts[7]!, 1) || !sameFelt(facts[8]!, poseidon([a.pool, 0, proof.output.length, ...proof.output]))) throw new Error('Proof facts do not bind this pool action bundle.');
+    if (!sameFelt(facts[2]!, simulatedProofs ? VIRTUAL_PROGRAM_HASH : MAINNET_PROOF_FORMAT.virtualProgramHash)) throw new Error('Unsupported virtual proof program.');
+    const configHash = simulatedProofs ? hash.computeHashOnElements([domain('StarknetOsConfig3'), a.chainId, MAINNET_DEPLOYMENT.sellToken.address]) : realProofConfigHash(a.chainId, MAINNET_DEPLOYMENT.sellToken.address);
     if (!sameFelt(facts[6]!, configHash)) throw new Error('Proof is for another network.');
     type Action = { activeVariant(): string; unwrap(): unknown };
     const actions = decoder.decodeParameters('core::array::Span::<privacy::actions::ServerAction>', proof.output.slice(1)) as unknown as Action[];
@@ -179,6 +195,7 @@ export async function createConfidentialClient(options: ConfidentialClientOption
     delete state.pending; await options.journal.save(state);
   }
   async function broadcast(mode: ConfidentialAttempt['mode'], id: string, send: () => Promise<{ transaction_hash: string }>) {
+    if (proofOnly) throw new Error('Proof rehearsal cannot submit transactions.');
     await reconcileUnlocked(); const state = await journal();
     state.pending = { id, mode }; await options.journal.save(state);
     let tx: { transaction_hash: string };
@@ -200,27 +217,50 @@ export async function createConfidentialClient(options: ConfidentialClientOption
       if (amount <= 0n) throw new Error('This side is already funded.');
       return { token: role === 'a' ? a.terms.tokenA : a.terms.tokenB, recipient: a.address, amount: amount.toString() };
   }
+  async function proveUnlocked(prepared: ConfidentialPrepared, approvals: readonly ConfidentialApproval[]) {
+    sameAgreement(prepared);
+    await reconcileUnlocked(); checkTime(prepared.mode, await inspectConfidentialDeployment(provider, a));
+    const invocation = authorizeConfidentialOperation(prepared, viewingKey, approvals);
+    // L1 acceptance can lag beyond the pool's proof validity window. Pin a recent
+    // accepted block explicitly rather than inheriting a hosted provider's old default.
+    const provingBlock = mainnet ? await provider.getBlockWithTxHashes('latest') : undefined;
+    if (provingBlock && (!('block_number' in provingBlock) || !('block_hash' in provingBlock) || !provingBlock.block_hash)) throw new Error('An accepted mainnet proving block is required.');
+    let proof: ConfidentialProof;
+    try { proof = await options.proofProvider.prove(invocation, provingBlock ? { block_hash: provingBlock.block_hash } : undefined); } catch { return safeError('Proof generation failed. The private invocation has not been logged or submitted.'); }
+    const submission = verifyProof(proof, prepared.mode);
+    const current = await inspectConfidentialDeployment(provider, a);
+    if (provingBlock) {
+      if (!sameFelt(proof.proofFacts[4]!, provingBlock.block_number) || !sameFelt(proof.proofFacts[5]!, provingBlock.block_hash)) throw new Error('Proof refers to another proving block.');
+      const validity = await provider.callContract({ contractAddress: a.pool, entrypoint: 'get_proof_validity_blocks', calldata: [] });
+      if (validity.length !== 1 || BigInt(validity[0]!) <= 0n || BigInt(current.block) > BigInt(provingBlock.block_number) + BigInt(validity[0]!)) throw new Error('Proof expired before rehearsal completed.');
+    }
+    checkTime(prepared.mode, current);
+    return submission;
+  }
   return {
     agreement: a, inspect: snapshot, prepare, funding,
     reconcile: () => options.journal.runExclusive(reconcileUnlocked),
     async approve(prepared: ConfidentialPrepared, role: ConfidentialRole, sign: (digest: string, review: ConfidentialReview) => Promise<readonly [string, string]>) {
-      sameAgreement(prepared); checkTime(prepared.mode, await inspectConfidentialDeployment(provider, a));
-      return approveConfidentialOperation(prepared, viewingKey, role, sign);
+      const owned = structuredClone(prepared);
+      sameAgreement(owned); checkTime(owned.mode, await inspectConfidentialDeployment(provider, a));
+      return approveConfidentialOperation(owned, viewingKey, role, sign);
+    },
+    /** Validates the public proof envelope; chain acceptance remains a separate verification. */
+    async prove(prepared: ConfidentialPrepared, approvals: readonly ConfidentialApproval[]) {
+      const owned = structuredClone(prepared), signatures = structuredClone(approvals);
+      return options.journal.runExclusive(() => proveUnlocked(owned, signatures));
     },
     async execute(prepared: ConfidentialPrepared, approvals: readonly ConfidentialApproval[]) {
+      if (proofOnly) throw new Error('Proof rehearsal cannot submit transactions.');
+      const owned = structuredClone(prepared), signatures = structuredClone(approvals);
       return options.journal.runExclusive(async () => {
-        sameAgreement(prepared);
-        await reconcileUnlocked(); checkTime(prepared.mode, await inspectConfidentialDeployment(provider, a));
-        const invocation = authorizeConfidentialOperation(prepared, viewingKey, approvals);
-        let proof: ConfidentialProof;
-        try { proof = await options.proofProvider.prove(invocation); } catch { return safeError('Proof generation failed. The private invocation has not been logged or submitted.'); }
-        const submission = verifyProof(proof, prepared.mode);
-        checkTime(prepared.mode, await inspectConfidentialDeployment(provider, a));
-        return broadcast(prepared.mode, prepared.digest, () => options.submit(submission));
+        const submission = await proveUnlocked(owned, signatures);
+        return broadcast(owned.mode, owned.digest, () => options.submit(submission));
       });
     },
     /** Durable funding uses the caller's own shielded wallet, in a separate transaction. */
     async fund(role: ConfidentialRole, transfer: (payment: { token: string; recipient: string; amount: string }) => Promise<{ transaction_hash: string }>) {
+      if (proofOnly) throw new Error('Proof rehearsal cannot fund an escrow.');
       return options.journal.runExclusive(async () => {
         await reconcileUnlocked();
         const payment = await funding(role);

@@ -14,6 +14,8 @@ describe("APP20 canonical routes", () => {
     ["/inbox", "/chat"],
     ["/mail/inbox", "/chat"],
     ["/vault", "/rfq"],
+    ["/rfq/confidential", "/rfq"],
+    ["/rfq/maker", "/rfq"],
     ["/intents", "/cross-chain-review"],
     ["/workflows", "/rfq"],
   ])("redirects %s to %s", (source, target) => {
@@ -46,6 +48,7 @@ describe("APP20 canonical routes", () => {
     expect(CANONICAL_ROUTES.home).toBe("/");
     expect(legacyRouteTarget(CANONICAL_ROUTES.home)).toBeNull();
     expect(CANONICAL_ROUTES.rfq).toBe("/rfq");
+    expect(CANONICAL_ROUTES.confidentialRfq).toBe("/rfq");
     expect(CANONICAL_ROUTES.rfqOperations).toBe("/rfq/operations");
     expect(CANONICAL_ROUTES.funding).toBe("/funding");
     expect(CANONICAL_ROUTES.send).toBe("/send");

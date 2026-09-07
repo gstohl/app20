@@ -316,7 +316,7 @@ test(recoveryRun ? "chat recovers lost message confirmation and makes one encryp
     const card = entry(page, offerBody);
     await expect(card.getByRole("button", { name: /Accept & send/ })).toHaveCount(0);
     await openFullRecord(card.getByRole("article", { name: /^Offer:/ }));
-    await expect(card.getByRole("link", { name: "Confidential swap availability →" })).toBeVisible();
+    await expect(card.getByRole("link", { name: "Confidential swap availability →" })).toHaveAttribute("href", "/rfq");
     await expect(card).toContainText("Settlement requires a confidential atomic swap");
     await page.screenshot({ path: "artifacts/desktop-ux/bob-swap-review.png", animations: "disabled" });
   });

@@ -89,7 +89,7 @@ export function strk20PoolForProviderIndex(
 // Localnet-final policy: historical proof deployments and injected live build
 // variables are never runtime configuration.
 export const mailHelperSepolia = "0x0";
-export const mailHelperMainnet = "0x0";
+export const mailHelperMainnet = "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4";
 export const mailHelperLocalnet = localnetWalletEnabled
   ? (import.meta.env.VITE_MAIL_HELPER_LOCALNET ?? "0x0")
   : "0x0";

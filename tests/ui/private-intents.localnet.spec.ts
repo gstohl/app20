@@ -23,11 +23,14 @@ function settlementRequests(page: Page) {
 async function expectPrivateOnlyRfq(page: Page) {
   const workspace = page.getByRole("main", { name: "Confidential RFQ" });
   await expect(workspace).toBeVisible();
-  await expect(workspace.getByRole("heading", { name: "Private settlement is required" })).toBeVisible();
-  await expect(workspace).toContainText("Mainnet and browser-wallet activation are pending");
-  await expect(workspace).toContainText("RFQ swaps, Chat offers and Chat payments");
+  await expect(workspace.getByRole("heading", { name: "Instant RFQ" })).toBeVisible();
+  await expect(workspace).toContainText("Confidential swaps are not available on this network yet");
+  await expect(workspace.getByRole("button", { name: "Request quotes", exact: true })).toBeDisabled();
+  await expect(workspace.getByRole("navigation")).toHaveCount(0);
+  await expect(workspace.getByLabel("You sell (STRK)", { exact: true })).toBeVisible();
+  await expect(workspace.getByLabel("Minimum you receive (USDC)", { exact: true })).toBeVisible();
   await expect(workspace.getByRole("button", {
-    name: /Get quotes|Request quotes|Request funded offer|Review selected quote fills|Take atomically|Swap now|Accept.*send|Create escrow/i,
+    name: /Get quotes|Request funded offer|Review selected quote fills|Take atomically|Swap now|Accept.*send|Create escrow/i,
   })).toHaveCount(0);
   await expect(workspace.getByLabel("Private intent sell amount")).toHaveCount(0);
   await expect(workspace.getByLabel("Private intent minimum receive")).toHaveCount(0);
@@ -38,7 +41,7 @@ test("RFQ defaults to confidential availability without requesting a trade", asy
   const requests = settlementRequests(page);
   await page.goto("/rfq");
   await expectPrivateOnlyRfq(page);
-  await expect(page.getByRole("link", { name: "Recover earlier maker inventory →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Recover earlier maker inventory →" })).toHaveCount(0);
   expect(requests).toHaveLength(0);
 });
 
@@ -59,9 +62,10 @@ test("legacy routes, market queries and history fragments cannot reopen settleme
     "/rfq?pair=USDC_STRK#active",
     "/rfq?pair=STRK_USDC&mode=advanced&settlement=live#desk",
     "/rfq/confidential?mainnetEnabled=true&VITE_CONFIDENTIAL_RFQ_LAB=true",
+    "/rfq/maker",
   ]) {
     await page.goto(route);
-    await expect(page).toHaveURL(/\/rfq(?:\/confidential)?(?:\?|#|$)/);
+    await expect(page).toHaveURL(/\/rfq(?:\?|#|$)/);
     await expectPrivateOnlyRfq(page);
   }
   expect(requests).toHaveLength(0);

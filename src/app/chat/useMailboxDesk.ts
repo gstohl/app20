@@ -151,8 +151,8 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
-  APP20_HELPER_FUNDING_BASE_UNITS,
   assertPrivateStrk20BatchBalance,
+  CHAT_REPLAY_NOTE_BASE_UNITS,
   strk20ErrorMessage,
   submitActions,
   transactionHashFromError,
@@ -1387,20 +1387,16 @@ export function useMailboxDesk() {
         }
         external = true;
       }
-      await authorizeValueAction(
-        context,
-        `Back up ${kind === "contacts" ? "contacts" : "RFQ history"} to encrypted Chat`,
-        APP20_HELPER_FUNDING_BASE_UNITS.toString(),
-        [APP20_HELPER_FUNDING_BASE_UNITS],
-      );
+      context.policy();
+      await assertPrivateStrk20BatchBalance(context.walletAccount, constants.addrSTRK, [CHAT_REPLAY_NOTE_BASE_UNITS]);
       const record = await encryptMail(keypair.publicKey, envelope);
       const result = await submitMail({
+        actionId: computeActionId("chat-backup", `${kind}/${seq}`),
         account: context.walletAccount,
         provider: context.provider,
         helperAddress: context.helperAddress,
         recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
-        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         policy: context.policy,
         record,
       });
@@ -1897,6 +1893,7 @@ export function useMailboxDesk() {
     const key =
       recipientKey ??
       (await lookupMailKey(context.helperAddress, offer.offerer));
+    await assertPrivateStrk20BatchBalance(context.walletAccount, constants.addrSTRK, [CHAT_REPLAY_NOTE_BASE_UNITS]);
     const receipt = receiptForTransfer(
       offer.dealId,
       accept.transfer,
@@ -1904,12 +1901,12 @@ export function useMailboxDesk() {
     );
     const record = await encryptMail(key, encodeEnvelope("receipt", receipt));
     await submitMail({
+      actionId: computeActionId("chat-receipt", `${offer.dealId}/${acceptTransactionHash}`),
       account: context.walletAccount,
       provider: context.provider,
       helperAddress: context.helperAddress,
       recoveryAddress: context.address,
       tokenAddress: constants.addrSTRK,
-      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
       policy: context.policy,
       record,
     });
@@ -1950,7 +1947,7 @@ export function useMailboxDesk() {
         context,
         "Accept OTC private transfer",
         offer.give.amount,
-        [offer.give.amount, APP20_HELPER_FUNDING_BASE_UNITS],
+        [offer.give.amount],
       );
       setActionState(actionKey, {
         pending: true,
@@ -1975,7 +1972,6 @@ export function useMailboxDesk() {
           tokenAddress: constants.addrSTRK,
           offer,
           record,
-          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           policy: context.policy,
           actionId: computeActionId("otc-accept-attempt", attemptId),
         },
@@ -2068,18 +2064,19 @@ export function useMailboxDesk() {
       }
       setActionState(actionKey, {
         pending: true,
-        message: "Encrypting decline; no transfer will be sent…",
+        message: "Encrypting decline; no payment will be sent…",
       });
+      await assertPrivateStrk20BatchBalance(context.walletAccount, constants.addrSTRK, [CHAT_REPLAY_NOTE_BASE_UNITS]);
       const decline = { dealId: offer.dealId };
       const key = await lookupMailKey(context.helperAddress, offer.offerer);
       const record = await encryptMail(key, encodeEnvelope("decline", decline));
       await submitMail({
+        actionId: computeActionId("chat-decline", offer.dealId),
         account: context.walletAccount,
         provider: context.provider,
         helperAddress: context.helperAddress,
         recoveryAddress: context.address,
         tokenAddress: constants.addrSTRK,
-        helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
         policy: context.policy,
         record,
       });
@@ -2090,7 +2087,7 @@ export function useMailboxDesk() {
       refreshOtcState();
       setActionState(actionKey, {
         pending: false,
-        message: "Decline confirmed. No STRK moved.",
+        message: "Decline confirmed. No payment was sent.",
       });
     } catch (error: unknown) {
       setActionState(actionKey, {
@@ -2289,7 +2286,6 @@ export function useMailboxDesk() {
           recipient: payableRequest.requester,
           amount: payableRequest.amount,
           record,
-          helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
           policy: context.policy,
           actionId: computeActionId("payment-attempt", attemptId),
         },

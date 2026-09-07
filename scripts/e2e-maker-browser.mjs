@@ -42,19 +42,30 @@ try {
       } });
     });
   }
-  for (const route of ['/rfq', '/rfq/confidential']) {
+  for (const route of ['/rfq', '/rfq/confidential', '/rfq/maker']) {
     await page.goto(baseUrl + route);
     await connectFixture();
     const panel = page.getByRole('main', { name: 'Confidential RFQ', exact: true });
     await panel.getByRole('heading', { name: 'Confidential RFQ', exact: true }).waitFor();
-    await panel.getByRole('heading', { name: 'Private settlement is required', exact: true }).waitFor();
-    await panel.getByText('Mainnet and browser-wallet activation are pending.', { exact: true }).waitFor();
-    assert.equal(await panel.getByRole('button', { name: /get quotes|request.*offer|review.*swap|confirm.*swap|fund|settle/i }).count(), 0, `${route} must not offer public settlement`);
-    assert.equal(await panel.getByLabel('You sell (STRK)', { exact: true }).count(), 0);
-    assert.equal(await panel.getByRole('link', { name: 'Recover earlier maker inventory →', exact: true }).getAttribute('href'), '/rfq/maker');
-    for (const width of [1440, 1280, 1024]) {
+    assert.equal(new URL(page.url()).pathname, '/rfq');
+    await panel.getByRole('heading', { name: 'Instant RFQ', exact: true }).waitFor();
+    assert.equal(await panel.getByRole('navigation').count(), 0);
+    assert.equal(await panel.getByRole('link', { name: /recovery|funding|development/i }).count(), 0);
+    assert(await panel.getByRole('button', { name: 'Request quotes', exact: true }).isDisabled());
+    await panel.getByLabel('You sell (STRK)', { exact: true }).fill('12.5');
+    await panel.getByLabel('Minimum you receive (USDC)', { exact: true }).fill('2.1');
+    await panel.getByRole('button', { name: 'Reverse swap direction', exact: true }).click();
+    assert.equal(await panel.getByLabel('You sell (USDC)', { exact: true }).inputValue(), '');
+    assert.equal(await panel.getByLabel('Minimum you receive (STRK)', { exact: true }).inputValue(), '');
+    await panel.getByRole('button', { name: 'Reverse swap direction', exact: true }).click();
+    assert.equal(await panel.locator('details').getAttribute('open'), null);
+    await mkdir('artifacts/rfq-single-screen', { recursive: true });
+    for (const width of [1440, 1024, 375]) {
       await page.setViewportSize({ width, height: 1000 });
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${route} overflows at ${width}px`);
+      const submitBox = await panel.getByRole('button', { name: 'Request quotes', exact: true }).boundingBox();
+      assert(submitBox && submitBox.x >= 0 && submitBox.x + submitBox.width <= width, 'Quote action must fit its screen');
+      if (route === '/rfq') await page.screenshot({ path: `artifacts/rfq-single-screen/rfq-${width}.png`, fullPage: true });
     }
   }
   // The deployed browser bundle also refuses stale callers that kept a prior UI open.
@@ -74,12 +85,10 @@ try {
     return results;
   });
   for (const message of blocked) assert.match(message, /Confidential settlement is required/);
-  await page.getByRole('navigation', { name: 'RFQ workspace', exact: true }).getByRole('link', { name: 'Maker recovery', exact: true }).click();
-  await page.getByRole('region', { name: 'Maker recovery', exact: true }).waitFor();
   assert.deepEqual(walletCalls, [], 'Read-only RFQ routes must not submit wallet calls');
   assert.deepEqual(legacyRpcCalls, [], 'An earlier executable maker configuration must not activate public RFQ');
   assert.deepEqual(errors, []);
-  console.log('PASS: /rfq and /rfq/confidential require confidential settlement, reject stale public builders, preserve the recovery link, and fit desktop widths. Connected wallet and RPC tripwires observed zero calls.');
+  console.log('PASS: one confidential RFQ ticket; old pages redirect; amount fields and reversal work; phone and desktop layouts fit; disabled settlement and stale public builders make zero wallet/RPC calls.');
 } catch (error) {
   await mkdir('artifacts/independent-makers', { recursive: true });
   await page?.screenshot({ path: 'artifacts/independent-makers/browser-failure.png', fullPage: true });

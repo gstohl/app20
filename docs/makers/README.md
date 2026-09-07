@@ -35,7 +35,7 @@ The bot records pending attempts before broadcast, atomically writes state and p
 
 Preserve the state file, account keys and original config. Deleting state resets local fee accounting and its tracked reservation index, not on-chain ownership or broadcasts. `QuoteReserved` events and the `quote(id)` view can identify old reservations; `release_expired(id)` remains permissionless after expiry. Recovery verifies deployment identities even when new pool output-note deposits are unavailable. This is not a claim of complete economic finality before L1 confirmation.
 
-The `/rfq/maker` page and [agent SDK](../../packages/agent-sdk/README.md) expose historical inspection and recovery. The downloadable CLI and its checksum remain under `/downloads/`. Downloaded older binaries are not automatically updated; use the current release's checksum-verified build.
+Historical inspection and recovery are available through the [agent SDK](../../packages/agent-sdk/README.md) and CLI. Earlier maker-page bookmarks redirect to the single RFQ workspace; recovery is not a product navigation item. The downloadable CLI and its checksum remain under `/downloads/`. Downloaded older binaries are not automatically updated; use the current release's checksum-verified build.
 
 ## Confidential maker integration
 
@@ -45,7 +45,7 @@ The existing maker's public inventory contract, reservation loop and MakerBook q
 
 ```sh
 npm run dev:confidential
-# Open http://127.0.0.1:5198/rfq/confidential
+# Open http://127.0.0.1:5198/rfq
 ```
 
 The development workspace controls two disposable wallets and executes local Cairo with simulated proof facts. **Mainnet activation remains disabled.** Real STARK proof acceptance, independent wallet integration and review remain open. A hosted prover sees its witness; escrow activity, timing, fees and ciphertext shape remain observable. [Development and recovery guide](../CONFIDENTIAL_RFQ.md).

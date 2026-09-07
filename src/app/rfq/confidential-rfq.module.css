@@ -27,3 +27,25 @@
 .disclosure h2 { font-size: 20px; }
 .page a { color: #d6e7bc; }
 @media (max-width: 680px) { .steps, .fields, .funding { grid-template-columns: 1fr; } .page { padding: 22px 16px 50px; } .intro, .card, .disclosure { padding: 20px; } }
+
+/* The public product uses the existing square, orange RFQ ticket. */
+.ticketPage { padding: 40px 16px 48px; }
+.ticket { margin: 0 auto; max-width: 900px; }
+.ticketTitle { margin: 0; font-size: 22px; line-height: 1.25; letter-spacing: -.02em; }
+.makerField { grid-column: 1 / -1; min-width: 0; color: var(--shell-muted); font-size: 12px; }
+.makerField select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--shell-line); border-radius: 0; background: var(--shell-inset); color: var(--shell-muted); font: inherit; }
+.ticket .availability { margin: 0; color: var(--shell-muted); font-size: 13px; line-height: 1.5; }
+.swapRecords { border-top: 1px solid var(--shell-line); padding: 20px 24px; }
+.swapRecords h3 { margin: 0 0 10px; font-size: 14px; }
+.swapRecords p { margin: 0; color: var(--shell-muted); font-size: 13px; line-height: 1.5; }
+.privacyDetails { border-top: 1px solid var(--shell-line); padding: 4px 24px; }
+.privacyDetails summary { display: list-item; min-height: 44px; padding: 12px 0; cursor: pointer; color: var(--shell-muted); font-size: 12px; }
+.privacyDetails p { max-width: 72ch; margin: 0 0 14px; font-size: 13px; line-height: 1.6; color: var(--shell-muted); }
+.ticket :focus-visible { outline: 2px solid var(--shell-orange); outline-offset: 3px; }
+.labWorkspace { max-width: 1120px; margin: 0 auto; }
+@media (max-width: 600px) {
+  .ticketPage { padding: 20px 12px 32px; }
+  .ticketTitle { font-size: 21px; }
+  .swapRecords { padding: 18px 12px; }
+  .privacyDetails { padding-inline: 12px; }
+}

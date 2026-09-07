@@ -1,7 +1,7 @@
 export const CANONICAL_ROUTES = {
   home: "/",
   rfq: "/rfq",
-  confidentialRfq: "/rfq/confidential",
+  confidentialRfq: "/rfq",
   agents: "/agents",
   rfqOperations: "/rfq/operations",
   marketProposal: "/rfq/markets/$tokenA/$tokenB/proposal",
@@ -37,6 +37,8 @@ export function legacyRouteTarget(pathname: string): string | null {
     case "/inbox":
     case "/mail/inbox":
       return CANONICAL_ROUTES.chat;
+    case "/rfq/confidential":
+    case "/rfq/maker":
     case "/vault":
     case "/workflows":
       return CANONICAL_ROUTES.rfq;

@@ -1,6 +1,6 @@
-# Confidential RFQ development release
+# Confidential RFQ integration guide
 
-Updated September 8, 2026. APP20 now includes a jointly authorized escrow contract, a Node SDK, durable submission recovery and a browser workspace backed by disposable local wallets. **Mainnet activation remains disabled.** Contract execution with simulated proof facts is verified; a real STARK proof for this protocol, compatible independent wallet adapters and independent review are still required.
+Updated September 8, 2026. APP20 now includes a jointly authorized escrow contract, a Node SDK, durable submission recovery and a browser workspace backed by disposable local wallets. A mainnet escrow instance is deployed at `0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f`; deployment is not yet real-proof settlement validation. Contract execution with simulated proof facts is verified; a real STARK proof for this protocol, compatible independent wallet adapters and independent review are still required.
 
 ## Private-only application policy
 
@@ -15,12 +15,12 @@ From the repository root, with the normal dependencies and pinned pool toolchain
 ```sh
 npm run pool:setup
 npm run dev:confidential
-# Open http://127.0.0.1:5198/rfq/confidential
+# Open http://127.0.0.1:5198/rfq
 ```
 
 The workspace creates a disposable devnet, registers two controlled wallets and shields test STRK and ETH. Create an escrow, approve setup, fund each side and approve the exchange. A second trade can be funded on just one side; advance the local clock and refund that party independently. The quote is a local example, not a market price. The workspace controls both wallets for demonstration; actual counterparties need separate signing adapters.
 
-The local control service binds to loopback, rejects cross-origin writes and serializes mutations. Its routes and wallet controls are omitted from production bundles. A production build rejects `VITE_CONFIDENTIAL_RFQ_LAB` configuration. The public `/rfq` and `/rfq/confidential` pages describe availability without offering mainnet signing. Stop the command to delete its disposable keys, state and devnet; this is not persistent wallet storage.
+The local control service binds to loopback, rejects cross-origin writes and serializes mutations. Its routes and wallet controls are omitted from production bundles. A production build rejects `VITE_CONFIDENTIAL_RFQ_LAB` configuration. The public `/rfq` page provides the swap form and current network availability; mainnet quote submission remains disabled. Earlier RFQ URLs redirect to this same workspace. Stop the command to delete its disposable keys, state and devnet; this is not persistent wallet storage.
 
 ## Protocol and privacy
 
@@ -40,7 +40,7 @@ Import `@app20/agent-sdk/confidential`; see [the package guide](../packages/agen
 
 `createConfidentialAgreement` computes canonical commitments; `confidentialConstructor` produces public deployment arguments. After deployment, `createConfidentialClient` verifies chain, the pinned escrow/pool classes and all constructor fields before accessing escrow viewing material. `inspect()` checks registration, decrypted funding, deadline, settlement status and pending recovery state.
 
-`prepare(mode)` builds and reviews the exact private operation. `approve(prepared, role, sign)` repeats that review and passes the digest, terms, destinations, chain and deadline to only that role's signing adapter. The peer independently approves using its own client and key. `execute(prepared, approvals)` verifies both signatures, requests a proof, validates its program/network/message binding and allowed public action types, then hands only the public call/proof to the fee-limited submission adapter. Mainnet clients fail before key retrieval; simulated proofs require loopback.
+`prepare(mode)` builds and reviews the exact private operation. `approve(prepared, role, sign)` repeats that review and passes the digest, terms, destinations, chain and deadline to only that role's signing adapter. The peer independently approves using its own client and key. `execute(prepared, approvals)` verifies both signatures, requests a proof, validates its program/network/message binding and allowed public action types, then hands only the public call/proof to the fee-limited submission adapter. Mainnet clients verify the pinned deployment and canonical pool before key retrieval; simulated proofs require loopback.
 
 Agreements, prepared operations and the shared viewing material are sensitive. Exchange them only through an authenticated encrypted channel and retain them in each wallet's secure storage. The SDK does not provide a public quote relay or claim that an arbitrary transport is secure. The existing mainnet bot and public inventory reservations do not operate this protocol. Real-proof and wallet gates precede production transport, inventory reservation and permissionless maker activation.
 
@@ -70,7 +70,7 @@ APP20_DEMO_VIDEO=1 node scripts/e2e-confidential-browser.mjs
 
 The SDK integration test uses the same client as the browser service, performs exact settlement, rejects incomplete funding/approvals and changed terms, then reopens a partially funded session and refunds it independently. The separate adversarial contract harness checks the full policy and scans public transaction surfaces for private test values. [Detailed contract evidence](../pool-harness/JOINT_ESCROW.md) distinguishes these local executions from real cryptographic proof generation.
 
-`cairo/src/confidential_escrow.cairo` is part of the normal Cairo build. `src/lib/confidential-rfq-deployment.ts` pins both Sierra and CASM hashes. The check script refuses a mismatch without rewriting the pins. CI's real-pool suite runs the SDK integration test; release checks require mainnet/proof availability to remain false. Generated media and proof artifacts are ignored under `artifacts/`. Public submission hashes remain the three verified transactions of the earlier mainnet protocol.
+`cairo/src/confidential_escrow.cairo` is part of the normal Cairo build. `src/lib/confidential-rfq-deployment.ts` pins both Sierra and CASM hashes. The check script refuses a mismatch without rewriting the pins. CI's real-pool suite runs the SDK integration test; release checks require the mainnet activation setting to match the release and keep real-proof verification false until evidence supports it. Generated media and proof artifacts are ignored under `artifacts/`. Public submission hashes remain the three verified transactions of the earlier mainnet protocol.
 
 
 ## Verification recorded for this implementation

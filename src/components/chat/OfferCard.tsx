@@ -158,7 +158,7 @@ export default function OfferCard({
         {settlementVerified ? "An earlier one-sided STRK payment was verified locally; it does not prove that both assets were exchanged." : "This offer is for review. Settlement requires a confidential atomic swap; compatible wallet support is still pending."}
       </p>
       {active ? <p className={styles.actionWarning}>
-        <a href="/rfq/confidential">Confidential swap availability →</a>
+        <a href="/rfq">Confidential swap availability →</a>
       </p> : null}
 
       {active && (onAccept || onDecline) ? (

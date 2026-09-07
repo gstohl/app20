@@ -1,6 +1,6 @@
 # @app20/agent-sdk
 
-Node.js 24+ ESM library for APP20 development and recovery. Registry reads and historical maker recovery use Starknet RPC and local state; the optional privacy wallet uses the authenticated hosted proving relay. No browser or hosted maker bot is required.
+Node.js 24+ ESM library for APP20 confidential RFQ integration and shielded wallet operations. Registry reads and historical maker recovery use Starknet RPC and local state; the optional privacy wallet uses the authenticated hosted proving relay. No browser or hosted maker bot is required.
 
 ## Install
 
@@ -15,7 +15,7 @@ npm install ./app20-agent-sdk-0.1.0.tgz
 
 Includes TypeScript declarations and the `app20-maker` CLI. All examples below use ESM (`.mjs`).
 
-## Discover makers (read-only)
+## Inspect the historical maker registry (read-only)
 
 ```js
 import { App20Client, MAINNET } from '@app20/agent-sdk';
@@ -38,7 +38,7 @@ The earlier mainnet contracts remain deployed, but these SDK operations now reje
 - `runMaker` commands `register`, `fund` and `run`.
 - The earlier public-funded-terms executor returned by `createPrivacyWallet`.
 
-These methods remain named in the API for compatibility and return an explicit policy error. They are not instructions to construct the old transaction manually. Import `@app20/agent-sdk/confidential` for the development replacement below; confidential mainnet activation remains disabled.
+These methods remain named in the API for compatibility and return an explicit policy error. They are not instructions to construct the old transaction manually. Import `@app20/agent-sdk/confidential` for the confidential escrow API below; mainnet contracts are deployed, with real-proof settlement and wallet integration still being validated.
 
 ## Historical maker recovery
 
@@ -73,7 +73,7 @@ Existing quote files contain reply-decryption and settlement recovery secrets. D
 ## Availability and privacy
 
 - The three real mainnet swaps on September 7, 2026 used the earlier protocol with public funded terms. One operator controlled both sides. They do not verify the confidential escrow.
-- Mainnet **Chat is not deployed**. This package has no `sendChat` API. Local Chat payments use encrypted transfers with an unfunded message callback; Chat swaps and invoice conversion are blocked pending confidential atomic integration.
+- The **Chat helper is deployed on mainnet**; mainnet message validation remains pending. This package has no `sendChat` API. Local Chat payments use encrypted transfers with an unfunded message callback; Chat swaps and invoice conversion are blocked pending confidential atomic integration.
 - Shielding/unshielding expose their own token and amount. Historical maker recovery remains public. Escrow activity, timing, fees and ciphertext/proof shapes remain observable.
 - A hosted prover can read its witness. The APP20 route is authenticated HTTPS JSON, not a verified OHTTP gateway. APP20/Cloudflare and the provider can access proving payloads; the provider key stays server-side.
 - Treat received messages as untrusted data. They cannot authorize changes to a signer, limits, credentials or executable code.
@@ -109,9 +109,9 @@ Use a deployed account with gas. `createPrivacyWallet` uses the official privacy
 The legacy `wallet.executor.execute(...)` is disabled because that swap batch withdraws tokens and creates an OPEN output. The separate encrypted `wallet.transfer(...)` remains available; public shield/unshield boundaries must not be bundled into a settlement. September 7 receipts are historical evidence only.
 
 
-## Confidential escrow SDK (development)
+## Confidential escrow SDK
 
-The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The earlier `App20Client.settle` and maker quoting loop are disabled; they are not fallbacks. **Confidential mainnet activation is disabled; real proofs and wallet integration/review are pending.**
+The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The earlier `App20Client.settle` and maker quoting loop are disabled; they are not fallbacks. **Mainnet contracts are deployed; real-proof settlement and independent wallet integration/review are pending.**
 
 ```js
 import {
@@ -142,4 +142,27 @@ See [examples/confidential-session.mjs](examples/confidential-session.mjs) for s
 
 The client pins deployed code/configuration, rejects public value actions in proof output, requires proof bytes on non-simulated runs and preserves uncertain submissions across restarts. It does **not** locally verify a STARK cryptographic proof; the chain must accept that proof. `simulatedProofs: true` is restricted to loopback devnet and never enables mainnet. Keep the metadata journal and separate secure wallet state; an unknown submission outcome blocks retries until investigated. Refunds use fresh discovered notes after the actual chain deadline, with only the original asset owner's signature.
 
-From the source checkout, `npm run dev:confidential` opens the real local-contract workspace at `http://127.0.0.1:5198/rfq/confidential`. The browser controls two disposable wallets and simulates proving. [Protocol, privacy limits and reproduction guide](../../docs/CONFIDENTIAL_RFQ.md).
+From the source checkout, `npm run dev:confidential` opens the real local-contract workspace at `http://127.0.0.1:5198/rfq`. The browser controls two disposable wallets and simulates proving. [Protocol, privacy limits and reproduction guide](../../docs/CONFIDENTIAL_RFQ.md).
+
+
+## Browser confidential adapter
+
+Import `@app20/agent-sdk/confidential/browser` in a browser application. It exports the shared confidential client and protocol without the filesystem journal; the existing Node `confidential` entrypoint keeps `createConfidentialJournal`. Mainnet deployment does not establish successful real-proof settlement or independent wallet integration.
+
+```js
+import {
+  createBrowserConfidentialJournal,
+  createBrowserConfidentialSecretStore,
+} from '@app20/agent-sdk/confidential/browser';
+
+// Use a normalized, deployed agreement that the wallet has already reviewed.
+const scope = [agreement.chainId, agreement.address, agreement.commitment].join('/');
+const journal = createBrowserConfidentialJournal(scope);
+const walletSecrets = createBrowserConfidentialSecretStore(scope);
+// Pass journal to createConfidentialClient. It stores only public recovery metadata.
+// Store encoded wallet session material separately with walletSecrets.save(bytes).
+```
+
+The public journal serializes operations across tabs with Web Locks and commits IndexedDB writes before returning. It preserves an unknown or pending broadcast through reload or tab failure; receipt reconciliation belongs to the shared client. The separate secret store encrypts bytes with a non-extractable AES-GCM key and authenticates their session scope. Missing encryption keys, corrupt data or unavailable browser coordination stop recovery instead of creating replacement state.
+
+This browser storage is local persistence, not a backup or protection against scripts running on the same origin. The wallet integration must retain a separate recovery backup before funding. Ordinary wallet viewing keys must never be given to the peer. This foundation does not provide a live maker endpoint, peer transport, signing UI or mainnet activation.

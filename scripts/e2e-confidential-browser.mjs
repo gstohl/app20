@@ -15,7 +15,7 @@ try {
   const page = await context.newPage(), video = page.video();
   const demo = recording ? await presentation(page, 'confidential-rfq') : undefined;
   const problems = []; page.on('pageerror', error => problems.push(error.message));
-  await page.goto(new URL('/rfq/confidential', base).href);
+  await page.goto(new URL('/rfq', base).href);
   await expect(page.getByRole('heading', { name: 'Agree on a swap', exact: true })).toBeVisible({ timeout: 180_000 });
   await demo?.mark('Confidential quote'); await demo?.hold(3);
   await page.getByRole('button', { name: 'Create escrow for these terms', exact: true }).click();

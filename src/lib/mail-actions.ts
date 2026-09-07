@@ -1,10 +1,11 @@
 import type { EncryptedMailRecord } from "./mail";
+import { addrSTRK } from "./tokens";
 import {
   type App20Strk20Action,
   OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
-  APP20_HELPER_FUNDING_BASE_UNITS,
-  buildMailInvokeActions,
+  buildMessageOnlyChatActions,
+  messageActionId,
   buildMemoTransferActions,
 } from "./strk20";
 
@@ -54,12 +55,12 @@ type BuildMailActionsInput = {
   recipientAddress: string;
   record: EncryptedMailRecord;
   attachmentAmount?: bigint;
+  actionId?: string;
 };
 
 /**
- * Backward-compatible facade for the compose screen. Every helper invoke has
- * explicit atomic helper funding plus a recovery OPEN note; an attachment adds
- * one numeric transfer before those actions.
+ * Compose facade: one protected unfunded message, with an optional encrypted
+ * numeric transfer. No helper withdrawal or recovery OPEN note is created.
  */
 export function buildMailActions({
   helperAddress,
@@ -68,17 +69,18 @@ export function buildMailActions({
   recipientAddress,
   record,
   attachmentAmount,
+  actionId = messageActionId(record),
 }: BuildMailActionsInput): App20Strk20Action[] {
   if (!isConfiguredMailHelper(helperAddress)) {
     throw new Error("A deployed message helper is required before sending.");
   }
   if (attachmentAmount === undefined) {
-    return buildMailInvokeActions({
+    return buildMessageOnlyChatActions({
       helperAddress,
-      tokenAddress,
-      recoveryAddress: senderAddress,
-      helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
+      tokenAddress: addrSTRK,
+      senderAddress,
       record,
+      actionId,
     });
   }
   return buildMemoTransferActions({
@@ -87,7 +89,7 @@ export function buildMailActions({
     recoveryAddress: senderAddress,
     recipient: recipientAddress,
     amount: attachmentAmount,
-    helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
     record,
+    actionId,
   });
 }

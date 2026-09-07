@@ -1,16 +1,15 @@
 # APP20 agent guide
 
 Site: https://app20.io
-RFQ availability: https://app20.io/rfq
-Historical maker recovery: https://app20.io/rfq/maker
+Confidential RFQ: https://app20.io/rfq
 Deployment identities and capability flags: https://app20.io/.well-known/app20.json
 
 ## Current policy and availability
 
 Every new RFQ, Chat payment, invoice and offer must settle privately. No public trade leg, OPEN note or one-sided swap acceptance is allowed. An unavailable confidential capability stops execution.
 
-- Confidential RFQ: implemented in the Node development SDK and local browser workspace. Mainnet activation and real-proof verification remain disabled.
-- Chat: localnet encrypted messaging and payments exist; mainnet Chat is not deployed. Fixed-offer acceptance and invoice conversion that require a swap are blocked pending confidential atomic wallet integration.
+- Confidential RFQ: implemented in the Node development SDK and local browser workspace. Mainnet SDK execution is enabled; real-proof settlement validation and independent browser wallet support remain pending.
+- Chat: localnet encrypted messaging and payments exist; the Chat helper is deployed on mainnet, with mainnet message validation pending. Fixed-offer acceptance and invoice conversion that require a swap are blocked pending confidential atomic wallet integration.
 - Earlier mainnet maker/settlement contracts: still deployed, with public funded terms. The current SDK and bot block new registration, funding, quoting and settlement.
 - Historical recovery: existing record reads, receipt reconciliation, expired reservation release, available inventory withdrawal and registration deactivation remain supported. These old-contract operations remain public.
 
@@ -28,23 +27,22 @@ npm install ./app20-agent-sdk-0.1.0.tgz
 ```
 
 ```js
-import { App20Client } from '@app20/agent-sdk';
-const app = new App20Client();
-await app.verify();
-const { makers } = await app.listMakers(); // Read the historical registry.
+import { confidentialCapabilities } from '@app20/agent-sdk/confidential';
+// Check network support before asking a wallet to sign.
+console.log(confidentialCapabilities.mainnetEnabled);
 ```
 
 API and examples: https://app20.io/agent-sdk.md
 
 `App20Client.registrationCall`, `inventoryCalls('fund', ...)`, `prepareQuote`, `submitRequest` and `settle` now reject new execution. The earlier `createPrivacyWallet().executor` also rejects. The wallet retains separately invoked register/shield/encrypted-transfer/unshield and reconciliation methods; shielding/unshielding are public boundaries and must not be bundled with settlement. No operation starts on import.
 
-## Confidential escrow development
+## Confidential RFQ integration
 
-Import `@app20/agent-sdk/confidential` for joint setup, separate encrypted funding, exact approvals by both parties, one-bundle encrypted settlement and independent timeout refunds. In a source checkout, `npm run dev:confidential` opens `http://127.0.0.1:5198/rfq/confidential`. The browser controls two disposable wallets and simulates proving.
+Import `@app20/agent-sdk/confidential` for joint setup, separate encrypted funding, exact approvals by both parties, one-bundle encrypted settlement and independent timeout refunds. In a source checkout, `npm run dev:confidential` opens `http://127.0.0.1:5198/rfq`. The browser controls two disposable wallets and simulates proving.
 
 Both parties retain their own signing keys. Share only a newly created escrow-only viewing key; ordinary wallet viewing keys never go to a peer. Terms and prepared operations are sensitive: use authenticated encrypted transport and secure wallet storage. The metadata-only journal preserves uncertain broadcasts; do not clear it to retry. Refunds use newly discovered notes and only the original asset owner's approval after the actual chain deadline.
 
-Real STARK proofs, independent wallet adapters, authenticated private negotiation and independent review remain pending. There is no mainnet confidential escrow address or public confidential quote endpoint. The old bot, MakerBook messages and public inventory reservations cannot substitute for these missing integrations.
+Real STARK proofs, independent wallet adapters, authenticated private negotiation and independent review remain pending. A confidential escrow is deployed on mainnet; real-proof operation and the public confidential quote endpoint remain unavailable. The old bot, MakerBook messages and public inventory reservations cannot substitute for these missing integrations.
 
 ## Existing maker recovery
 
@@ -70,7 +68,7 @@ Run `npm run dev:localnet` for Alice/Bob development wallets, then open `/chat`,
 
 A Chat payment or same-token invoice spends existing shielded notes and posts its encrypted memo through an unfunded `compute_and_invoke` helper operation. No payment withdrawal or OPEN output is included. The helper's public STRK argument is a fixed helper constant, not the payment asset. A fixed offer requiring two assets must wait for confidential atomic integration; paying one side is not an accepted swap.
 
-Mainnet Chat still requires a verified helper deployment and compatible independent wallet actions. There is no `sendChat` SDK API or REST endpoint. Do not substitute the maker book for Chat, disclose keys or bypass replay/receipt checks. Chat keys and maker transport keys serve different protocols.
+Mainnet Chat has a deployed helper; mainnet message validation remains pending. There is no `sendChat` SDK API or REST endpoint. Do not substitute the maker book for Chat, disclose keys or bypass replay/receipt checks. Chat keys and maker transport keys serve different protocols.
 
 ## What remains visible
 

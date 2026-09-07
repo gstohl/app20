@@ -650,10 +650,69 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 
         // Current payment path: no helper funding, public trade leg or OPEN output.
         const bobWallet = makeAlicePrivacy(env, env.bob, "app20-private-chat-bob");
+        const simulateTransaction = env.node.channel.simulateTransaction.bind(env.node.channel);
+        env.node.channel.simulateTransaction = async (...args) => {
+            const result = await simulateTransaction(...args);
+            const failure = result?.[0]?.transaction_trace?.execute_invocation?.revert_reason;
+            if (failure) throw new Error(`Pool execution rejected the signed Chat proof invocation: ${failure}`);
+            return result;
+        };
         await createBlocks(devnet.url, 12);
         const registered = await broadcastPrepared(devnet, env, await prepare(bobWallet.prover, []));
         assert(registered.receipt.isSuccess(), revertReason(registered.receipt));
         await createBlocks(devnet.url, 12);
+        // One private base unit supplies the pool's mandatory note replay fence.
+        // Message delivery returns it to the sender, without public funding or OPEN notes.
+        const seed = await broadcastPrepared(devnet, env, await prepare(prover, [{type:"transfer",token:env.strk,recipient:env.bob.address,amount:"1"}]));
+        assert(seed.receipt.isSuccess(), revertReason(seed.receipt));
+        await createBlocks(devnet.url, 12);
+        const textBefore = await bobWallet.transfers.discoverNotes({tokens:[BigInt(env.strk)]});
+        const privateBeforeText = [...textBefore.notes.values()].flat().reduce((sum,note)=>sum+note.amount,0n);
+        assert.equal(privateBeforeText,1n);
+        const text = "Hey, can you see this private message?";
+        const textRecord = await mail.encryptMail(aliceMail.publicKey, text);
+        const textActionId = strk20.computeActionId("message-only-client", "empty-balance-bob");
+        const poolBeforeText = await tokenBalance(env.node, env.strk, env.privacy.address);
+        const helperBeforeText = await tokenBalance(env.node, env.strk, helperAddress);
+        let textActions;
+        let walletRequests = 0;
+        const textResult = await strk20.submitMail({
+            account: {address:env.bob.address,strk20InvokeTransaction:async actions=>{
+                walletRequests++;
+                textActions=actions;
+                assert.deepEqual(actions.map(action=>action.type),["transfer","compute_and_invoke"]);
+                assert.equal(BigInt(actions[0].amount),1n);
+                assert.equal(BigInt(actions[0].recipient),BigInt(env.bob.address));
+                assert(!JSON.stringify(actions).match(/withdraw|OPEN|openNoteIds/));
+                const prepared=await prepare(bobWallet.prover,actions);
+                const core=toCoreCallAndProof(prepared);
+                assert.deepEqual(withHelperFundingPreflight(core,actions,{mailHelperAddress:helperAddress}),core,
+                    "An unfunded Chat proof must need no prepare_funding call");
+                const submitted=await broadcastPrepared(devnet,env,prepared);
+                assert(submitted.receipt.isSuccess(),revertReason(submitted.receipt));
+                return {transaction_hash:submitted.transactionHash};
+            }},
+            provider:env.node,
+            helperAddress,
+            record:textRecord,
+            actionId:textActionId,
+            policy:()=>{},
+        });
+        assert.equal(walletRequests,1);
+        txHashes.messageOnly=textResult.transactionHash;
+        assert.equal(await tokenBalance(env.node,env.strk,env.privacy.address),poolBeforeText);
+        assert.equal(await tokenBalance(env.node,env.strk,helperAddress),helperBeforeText);
+        const textAfter = await bobWallet.transfers.discoverNotes({tokens:[BigInt(env.strk)]});
+        assert.equal([...textAfter.notes.values()].flat().reduce((sum,note)=>sum+note.amount,0n),privateBeforeText);
+        const textEvent=(await messageEvents(env.node,helperAddress)).at(-1);
+        assert.equal(BigInt(parseMessageEvent(textEvent).actionId),BigInt(textActionId));
+        assert.equal(new TextDecoder().decode(await mail.decryptMail(aliceMail.privateKey,parseMessageEvent(textEvent))),text);
+        const textReplay=await broadcastPrepared(devnet,env,await prepare(bobWallet.prover,textActions));
+        assert(textReplay.receipt.isReverted());
+        assert.match(revertReason(textReplay.receipt),/ACTION_ID_USED/);
+        assert.equal(await tokenBalance(env.node,env.strk,helperAddress),helperBeforeText);
+        console.log("Message-only submitMail: encrypted self-transfer preserves private balance, no funding preflight or OPEN output, decryptable message, replay rejected; simulated proofs only.");
+
         // Establish private channels before the measured payment.
         const setup = await broadcastPrepared(devnet, env, await prepare(prover, [{type: "transfer", token: env.strk, recipient: env.bob.address, amount: "1"}]));
         assert(setup.receipt.isSuccess(), revertReason(setup.receipt));

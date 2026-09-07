@@ -42,7 +42,7 @@ const vite = await createServer({ server: { host: '127.0.0.1', port, strictPort:
   });
 } }] });
 await vite.listen();
-console.log(`Confidential RFQ development UI: ${origin}/rfq/confidential`);
+console.log(`Confidential RFQ development UI: ${origin}/rfq`);
 console.log('Starting disposable devnet wallets. Proof facts are simulated; no mainnet transactions.');
 let stopping = false;
 async function stop() { if (stopping) return; stopping = true; await vite.close(); await lab?.close(); process.exit(0); }

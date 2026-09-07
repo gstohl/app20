@@ -4,7 +4,6 @@
   "chainId": "0x534e5f4d41494e",
   "site": "https://app20.io",
   "guide": "https://app20.io/agents.md",
-  "makerSetup": "https://app20.io/rfq/maker",
   "rpcUrl": "https://api.cartridge.gg/x/starknet/mainnet",
   "contracts": {
     "App20MakerBook": {
@@ -16,6 +15,16 @@
       "address": "0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642",
       "classHash": "0x254bbd706cfd89a774d0e88c46c6223d7bb22d555eeca87367bf8742b3c4846",
       "status": "historical-public-term-protocol-recovery-only-in-current-clients"
+    },
+    "App20Chat": {
+      "address": "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4",
+      "classHash": "0x2e6fd0b464b0a7a1c8793b5d18609609e167af5ce7916e28821af34b5de4b12",
+      "status": "deployed-mainnet-validation-pending"
+    },
+    "App20ConfidentialEscrow": {
+      "address": "0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f",
+      "classHash": "0x134accea913ca144f2a37015014235785687fd8eec2c15773d716e505cd669f",
+      "status": "deployed-mainnet-validation-pending"
     }
   },
   "pool": {
@@ -26,16 +35,15 @@
   },
   "fromBlock": 14474272,
   "chat": {
-    "status": "not-deployed-on-mainnet",
-    "address": null,
+    "status": "deployed-mainnet-validation-pending",
+    "address": "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4",
     "localPaymentSettlement": "encrypted-transfer-and-unfunded-encrypted-message",
-    "mainnetPaymentsEnabled": false,
+    "mainnetPaymentsEnabled": true,
     "offerSwapAcceptanceEnabled": false,
     "invoiceSwapConversionEnabled": false,
     "paymentMemoPublicToken": "fixed-STRK-helper-argument-not-payment-asset"
   },
   "liveWalletFillVerified": true,
-  "operatorDownload": "https://app20.io/downloads/app20-maker.mjs",
   "agentSdk": {
     "name": "@app20/agent-sdk",
     "version": "0.1.0",
@@ -49,7 +57,8 @@
     "nodePrivacyWalletAdapter": true,
     "confidentialDevelopment": true,
     "legacySettlementExecutorEnabled": false,
-    "legacyNewQuoteSubmissionEnabled": false
+    "legacyNewQuoteSubmissionEnabled": false,
+    "confidentialMainnet": true
   },
   "proving": {
     "transport": "https-json",
@@ -77,11 +86,11 @@
     "currentClientExecutionEnabled": false
   },
   "confidentialRfq": {
-    "status": "development-only",
+    "status": "deployed-mainnet-validation-pending",
     "guide": "https://app20.io/agent-sdk.md",
-    "page": "https://app20.io/rfq/confidential",
+    "page": "https://app20.io/rfq",
     "sdkEntrypoint": "@app20/agent-sdk/confidential",
-    "mainnetEnabled": false,
+    "mainnetEnabled": true,
     "realProofVerified": false,
     "independentBrowserWalletsSupported": false,
     "independentReviewComplete": false,
@@ -99,7 +108,10 @@
     ],
     "hostedProverSeesWitness": true,
     "defaultRfqPage": "https://app20.io/rfq",
-    "chatSwapIntegrationReady": false
+    "chatSwapIntegrationReady": false,
+    "deploymentAddress": "0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f",
+    "deploymentTransaction": "0x57642bc0760ef6fcfd07d4cbe589193c32b352b302d6660c8d6e255dcafc872",
+    "deploymentBlock": 14528770
   },
   "settlementPolicy": {
     "mode": "private-only",
@@ -132,5 +144,11 @@
     ],
     "shieldingAndUnshielding": "separate-public-wallet-boundaries"
   },
-  "liveWalletFillVerifiedScope": "historical-public-funded-terms-protocol-only"
+  "liveWalletFillVerifiedScope": "historical-public-funded-terms-protocol-only",
+  "rfq": "https://app20.io/rfq",
+  "historicalRecovery": {
+    "guide": "https://app20.io/agent-sdk.md",
+    "operatorDownload": "https://app20.io/downloads/app20-maker.mjs",
+    "checksum": "https://app20.io/downloads/app20-maker.sha256"
+  }
 }

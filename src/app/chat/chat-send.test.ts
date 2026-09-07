@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { addrSTRK } from "@/lib/tokens";
+import { describe, expect, it, vi } from "vitest";
 import { decodeEnvelope, encodeEnvelope } from "@/lib/envelope";
-import { deriveKeypair } from "@/lib/mail";
+import { deriveKeypair, decryptMail, publicKeyToFelts } from "@/lib/mail";
+import type { App20Strk20Action } from "@/lib/strk20";
 import { mailboxPublicKeyHex, verifyMailSenderAuth } from "@/lib/mail-auth";
 import {
   CHAT_LETTER_MAX_CHARS,
@@ -8,6 +10,8 @@ import {
   chatLetterBudget,
   chatSendBlocker,
   previewChatLetterBudget,
+  sendChatLetter,
+  type ChatSendContext,
 } from "./chat-send";
 
 const SEED = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
@@ -131,5 +135,38 @@ describe("chat message", () => {
       preview.plaintextBytes,
     );
     expect(previewChatLetterBudget("y".repeat(4_000), true).fits).toBe(false);
+  });
+});
+
+
+describe("message-only wallet submission", () => {
+  it("sends and decrypts with a private one-unit self-transfer", async () => {
+    const recipientKey = deriveKeypair(new Uint8Array(32).fill(7));
+    const balances = vi.fn(async () => [{token: addrSTRK, amount: "0x1"}]);
+    const invoke = vi.fn(async (_actions: App20Strk20Action[]) => ({ transaction_hash: "0x999" }));
+    const lookup = vi.fn(async () => publicKeyToFelts(recipientKey.publicKey));
+    const context = {
+      providerIndex: 2,
+      provider: { callContract: lookup, waitForTransaction: async () => ({ execution_status: "SUCCEEDED", finality_status: "ACCEPTED_ON_L2" }) },
+      helperAddress: "0x123",
+      walletAccount: { address:"0xa11ce", strk20InvokeTransaction: invoke, strk20Balances: balances },
+      selectedWallet: { features: { "starknet:walletApi": { id: "ready" } } },
+      senderAddress: "0xa11ce", chainId: "SN_SEPOLIA",
+      mailSeed: SEED, keypair: deriveKeypair(SEED),
+    } as unknown as ChatSendContext;
+    const result = await sendChatLetter({ recipient: "0xb0b", body: "See you at seven.", context });
+    expect(balances).toHaveBeenCalledOnce();
+    expect(lookup).toHaveBeenCalledOnce();
+    expect(lookup.mock.calls[0]).toEqual([expect.objectContaining({ entrypoint: "get_pubkey" })]);
+    expect(invoke).toHaveBeenCalledOnce();
+    const [actions] = invoke.mock.calls[0];
+    expect(actions.map(action => action.type)).toEqual(["transfer", "compute_and_invoke"]);
+    expect(JSON.stringify(actions)).not.toMatch(/withdraw|OPEN|openNoteIds/);
+    const action = actions[1];
+    if (action.type !== "compute_and_invoke") throw Error("Expected protected message");
+    expect(BigInt(String(action.compute_calldata.at(-1)))).not.toBe(0n);
+    const decoded = decodeEnvelope(await decryptMail(recipientKey.privateKey, result.envelope.record));
+    expect(decoded).toMatchObject({ type: "text", payload: { body: "See you at seven." } });
+    expect(result.transactionHash).toBe("0x999");
   });
 });

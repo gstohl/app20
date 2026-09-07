@@ -1,4 +1,3 @@
-import MakerPage from './app/rfq/MakerPage';
 import AgentsPage from './app/agents/page';
 import { createRoot } from "react-dom/client";
 import { lazy, Suspense, type ReactNode } from "react";
@@ -16,7 +15,6 @@ import AppProviders from "@/app/providers";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
-import ConfidentialRfqPage from "@/app/rfq/ConfidentialRfqPage";
 import OperationsDashboard from "@/app/rfq/OperationsDashboard";
 import FundingPage from "@/app/funding/page";
 import SendPage from "@/app/send/page";
@@ -25,7 +23,7 @@ import { CANONICAL_ROUTES, legacyRouteRedirect } from "@/app/routes";
 import "@/app/globals.css";
 import "@/app/design-system.css";
 
-// The default RFQ information page does not need the Chat composer, payment
+// The RFQ ticket does not need the Chat composer, payment
 // controller, or historical correspondence recovery. Load that workflow only
 // when its route opens, after the explicit Ready account gate.
 const ChatPage = lazy(() => import("@/app/chat/page"));
@@ -133,8 +131,8 @@ const rfqRoute = createRoute({
   component: RfqPage,
 });
 
-const makerSetupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/maker", component: MakerPage });
-const confidentialRfqRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/confidential", component: ConfidentialRfqPage });
+const makerSetupRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/maker", beforeLoad: ({ location }) => redirectLegacyRoute("/rfq/maker", location.hash) });
+const confidentialRfqRoute = createRoute({ getParentRoute: () => rootRoute, path: "/rfq/confidential", beforeLoad: ({ location }) => redirectLegacyRoute("/rfq/confidential", location.hash) });
 
 const agentsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/agents", component: AgentsPage });
 

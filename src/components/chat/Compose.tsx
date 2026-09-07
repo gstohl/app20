@@ -64,7 +64,7 @@ import {
 } from "@/lib/otc";
 import {
   computeActionId,
-  APP20_HELPER_FUNDING_BASE_UNITS,
+  CHAT_REPLAY_NOTE_BASE_UNITS,
   assertPrivateStrk20BatchBalance,
   strk20ErrorMessage,
   submitActions,
@@ -854,17 +854,17 @@ export default function Compose({
         kind: "lookup",
         message: document.payment
           ? "Checking the shielded STRK payment balance…"
-          : "Checking private STRK for chat service funding…",
+          : "Checking your private STRK note for the message…",
         step: 1,
         totalSteps: 1,
       });
-      await assertPrivateStrk20BatchBalance(
-        walletAccount,
-        addrSTRK,
-        document.payment
-          ? [document.payment.transfer.amount]
-          : [APP20_HELPER_FUNDING_BASE_UNITS],
-      );
+      if (!document.escrow) {
+        await assertPrivateStrk20BatchBalance(
+          walletAccount,
+          addrSTRK,
+          [document.payment ? document.payment.transfer.amount : CHAT_REPLAY_NOTE_BASE_UNITS],
+        );
+      }
       if (document.payment && poolAddress) {
         setSendState({
           kind: "lookup",
@@ -1088,7 +1088,6 @@ export default function Compose({
               amount: document.payment.transfer.amount,
               record,
               actionId: mailActionId,
-              helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
               policy,
             },
             options,
@@ -1102,7 +1101,6 @@ export default function Compose({
               tokenAddress: addrSTRK,
               record,
               actionId: mailActionId,
-              helperFundingAmount: APP20_HELPER_FUNDING_BASE_UNITS,
               policy,
             },
             options,
@@ -1451,10 +1449,10 @@ export default function Compose({
                     <li>No user-requested payment or attachment transfer.</li>
                   )}
                   <li>
-                    The atomic messages batch temporarily withdraws 7 STRK base
-                    units to the public helper address and returns those units
-                    to your OPEN recovery note. The helper, amount, ciphertext
-                    size, and timing remain public.
+                    {preflight.valueMoves.length === 0
+                      ? "A private STRK note is required. One base unit returns to you privately to prevent replay; your private balance stays the same. "
+                      : "The payment uses encrypted notes with no helper funding. "}
+                    Message activity, ciphertext size and timing remain public.
                   </li>
                   {preflight.noValueAttachments.map((attachment) => (
                     <li key={attachment}>{attachment}</li>

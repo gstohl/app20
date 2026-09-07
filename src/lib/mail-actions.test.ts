@@ -7,6 +7,7 @@ import {
   buildMemoTransferActions,
   buildOtcAcceptActions,
   computeActionId,
+  messageActionId,
   APP20_HELPER_FUNDING_BASE_UNITS,
   Strk20RevertedError,
   Strk20SubmissionCallbackError,
@@ -17,7 +18,6 @@ import {
   submitOtcAccept,
 } from "./strk20";
 import {
-  OPEN_NOTE_ID_PLACEHOLDER,
   POOL_ADDRESS_PLACEHOLDER,
   buildMailActions,
   isConfiguredMailHelper,
@@ -40,42 +40,24 @@ const baseInput = {
 };
 
 describe("mail STRK20 actions", () => {
-  it("atomically funds the helper before creating and consuming a recovery note", () => {
+  it("returns one private base unit to the sender with no helper funding or OPEN output", () => {
     const actions = buildMailActions(baseInput);
+    expect(actions).toHaveLength(2);
+    expect(actions[0]).toEqual({type:"transfer",token:addrSTRK,recipient:baseInput.senderAddress,amount:"0x1"});
+    expect(actions[1]).toMatchObject({ type: "compute_and_invoke", contract: "0x123" });
+    if (actions[1].type !== "compute_and_invoke") throw Error("Expected protected message");
+    expect(actions[1].compute_calldata.slice(0, 2)).toEqual([addrSTRK, "0x0"]);
+    expect(actions[1].invoke_calldata.slice(0, 3)).toEqual([addrSTRK, POOL_ADDRESS_PLACEHOLDER, "0x0"]);
+    expect(actions[1].compute_calldata.at(-1)).toBe(messageActionId(record));
+    expect(BigInt(messageActionId(record))).not.toBe(0n);
+    expect(JSON.stringify(actions)).not.toMatch(/withdraw|OPEN|openNoteIds/);
+  });
 
-    expect(actions).toEqual([
-      {
-        type: "withdraw",
-        token: "0x456",
-        amount: "0x7",
-        recipient: "0x123",
-      },
-      {
-        type: "transfer",
-        token: "0x456",
-        amount: "OPEN",
-        recipient: "0x789",
-      },
-      {
-        type: "invoke",
-        contract: "0x123",
-        calldata: [
-          "0x456",
-          POOL_ADDRESS_PLACEHOLDER,
-          OPEN_NOTE_ID_PLACEHOLDER,
-          "0x11",
-          "0x22",
-          "0x7a",
-          "0x33",
-          "0x44",
-          "0x3",
-          "0x2",
-          "0xabc",
-          "0xdef",
-          "0x0",
-        ],
-      },
-    ]);
+  it("derives the same fallback action ID from equivalent field encodings", () => {
+    const equivalent = { ...record, ephemeralPub: ["0x0011", "0x0022"] as [string, string], ciphertextFelts: ["0x02", "0x0abc", "0x0def"] };
+    expect(messageActionId(equivalent)).toBe(messageActionId(record));
+    expect(messageActionId({ ...record, nonce: ["0x35", "0x44"] })).not.toBe(messageActionId(record));
+    expect(() => buildMailActions({ ...baseInput, actionId: "0x0" })).toThrow(/nonzero replay-protected/);
   });
 
   it("keeps payment assets out of the unfunded public memo call", () => {
@@ -180,7 +162,7 @@ describe("mail STRK20 actions", () => {
 
     await expect(
       submitMail({
-        account: { strk20InvokeTransaction: invoke } as unknown as WalletAccountV6,
+        account: { address: "0xb0b", strk20InvokeTransaction: invoke } as unknown as WalletAccountV6,
         provider: {} as ProviderInterface,
         policy,
         helperAddress: "0x123",
@@ -225,7 +207,7 @@ describe("mail STRK20 actions", () => {
       expect(onSubmitted).not.toHaveBeenCalled();
     });
 
-  it("submits historical mail once and refuses one-sided offer acceptance", async () => {
+  it("submits unfunded mail once and refuses one-sided offer acceptance", async () => {
     const batches: App20Strk20Action[][] = [];
     const invoke = vi.fn(async (actions: App20Strk20Action[]) => {
       batches.push(actions);
@@ -236,6 +218,7 @@ describe("mail STRK20 actions", () => {
       execution_status: "SUCCEEDED",
     }));
     const account = {
+      address: "0xb0b",
       strk20InvokeTransaction: invoke,
     } as unknown as WalletAccountV6;
     const provider = {
@@ -253,14 +236,10 @@ describe("mail STRK20 actions", () => {
       record,
     });
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(batches[0].map((action) => action.type)).toEqual([
-      "withdraw",
-      "transfer",
-      "invoke",
-    ]);
+    expect(batches[0].map((action) => action.type)).toEqual(["transfer", "compute_and_invoke"]);
+    expect(JSON.stringify(batches[0])).not.toMatch(/withdraw|OPEN|openNoteIds/);
     expect(batches[0][1]).toMatchObject({
-      amount: "OPEN",
-      recipient: "0xb0b",
+      invoke_calldata: expect.arrayContaining([messageActionId(record)]),
     });
 
     const offer = {
@@ -299,6 +278,7 @@ describe("mail STRK20 actions", () => {
 
   it("fails closed when an accepted receipt says execution reverted", async () => {
     const account = {
+      address: "0xb0b",
       strk20InvokeTransaction: vi.fn(async () => ({
         transaction_hash: "0x999",
       })),
@@ -325,6 +305,7 @@ describe("mail STRK20 actions", () => {
 
   it("keeps a submitted transaction unknown when confirmation times out", async () => {
     const account = {
+      address: "0xb0b",
       strk20InvokeTransaction: vi.fn(async () => ({
         transaction_hash: "0x999",
       })),
@@ -353,6 +334,7 @@ describe("mail STRK20 actions", () => {
 
   it("waits for execution but never treats a throwing submitted callback as verified", async () => {
     const account = {
+      address: "0xb0b",
       strk20InvokeTransaction: vi.fn(async () => ({
         transaction_hash: "0x999",
       })),

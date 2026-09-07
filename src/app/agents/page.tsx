@@ -1,33 +1,46 @@
 import { Link } from '@tanstack/react-router';
-import { MAINNET_MAKER_CONFIG as deployment } from '@/lib/mainnet-maker-config';
 import styles from './agents.module.css';
+
 export default function AgentsPage() {
   return <main className={styles.page}>
-    <header><p className={styles.eyebrow}>APP20 / AGENTS</p><h1>Private payments and confidential swaps</h1><p>Use your own account and signing policy. Every new settlement must use encrypted notes, including payments and offers in Chat.</p></header>
-    <nav aria-label="Agent resources"><a href="/agents.md">Plain-text agent guide</a><a href="/.well-known/app20.json">Deployment manifest</a><Link to="/rfq">Confidential RFQ</Link><Link to="/rfq/maker">Earlier maker recovery</Link></nav>
-    <section><h2>What is available</h2><dl><div><dt>Confidential RFQ</dt><dd>The contract, Node SDK and local workspace support separate approvals, encrypted settlement and independent timeout refunds. Mainnet activation remains disabled.</dd></div><div><dt>Chat payments</dt><dd>Localnet payments use encrypted transfers with an unfunded encrypted message. Mainnet Chat is not deployed. Offers requiring a swap cannot be accepted until confidential atomic wallet integration is available.</dd></div><div><dt>Earlier maker positions</dt><dd>Existing records and inventory can be inspected and recovered. New public-term registration, funding, quoting and settlement are disabled.</dd></div></dl></section>
-    <section><h2>Node.js library</h2><p>Use <code>@app20/agent-sdk</code> to inspect historical records and recover existing positions. Its <code>confidential</code> entrypoint provides the development escrow workflow.</p><p><a href="/downloads/app20-agent-sdk-0.1.0.tgz" download>Download npm package</a> · <a href="/downloads/app20-agent-sdk-0.1.0.sha256">SHA-256</a> · <a href="/agent-sdk.md">API guide and examples</a></p>
+    <header>
+      <p className={styles.eyebrow}>APP20 / AGENTS</p>
+      <h1>Private payments and confidential swaps</h1>
+      <p>Build with your own account and signing policy. Both sides approve the same swap, and both assets settle together as encrypted notes.</p>
+    </header>
+    <nav aria-label="Agent resources">
+      <Link to="/rfq">Confidential RFQ</Link>
+      <a href="/agents.md">Plain-text agent guide</a>
+      <a href="/.well-known/app20.json">Deployment manifest</a>
+    </nav>
+    <section>
+      <h2>Node.js library</h2>
+      <p>Use <code>@app20/agent-sdk/confidential</code> to prepare an agreement, collect separate approvals, inspect encrypted funding and recover an incomplete swap after its deadline. Each party keeps its own signing key.</p>
+      <p><a href="/downloads/app20-agent-sdk-0.1.0.tgz" download>Download npm package</a> · <a href="/downloads/app20-agent-sdk-0.1.0.sha256">SHA-256</a> · <a href="/agent-sdk.md">API guide and examples</a></p>
       <pre>{`npm install https://app20.io/downloads/app20-agent-sdk-0.1.0.tgz
 
-import { App20Client } from '@app20/agent-sdk';
-const app = new App20Client();
-await app.verify();
-const { makers } = await app.listMakers(); // Read-only historical registry.`}</pre>
-      <p>Node 24+ with TypeScript definitions. Distributed as an npm-installable archive; not yet on the npm registry. The API guide includes checksum verification.</p><p>Signing stays with your agent. The old quote-submission and settlement APIs reject new execution. Wallet shield/unshield operations remain separate public boundaries; they must never be bundled into settlement.</p>
+import { confidentialCapabilities } from '@app20/agent-sdk/confidential';
+
+// Check support before asking a wallet to sign.
+console.log(confidentialCapabilities.mainnetEnabled);`}</pre>
+      <p>Requires Node 24+ and includes TypeScript definitions. The package is distributed as an npm-installable archive; it is not yet published to the npm registry.</p>
     </section>
-    <section><h2>Confidential escrow development</h2><p><code>@app20/agent-sdk/confidential</code> supports joint setup, separate shielded funding, exact approval by both parties and independent timeout refunds. Each party retains its own signing key and shares only new escrow-only viewing material.</p><p>Run <code>npm run dev:confidential</code> from the source checkout to open the local browser workspace. It executes escrow and pool contracts with two disposable wallets and simulated proof facts.</p><p><strong>Mainnet activation is pending.</strong> Real STARK proofs, independent wallet adapters, authenticated private negotiation and independent review remain required. There is no public confidential quote endpoint yet.</p><p><Link to="/rfq/confidential">Explore the confidential flow →</Link> · <a href="/agent-sdk.md">SDK guide and recovery example</a></p></section>
-    <section><h2>Recover an earlier maker position</h2><p>Use the current CLI with your original operator configuration and persistent state. Begin with the read-only check and reconcile saved pending transactions.</p>
-      <p><a href="/downloads/app20-maker.mjs" download>Download recovery CLI</a> · <a href="/downloads/app20-maker.sha256">SHA-256</a></p>
-      <pre>{`curl -fSLO https://app20.io/downloads/app20-maker.mjs
-curl -fSLO https://app20.io/downloads/app20-maker.sha256
-shasum -a 256 -c app20-maker.sha256
-node app20-maker.mjs existing-operator.json --check
-node app20-maker.mjs existing-operator.json --reconcile`}</pre>
-      <p>Supported commands: <code>--check</code>, <code>--reconcile</code>, <code>--release</code>, <code>--withdraw</code> and <code>--deactivate</code>. New <code>--register</code>, <code>--fund</code> and <code>--run</code> operations are blocked.</p>
-      <p>Withdrawals and expired reservation releases retain the earlier contracts’ public amount and asset visibility. They recover existing positions and never start a new trade. Use the original signer and explicit gas limits, preserve state, and investigate unknown submissions before retrying.</p>
+    <section>
+      <h2>Try the swap flow</h2>
+      <p>Run <code>npm run dev:confidential</code> in the source checkout and open <code>http://127.0.0.1:5198/rfq</code>. Create an agreement, fund each side and approve the exchange. You can also let an incomplete swap expire and refund the funded side independently.</p>
+      <p>This local workspace controls two disposable wallets and executes the escrow and pool contracts with simulated proofs. <strong>Mainnet contracts and the SDK are available; independent browser wallet integration remains pending.</strong> Real proof acceptance, independent wallet adapters, private negotiation and review remain required.</p>
+      <p><Link to="/rfq">Open RFQ →</Link> · <a href="/agent-sdk.md">Read the integration guide</a></p>
     </section>
-    <section><h2>Chat and payments</h2><p>In the repository’s <code>npm run dev:localnet</code> environment, open <Link to="/chat">Chat</Link>, unlock chat keys and choose the Alice or Bob development counterparty. Payments and same-token invoices spend existing encrypted notes and attach an unfunded encrypted message. Do not put mainnet funds into these development wallets.</p><p>Fixed offers and invoices requiring conversion need a confidential atomic exchange. One-sided acceptance is disabled. Message encryption does not make a public settlement private.</p><p><strong>Mainnet Chat is not active.</strong> There is no live mainnet Chat endpoint or <code>sendChat</code> SDK API. Chat keys and maker transport keys are separate; keep all recovery material private.</p></section>
-    <section><h2>Privacy and historical evidence</h2><p>Settlement still exposes activity, timing, fees and ciphertext/proof shape. Shielding and unshielding reveal their own amounts and assets. A counterparty knows its agreement. Hosted proving uses HTTPS: APP20/Cloudflare and the proving provider can access the witness.</p><p>The three September 7, 2026 mainnet swaps used the earlier protocol with public funded terms. One operator controlled both sides. Those receipts do not verify the confidential escrow, and disabling client execution cannot revoke the existing contracts.</p></section>
-    <section><h2>Historical mainnet deployment</h2><dl><div><dt>Chain</dt><dd><code>{deployment.chainId}</code></dd></div><div><dt>Maker book</dt><dd><code>{deployment.address}</code></dd></div><div><dt>Earlier settlement</dt><dd><code>{deployment.settlement.address}</code></dd></div><div><dt>Privacy pool</dt><dd><code>{deployment.settlement.pool}</code></dd></div></dl><p>Use these identities to inspect historical positions. Exact class hashes and current capability flags are in the <a href="/.well-known/app20.json">machine-readable manifest</a>. There is no activated mainnet confidential escrow address.</p></section>
+    <section>
+      <h2>Chat and payments</h2>
+      <p>In the repository’s <code>npm run dev:localnet</code> environment, open <Link to="/chat">Chat</Link> to send an encrypted message or payment between the Alice and Bob development wallets. Payments and same-token invoices spend existing encrypted notes and include an unfunded encrypted message.</p>
+      <p>The Chat helper is deployed on mainnet; mainnet message validation remains pending. Fixed offers and invoices requiring conversion remain unavailable until confidential atomic wallet integration is ready. There is no <code>sendChat</code> SDK API yet.</p>
+    </section>
+    <section>
+      <h2>Privacy and signing</h2>
+      <p>Keep ordinary wallet viewing keys private. A swap uses new viewing material limited to that escrow, and both parties approve the exact terms and destinations.</p>
+      <p>Activity, timing, network fees and ciphertext/proof sizes remain visible. Shielding and unshielding expose their own assets and amounts. Counterparties know their agreement, and a hosted prover can access the private data it proves.</p>
+      <p>Check current network support in the <a href="/.well-known/app20.json">deployment manifest</a> before signing. Unavailable confidential operations stop without submitting a public trade.</p>
+    </section>
   </main>;
 }

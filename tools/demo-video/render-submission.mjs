@@ -1,0 +1,25 @@
+import {chromium} from '@playwright/test';
+import {writeFile,readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {execFileSync} from 'node:child_process';
+const dir=resolve('artifacts/hackathon/submission');
+const browser=await chromium.launch();
+const page=await browser.newPage({viewport:{width:1920,height:1080},deviceScaleFactor:1});
+await page.setContent(`<style>*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 85% 50%,#252d42,#0b0d0c 65%);color:#f6f4ed;font-family:Arial,sans-serif}.bar{height:58px;background:#0b0d0c;border-bottom:1px solid #343832;padding:14px 32px;font-size:27px;font-weight:700}.orange{color:#f47736}.body{padding:85px 105px}.eyebrow{font-size:22px;letter-spacing:4px}h1{font-size:84px;line-height:1.1;letter-spacing:-3px;margin:30px 0 32px}.url{font-size:58px;font-weight:700}.cards{display:flex;gap:24px;margin-top:55px}.card{flex:1;padding:26px;background:#141714;border-top:2px solid #f47736}.card b{font-size:24px;color:#f47736}.card p{font-size:26px;line-height:1.35;margin-bottom:0}.note{font-size:23px;color:#b5b8b2;line-height:1.5;margin-top:30px}</style><div class="bar">APP<span class="orange">[20]</span></div><div class="body"><div class="eyebrow orange">BUILT ON STARKNET</div><h1>Conversations.<br>Clear terms. Private settlement.</h1><div class="url orange">app20.io</div><div class="cards"><div class="card"><b>CHAT</b><p>Contract deployed on mainnet</p></div><div class="card"><b>CONFIDENTIAL RFQ</b><p>Escrow deployed on mainnet</p></div><div class="card"><b>AGENTS</b><p>SDK with separate party approvals</p></div></div><p class="note">The walkthrough uses local contracts and simulated proofs.<br>Mainnet integration is in progress; the new confidential settlement has not yet been verified end to end.</p></div>`);
+await page.screenshot({path:resolve(dir,'closing.png')});await browser.close();
+const run=(args)=>execFileSync('ffmpeg',['-hide_banner','-loglevel','error','-y',...args],{stdio:'inherit'});
+run(['-loop','1','-framerate','30','-i',resolve(dir,'closing.png'),'-t','12','-c:v','libx264','-preset','fast','-crf','18','-pix_fmt','yuv420p','-threads','4',resolve(dir,'closing.mp4')]);
+run(['-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t','12','-c:a','pcm_s16le',resolve(dir,'closing.wav')]);
+const indices=[0,1,2,3,4,5,6,7,8,10];
+const path=(i,suffix)=>resolve('artifacts/hackathon/v8/edit',`${i}${suffix}`);
+await writeFile(resolve(dir,'video.txt'),[...indices.map(i=>`file '${path(i,'.mp4')}'`),`file '${resolve(dir,'closing.mp4')}'`].join('\n'));
+await writeFile(resolve(dir,'audio.txt'),[...indices.map(i=>`file '${path(i,'-voice.wav')}'`),`file '${resolve(dir,'closing.wav')}'`].join('\n'));
+run(['-f','concat','-safe','0','-i',resolve(dir,'audio.txt'),'-c:a','pcm_s16le',resolve(dir,'narration.wav')]);
+const original=await readFile('artifacts/hackathon/app20-demo-v8-confidential.srt','utf8');
+const seconds=s=>{const [h,m,rest]=s.split(':');return +h*3600 + +m*60 + +rest.replace(',','.');};
+const stamp=n=>{const ms=Math.round(n*1000);return `${String(Math.floor(ms/3600000)).padStart(2,'0')}:${String(Math.floor(ms/60000)%60).padStart(2,'0')}:${String(Math.floor(ms/1000)%60).padStart(2,'0')},${String(ms%1000).padStart(3,'0')}`;};
+const captions=[];
+for(const block of original.trim().split(/\n\s*\n/)){const lines=block.split('\n'),[start,end]=lines[1].split(' --> ').map(seconds);if(start>=123||(start>=105&&start<114))continue;const shift=start>=114?9:0;captions.push(`${captions.length+1}\n${stamp(start-shift)} --> ${stamp(end-shift)}\n${lines.slice(2).join('\n')}\n`);}
+const srt=resolve(dir,'app20-demo-mainnet.srt');await writeFile(srt,captions.join('\n'));
+run(['-f','concat','-safe','0','-i',resolve(dir,'video.txt'),'-i',resolve(dir,'narration.wav'),'-i',srt,'-map','0:v:0','-map','1:a:0','-map','2:0','-c:v','copy','-c:a','aac','-b:a','160k','-c:s','mov_text','-metadata:s:s:0','language=eng','-t','126','-movflags','+faststart',resolve(dir,'app20-demo-mainnet.mp4')]);
+console.log('126-second submission video ready; complete original voice segments retained.');

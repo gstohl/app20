@@ -18,12 +18,12 @@ const validFiles = {
     export const CHAT_ONE_SIDED_ACCEPT_ENABLED = false;
   `,
   "src/lib/confidential-rfq-status.ts": `
-    export const CONFIDENTIAL_RFQ_MAINNET_ENABLED = false;
+    export const CONFIDENTIAL_RFQ_MAINNET_ENABLED = true;
     export const CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED = false;
   `,
   "src/utils/constants.ts": `
     export const mailHelperSepolia = "0x0";
-    export const mailHelperMainnet = "0x0";
+    export const mailHelperMainnet = "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4";
     export const escrowHelperSepolia = "0x0";
     export const escrowHelperMainnet = "0x0";
   `,
@@ -97,7 +97,7 @@ test("AST checks reject comment/string decoys for every TypeScript release gate"
       `
       // export const mailHelperSepolia = "0x0";
       export const mailHelperSepolia = "0x1";
-      export const mailHelperMainnet = "0x0";
+      export const mailHelperMainnet = "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4";
       export const escrowHelperSepolia = "0x0";
       export const escrowHelperMainnet = "0x0";
     `,
@@ -269,10 +269,10 @@ test("lstat rejects present, dangling, and checked-source symlinks", async () =>
 });
 
 
-test("confidential mainnet and real-proof declarations cannot be enabled before release review", async () => {
-  for (const name of ["CONFIDENTIAL_RFQ_MAINNET_ENABLED", "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED"]) {
+test("public confidential activation cannot misrepresent settlement verification", async () => {
+  for (const [name, expected] of [["CONFIDENTIAL_RFQ_MAINNET_ENABLED", true], ["CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", false]]) {
     const root = await fixture();
-    await overwrite(root, "src/lib/confidential-rfq-status.ts", validFiles["src/lib/confidential-rfq-status.ts"].replace(`${name} = false`, `${name} = true`));
+    await overwrite(root, "src/lib/confidential-rfq-status.ts", validFiles["src/lib/confidential-rfq-status.ts"].replace(`${name} = ${expected}`, `${name} = ${!expected}`));
     assert((await checkReleaseDeny(root)).some(failure => failure.includes(name)));
   }
 });

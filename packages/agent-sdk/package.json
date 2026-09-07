@@ -15,6 +15,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./confidential/browser": {
+      "types": "./dist/confidential-browser.d.ts",
+      "import": "./dist/confidential-browser.js"
     }
   },
   "bin": {
