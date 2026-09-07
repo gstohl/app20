@@ -121,9 +121,15 @@ async function restoreRegisteredKey(page: Page, backup: string) {
   await expect(page.getByRole("button", { name: "Check for new messages" })).toBeEnabled({ timeout: 60_000 });
 }
 
-/** The chain panel every decrypted or sent record carries. */
+/** Chat embeds chain evidence directly inside the message disclosure. */
 async function openChainPanel(record: Locator) {
-  await record.getByText("What the chain sees", { exact: true }).click();
+  const summary = record.getByText("Message details", { exact: true });
+  if ((await summary.locator("..").getAttribute("open")) === null) {
+    await summary.click();
+  }
+  await expect(record.getByRole("complementary", {
+    name: /^Public on-chain record for message /,
+  })).toBeVisible();
 }
 
 const STRK_SCALE = 10n ** 18n;
@@ -599,9 +605,13 @@ test("all APP20 localnet journeys", async ({
         { exact: true },
       ),
     ).toBeVisible({ timeout: 60_000 });
+    // The live sync control is absent while locked; history remains disabled.
     await expect(
       wrongKeyPage.getByRole("button", { name: "Check for new messages" }),
-    ).toBeDisabled();
+    ).toHaveCount(0);
+    await openTools(wrongKeyPage, "Message history");
+    await expect(wrongKeyPage.getByRole("button", { name: "Load older messages" }))
+      .toBeDisabled();
     await expect(wrongKeyPage.getByText(compositeBody)).toHaveCount(0);
     await screenshot(wrongKeyPage, "10-unrelated-key-empty", testInfo);
     await unrelated.close();
@@ -639,6 +649,10 @@ test("all APP20 localnet journeys", async ({
 
   await test.step("6. share, review, and explicitly pay an invoice from a fresh context", async () => {
     const invoiceEntry = entry(page, compositeBody);
+    const invoiceHeadingId = await invoiceEntry
+      .getByRole("heading", { name: "Payment request: 0.2 STRK", exact: true })
+      .getAttribute("id");
+    expect(invoiceHeadingId).toMatch(/^invoice-[0-9a-f]{64}$/);
     await invoiceEntry
       .getByRole("button", { name: "Share payment link" })
       .click();
@@ -715,14 +729,22 @@ test("all APP20 localnet journeys", async ({
       conversationRowByAddress(payPage, alice.address),
     ).toContainText("Needs action");
     await restoreRegisteredKey(payPage, bobBackup);
-    // The reviewed link is the record this device pays from; the sealed
-    // copy Alice sent arrives with the post-payment mail check and carries
-    // the outcome forward.
-    const pay = payPage.getByRole("button", { name: "Pay 0.2 STRK privately" });
+    // Discovery replaces the imported message with the original document.
+    // Bind payment to the reviewed request's full ID, not another same-price
+    // invoice left on this localnet by an earlier run.
+    const discovered = entry(payPage, compositeBody);
+    await expect(discovered).toBeVisible({ timeout: 60_000 });
+    const reviewedInvoice = discovered.locator(
+      `article[aria-labelledby="${invoiceHeadingId}"]`,
+    );
+    await expect(reviewedInvoice).toContainText(
+      "Unverified legacy link imported for local review. No payment was submitted.",
+    );
+    const pay = reviewedInvoice.getByRole("button", { name: "Pay 0.2 STRK privately" });
     await expect(pay).toBeVisible();
     await pay.click();
     await expect(
-      payPage
+      reviewedInvoice
         .getByRole("status")
         .filter({ hasText: /Preparing one private STRK payment/i }),
     ).toBeVisible();
@@ -862,8 +884,7 @@ test("all APP20 localnet journeys", async ({
         await conversationRow(page, bobLabel).click();
         await expect(timeline(page)).toBeVisible();
         const context = page.getByRole("button", {
-          name: "Context",
-          exact: true,
+          name: /^(Contact details|Hide contact details)$/,
         });
         await expect(context).toHaveAttribute("aria-expanded", "false");
         await context.click();
