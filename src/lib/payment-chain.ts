@@ -30,4 +30,3 @@ export function paymentLinkChainIdsEqual(left: string, right: string): boolean {
     return false;
   }
 }
-
