@@ -1,6 +1,6 @@
 import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import type { BackupKind } from "@/lib/backup-snapshot";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type ContactSnapshotCardProps = {
   kind?: BackupKind;

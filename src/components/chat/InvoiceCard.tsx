@@ -25,7 +25,7 @@ import {
 } from "@/lib/payment-link";
 import { sanitizeUntrustedText } from "@/lib/text";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type InvoiceCardProps = {
   request: PaymentRequestPayload;

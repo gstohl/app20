@@ -9,7 +9,7 @@ import {
 import { createBackupSnapshot } from "@/lib/backup-snapshot";
 import { computeCidV1Raw } from "@/lib/blob-store";
 import { addrSTRK } from "@/utils/constants";
-import type { LocalMailMessage } from "@/components/mail/message";
+import type { LocalMailMessage } from "@/components/chat/message";
 import type { EncryptedMailRecord } from "@/lib/mail";
 import {
   escrowForNetwork,

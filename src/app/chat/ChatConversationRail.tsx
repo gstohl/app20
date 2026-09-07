@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { shortenFelt } from "@/components/mail/correspondent";
+import { shortenFelt } from "@/components/chat/correspondent";
 import { contactDisplayName, type ChatConversation } from "./chat-model";
 import styles from "./chat.module.css";
 

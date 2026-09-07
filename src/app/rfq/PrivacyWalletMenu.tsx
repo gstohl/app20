@@ -27,7 +27,7 @@ import {
   submitActions,
 } from "@/lib/strk20";
 import * as constants from "@/utils/constants";
-import { ProvingProgress } from "@/components/mail/OperationProgress";
+import { ProvingProgress } from "@/components/chat/OperationProgress";
 import styles from "./PrivacyWalletMenu.module.css";
 
 const TOKEN = constants.addrSTRK;

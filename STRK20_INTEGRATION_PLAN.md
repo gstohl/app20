@@ -199,7 +199,7 @@ These are closed. Do not re-interview. Poker decisions are void.
   - `src/app/components/client/WalletHandle/Strk20CapabilityDiagnostic.tsx`
   - `src/lib/strk20.ts`, `src/lib/addresses.ts`
 - Phase 2 landed:
-  - `src/app/inbox/page.tsx`, `src/components/mail/*`
+  - `src/app/inbox/page.tsx`, `src/components/chat/*`
   - `src/lib/mail.ts`, `src/lib/mail-actions.ts`
   - Team-written helper: `cairo/src/lib.cairo`
 - Privacy goal: hide sender, recipient, and content; keep the fact+timing of a pool interaction public.
@@ -257,9 +257,9 @@ Historical status at that checkpoint: code-complete locally, with no helper depl
 | --- | --- |
 | `src/app/routes.ts` | Defines the canonical `/chat` route and the legacy redirects, `/mail/inbox` included |
 | `src/app/inbox/page.tsx` | Network-aware onboarding, compose, public-event scan, and newest-first local plaintext list |
-| `src/components/mail/Onboard.tsx` | Locally persisted random device seed, one-time backup display, and public `register_pubkey` transaction |
-| `src/components/mail/Compose.tsx` | Recipient directory lookup, local encryption, optional private STRK attachment, and STRK20 submission |
-| `src/components/mail/Thread.tsx` | Displays successful local decryptions only; no plaintext persistence |
+| `src/components/chat/Onboard.tsx` | Locally persisted random device seed, one-time backup display, and public `register_pubkey` transaction |
+| `src/components/chat/Compose.tsx` | Recipient directory lookup, local encryption, optional private STRK attachment, and STRK20 submission |
+| `src/components/chat/Thread.tsx` | Displays successful local decryptions only; no plaintext persistence |
 | `src/lib/mail.ts` | x25519 + HKDF-SHA256 + AES-256-GCM, bounded felt packing, authenticated binary retention, and view-tag scan |
 | `src/lib/mail-actions.ts` | Builds optional numeric `transfer`, recovery open note, and final `invoke`; preserves `${poolAddress}` and `${openNoteIds[0]}` as wallet literals |
 | `cairo/src/lib.cairo` | Team-written helper and public-key directory |

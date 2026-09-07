@@ -52,6 +52,7 @@ import {
 } from "@/lib/mail";
 import { parseOptionalStrkAmount } from "@/lib/mail-actions";
 import { createMailSenderAuth, type MailSenderAuth } from "@/lib/mail-auth";
+import { normalizePaymentLinkChainId } from "@/lib/payment-chain";
 import { assertWalletOperationPolicy } from "@/lib/wallet-policy";
 import { randomConversationId } from "@/lib/mail-thread";
 import {
@@ -81,7 +82,7 @@ import {
   strk20PoolForProviderIndex,
 } from "@/utils/constants";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 export type SentEnvelope = {
   documentId: string;
@@ -607,6 +608,9 @@ export default function Compose({
         };
         attachments.push({ type: "payment", payload: payment });
       } else if (attachment.type === "payment_request") {
+        if (!chainId) {
+          throw new Error("Connect a supported network before creating an invoice.");
+        }
         const token = invoiceTokenOptions.find(
           (option) => option.symbol === attachment.token,
         );
@@ -617,6 +621,7 @@ export default function Compose({
         }
         const payload: PaymentRequestPayload = {
           requestId: attachment.requestId,
+          chainId: normalizePaymentLinkChainId(chainId),
           token,
           amount: parseDecimalToBaseUnits(attachment.amount, token.decimals),
           requester: validateAndParseAddress(senderAddress),

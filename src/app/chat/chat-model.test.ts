@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { paymentLinkToLocal } from "@/app/chat/mailbox-model";
 import type { RfqLifecycleRecord } from "@/app/rfq/rfq-lifecycle";
-import type { LocalMailMessage } from "@/components/mail/message";
+import type { LocalMailMessage } from "@/components/chat/message";
 import { feltEquals } from "@/lib/addresses";
 import { decodeEnvelope, encodeEnvelope, type EnvelopeType } from "@/lib/envelope";
 import type { EscrowState } from "@/lib/escrow";

@@ -303,12 +303,12 @@ describe("pay-any-token invoice lifecycle", () => {
     ).toThrow(/different settled take/i);
 
     const publicStorage = new MemoryStorage();
-    recordPaymentRequest(publicStorage, "SN_SEPOLIA", ACCOUNT, request, NOW);
+    expect(() =>
+      recordPaymentRequest(publicStorage, "SN_SEPOLIA", ACCOUNT, request, NOW),
+    ).toThrow(/another Starknet network/i);
+    expect(loadOtcState(publicStorage, "SN_SEPOLIA", ACCOUNT).payments).toEqual({});
     expect(() =>
       claimPayment(publicStorage, "SN_SEPOLIA", ACCOUNT, request, NOW + 1),
-    ).toThrow(/only STRK.*public networks/i);
-    expect(
-      loadOtcState(publicStorage, "SN_SEPOLIA", ACCOUNT).payments,
-    ).toHaveProperty(request.requestId);
+    ).toThrow(/locally reviewed record/i);
   });
 });

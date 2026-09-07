@@ -653,6 +653,19 @@ test("all APP20 localnet journeys", async ({
       .getByRole("heading", { name: "Payment request: 0.2 STRK", exact: true })
       .getAttribute("id");
     expect(invoiceHeadingId).toMatch(/^invoice-[0-9a-f]{64}$/);
+    const requestId = invoiceHeadingId?.replace(/^invoice-/, "0x") ?? "";
+    const { local: chatStorage } = await readStorageSnapshot(page);
+    const originalRequests = Object.entries(chatStorage)
+      .filter(([key, value]) => key.startsWith("app20/otc/v1/") && value)
+      .flatMap(([, value]) => {
+        const request = JSON.parse(value as string).payments?.[requestId]?.request;
+        return request ? [request] : [];
+      });
+    expect(originalRequests.length).toBeGreaterThan(0);
+    for (const request of originalRequests) {
+      // The encrypted original is network-bound before any URL adds metadata.
+      expect(request.chainId).toBe(config.chainId);
+    }
     await invoiceEntry
       .getByRole("button", { name: "Share payment link" })
       .click();

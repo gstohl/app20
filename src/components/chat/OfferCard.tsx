@@ -12,7 +12,7 @@ import {
   type OfferPayload,
 } from "@/lib/otc";
 import { ProvingProgress } from "./OperationProgress";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type OfferCardProps = {
   offer: OfferPayload;

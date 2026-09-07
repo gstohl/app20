@@ -177,7 +177,7 @@
 }
 
 /* APP20 component styling. Values copied from the product's CSS modules
-   (globals.css, rfq.module.css, mail.module.css). All colour via tokens. */
+   (globals.css, rfq.module.css, chat.module.css). All colour via tokens. */
 
 /* ── Reset the desk expects ─────────────────────────────────────────────── */
 .app-shell { color: var(--shell-text); background: var(--shell-bg); font-family: var(--font-body); font-size: var(--text-base); color-scheme: dark }

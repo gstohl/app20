@@ -9,11 +9,11 @@ import { clearChatSession, rememberChatSession, restoreChatSession } from "./cha
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { loadReadMessageIds, saveReadMessageIds } from "@/lib/mail-read-state";
-import type { SentEnvelope } from "@/components/mail/Compose";
+import type { SentEnvelope } from "@/components/chat/Compose";
 import type {
   LocalMailMessage,
   ThreadActionState,
-} from "@/components/mail/message";
+} from "@/components/chat/message";
 import {
   ADDRESS_BOOK_CHANGED_EVENT,
   loadAddressBook,

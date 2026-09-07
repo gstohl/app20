@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import EscrowCard from "@/components/mail/EscrowCard";
-import InvoiceCard from "@/components/mail/InvoiceCard";
-import OfferCard from "@/components/mail/OfferCard";
+import EscrowCard from "@/components/chat/EscrowCard";
+import InvoiceCard from "@/components/chat/InvoiceCard";
+import OfferCard from "@/components/chat/OfferCard";
 import { PUBLIC_SETTLEMENT_ENABLED } from "@app20/domain";
-import ReceiptCard from "@/components/mail/ReceiptCard";
-import type { ThreadActionState } from "@/components/mail/message";
+import ReceiptCard from "@/components/chat/ReceiptCard";
+import type { ThreadActionState } from "@/components/chat/message";
 import { feltEquals } from "@/lib/addresses";
 import { findAliasByAddress, type AliasRecord } from "@/lib/aliases";
 import type { EscrowFundPayload } from "@/lib/escrow";
@@ -16,7 +16,7 @@ import {
 import type { PaymentLinkAuthenticity } from "@/lib/payment-link";
 import type { ChatRecord } from "./chat-model";
 import styles from "./chat.module.css";
-import mailStyles from "@/components/mail/mail.module.css";
+import mailStyles from "@/components/chat/chat.module.css";
 
 /**
  * The value actions a record can offer, exactly as the mailbox desk exposes

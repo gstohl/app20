@@ -1,11 +1,8 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import { constants } from "starknet";
-import {
-  LOCALNET_CHAIN_ID,
-  addrSTRK,
-  localnetWalletEnabled,
-} from "../utils/constants";
-import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
+import { addrSTRK } from "../utils/constants";
+import { canonicalizeStarknetAddress } from "./addresses";
+import { normalizePaymentLinkChainId } from "./payment-chain";
+export { normalizePaymentLinkChainId, paymentLinkChainIdsEqual } from "./payment-chain";
 import {
   createMailSenderAuth,
   parseMailSenderAuth,
@@ -141,35 +138,6 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
     difference |= left[index] ^ right[index];
   }
   return difference === 0;
-}
-
-export function normalizePaymentLinkChainId(chainId: string): string {
-  if (
-    chainId === "SN_MAIN" ||
-    feltEquals(chainId, constants.StarknetChainId.SN_MAIN)
-  ) {
-    return "SN_MAIN";
-  }
-  if (
-    chainId === "SN_SEPOLIA" ||
-    feltEquals(chainId, constants.StarknetChainId.SN_SEPOLIA)
-  ) {
-    return "SN_SEPOLIA";
-  }
-  if (localnetWalletEnabled && feltEquals(chainId, LOCALNET_CHAIN_ID)) {
-    return LOCALNET_CHAIN_ID;
-  }
-  throw new Error("Payment links require Mainnet or Sepolia.");
-}
-
-export function paymentLinkChainIdsEqual(left: string, right: string): boolean {
-  try {
-    return (
-      normalizePaymentLinkChainId(left) === normalizePaymentLinkChainId(right)
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function paymentLinkNetworkLabel(chainId: string): string {

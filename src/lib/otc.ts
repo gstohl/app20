@@ -1,6 +1,7 @@
 import { canonicalizeStarknetAddress, feltEquals } from "./addresses";
 import { noteMaturityStatus } from "./note-maturity";
 import type { PaymentLinkAuthenticity } from "./payment-link";
+import { paymentLinkChainIdsEqual } from "./payment-chain";
 import { sanitizeUntrustedText } from "./text";
 import { resolveCanonicalToken } from "./token-registry";
 import { addrSTRK } from "./tokens";
@@ -572,6 +573,7 @@ function offersEqual(left: OfferPayload, right: OfferPayload): boolean {
 function paymentRequestsEqual(
   left: PaymentRequestPayload,
   right: PaymentRequestPayload,
+  storageChainId: string,
 ): boolean {
   return (
     left.requestId === right.requestId &&
@@ -580,7 +582,10 @@ function paymentRequestsEqual(
     (left.memo ?? "") === (right.memo ?? "") &&
     left.expiresAt === right.expiresAt &&
     feltEquals(left.requester, right.requester) &&
-    (left.chainId ?? "") === (right.chainId ?? "")
+    // Older encrypted envelopes inherit the mailbox network. An explicit
+    // chain must match that verified storage scope; it is never discarded.
+    paymentLinkChainIdsEqual(left.chainId ?? storageChainId, storageChainId) &&
+    paymentLinkChainIdsEqual(right.chainId ?? storageChainId, storageChainId)
   );
 }
 
@@ -1082,10 +1087,13 @@ function recordPaymentRequestWithOrigin(
 ): PaymentRecord {
   const parsed = parsePaymentRequestPayload(request);
   if (!parsed) throw new Error("Invalid payment request payload.");
+  if (!paymentLinkChainIdsEqual(parsed.chainId ?? chainId, chainId)) {
+    throw new Error("Payment request is bound to another Starknet network.");
+  }
   const state = loadOtcState(storage, chainId, selfAddress);
   const existing = state.payments[parsed.requestId];
   if (existing) {
-    if (!paymentRequestsEqual(existing.request, parsed)) {
+    if (!paymentRequestsEqual(existing.request, parsed, chainId)) {
       throw new Error(
         "Conflicting payment terms reuse an existing request id; the duplicate was rejected.",
       );
@@ -1093,6 +1101,7 @@ function recordPaymentRequestWithOrigin(
     if (
       origin === "payment_link" &&
       (existing.origin !== origin ||
+        (existing.request.chainId === undefined && parsed.chainId !== undefined) ||
         !paymentLinkAuthenticitiesEqual(
           existing.linkAuthenticity,
           linkAuthenticity,
@@ -1100,6 +1109,9 @@ function recordPaymentRequestWithOrigin(
     ) {
       const imported = {
         ...existing,
+        // Preserve the verified link's explicit chain binding when it meets
+        // an older same-scope envelope that omitted the chain field.
+        request: parsed,
         origin,
         ...(linkAuthenticity ? { linkAuthenticity } : {}),
       };
@@ -1295,7 +1307,7 @@ function claimPaymentInternal(
     throw new Error("Invalid expected payment request terms.");
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[parsedExpected.requestId];
-  if (!current || !paymentRequestsEqual(current.request, parsedExpected)) {
+  if (!current || !paymentRequestsEqual(current.request, parsedExpected, chainId)) {
     throw new Error(
       "Payment request terms do not match the locally reviewed record.",
     );

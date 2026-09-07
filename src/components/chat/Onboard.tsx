@@ -17,7 +17,7 @@ import { exportMailSeed, restoreMailSeed } from "./seedBackup";
 import { myFrontendProviders } from "@/utils/constants";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
-import styles from "./mail.module.css";
+import styles from "./chat.module.css";
 
 type OnboardProps = {
   helperAddress: string | null;

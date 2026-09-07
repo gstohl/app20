@@ -1,8 +1,8 @@
 import { useRef, useState, type FormEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import AddressBookField from "@/components/address-book/AddressBookField";
-import { ScanProgress } from "@/components/mail/OperationProgress";
-import type { ThreadActionState } from "@/components/mail/message";
+import { ScanProgress } from "@/components/chat/OperationProgress";
+import type { ThreadActionState } from "@/components/chat/message";
 import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
 import type { CompositeDraft } from "@/lib/drafts";
 import { chatTimeLabel } from "./ChatConversationRail";
