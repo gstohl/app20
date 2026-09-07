@@ -1,6 +1,16 @@
 # STRK20 Privacy Integration Plan — APP20
 
-## Active request — confidential RFQ settlement (2026-09-07)
+## Active request — private settlement everywhere (2026-09-08)
+
+The user requires every settlement to be private, including Chat payments, invoices and swaps. This supersedes older scope descriptions and execution instructions below. See [the current settlement policy](docs/PRIVATE_SETTLEMENT_POLICY.md).
+
+- New public-term RFQ creation and settlement, public maker registration/funding/quoting and the old Node settlement executor are disabled. The default `/rfq` route presents confidential availability.
+- Chat payments use encrypted transfers from existing shielded notes and an unfunded encrypted helper invocation. Deposits, withdrawals and OPEN notes cannot be bundled with payment. The public helper token is fixed STRK, not the chosen payment asset.
+- Chat fixed-offer acceptance and invoice conversion requiring a swap are blocked until the confidential atomic wallet flow is available. Two unrelated transfers are never a fallback.
+- Historical receipt reconciliation, expired reservation release, available inventory withdrawal and deactivation remain available. They preserve the old contracts' public disclosures; an app release cannot revoke existing contracts or hide old transactions.
+- The joint escrow stays development-only. Real accepted proofs, independent wallet integration, authenticated private negotiation and review remain open; no new mainnet spending or deployment is authorized by these application changes.
+
+### Confidential RFQ implementation (2026-09-07)
 
 ### Approved implementation follow-through
 
@@ -8,13 +18,13 @@ The user approved implementation after the 26-case joint escrow experiment. This
 
 The SDK must verify the deployed account configuration and pool class, review each private action before requesting either signature, reject a prover output for another escrow/mode, serialize uncertain submissions in a durable journal, and rebuild refunds from discovered notes. Ordinary browser wallets never disclose viewing keys. A local UI may operate disposable controlled test accounts and must label simulated proofs explicitly.
 
-The user now requests confidential RFQ settlement, including hidden trade amounts and funded terms. This supersedes earlier product-scope descriptions below where they conflict with that objective. It does not authorize a mainnet deployment, new spending, or unqualified claims of production privacy. The deployed mainnet MakerBook/PrivateSwap and three verified swaps remain the current execution path; the older “localnet-final” sections are historical and do not describe today's mainnet deployment.
+The user now requests confidential RFQ settlement, including hidden trade amounts and funded terms. This supersedes earlier product-scope descriptions below where they conflict with that objective. It does not authorize a mainnet deployment, new spending, or unqualified claims of production privacy. The deployed mainnet MakerBook/PrivateSwap and three verified swaps remain historical evidence; new execution through this app and SDK is disabled; the older “localnet-final” sections are historical and do not describe today's mainnet deployment.
 
 **Current status:** the new Cairo contract, independent-signature Node SDK, durable submission recovery, local browser workflow and matching product/agent documentation are implemented. The shared SDK passed settlement and restart/refund tests against the exact mainnet pool class deployed locally; the browser passed setup, separate funding, settlement, independent refund and cross-origin rejection. Mainnet activation remains disabled. The alternative jointly authorized escrow passed a local execution test against the exact mainnet pool class: one action message settled both encrypted assets, and either party could independently recover its original asset after expiry. The isolated Cairo policy rejects one-sided settlement, changed terms/recipients, OPEN outputs, callback bypasses and unsafe signature fallbacks. Funding is separate and precedes settlement. This is simulated devnet proof-fact evidence, not a generated STARK proof or a production integration. The local node rejects storage-proof requests, so the real-proof gate remains open. See [the joint escrow experiment](pool-harness/JOINT_ESCROW.md).
 
-The existing withdraw/helper/OPEN-output swap remains the deployed path and is not amount-confidential. The earlier two-proof candidate failed against both the development pool and the exact mainnet class deployed locally: each call requires a different singleton message in the same transaction-wide proof facts. That regression stays intact; the joint escrow is a different funding and authorization protocol.
+The existing withdraw/helper/OPEN-output contracts remain deployed and are not amount-confidential. Current clients block new use of that path. The earlier two-proof candidate failed against both the development pool and the exact mainnet class deployed locally: each call requires a different singleton message in the same transaction-wide proof facts. That regression stays intact; the joint escrow is a different funding and authorization protocol.
 
-The concrete replacement requirements, rejected candidate, experiment findings and release gates are in [CONFIDENTIAL_RFQ_DESIGN.md](docs/CONFIDENTIAL_RFQ_DESIGN.md). Reproduction commands are in [the harness notes](pool-harness/CONFIDENTIAL_RFQ.md). The escrow still needs real proofs, independent protocol review, wallet support and durable recovery before UI integration. Sending two independent transfers is not an atomic fallback.
+The concrete replacement requirements, rejected candidate, experiment findings and release gates are in [CONFIDENTIAL_RFQ_DESIGN.md](docs/CONFIDENTIAL_RFQ_DESIGN.md). Reproduction commands are in [the harness notes](pool-harness/CONFIDENTIAL_RFQ.md). The escrow has a local UI and durable metadata recovery, but still needs real proofs, independent protocol review, compatible wallets and secure persistent wallet recovery before public activation. Sending two independent transfers is not an atomic fallback.
 
 ### Current verified pins and drift
 
@@ -29,14 +39,14 @@ APP20 uses React/Vite, `starknet@10.5.0`, get-starknet discovery/wallet-standard
 
 **Approval (2026-09-07):** the user explicitly approved implementing the local prototype, including new Cairo contracts, overriding the integration skill's app-code-only restriction. This approval covers the local experiment; mainnet deployment and a new fee budget remain separate.
 
-**Execution status:** an isolated two-wallet SDK experiment and test-only Cairo forwarding probe now exercise the pool's proof-composition gate. No new RFQ wallet flow or production settlement capability is enabled. See the design's prototype findings and `pool-harness/CONFIDENTIAL_RFQ.md` for the reproducible test and its limitations.
+**Experiment history:** an isolated two-wallet SDK experiment and test-only Cairo forwarding probe exercise the pool's proof-composition gate. The implemented local confidential workflow is described above; no production settlement capability is enabled. See the design's prototype findings and `pool-harness/CONFIDENTIAL_RFQ.md` for the reproducible test and its limitations.
 
 ---
 
 
 > Historical Mail implementation remains below. The approved 2026-08-25 programme expands APP20 into a bookless invited-maker RFQ venue. A later explicit pre-release namespace reset renamed the active contracts, storage and cryptographic domains, environment variables, runtime paths, and artifacts to APP20; pre-reset data is not silently migrated. APP20 routing, Cloudflare relay, Privy Sepolia support, and Mainnet Ready-only policy remain defined in `docs/APP20_ARCHITECTURE.md`. Never restore browser RPC credentials or the former `VITE_PROVIDER_URL` design from this document.
 
-## Current operative decision: localnet-final
+## Historical decision: localnet-final (superseded by the active request above)
 
 APP20 Mail helpers, escrow, and RFQ are now scoped only to build-gated localnet. Ready STRK20 functionality exposed by the app remains available on live networks (public transfer is unavailable), and Privy remains optional on Sepolia, but neither live rail may configure APP20 Mail/escrow or production RFQ. The one-off Sepolia transactions are denylisted historical proof evidence only. Every later phase, manual live-network instruction, deployment gate, and “next gate” below is **superseded and non-operational** unless a new scope is explicitly approved. See `docs/LOCALNET_SCOPE_DECISION.md`.
 

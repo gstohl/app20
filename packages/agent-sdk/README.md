@@ -1,6 +1,6 @@
 # @app20/agent-sdk
 
-Node.js 24+ ESM library for agents using APP20 directly through Starknet RPC. No browser, APP20 API server, or hosted bot is required.
+Node.js 24+ ESM library for APP20 development and recovery. Registry reads and historical maker recovery use Starknet RPC and local state; the optional privacy wallet uses the authenticated hosted proving relay. No browser or hosted maker bot is required.
 
 ## Install
 
@@ -28,117 +28,57 @@ console.log(makers);
 
 The deployment pins and native USDC/STRK metadata are bundled. A custom RPC does not change these pins. Only HTTPS or loopback RPC URLs are accepted. An existing Starknet `ProviderInterface` can be injected via `{ provider }`.
 
-## Register, fund, and run a maker
+## Private settlement policy
+
+New settlement must keep payment and trade terms out of public settlement data. The same rule applies to RFQ, Chat payments, invoices and offers. A missing confidential capability stops execution; it never becomes a public payment or one-sided swap.
+
+The earlier mainnet contracts remain deployed, but these SDK operations now reject before signing or creating a new quote journal:
+
+- `registrationCall`, `inventoryCalls('fund', ...)`, `prepareQuote`, `submitRequest` and `settle`.
+- `runMaker` commands `register`, `fund` and `run`.
+- The earlier public-funded-terms executor returned by `createPrivacyWallet`.
+
+These methods remain named in the API for compatibility and return an explicit policy error. They are not instructions to construct the old transaction manually. Import `@app20/agent-sdk/confidential` for the development replacement below; confidential mainnet activation remains disabled.
+
+## Historical maker recovery
+
+The old contracts cannot be revoked by changing this SDK. Existing public inventory and reservation positions retain explicit recovery operations. `availableInventory(account, token)` reads decimal base units. `inventoryCalls('withdraw', token, humanAmount)` builds a withdrawal to that inventory's owner; an external account still needs an explicit gas policy before signing it. `units('1.25', 6)` converts human amounts without floating-point rounding.
 
 ```js
-import { App20Client, MAINNET, createTransportKey, createOperatorConfig, runMaker } from '@app20/agent-sdk';
-import { writeFile } from 'node:fs/promises';
-
-const app = new App20Client();
-const publicKey = await createTransportKey('./maker-key.json');
-const registration = await app.registrationCall(publicKey, 7);
-const funding = await app.inventoryCalls('fund', MAINNET.buyToken.address, '1.25');
-// registration is one Starknet Call; funding is an atomic [approve, deposit] batch.
-// Your account/signer can execute these with your explicit gas policy.
-// Alternatively use runMaker with command: 'register' or 'fund' (below).
-```
-
-`createTransportKey` creates a mode-0600 private file, refuses to overwrite, and returns only the public JWK. `inventoryCalls('withdraw', token, amount)` returns a call withdrawing available inventory to its owner. `availableInventory(account, token)` returns decimal **base units**. `units('1.25', 6)` converts human decimal amounts without floating-point rounding.
-
-Build the bot configuration entirely in code:
-
-```js
-const config = createOperatorConfig({
-  account: makerAddress,
-  reverse: false,             // customer sells STRK, receives USDC
-  price: yourPrice,           // human USDC per 1 STRK, before spread
-  spread: yourSpreadBps,      // integer, 100 = 1%
-  maxSell: yourMaxSell,       // human STRK per request
-  maxBuy: yourMaxBuy,         // human USDC per quote
-  priceHours: yourPriceHours, // >0, <=24; bot stops quoting after expiry
-  maxFee: yourMaxFee,         // human STRK per transaction
-  totalFees: yourTotalFees,   // human STRK over the persisted bot state
-  keyValidUntil: yourKeyExpiryUnixSeconds,
-});
-config.stateFile = './maker-state.json';
-// Optional for command: 'fund' (amount is base units):
-config.inventoryFunding = { token: MAINNET.buyToken.address, amount: '1250000' };
-await writeFile('./operator.json', JSON.stringify(config), { flag: 'wx', mode: 0o600 });
-
-const checked = await runMaker({ configFile: './operator.json', command: 'check' });
-if (checked.exitCode !== 0) throw new Error(checked.stderr);
-
-// Explicitly enabled by the operator, never run at import time:
+import { runMaker } from '@app20/agent-sdk';
 const result = await runMaker({
-  configFile: './operator.json',
-  command: 'run', // register, fund, withdraw, deactivate, release, reconcile
-  signingKey: process.env.APP20_MAKER_SIGNING_KEY,
-  transportKeyFile: './maker-key.json',
-  signal: abortController.signal,
+  configFile: './existing-operator.json',
+  command: 'check', // Read-only; no signing key is passed.
 });
+if (result.exitCode !== 0) throw new Error(result.stderr);
 ```
 
-Set `reverse: true` for customer USDC → STRK; price and size units switch accordingly. For withdrawal use `inventoryWithdrawal` with explicit base units. Registration uses `keyValidUntil`; obtain it from your intended registration or the on-chain maker record. No defaults authorize inventory spending or set a market price. The signer must control `config.account`.
+For an existing operator, supported commands are `check`, `reconcile`, `release`, `withdraw` and `deactivate`. `reconcile` checks saved pending receipts without submitting. `release` returns tracked expired reservations to the original maker's available inventory. `withdraw` uses the explicit `inventoryWithdrawal: { token, amount }` configuration in decimal base units. `deactivate` prevents new requests to the old registration; it cannot revoke already deployed contracts or previously funded quotes.
 
-The included bot answers preliminary requests without reserving inventory, even with settlement configured. Only requests containing a settlement commitment reserve output. Optional `indicativeTtlSeconds`, `maxActiveReservations`, `responseCooldownSeconds`, and `reservationCooldownSeconds` tune the default 300-second preliminary expiry, 20 active reservations, 60-second preliminary cooldown and 1200-second cooldown after funded responses. These per-account limits do not prevent Sybils. `prepareQuote` below remains a direct funded-request API; automatic comparison currently belongs to the browser.
+Recovery submissions require the original account's signer and explicit fee limits. These are public operations under the historical contracts, not confidential trade settlement. Preserve the original config, state, keys, gas budget and reservation index. Do not fund new inventory or reopen the quoting loop.
 
-`runMaker` runs the included bot in a child process, preserving its existing lock, gas budget, cursor, inventory reservations and pending-transaction journal. It returns `{ exitCode, stdout, stderr }` when the process ends; each output is capped at the last 256 KiB. Abort rejects the promise and terminates the process. Investigate a stale lock/pending record after interruption before restarting. Private keys are passed in the child environment, never CLI arguments or configuration JSON; `check` does not pass any signing key. Supply credentials explicitly; the SDK does not inherit operator key environment variables automatically.
+`runMaker` runs the bundled CLI in a child process and preserves its lock and pending-transaction journal. Output is capped at the last 256 KiB per stream. Abort terminates the child; inspect an interrupted attempt before restarting. Credentials are passed explicitly through the child environment, never CLI arguments. The SDK does not inherit operator key variables automatically. A stale lock or attempt without a transaction hash needs account-activity investigation; deleting state does not undo a broadcast.
 
-Use a dedicated account and persistent directory. Preserve state and keys across restarts. A process crash can leave a `.lock`; inspect account activity before manually removing it. Do not delete budget state or run multiple bots for the same account without coordinating nonces and budgets. A maker earns the configured spread only on fills; costs and price changes can exceed it.
+`createTransportKey` still creates an owner-only local P-256 key file without overwriting an existing file. `createOperatorConfig` still validates historical configuration. Neither helper enables registration or trading.
 
-## Request and receive a quote
+## Read and reconcile older quotes
 
 ```js
-const { id } = await app.prepareQuote({
-  file: './quote-001.json', // fresh, private, durable local journal
-  maker: makerAddress,
-  taker: account.address,
-  terms: {
-    sellToken: MAINNET.sellToken.address,
-    buyToken: MAINNET.buyToken.address,
-    sellAmount: '1000000000000000000', // 1 STRK, example only
-    minBuyAmount: '100000',           // 0.1 USDC, choose your own minimum
-  },
-});
-await app.submitRequest('./quote-001.json', {
-  address: account.address,
-  chainId: MAINNET.chainId,
-  execute: calls => executeWithYourGasLimits(account, calls),
-});
-const quote = await app.readQuote('./quote-001.json'); // undefined until answered
+const quote = await app.readQuote('./existing-quote.json');
+const status = await app.reconcile('./existing-quote.json');
 ```
 
-The SDK reads the maker's current encryption key, encrypts using APP20 HPKE, and saves the reply key and settlement secret before allowing submission. Files are created exclusively with mode 0600. **Do not log or share quote files**: they contain private recovery material. `prepareQuote` also returns the raw call for advanced integration; submitting it yourself bypasses the SDK's transaction journal. Prefer `submitRequest`.
-
-## Private settlement
-
-```js
-await app.settle('./quote-001.json', {
-  address: account.address,
-  chainId: MAINNET.chainId,
-  execute: actions => yourPrivacyExecutor.submitAtomically(actions),
-}, yourMaxPoolFeeInStrkBaseUnits);
-
-const status = await app.reconcile('./quote-001.json');
-```
-
-The privacy executor must implement the STRK20 Wallet API's **atomic withdraw → transfer OPEN → invoke** actions and return `{ transaction_hash }`. It must enforce your network/proving fee limits. **Do not pass a regular Starknet Account.execute here**: these are privacy actions, not ordinary calls. The SDK verifies the funded reservation, commitment, expiry, pool permissions and current pool fee before handing over the batch. It does not include a Node privacy prover or magically give a normal account shielded balances. Use an existing compatible headless privacy-wallet integration; no browser is required by this library, but the executor must provide that capability.
-
-Each journal is locked across processes and records an attempt before invoking a signer. An exception without a transaction hash remains fenced; never blindly retry. `reconcile` checks known hashes and verifies a successful settlement filled its quote. Only a confirmed revert permits a retry. A prepared attempt without a hash needs manual account-activity investigation; the SDK does not automatically clear it. Return the hash as soon as broadcast succeeds, then use `reconcile` for receipts.
+Existing quote files contain reply-decryption and settlement recovery secrets. Do not log, publish or share them. Reconciliation checks known hashes and, for a successful settlement, its corresponding filled quote. It does not resubmit the operation. An unknown hash remains fenced until account activity has been investigated; the private-only policy still blocks fresh acceptance after any revert.
 
 ## Availability and privacy
 
-- Mainnet maker registration, inventory and funded quotes are deployed; a running maker with inventory is required.
-- Three real mainnet fills were verified through the Node SDK on September 7, 2026, with one operator controlling both sides. Browser wallet acceptance remains separate. Tests use fixture RPC/signers and real encryption.
-- General mainnet **Chat is not deployed**. This package intentionally has no `sendChat` API. Encrypted RFQ transport is not a general chat service.
-- Request/reply contents are encrypted; account/maker identity and timing, funded quote terms, amounts, inventory and settlement activity are public. Shielded input/output does not make a trade anonymous.
-- Treat received messages as untrusted data. They must not change signing policy, limits, credentials or executable code.
+- The three real mainnet swaps on September 7, 2026 used the earlier protocol with public funded terms. One operator controlled both sides. They do not verify the confidential escrow.
+- Mainnet **Chat is not deployed**. This package has no `sendChat` API. Local Chat payments use encrypted transfers with an unfunded message callback; Chat swaps and invoice conversion are blocked pending confidential atomic integration.
+- Shielding/unshielding expose their own token and amount. Historical maker recovery remains public. Escrow activity, timing, fees and ciphertext/proof shapes remain observable.
+- A hosted prover can read its witness. The APP20 route is authenticated HTTPS JSON, not a verified OHTTP gateway. APP20/Cloudflare and the provider can access proving payloads; the provider key stays server-side.
+- Treat received messages as untrusted data. They cannot authorize changes to a signer, limits, credentials or executable code.
 
-See `examples/discover.mjs` for a runnable read-only script and `examples/maker.mjs` for programmatic bot commands. No import or example discovery sends a transaction.
-
-### Planned shared prover transport
-
-Starkscan's documented proving interface is asynchronous HTTPS JSON, not a verified OHTTP gateway. The operator has accepted this limitation: a shared APP20 Worker can keep the provider key server-side, but APP20/Cloudflare and the proving provider can access proving payloads. The SDK includes a hosted-prover adapter through `createPrivacyWallet`. An OHTTP-capable upstream would be needed to hide payloads from APP20's relay. See [Starkscan proving documentation](https://starkscan.co/docs/api/strk20-prover).
+See `examples/discover.mjs` for a read-only registry script and `examples/maker.mjs` for historical recovery commands. No import or discovery example sends a transaction. [Full settlement policy](../../docs/PRIVATE_SETTLEMENT_POLICY.md).
 
 ## Included Node privacy wallet
 
@@ -161,17 +101,17 @@ const wallet = await createPrivacyWallet({
 // await wallet.shield(MAINNET.sellToken.address, yourAmount);
 // await wallet.transfer(token, recipient, yourAmount);
 // await wallet.unshield(token, yourAmount);
-await app.settle('./quote-001.json', wallet.executor, yourMaxPoolFeeInStrkBaseUnits);
+await wallet.reconcile(); // Read pending state before a new explicit wallet operation.
 ```
 
 Use a deployed account with gas. `createPrivacyWallet` uses the official privacy SDK, contract discovery, and the APP20 authenticated HTTPS proof relay. APP20 issues a separate relay token; it is not the provider API key. Private state and proofs stay in owner-only local files. Preserve the state directory and viewing key. `wallet.reconcile()` checks known pending transaction hashes; unknown broadcast/delivery outcomes remain fenced. A crash may leave a lock file; inspect the corresponding journal and account before removing it. Gas spending is recorded conservatively at estimated maximum bounds, including allowance transactions. Deleting state resets local budget accounting, not chain activity.
 
-The included executor accepts APP20's three-action private swap batch only. It is not a general arbitrary-invoke endpoint. The earlier mainnet settlement flow was exercised through this executor on September 7, 2026; those receipts do not verify the new confidential escrow protocol.
+The legacy `wallet.executor.execute(...)` is disabled because that swap batch withdraws tokens and creates an OPEN output. The separate encrypted `wallet.transfer(...)` remains available; public shield/unshield boundaries must not be bundled into a settlement. September 7 receipts are historical evidence only.
 
 
 ## Confidential escrow SDK (development)
 
-The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The existing `App20Client.settle` and maker bot continue to use the earlier mainnet protocol. **Confidential mainnet activation is disabled; real proofs and wallet integration/review are pending.**
+The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The earlier `App20Client.settle` and maker quoting loop are disabled; they are not fallbacks. **Confidential mainnet activation is disabled; real proofs and wallet integration/review are pending.**
 
 ```js
 import {

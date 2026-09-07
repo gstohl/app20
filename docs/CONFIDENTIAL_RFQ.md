@@ -1,6 +1,12 @@
 # Confidential RFQ development release
 
-Updated September 7, 2026. APP20 now includes a jointly authorized escrow contract, a Node SDK, durable submission recovery and a browser workspace backed by disposable local wallets. **Mainnet activation remains disabled.** Contract execution with simulated proof facts is verified; a real STARK proof for this protocol, compatible independent wallet adapters and independent review are still required.
+Updated September 8, 2026. APP20 now includes a jointly authorized escrow contract, a Node SDK, durable submission recovery and a browser workspace backed by disposable local wallets. **Mainnet activation remains disabled.** Contract execution with simulated proof facts is verified; a real STARK proof for this protocol, compatible independent wallet adapters and independent review are still required.
+
+## Private-only application policy
+
+The default `/rfq` page now presents this confidential path. New legacy public-funded-term requests, maker registration/funding/quoting and settlement are blocked in the browser, SDK and CLI. The rule also covers Chat: payments and same-token invoices use encrypted transfers plus an unfunded encrypted message operation; fixed-offer acceptance and invoice conversion requiring a swap wait for confidential atomic wallet integration.
+
+Historical recovery remains explicit and public under the original contracts. Existing deployed contracts and earlier transaction data cannot be revoked by changing the application. [Complete settlement policy](PRIVATE_SETTLEMENT_POLICY.md).
 
 ## Run it
 
@@ -14,7 +20,7 @@ npm run dev:confidential
 
 The workspace creates a disposable devnet, registers two controlled wallets and shields test STRK and ETH. Create an escrow, approve setup, fund each side and approve the exchange. A second trade can be funded on just one side; advance the local clock and refund that party independently. The quote is a local example, not a market price. The workspace controls both wallets for demonstration; actual counterparties need separate signing adapters.
 
-The local control service binds to loopback, rejects cross-origin writes and serializes mutations. Its routes and wallet controls are omitted from production bundles. A production build rejects `VITE_CONFIDENTIAL_RFQ_LAB` configuration. The public `/rfq/confidential` page describes availability without offering mainnet signing. Stop the command to delete its disposable keys, state and devnet; this is not persistent wallet storage.
+The local control service binds to loopback, rejects cross-origin writes and serializes mutations. Its routes and wallet controls are omitted from production bundles. A production build rejects `VITE_CONFIDENTIAL_RFQ_LAB` configuration. The public `/rfq` and `/rfq/confidential` pages describe availability without offering mainnet signing. Stop the command to delete its disposable keys, state and devnet; this is not persistent wallet storage.
 
 ## Protocol and privacy
 
@@ -26,7 +32,7 @@ The local control service binds to loopback, rejects cross-origin writes and ser
 
 Amounts, asset addresses and destinations are private inputs to the settlement proof. Escrow deployment/activity, public ephemeral signing keys, deadline, timing, nullifiers, ciphertext/proof sizes and fees remain observable. Public shielding/unshielding and external hedges reveal their own amounts and assets. The peer knows this trade; it can disclose it. An external proving service can read the witness. The current local environment simulates proving and does not establish secrecy from a hosted prover or traffic analysis resistance.
 
-The deployed mainnet MakerBook/PrivateSwap flow is a separate, earlier protocol with public funded terms. It is never used as an automatic fallback for a failed confidential operation. Chat encryption does not change settlement disclosure.
+The deployed mainnet MakerBook/PrivateSwap flow is a separate, earlier protocol with public funded terms. Current clients disable new use of it; they retain receipt reads and historical recovery only. No failed confidential operation falls back to that protocol. Encrypted Chat messages cannot conceal public trade legs, so Chat swap acceptance is also blocked until the confidential path is integrated.
 
 ## Node API and trust boundaries
 
@@ -71,4 +77,4 @@ The SDK integration test uses the same client as the browser service, performs e
 
 September 7, 2026: `npm run build` and the full `npm run test:all` suite passed; the standard Cairo suite passed 134 tests. The confidential SDK passed the exact mainnet-pool-class settlement/restart/refund test on devnet, the separate contract harness passed 26 adversarial cases, and the browser flow passed settlement and one-party recovery. Both contract hashes match their source build. Production CSP checks reported no violations, and a fresh installation of the generated package resolved its confidential entrypoint correctly.
 
-The version-8 demo is 136 seconds / 4,080 frames at 1080p30. Its delivered audio/video decodes cleanly, and all 12 spoken endings match their source waveforms with at least 1.5 seconds of space after narration. [Demo notes](HACKATHON_DEMO.md). These are local development and media checks; no public deployment or new mainnet transaction was performed.
+The historical version-8 demo is 136 seconds / 4,080 frames at 1080p30. Its one-sided Chat offer acceptance and public maker onboarding predate the private-only policy and must be recaptured before publication as the current product. Its delivered audio/video decodes cleanly, and all 12 spoken endings match their source waveforms with at least 1.5 seconds of space after narration. [Demo notes](HACKATHON_DEMO.md). These are local development and media checks; no public deployment or new mainnet transaction was performed.

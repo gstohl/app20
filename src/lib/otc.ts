@@ -1308,11 +1308,7 @@ function claimPaymentInternal(
   const token = resolvePaymentRequestTokenForChain(current.request, chainId);
   const awaitingMaturity =
     current.paymentOperation?.state === "awaiting-note-maturity";
-  if (!isCanonicalStrkToken(token) && !awaitingMaturity) {
-    throw new Error(
-      "This localnet USDC invoice must complete its private STRK RFQ before payment.",
-    );
-  }
+  // Direct payments use existing shielded tokens; never create a public RFQ leg.
   if (awaitingMaturity) {
     const take = operationTakeSettlement(current.paymentOperation);
     if (
@@ -1532,19 +1528,22 @@ export function markPaymentOutcome(
   chainId: string,
   selfAddress: string,
   requestId: string,
-  transactionHash: string,
+  transactionHash: string | undefined,
   outcome: "reverted" | "unknown",
   at = nowSeconds(),
 ): PaymentRecord {
   const state = loadOtcState(storage, chainId, selfAddress);
   const current = state.payments[requestId];
+  const unknownWithoutHash = outcome === "unknown" && transactionHash === undefined &&
+    current?.paymentOperation?.state === "reserved" && current.paymentPending &&
+    Boolean(current.paymentOperation.attemptId) && !current.paymentTxHash;
   if (
     !current ||
     current.status !== "paid" ||
-    current.paymentOperation?.state !== "submitted" ||
+    (!unknownWithoutHash && (current.paymentOperation?.state !== "submitted" ||
     !current.paymentOperation.transactionHash ||
     !isFelt(transactionHash) ||
-    !feltEquals(current.paymentOperation.transactionHash, transactionHash)
+    !feltEquals(current.paymentOperation.transactionHash, transactionHash)))
   ) {
     throw new Error("No matching submitted payment can be reconciled.");
   }
@@ -1558,7 +1557,7 @@ export function markPaymentOutcome(
         }
       : {
           state: outcome,
-          attemptId: current.paymentOperation.attemptId,
+          attemptId: current.paymentOperation?.attemptId,
           ...take,
           transactionHash,
           updatedAt: at,

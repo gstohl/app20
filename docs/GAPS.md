@@ -1,10 +1,26 @@
 # APP20 gaps
 
-## Confidential RFQ development status (September 7, 2026)
+## Private settlement release gaps (September 8, 2026)
+
+All new RFQ and Chat settlements are subject to [the private-only policy](PRIVATE_SETTLEMENT_POLICY.md). The browser, SDK and CLI now reject legacy public-term execution; Chat payments use encrypted transfer plus an unfunded message operation. Chat swaps and invoice conversion are blocked until confidential atomic wallet integration is available.
+
+| Gap | Status and closure condition |
+| --- | --- |
+| Real confidential escrow proof | Open: generate and obtain chain acceptance of a real STARK proof for the pinned escrow/pool; simulated facts do not satisfy this |
+| Independent wallet integration | Open: separate users approve exact terms without exporting ordinary viewing keys; prove, submit and recover through compatible wallet adapters |
+| Chat settlement integration | Partial: encrypted payments implemented locally; add confidential atomic offer/invoice-conversion handoff and a compatible verified mainnet Chat deployment |
+| Private negotiation and inventory | Open: authenticated encrypted quote transport, secure wallet state and production maker reservation workflow for the new escrow |
+| Review and activation | Open: independent protocol/wallet review and verified release evidence before mainnet flags change |
+| Hosted prover confidentiality | Open for secrecy from the provider: hosted services see the witness; require a verified self-controlled route for that property |
+| Current demo footage | Open: replace v8 one-sided Chat acceptance and public maker onboarding before showing it as the current product |
+
+Historical maker recovery is deliberately retained and public. Earlier deployed contracts cannot be revoked by client gating. The existing three mainnet swaps remain evidence of the old protocol only.
+
+## Confidential RFQ development status
 
 The separate `App20ConfidentialEscrow` contract is now part of the normal Cairo build. `@app20/agent-sdk/confidential` implements private action review, independent approvals, pinned deployment checks, one-bundle settlement, durable submission recovery and unilateral timeout refunds. `npm run dev:confidential` exposes the same implementation through a disposable local browser workspace; its controls are excluded from production builds.
 
-Local contract execution with simulated proof facts passes. Real STARK proofs for this escrow, independent wallet adapters, authenticated private negotiation/inventory reservations and independent review remain open. Mainnet is explicitly disabled. The existing mainnet RFQ and its public funded terms remain a separate protocol. See [the current development guide](CONFIDENTIAL_RFQ.md); older architecture and gap sections below retain their original protocol scope.
+Local contract execution with simulated proof facts passes. Real STARK proofs for this escrow, independent wallet adapters, authenticated private negotiation/inventory reservations and independent review remain open. Mainnet is explicitly disabled. The earlier mainnet RFQ and its public funded terms are disabled for new client execution. See [the current development guide](CONFIDENTIAL_RFQ.md). The legacy v3 gap register below preserves stable historical IDs and protocol scope; it is not a statement that those older activation paths should be reopened.
 
 Engineering work the product still needs before private RFQ can run on a public Starknet network. RFQ v3 is mounted and browser-tested only in the build-gated localnet; legacy v1 records retain additive recovery actions. Sepolia and Mainnet RFQ transport, publication, and settlement authority are hard-disabled.
 
@@ -103,8 +119,8 @@ Local-v3 residual risks that do not create a production-v3 commitment:
 5. Operations and Mail: P0-27, P0-33, P0-36; preserve the local-only P1-21/P1-22 controls while production lifecycle work proceeds.
 6. Mount: P0-01.
 
-## Independent fixed-quote settlement (2026-09-06)
+## Historical independent fixed-quote settlement (2026-09-06)
 
 `App20MakerBook`, `App20PrivateSwap`, the standalone maker CLI and the desktop frontend implement permissionless encrypted request/reply transport, funded fixed quotes, atomic shielded swaps, maker proceeds and expiry release. The real-pool devnet lifecycle passes with upstream simulated proof facts. See [operator documentation](makers/README.md).
 
-This separate protocol does not close the legacy v3 ladder/claim-ticket items above. RFQ requesting accounts and funded quote amounts remain public; maker inventory and proceeds are public. The maker book and settlement are now deployed and verified on mainnet; see the [deployment manifest](../deployments/mainnet/private-settlement.json). Live wallet/proof validation and operational inventory remain pending. The production fixed-quote UI now pins the verified mainnet deployment; this does not activate the legacy v3 protocol.
+This separate protocol does not close the legacy v3 ladder/claim-ticket items above. RFQ requesting accounts and funded quote amounts remain public; maker inventory and proceeds are public. The maker book and settlement are now deployed and verified on mainnet; see the [deployment manifest](../deployments/mainnet/private-settlement.json). Live wallet/proof validation and operational inventory remain pending. That release pinned the mainnet deployment without activating legacy v3. It is now superseded: the current app and SDK disable new fixed-quote trading because its terms are public.

@@ -34,7 +34,7 @@ Only proofs produced by the official Starknet/Stwo path are accepted by Starknet
 
 ### What must be deployed?
 
-For normal register → shield → private transfer → unshield flows, no new privacy contract is required. Use the canonical pool and existing token contracts. Each Privy wallet deploys its own account instance, but its class is already declared. Prover and discovery are off-chain services. Deploy a separate Cairo contract only for an application-specific private action such as a swap, vault, or treasury helper.
+For normal register → shield → private transfer → unshield flows, no new privacy contract is required. Use the canonical pool and existing token contracts. Each Privy wallet deploys its own account instance, but its class is already declared. Prover and discovery are off-chain services. Application-specific swaps require a confidential protocol; a helper with public withdrawals and OPEN output notes does not hide the traded assets or amounts.
 
 ## Requirements
 
@@ -102,28 +102,11 @@ const session = await client.session(wallet, (hash) =>
 
 The browser holds viewing keys, notes, private inputs, and witness construction. A blind relay sees authenticated/pseudonymous quota context plus ciphertext; the final remote prover still sees the decrypted witness. See [`docs/BROWSER_PRIVACY.md`](docs/BROWSER_PRIVACY.md).
 
-### Application-specific private invocation
+### Confidential settlement policy
 
-`invokeExternal()` groups private transfers, explicit helper funding, one OPEN recovery note, and one external invocation into the same proof. Helper funding is mandatory and application-reviewed; the SDK never invents a dust amount.
+`PrivacyClient.invoke()`, `PrivacyClient.invokeExternal()`, and the browser session's `invokeExternal()` are retired. They reject before wallet initialization, key access, proving, or submission. Their earlier funding withdrawals and OPEN recovery notes exposed the settlement assets and amounts.
 
-```ts
-await session.invokeExternal({
-  funding: { token: STRK, recipient: helperAddress, amount: helperFunding },
-  recovery: { token: STRK, recipient: session.address },
-  transfers: [{ token: STRK, recipient, amount }], // optional
-  calldata: ({ poolAddress, openNotes }) => ({
-    contractAddress: helperAddress,
-    calldata: [
-      STRK,
-      poolAddress,
-      (openNotes as Array<{ noteId: bigint }>)[0]!.noteId,
-      ...encryptedApplicationPayload,
-    ],
-  }),
-});
-```
-
-This is the browser-owned seam used by APP20's Privacy Mail Vault. Message plaintext must already be end-to-end encrypted before it enters the invocation payload.
+Private transfers still spend existing shielded notes and return encrypted change. Register, shield, unshield, balance discovery, and historical transaction reconciliation remain available. Shielding and unshielding are public funding boundaries; they must be separate from settlement. APP20's confidential escrow integration is a development candidate until its real proof and independent wallet support are verified. These methods do not fall back to the earlier public settlement.
 
 ## Legacy server-side shared prover
 

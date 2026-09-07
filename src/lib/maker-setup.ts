@@ -1,4 +1,5 @@
 import type { Call } from 'starknet';
+import { rejectPublicSettlement } from '@app20/domain';
 import { publicKey, keyCoordinates, felt } from '@app20/private-intents/starknet-maker';
 import { MAINNET_DEPLOYMENT as deployment } from './mainnet-deployment';
 
@@ -11,6 +12,7 @@ export function makerUnits(value: string, decimals: number): string {
   return result.toString();
 }
 export async function makerRegistration(raw: string, days: number, now: number): Promise<Call> {
+  rejectPublicSettlement();
   let key: JsonWebKey;
   try { key = JSON.parse(raw); } catch { throw new Error('Paste the public P-256 key JSON printed by the bot.'); }
   if (key.d) throw new Error('This is a private key. Remove it; only paste the public key.');
@@ -19,6 +21,7 @@ export async function makerRegistration(raw: string, days: number, now: number):
   return { contractAddress: deployment.address, entrypoint: 'register', calldata: [...keyCoordinates(key), String(now + days * 86400)] };
 }
 export function makerInventoryCalls(action: 'fund' | 'withdraw', token: string, value: string): Call[] {
+  if (action === 'fund') rejectPublicSettlement();
   const metadata = [deployment.sellToken, deployment.buyToken].find(t => felt(t.address) === felt(token));
   if (!metadata) throw new Error('Unsupported inventory token.');
   const amount = makerUnits(value, metadata.decimals);

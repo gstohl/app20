@@ -13,7 +13,6 @@ import {
 import AppShell from "@/app/components/AppShell";
 import ReadyRailGate from "@/app/components/ReadyRailGate";
 import AppProviders from "@/app/providers";
-import ChatPage from "@/app/chat/page";
 import PayPage from "@/app/pay/page";
 import ContactsPage from "@/app/contacts/page";
 import RfqPage from "@/app/rfq/page";
@@ -26,9 +25,12 @@ import { CANONICAL_ROUTES, legacyRouteRedirect } from "@/app/routes";
 import "@/app/globals.css";
 import "@/app/design-system.css";
 
-// The proposal-only market view and the dry cross-chain review are secondary,
-// read-only tools. Deferring them keeps the eagerly loaded shell inside its
-// recorded byte budget now that Chat carries the whole correspondence desk.
+// The default RFQ information page does not need the Chat composer, payment
+// controller, or historical correspondence recovery. Load that workflow only
+// when its route opens, after the explicit Ready account gate.
+const ChatPage = lazy(() => import("@/app/chat/page"));
+
+// These read-only tools are secondary routes too.
 const MarketProposalPage = lazy(
   () => import("@/app/rfq/markets/proposal/page"),
 );
@@ -57,7 +59,9 @@ function redirectLegacyRoute(pathname: string, locationHash: string): never {
 function ReadyChatPage() {
   return (
     <ReadyRailGate moduleName="Chat">
-      <ChatPage />
+      <Suspense fallback={<RouteLoading name="Chat" />}>
+        <ChatPage />
+      </Suspense>
     </ReadyRailGate>
   );
 }

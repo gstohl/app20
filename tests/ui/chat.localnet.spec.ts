@@ -25,6 +25,7 @@ import {
   scanRecent,
   timeline,
   navLink,
+  openFullRecord,
 } from "./support/chat";
 
 test.describe.configure({ mode: "serial" });
@@ -55,7 +56,7 @@ async function switchIdentity(
 
 const recoveryRun = process.env.APP20_TEST_CHAT_RECOVERY === "1";
 
-test(recoveryRun ? "chat recovers lost confirmation and two receipt failures without repeating payment" : "chat carries a message and an attached offer between two chats", async ({
+test(recoveryRun ? "chat recovers lost message confirmation and makes one encrypted invoice payment" : "chat reviews a swap offer without sending and pays a separate invoice privately", async ({
   page,
   localnetConfig: config,
 }) => {
@@ -86,20 +87,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
         throw chatSendFailure(new Error("Injected lost confirmation"), pendingLetter);
       `) });
     });
-    await page.route('**/src/app/chat/useMailboxDesk.ts*', async (route) => {
-      const response = await route.fetch();
-      let source = await response.text();
-      const marker = 'async function postReceipt(offer, accept, acceptTransactionHash, recipientKey) {';
-      expect(source).toContain(marker);
-      source = source.replace(marker, marker + `
-        window.__receiptAttempts = (window.__receiptAttempts || 0) + 1;
-        if (window.__receiptAttempts <= 2) throw new Error("Injected receipt interruption");
-      `);
-      const transfer = 'const result = await submitOtcAccept(';
-      expect(source).toContain(transfer);
-      source = source.replace(transfer, 'window.__acceptCount = (window.__acceptCount || 0) + 1; ' + transfer);
-      await route.fulfill({ response, body: source });
-    });
+
   }
 
 
@@ -131,9 +119,8 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     await expect(conversationPane(page).locator("header strong")).toContainText(
       contactLabel,
     );
-    await expect(
-      page.getByText(`No records with ${contactLabel} on this device yet.`),
-    ).toBeVisible();
+    // A caller-owned chain can contain earlier letters; this run's text and
+    // offer amount identify the new conversation records below.
     await expect(contextPanel(page)).toBeHidden();
     await page.getByRole("button", { name: "Contact details", exact: true }).click();
     await expect(contextPanel(page)).toContainText(addressPattern(alice.address));
@@ -260,10 +247,10 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
       name: new RegExp(`^Offer: ${terms.replaceAll(".", "\\.")}`),
     });
     await expect(offerCard).toBeVisible();
-    await expect(offerCard).toContainText("Accept or decline this offer.");
+    await expect(offerCard).toContainText("Review or decline. Confidential swap support is pending.");
     await expect(
       offerCard.getByRole("button", { name: "Accept & send 0.25 STRK" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(entry(page, offerBody)).toContainText("Opened · record");
 
     await demo?.mark("Bob reviews the offer");
@@ -280,7 +267,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
       .click();
     await expect(context).toContainText("Record detail");
     await expect(
-      context.getByText("OTC OFFER / ONE-SIDED V1", { exact: true }),
+      context.getByText("SWAP OFFER", { exact: true }),
     ).toBeVisible();
     await expect(conversation).toBeVisible();
     await context.getByRole("button", { name: "Show in conversation" }).click();
@@ -317,37 +304,60 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     for (const width of [1440, 1280, 1024]) {
       await page.setViewportSize({ width, height: 900 });
       await expectNoHorizontalOverflow(page);
-      await entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" }).scrollIntoViewIfNeeded();
+      await entry(page, offerBody).scrollIntoViewIfNeeded();
       await page.screenshot({ path: `artifacts/desktop-ux/chat-focus/offer-${width}.png`, animations: "disabled" });
     }
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.screenshot({ path: "artifacts/desktop-ux/bob-offer.png", animations: "disabled" });
   });
 
-  await test.step("6. Bob accepts once and confirms the local transfer and receipt", async () => {
+  await test.step("6. swap review cannot send a one-sided payment", async () => {
     await conversationRow(page, contactLabel).click();
-    const accept = entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" });
-    await demo?.mark("Accept payment");
-    await accept.click();
-    if (recoveryRun) {
-      const card = entry(page, offerBody);
-      await expect(card.getByText(/Payment complete; receipt not confirmed/)).toBeVisible({ timeout: 180_000 });
-      await expect(accept).toHaveCount(0);
-      await expect(card).toContainText("Posting it will not send the payment again.");
-      await card.getByRole("button", { name: "Post receipt", exact: true }).click();
-      await expect(card).toContainText("You can retry only the receipt.");
-      await page.screenshot({ path: "artifacts/desktop-ux/recovery/receipt-retry.png" });
-      await card.getByRole("button", { name: "Post receipt", exact: true }).click();
-      await expect(card.getByText("Receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
-      expect(await page.evaluate(() => (window as any).__acceptCount)).toBe(1);
-      expect(await page.evaluate(() => (window as any).__receiptAttempts)).toBe(3);
-    } else {
-      await expect(page.getByText("Accept transfer and one-sided receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
-    }
-    await expect(accept).toHaveCount(0);
-    await demo?.mark("Payment confirmed");
-    await demo?.hold(8);
-    await demo?.mark("End presentation");
-    await page.screenshot({ path: "artifacts/desktop-ux/bob-accepted.png", animations: "disabled" });
+    const card = entry(page, offerBody);
+    await expect(card.getByRole("button", { name: /Accept & send/ })).toHaveCount(0);
+    await openFullRecord(card.getByRole("article", { name: /^Offer:/ }));
+    await expect(card.getByRole("link", { name: "Confidential swap availability →" })).toBeVisible();
+    await expect(card).toContainText("Settlement requires a confidential atomic swap");
+    await page.screenshot({ path: "artifacts/desktop-ux/bob-swap-review.png", animations: "disabled" });
+  });
+
+  await test.step("7. Bob pays Alice's separate invoice with encrypted notes and an unfunded memo", async () => {
+    const invoiceBody = `Lunch yesterday — thanks for covering it! ${runTag}`;
+    await switchIdentity(page, config, "alice");
+    await loadExistingKey(page);
+    await conversationRowByAddress(page, bob.address).click();
+    await attachTerms(page);
+    await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(invoiceBody);
+    await page.getByRole("button", { name: /Invoice/ }).click();
+    await page.getByLabel("STRK requested").fill("0.05");
+    await page.getByLabel("Invoice memo (optional)").fill("Your share of lunch");
+    await page.getByRole("button", { name: "Send encrypted message", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "New document" })).toHaveCount(0, {timeout: 180_000});
+    await switchIdentity(page, config, "bob");
+    await loadExistingKey(page);
+    await scanRecent(page);
+    await conversationRow(page, contactLabel).click();
+    const invoice = entry(page, invoiceBody);
+    await expect(invoice).toBeVisible({timeout: 60_000});
+    await openFullRecord(invoice.getByRole("article", {name: /^Invoice:/}));
+    const payments: unknown[][] = [];
+    page.on("request", request => {
+      if (request.url().includes("/__app20_localnet_wallet/privacy") && request.method() === "POST") {
+        const body = request.postDataJSON();
+        payments.push(body.actions);
+      }
+    });
+    const pay = invoice.getByRole("button", {name: "Pay 0.05 STRK privately", exact: true});
+    await pay.click();
+    await expect(invoice).toContainText("Private STRK payment and encrypted memo confirmed.", {timeout: 180_000});
+    await expect(pay).toHaveCount(0);
+    expect(payments).toHaveLength(1);
+    expect(payments[0]).toEqual([
+      expect.objectContaining({type: "transfer", amount: "0xb1a2bc2ec50000"}),
+      expect.objectContaining({type: "compute_and_invoke"}),
+    ]);
+    await demo?.mark("Private payment confirmed");
+    await demo?.hold(5);
+    await page.screenshot({path: "artifacts/desktop-ux/chat-private-payment.png", animations: "disabled"});
   });
 });

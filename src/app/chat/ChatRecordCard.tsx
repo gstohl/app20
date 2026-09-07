@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import EscrowCard from "@/components/mail/EscrowCard";
 import InvoiceCard from "@/components/mail/InvoiceCard";
 import OfferCard from "@/components/mail/OfferCard";
+import { PUBLIC_SETTLEMENT_ENABLED } from "@app20/domain";
 import ReceiptCard from "@/components/mail/ReceiptCard";
 import type { ThreadActionState } from "@/components/mail/message";
 import { feltEquals } from "@/lib/addresses";
@@ -148,7 +149,7 @@ export function ChatRecordFull({
         actionMessage={action?.message}
         actionStartedAt={action?.startedAt}
         onFill={
-          ownDeal || !actions?.onEscrowFill
+          !PUBLIC_SETTLEMENT_ENABLED || ownDeal || !actions?.onEscrowFill
             ? undefined
             : () => actions.onEscrowFill?.(fund)
         }

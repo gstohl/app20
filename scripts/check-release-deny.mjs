@@ -336,6 +336,13 @@ export async function checkReleaseDeny(root = repositoryRoot) {
   }
 
   const confidentialPath = "src/lib/confidential-rfq-status.ts";
+  const settlementPolicyPath = "packages/domain/src/settlement-privacy.ts";
+  const settlementPolicyText = await checkedSource(canonicalRoot, settlementPolicyPath, failures);
+  if (settlementPolicyText !== undefined) {
+    const parsed = sourceFile(settlementPolicyPath, settlementPolicyText, failures);
+    for (const name of ["PUBLIC_SETTLEMENT_ENABLED", "CHAT_ONE_SIDED_ACCEPT_ENABLED"])
+      assertExportedConst(parsed, settlementPolicyPath, name, false, failures);
+  }
   const confidentialText = await checkedSource(canonicalRoot, confidentialPath, failures);
   if (confidentialText !== undefined) {
     const parsed = sourceFile(confidentialPath, confidentialText, failures);

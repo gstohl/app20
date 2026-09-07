@@ -1,5 +1,6 @@
 "use client";
 
+import { rejectOneSidedChatSwap, rejectPublicSettlement } from "@app20/domain";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { hash, validateAndParseAddress } from "starknet";
@@ -1924,6 +1925,7 @@ export function useMailboxDesk() {
     let claimed = false;
     let submittedHash = "";
     try {
+      rejectOneSidedChatSwap();
       const context = requireActionContext();
       const accept = acceptPayloadForOffer(offer, offerIndex);
       const reservedAccept = claimOtcAccept(
@@ -2142,6 +2144,7 @@ export function useMailboxDesk() {
   function handlePayPrivatelyWithStrk(request: PaymentRequestPayload) {
     const actionKey = `payment:${request.requestId}`;
     try {
+      rejectPublicSettlement();
       const context = requireActionContext();
       if (providerIndex !== constants.LOCALNET_PROVIDER_INDEX) {
         throw new Error("USDC invoice RFQ handoff is localnet-only.");
@@ -2244,14 +2247,14 @@ export function useMailboxDesk() {
       setActionState(actionKey, {
         pending: true,
         message:
-          "Checking the private payment plus chat service funding, live pool fee, and public fee balance…",
+          "Checking the shielded payment balance and network fees…",
         startedAt: Date.now(),
       });
       await authorizeValueAction(
         context,
         "Invoice private payment",
         payableRequest.amount,
-        [payableRequest.amount, APP20_HELPER_FUNDING_BASE_UNITS],
+        [payableRequest.amount],
         payableToken.address,
       );
       setActionState(actionKey, {
@@ -2327,14 +2330,14 @@ export function useMailboxDesk() {
     } catch (error: unknown) {
       const outcome = transactionStateFromError(error);
       const hash = transactionHashFromError(error) ?? submittedHash;
-      if (claimed && hash && outcome && address && chainId) {
+      if (claimed && outcome && (hash || outcome === "unknown") && address && chainId) {
         try {
           markPaymentOutcome(
             window.localStorage,
             chainId,
             address,
             request.requestId,
-            hash,
+            hash || undefined,
             outcome,
           );
         } catch {
@@ -2362,6 +2365,7 @@ export function useMailboxDesk() {
     let reserved = false;
     let submittedHash = "";
     try {
+      rejectPublicSettlement();
       if (
         providerIndex !== constants.LOCALNET_PROVIDER_INDEX ||
         !constants.localnetWalletEnabled

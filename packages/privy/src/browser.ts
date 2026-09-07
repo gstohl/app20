@@ -10,7 +10,7 @@ import {
   type PrivacySequencingState,
 } from "./coordination.js";
 import type { Strk20Discovery } from "./discovery.js";
-import { AccountNotDeployedError, ConfigError } from "./errors.js";
+import { AccountNotDeployedError, ConfigError, PublicSettlementDisabledError } from "./errors.js";
 import { PrivacyClient, type PrivacyInvokeInput } from "./privacy.js";
 import type { Strk20Prover } from "./prover.js";
 import {
@@ -345,8 +345,9 @@ export class BrowserStrk20Session {
     return this.privacy().unshield(input);
   }
 
-  invokeExternal(input: PrivacyInvokeInput): Promise<PrivacyExecuteResult> {
-    return this.privacy().invokeExternal(input);
+  /** @deprecated Public funding and OPEN recovery cannot provide confidential settlement. */
+  async invokeExternal(_input: PrivacyInvokeInput): Promise<PrivacyExecuteResult> {
+    throw new PublicSettlementDisabledError();
   }
 
   balances(tokens?: string[]): Promise<ShieldedBalance[]> {

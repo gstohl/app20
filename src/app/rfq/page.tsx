@@ -1,5 +1,5 @@
-import RfqWorkspace from "./RfqWorkspace";
+import ConfidentialRfqPage from "./ConfidentialRfqPage";
 
 export default function RfqPage() {
-  return <RfqWorkspace />;
+  return <ConfidentialRfqPage />;
 }

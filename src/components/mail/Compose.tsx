@@ -1,4 +1,5 @@
 "use client";
+import { rejectPublicSettlement } from "@app20/domain";
 
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -810,6 +811,7 @@ export default function Compose({
       const escrowAttachment = draft.attachments.find(
         (attachment) => attachment.type === "escrow_fund",
       );
+      if (escrowAttachment) rejectPublicSettlement();
       const ticketAddress = escrowAttachment
         ? await ensureLocalnetMailEscrowTicket(escrowAttachment.dealId)
         : undefined;
@@ -846,7 +848,7 @@ export default function Compose({
       setSendState({
         kind: "lookup",
         message: document.payment
-          ? "Checking private STRK for the payment plus chat service funding…"
+          ? "Checking the shielded STRK payment balance…"
           : "Checking private STRK for chat service funding…",
         step: 1,
         totalSteps: 1,
@@ -855,7 +857,7 @@ export default function Compose({
         walletAccount,
         addrSTRK,
         document.payment
-          ? [document.payment.transfer.amount, APP20_HELPER_FUNDING_BASE_UNITS]
+          ? [document.payment.transfer.amount]
           : [APP20_HELPER_FUNDING_BASE_UNITS],
       );
       if (document.payment && poolAddress) {
@@ -1265,7 +1267,7 @@ export default function Compose({
             </header>
             <div className={styles.attachmentButtons}>
               {(
-                ["payment", "offer", "payment_request", "escrow_fund"] as const
+                ["payment", "offer", "payment_request"] as const
               ).map((type) => {
                 const attached = draft.attachments.some(
                   (attachment) => attachment.type === type,

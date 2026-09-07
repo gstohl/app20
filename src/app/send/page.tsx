@@ -12,8 +12,8 @@ export default function SendPage() {
         <h2>Unavailable in this build</h2>
         <p>
           Public send is not implemented here, so nothing on this page can move
-          value. Use a payment request when you need someone to pay you, or
-          return to RFQ for a private maker trade.
+          value. Payment requests are reviewed in Chat on supported networks;
+          confidential swaps remain in development.
         </p>
         <Link to="/pay">Open payment request</Link>
       </section>

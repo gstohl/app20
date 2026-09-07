@@ -1,12 +1,12 @@
 # Hackathon demonstration status
 
-Updated September 7, 2026. Three mainnet settlement transactions are verified and recorded in `strk20.json`. The current 2:16 narrated video demonstrates localnet Chat and the new confidential escrow development flow, with simulated proving clearly labelled. Its mainnet receipt chapter is omitted. The public video URL and submission are still pending.
+Updated September 8, 2026. Three historical mainnet settlement transactions are verified and recorded in `strk20.json`. They use the earlier protocol with public funded terms. The prior 2:16 narrated video includes localnet Chat and confidential escrow development, but its one-sided Chat offer acceptance and public maker onboarding predate the new private-only policy. Those scenes must be replaced before publication as the current product. The public video URL remains pending.
 
-## Current video: confidential development (version 8)
+## Prior video: confidential development (version 8)
 
 `artifacts/hackathon/app20-demo-v8-confidential.mp4` is a 136-second H.264/AAC export at 1920×1080/30 fps, with selectable English subtitles and a separate SRT. It keeps the selected ElevenLabs Liam voice, natural Chat examples, macOS cursor/window styling and compact title/caption bars. Five new narration chapters describe the implemented escrow, separate approvals, atomic encrypted-note settlement, independent timeout refund and current privacy limits. No confirmed-swaps chapter appears.
 
-The browser's real local-contract flow passed, including incomplete funding and unilateral recovery. The shared SDK passed against the exact mainnet pool class deployed locally; all 26 adversarial escrow cases passed with simulated facts. The production build, full application/package regression suite, 134 Cairo tests and CSP verification passed. These checks do not establish real STARK proof acceptance for this new protocol. Mainnet activation remains disabled pending real proofs, independent wallet integration and review.
+In the September 7 recording run, the browser's real local-contract flow passed, including incomplete funding and unilateral recovery. The shared SDK passed against the exact mainnet pool class deployed locally; all 26 adversarial escrow cases passed with simulated facts. The production build, full application/package regression suite, 134 Cairo tests and CSP verification passed. These checks do not establish real STARK proof acceptance for this new protocol. Mainnet activation remains disabled pending real proofs, independent wallet integration and review.
 
 The export is checked for 4,080 frames, clean audio/video decoding and the complete waveform tail of all 12 narration chapters. Every clip leaves at least 1.5 seconds after its measured voice. [Timed script](../tools/demo-video/VOICEOVER.md) · [Recording guide](../tools/demo-video/README.md) · [Implementation and evidence limits](CONFIDENTIAL_RFQ.md).
 
@@ -28,14 +28,14 @@ The maker's 0.03 STRK proceeds were withdrawn, its registration deactivated, and
 
 The 17 setup, swap and cleanup transactions cost **11.863877034965690848 STRK network fees + 24 STRK pool fees = 35.863877034965690848 STRK**. Earlier deployment plus this demo totals **63.910369825551435280 STRK**, within the 65 STRK ceiling. A separate 0.5 STRK inventory purchase yielded 0.015442 native USDC; 0.003 USDC was used by the maker and 0.012442 USDC remains public in the operator wallet.
 
-## Browser rehearsal verification
+## Historical browser rehearsal verification
 
 - Alice/Bob Chat localnet end-to-end test passed: message delivery, attached fixed offer, and payment response. Proving is simulated on localnet. Chat offers do not guarantee atomic settlement of both assets.
 - Desktop RFQ browser rehearsal passed: minimum receive enforcement, ranked preliminary replies, only one funded reservation, explicit review of price changes, settlement recovery after reload, and duplicate-attempt prevention. RPC and wallet are fixtures; cryptography is real.
 - Agent SDK tests passed (8 tests), including preserving proof arguments through fee estimation and transaction submission. The production build passed.
 - Captured the live public RFQ, maker, agents, and Chat pages without connecting a wallet or submitting transactions.
 
-Recordings and edits are in the ignored `artifacts/hackathon/` folder. The current `app20-demo-v8-confidential.mp4` is a 136-second, 1920×1080 H.264 video with Liam narration, subtitles, a compact macOS-style window, conversational Chat examples and the new local confidential escrow flow. It omits the confirmed-swaps chapter at the user's request; the mainnet evidence remains in `strk20.json` and `deployments/mainnet/`. Older edits described below are preserved locally. See `tools/demo-video/README.md` for rendering instructions.
+Recordings and edits are in the ignored `artifacts/hackathon/` folder. The prior `app20-demo-v8-confidential.mp4` is a 136-second, 1920×1080 H.264 video with Liam narration, subtitles, a compact macOS-style window, conversational Chat examples and the new local confidential escrow flow. It omits the confirmed-swaps chapter at the user's request; the mainnet evidence remains in `strk20.json` and `deployments/mainnet/`. Older edits described below are preserved locally. See `tools/demo-video/README.md` for rendering instructions.
 
 ## Required before submission
 
@@ -49,7 +49,7 @@ node scripts/verify-hackathon-transactions.mjs --rpc https://rpc.starknet.lava.b
 
 The verifier checks mainnet, successful included receipts, a completed APP20 quote event, pool and APP20 settlement calls in traces, and pinned contract classes. It records receipt evidence; `--write` additionally updates `strk20.json`. Historical trace availability is required. Lava handled the proof-bearing transactions and traces successfully; Cartridge's trace endpoint rejected the new proof-fact version during this run. Starkscan proving worked, but its RPC write gateway reported disabled writes, so signed transactions were broadcast through Lava without provider credentials.
 
-Publish the reviewed MP4 and fill `demo_video` with its public URL. The current cut omits the receipt chapter; its Chat and confidential escrow localnet footage remain labelled. Remote proving exposes proving payloads to the relay/proving infrastructure; this recording does not establish anonymous proving or remove that documented limitation.
+Replace the superseded Chat acceptance and maker onboarding scenes, review the new MP4, then publish it and fill `demo_video` with the public URL. The prior cut omits the receipt chapter; its confidential escrow footage is localnet development with simulated proving. Remote proving exposes proving payloads to the relay/proving infrastructure; this recording does not establish anonymous proving or remove that documented limitation.
 
 ## Earlier recording and voiceover (version 3)
 
@@ -87,4 +87,15 @@ The source narration was transcribed to check sentence endings. Every final audi
 
 ## Submission fields rechecked
 
-On September 7, 2026 at 17:26 UTC, all three root-manifest transaction receipts were SUCCEEDED and ACCEPTED_ON_L1, with events from the STRK20 pool and the declared APP20 swap contract. Both declared contract addresses resolved to the expected mainnet class hashes. GitHub's Website field was corrected to `https://app20.io`. The remaining required manifest value is a public `demo_video` URL; the current export is local until published.
+On September 7, 2026 at 17:26 UTC, all three root-manifest transaction receipts were SUCCEEDED and ACCEPTED_ON_L1, with events from the STRK20 pool and the declared APP20 swap contract. Both declared contract addresses resolved to the expected mainnet class hashes. GitHub's Website field was corrected to `https://app20.io`. The remaining required manifest value is a public `demo_video` URL; the prior export is local and its superseded scenes need replacement before publication.
+
+
+## Organizer registry and transaction display
+
+The [supplied organizer commit](https://github.com/starkience/strk20-hackathon/commit/1a462e9ec1ea24f7336adbcd6923edaec9fca581) updates project identity in the hackathon's `registry.json`. APP20's own `strk20.json` supplies transactions, contracts, `demo_video` and `demo_url`; adding an app-name field there does not rename the panel entry.
+
+At the September 8 local-time check, the organizer's [registry](https://github.com/starkience/strk20-hackathon/blob/main/registry.json) still named the `gstohl/quietline` entry Quietline, while that repository redirects to `gstohl/app20`. The display name, description and repository identity therefore need an organizer registry update. This note does not claim that such an update has been merged.
+
+The organizer's [generated project data](https://github.com/starkience/strk20-hackathon/blob/main/projects.json) already included all three hashes with `verified_txs: 3`; each passed its transaction, pool and project-contract checks, and both contracts were identified as mainnet. Its requirement flags were `demo: true`, `mainnet: true`, `video: false`. The remaining `building` status was the missing public video URL, not missing mainnet receipts. The [project builder](https://github.com/starkience/strk20-hackathon/blob/main/scripts/build-projects.mjs#L967-L1043) defines these checks. This supersedes the earlier missing-transaction diagnosis for that snapshot.
+
+Do not replace the valid historical hashes with localnet or unverified confidential hashes. They remain honestly scoped evidence of the earlier protocol; a new confidential mainnet claim needs new real-proof evidence after its release gates pass.

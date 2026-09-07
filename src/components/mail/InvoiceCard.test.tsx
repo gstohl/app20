@@ -62,7 +62,7 @@ describe("localnet USDC invoice actions", () => {
     fixture.walletAddress = "0xb0b";
   });
 
-  it("offers the exact private STRK RFQ handoff before a take is recorded", () => {
+  it("pays existing shielded tokens without offering the public RFQ conversion", () => {
     expect(
       resolvePaymentRequestTokenForChain(request, fixture.chainId),
     ).toMatchObject({
@@ -70,8 +70,8 @@ describe("localnet USDC invoice actions", () => {
       decimals: 6,
     });
     const markup = render();
-    expect(markup).toContain("Pay privately with STRK");
-    expect(markup).not.toContain("Complete payment");
+    expect(markup).not.toContain("Pay privately with STRK");
+    expect(markup).toContain("Complete payment");
   });
 
   it("waits for note maturity before enabling completion", () => {

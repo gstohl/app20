@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { OutsideExecutionVersion, constants, hash, json, num } from "starknet";
+import { CallData, OutsideExecutionVersion, constants, hash, json, num } from "starknet";
 import { withHelperFundingPreflight } from "../../scripts/escrow-funding-preflight.mjs";
 import {
 	CorePrivateTransfersProver,
@@ -20,6 +20,8 @@ import {
 	ScreeningCallMockProofProvider,
 	createDevnetTestEnv,
 } from "@starkware-libs/starknet-privacy-sdk/testing";
+
+import { PrivacyPoolABI } from "@starkware-libs/starknet-privacy-sdk/abi";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BUILD_DIR = join(ROOT, ".e2e-build", "real-pool-mail");
@@ -211,27 +213,27 @@ async function messageEvents(node, helperAddress) {
 	return events;
 }
 
-function makeAlicePrivacy(env) {
+function makeAlicePrivacy(env, account = env.alice, passphrase = PASSPHRASE) {
 	const discovery = new ContractDiscoveryProvider(env.privacy);
 	const proving = new ScreeningCallMockProofProvider(
 		env.node,
 		constants.StarknetChainId.SN_SEPOLIA,
 	);
 	const viewingKeyProvider = passphraseViewingKeyProvider(
-		PASSPHRASE,
-		env.alice.address,
+		passphrase,
+		account.address,
 	);
 	const transfers = createPrivateTransfers({
-		account: env.alice,
+		account: account,
 		viewingKeyProvider,
 		provingProvider: proving,
 		discoveryProvider: discovery,
 		poolContractAddress: env.privacy.address,
 	});
 	const prover = new CorePrivateTransfersProver({
-		signer: env.alice.signer,
-		address: env.alice.address,
-		passphrase: PASSPHRASE,
+		signer: account.signer,
+		address: account.address,
+		passphrase,
 		node: env.node,
 		discovery,
 		prover: proving,
@@ -254,7 +256,7 @@ function makeAlicePrivacy(env) {
 	assert.ok(coreTransfers && typeof coreTransfers.build === "function");
 	const coreBuild = coreTransfers.build.bind(coreTransfers);
 	coreTransfers.build = (...args) =>
-		coreBuild(...args).surplusTo(env.alice.address, false);
+		coreBuild(...args).surplusTo(account.address, false);
 	return { prover, transfers };
 }
 
@@ -645,6 +647,63 @@ test("real privacy pool: APP20 localnet mail batch, recovery note, and action-id
 			allEvents.map((event) => BigInt(parseMessageEvent(event).actionId)),
 			[BigInt(actionId), 0n, 0n],
 		);
+
+        // Current payment path: no helper funding, public trade leg or OPEN output.
+        const bobWallet = makeAlicePrivacy(env, env.bob, "app20-private-chat-bob");
+        await createBlocks(devnet.url, 12);
+        const registered = await broadcastPrepared(devnet, env, await prepare(bobWallet.prover, []));
+        assert(registered.receipt.isSuccess(), revertReason(registered.receipt));
+        await createBlocks(devnet.url, 12);
+        // Establish private channels before the measured payment.
+        const setup = await broadcastPrepared(devnet, env, await prepare(prover, [{type: "transfer", token: env.strk, recipient: env.bob.address, amount: "1"}]));
+        assert(setup.receipt.isSuccess(), revertReason(setup.receipt));
+        await successEthFunding();
+        async function successEthFunding() {
+            const approval = await env.alice.execute({contractAddress:env.eth,entrypoint:"approve",calldata:[env.privacy.address,"10000","0"]});
+            await waitForSuccess(env.node, approval.transaction_hash, "ETH fixture shielding approval");
+            await createBlocks(devnet.url,12);
+            const deposit=await broadcastPrepared(devnet,env,await prepare(prover,[{type:"deposit",token:env.eth,amount:"10000"}]));
+            assert(deposit.receipt.isSuccess(),revertReason(deposit.receipt));
+            await createBlocks(devnet.url,12);
+            const setup=await broadcastPrepared(devnet,env,await prepare(prover,[{type:"transfer",token:env.eth,recipient:env.bob.address,amount:"1"}]));
+            assert(setup.receipt.isSuccess(),revertReason(setup.receipt));
+        }
+        const decoder=new CallData(PrivacyPoolABI);
+        const balanceOf=async(wallet,token)=>{
+            const {notes}=await wallet.discoverNotes({tokens:[BigInt(token)]});
+            return [...notes.entries()].filter(([key])=>feltEqual(key,token)).flatMap(([,values])=>values).reduce((sum,note)=>sum+note.amount,0n);
+        };
+        for(const [token,amount] of [[env.strk,23n],[env.eth,2345n]]) {
+            await createBlocks(devnet.url,12);
+            const before=await balanceOf(bobWallet.transfers,token);
+            const envelope=await mail.encryptMail(bobMail.publicKey, `Private payment ${amount} ${token}`);
+            const actions=strk20.buildMemoTransferActions({helperAddress,recoveryAddress:env.alice.address,tokenAddress:token,recipient:env.bob.address,amount,record:envelope,helperFundingAmount:RECOVERY_DUST,actionId:strk20.computeActionId("payment-test",token)});
+            assert.deepEqual(actions.map(action=>action.type),["transfer","compute_and_invoke"]);
+            const prepared=await prepare(prover,actions,helperAddress);
+            const publicActions=decoder.decodeParameters("core::array::Span::<privacy::actions::ServerAction>",prepared.proof.output.slice(1));
+            const kinds=publicActions.map(action=>action.activeVariant());
+            assert(kinds.includes("EmitEncNoteCreated"));
+            for(const kind of kinds) assert(["WriteOnce","EmitEncNoteCreated","EmitNoteUsed","InvokeWithComputation"].includes(kind),`Unexpected public payment action: ${kind}`);
+            for(const value of prepared.call.calldata) {
+                assert(![env.alice.address,env.bob.address,amount,...(token===env.eth?[env.eth]:[])].some(secret=>feltEqual(value,secret)),"Payment fields leaked into public calldata");
+            }
+            const poolBefore=await tokenBalance(env.node,token,env.privacy.address);
+            const helperBefore=await tokenBalance(env.node,token,helperAddress);
+            const paid=await broadcastPrepared(devnet,env,prepared);
+            assert(paid.receipt.isSuccess(),revertReason(paid.receipt));
+            assert.equal(await tokenBalance(env.node,token,env.privacy.address),poolBefore);
+            assert.equal(await tokenBalance(env.node,token,helperAddress),helperBefore);
+            await createBlocks(devnet.url,12);
+            assert.equal(await balanceOf(bobWallet.transfers,token),before+amount);
+            const latest=(await messageEvents(env.node,helperAddress)).at(-1);
+            assert.equal(new TextDecoder().decode(await mail.decryptMail(bobMail.privateKey,parseMessageEvent(latest))),`Private payment ${amount} ${token}`);
+            const replay=await broadcastPrepared(devnet,env,await prepare(prover,actions,helperAddress));
+            assert(replay.receipt.isReverted());
+            assert.match(revertReason(replay.receipt),/ACTION_ID_USED/);
+            await createBlocks(devnet.url,12);
+            assert.equal(await balanceOf(bobWallet.transfers,token),before+amount,"replay cannot pay twice");
+        }
+        console.log("Private Chat STRK/ETH payments: encrypted outputs, exact balances, no public payment fields, no OPEN notes, replay rejected; simulated proofs only.");
 
 		console.log("APP20 real-pool mail flow passed:");
 		console.log(`  privacy_Privacy: ${env.privacy.address}`);

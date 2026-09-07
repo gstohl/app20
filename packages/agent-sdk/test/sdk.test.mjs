@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, stat, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, stat, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { hash } from 'starknet';
@@ -55,16 +55,16 @@ test('owner-only key generation, no overwrite, public registration and exact inv
     assert.equal(key.d,undefined);assert.equal((await stat(path)).mode&0o777,0o600);
     await assert.rejects(()=>createTransportKey(path),/EEXIST/);
     const privateKey=JSON.parse(await readFile(path,'utf8'));
-    await assert.rejects(()=>f.client.registrationCall(privateKey,7),/private key/);
-    assert.equal((await f.client.registrationCall(key,7)).entrypoint,'register');
-    const calls=await f.client.inventoryCalls('fund',MAINNET.buyToken.address,'1.25');
-    assert.deepEqual(calls.map(c=>c.entrypoint),['approve','deposit_inventory']);
+    await assert.rejects(()=>f.client.registrationCall(privateKey,7),/Confidential settlement/);
+    await assert.rejects(()=>f.client.registrationCall(key,7),/Confidential settlement/);
+    await assert.rejects(()=>f.client.inventoryCalls('fund',MAINNET.buyToken.address,'1.25'),/Confidential settlement/);
+    const calls=await f.client.inventoryCalls('withdraw',MAINNET.buyToken.address,'1.25');
+    assert.deepEqual(calls.map(c=>c.entrypoint),['withdraw_inventory']);
     assert.equal(calls[0].calldata[1],'1250000');
-    assert.equal(calls[1].calldata[1],'1250000');
     assert.equal(await f.client.availableInventory('0xabc',MAINNET.buyToken.address),((1n<<128n)+7n).toString());
     assert.equal((await f.client.listMakers()).makers[0].address,'0xabc');
     f.state.chain='0x123';
-    await assert.rejects(()=>f.client.registrationCall(key,7),/network/);
+    await assert.rejects(()=>f.client.availableInventory('0xabc',MAINNET.buyToken.address),/network/);
   } finally {await rm(f.dir,{recursive:true,force:true});}
 });
 
@@ -78,68 +78,38 @@ test('decimal-aware configuration, explicit budgets and no website dependency',(
   assert.throws(()=>new App20Client({rpcUrl:'http://example.com'}),/HTTPS/);
 });
 
-test('persisted encrypted quote, settlement fee cap, atomic actions and receipt recovery',async()=>{
-  const f=await fixture();
+test('public RFQ methods fail before RPC, file creation, signing or submission', async () => {
+  const dir=await mkdtemp(join(tmpdir(),'app20-sdk-closed-'));
+  let touched=0;
+  const tripwire=()=>{touched++;throw Error('External action called');};
+  const client=new App20Client({provider:new Proxy({}, {get:()=>tripwire})});
+  const file=join(dir,'never-created.json');
+  const executor={address:'0xdef',chainId:MAINNET.chainId,execute:tripwire};
   try {
-    const prepared=await f.client.prepareQuote(f.input);
-    assert.equal((await stat(f.file)).mode&0o777,0o600);
-    await assert.rejects(()=>f.client.prepareQuote(f.input),/EEXIST/);
-    let requestCount=0;
-    const requestExecutor={address:'0xdef',chainId:MAINNET.chainId,execute:async calls=>{requestCount++;assert.deepEqual(calls,[prepared.call]);return {transaction_hash:'0x111'};}};
-    await assert.rejects(()=>f.client.submitRequest(f.file,{...requestExecutor,address:'0xaaa'}),/Executor/);
-    await f.client.submitRequest(f.file,requestExecutor);
-    await assert.rejects(()=>f.client.submitRequest(f.file,requestExecutor),/already attempted/);
-    assert.equal(requestCount,1);
-    await f.answer();
-    assert.equal((await f.client.readQuote(f.file)).buyAmount,'250000');
-    let settled=0;
-    const executor={address:'0xdef',chainId:MAINNET.chainId,execute:async actions=>{settled++;assert.deepEqual(actions.map(a=>a.type),['withdraw','transfer','invoke']);assert.equal(actions[1].amount,'OPEN');return {transaction_hash:'0x222'};}};
-    await assert.rejects(()=>f.client.settle(f.file,executor,'5'),/Pool fee/);
-    assert.equal(settled,0);
-    await f.client.settle(f.file,executor,'6');
-    const reloaded=new App20Client({provider:f.provider});
-    await assert.rejects(()=>reloaded.settle(f.file,executor,'6'),/already attempted/);
-    assert.equal(settled,1);
-    f.state.receipt='success';f.state.quoteStatus='0x2';
-    assert.equal((await reloaded.reconcile(f.file)).settlement.status,'confirmed');
-  } finally {await rm(f.dir,{recursive:true,force:true});}
-});
-
-test('uncertain submission and concurrent processes cannot send a duplicate',async()=>{
-  const f=await fixture();
-  try {
-    await f.client.prepareQuote(f.input);
-    let release;const wait=new Promise(r=>release=r);let entered;const started=new Promise(r=>entered=r);
-    const executor={address:'0xdef',chainId:MAINNET.chainId,execute:async()=>{entered();await wait;throw Error('Connection lost after broadcast');}};
-    const first=f.client.submitRequest(f.file,executor);const rejected=assert.rejects(first,/Connection lost/);
-    await started;
-    await assert.rejects(()=>new App20Client({provider:f.provider}).submitRequest(f.file,executor),/EEXIST/);
-    release();await rejected;
-    await assert.rejects(()=>f.client.submitRequest(f.file,executor),/already attempted/);
-    assert.equal((await f.client.reconcile(f.file)).request.status,'prepared');
-  } finally {await rm(f.dir,{recursive:true,force:true});}
-});
-
-test('changed deployment or blocked pool prevents request preparation',async()=>{
-  const f=await fixture();
-  try {
-    f.state.blocked='0x1';
-    await assert.rejects(()=>f.client.prepareQuote(f.input),/does not currently accept/);
-    await assert.rejects(()=>stat(f.file),/ENOENT/);
-    await assert.rejects(()=>runMaker({configFile:'operator.json',command:'made-up'}),/Unsupported/);
-  } finally {await rm(f.dir,{recursive:true,force:true});}
-});
-
-test('included Node wallet rejects unsafe relay URLs, missing gas budgets and unrelated action batches',async()=>{
-  const {createPrivacyWallet}=await import('../dist/index.js');
-  const dir=await mkdtemp(join(tmpdir(),'app20-node-wallet-'));
-  let calls=0;
-  const options={account:{address:'0xabc'},provider:{getChainId:async()=>{calls++;return MAINNET.chainId;}},viewingKeyProvider:{getViewingKey:async()=>1n},stateDirectory:dir,relayUrl:'https://app20.io/api/privacy/prove',relayToken:'local-fixture',maxFeePerTransaction:1n,maxTotalFees:2n};
-  try {
-    await assert.rejects(()=>createPrivacyWallet({...options,relayUrl:'http://example.com'}),/HTTPS/);
-    await assert.rejects(()=>createPrivacyWallet({...options,maxTotalFees:0n}),/gas limits/);
-    const wallet=await createPrivacyWallet(options);
-    await assert.rejects(()=>wallet.executor.execute([{type:'invoke',contract:'0x777',calldata:[]}]),/Unsupported/);
-    assert.equal(calls,0,'Constructing a wallet or rejecting arbitrary actions must not start chain activity');
+    await assert.rejects(()=>client.prepareQuote({file,maker:'0xabc',taker:'0xdef',terms:{sellToken:'0x1',buyToken:'0x2',sellAmount:'1',minBuyAmount:'1'}}),/Confidential settlement/);
+    await assert.rejects(()=>client.submitRequest(file,executor),/Confidential settlement/);
+    await assert.rejects(()=>client.settle(file,executor,'6'),/Confidential settlement/);
+    for(const command of ['register','fund','run']) await assert.rejects(()=>runMaker({configFile:file,command}),/Confidential settlement/);
+    await assert.rejects(()=>stat(file),/ENOENT/);
+    await assert.rejects(()=>stat(file+'.lock'),/ENOENT/);
+    assert.equal(touched,0);
   } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+test('historical pending receipts remain reconcilable without another settlement',async()=>{
+  const f=await fixture();
+  try {
+    const scope={chainId:MAINNET.chainId,book:MAINNET.address,id:'0x77',maker:'0xabc',taker:'0xdef',revision:1,expiresAt:Math.floor(Date.now()/1000)+600};
+    const answer={kind:'executable',quoteId:scope.id,settlement:MAINNET.settlement.address,buyAmount:'250000',expiresAt:scope.expiresAt,commitment:'0x88'};
+    f.state.answer=answer;
+    f.state.record={version:1,scope,terms:f.input.terms,secret:'0x99',privateKey:{},call:{},request:{status:'submitted',transactionHash:'0x111'},settlement:{status:'submitted',transactionHash:'0x222'},answer};
+    await writeFile(f.file,JSON.stringify(f.state.record),{mode:0o600});
+    f.state.receipt='success';f.state.quoteStatus='0x2';
+    const recovered=await f.client.reconcile(f.file);
+    assert.equal(recovered.request.status,'confirmed');
+    assert.equal(recovered.settlement.status,'confirmed');
+    const saved=await readFile(f.file,'utf8');
+    await assert.rejects(()=>f.client.settle(f.file,{address:'0xdef',chainId:MAINNET.chainId,execute:()=>{throw Error('must not submit');}},'6'),/Confidential settlement/);
+    assert.equal(await readFile(f.file,'utf8'),saved);
+  } finally {await rm(f.dir,{recursive:true,force:true});}
 });

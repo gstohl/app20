@@ -13,6 +13,8 @@ import { createServer } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertLocalnetSettlementActions, assertLocalnetSettlementRoute } from "./localnet-settlement-policy.mjs";
+import { rejectPublicSettlement } from "../packages/domain/src/settlement-privacy.ts";
 import { withHelperFundingPreflight } from "./escrow-funding-preflight.mjs";
 // Node 24 strips types natively, so the solver shares one canonical-quote
 // implementation with the app instead of keeping a drift-prone copy here.
@@ -1294,6 +1296,7 @@ function assertLocalIntentPair(body, env, starknet) {
 
 async function executePrivacyActions(identity, actions, label, env, starknet, escrowAddress, mailHelperAddress) {
   return serializeOperation(label, identity.id, async () => {
+    assertLocalnetSettlementActions(actions, { escrowAddress, mailHelperAddress, strkAddress: env.strk });
     await approveDeposits(identity, actions, env, starknet);
     const prepared = await identity.prover.prove(actions);
     if (prepared.proof.data !== undefined && prepared.proof.data !== "") {
@@ -1898,6 +1901,7 @@ async function startApi({
   }
 
   function assertRfqStartAllowed(action) {
+    rejectPublicSettlement();
     if (Math.floor(Date.now() / 1_000) >= RFQ_MAKER_KEY_VALID_UNTIL)
       fail(
         `${action} is blocked because the published local fixture maker keys expired; recovery remains enabled.`,
@@ -1990,6 +1994,7 @@ async function startApi({
 
       const body = await readRequestBody(request);
       assertLocalnetRuntimeEpoch(url.pathname, body, RUNTIME_EPOCH);
+      assertLocalnetSettlementRoute(url.pathname);
       if (url.pathname === "/devnet/create-block") {
         const result = await serializeOperation(
           "create one test-only devnet block",

@@ -1,4 +1,5 @@
 import { poseidonHashMany } from '@scure/starknet';
+import { rejectPublicSettlement } from '@app20/domain';
 import { amount, felt, type MakerScope, type MakerTerms } from './starknet-maker.ts';
 export type SettlementDeployment = Readonly<{ address: string; classHash: string; pool: string; poolClassHash: string }>;
 export type ExecutableMakerAnswer = Readonly<{ kind: 'executable'; buyAmount: string; expiresAt: number; settlement: string; quoteId: string; commitment: string }>;
@@ -14,6 +15,7 @@ export function decodeExecutableAnswer(body: unknown, scope: MakerScope, terms: 
 }
 /** Published Wallet API actions only: one atomic withdrawal and shielded output. */
 export function buildPrivateSettlementActions(scope: MakerScope, terms: MakerTerms, answer: ExecutableMakerAnswer, secret: string, recipient: string) {
+  rejectPublicSettlement();
   if (settlementCommitment(scope.chainId, answer.settlement, secret) !== felt(answer.commitment) || felt(answer.quoteId) !== felt(scope.id)) throw new Error('Settlement authorization does not match.');
   amount(terms.sellAmount); amount(answer.buyAmount);
   return [

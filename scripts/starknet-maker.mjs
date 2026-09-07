@@ -2,12 +2,15 @@
 import { readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, mkdirSync, fsyncSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { Account, RpcProvider, hash } from 'starknet';
+import { rejectPublicSettlement } from '../packages/domain/src/settlement-privacy.ts';
 import { coordinatesKey, decodeRequest, felt, keyCoordinates, open, publicKey, responseCall, seal } from '../packages/private-intents/src/starknet-maker.ts';
 import { canRespond, validateResponseLimits } from '../packages/maker-node/src/response-limits.ts';
 import { priceRequest, validateMarket } from '../packages/maker-node/src/starknet-pricing.ts';
 import { verifyMakerBook, verifySettlement } from '../src/lib/starknet-maker-client.ts';
 
 const [configPath, mode = '--check'] = process.argv.slice(2);
+// Stop before reading operator files, loading keys, accessing RPC, or spawning transactions.
+if (['--register', '--run', '--fund'].includes(mode)) rejectPublicSettlement();
 if (configPath === '--init-key') {
   if (!mode || mode.startsWith('--')) throw new Error('Usage: node app20-maker.mjs --init-key ./maker-key.json');
   const path = resolve(mode);

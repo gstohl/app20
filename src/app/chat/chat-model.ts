@@ -309,7 +309,7 @@ export function offerRecord(
       ? "Verify the transfer outcome before taking any further action."
       : "Transfer pending confirmation. Do not submit another transfer.";
   } else if (!own && status === "offered" && !expired) {
-    needsAction = "Accept or decline this offer.";
+    needsAction = "Review or decline. Confidential swap support is pending.";
   } else if (
     !own &&
     status === "accepted" &&

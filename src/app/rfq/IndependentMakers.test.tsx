@@ -1,14 +1,13 @@
 import { it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import IndependentMakers, { parseMakerAmount, parseMakerConfig } from './IndependentMakers';
-it('shows the independent operator path without presenting indicative quotes as trades', () => {
+it('keeps earlier records readable without offering public settlement', () => {
   const html = renderToStaticMarkup(<IndependentMakers />);
-  expect(html).toContain('Compare &amp; swap');
-  expect(html).toContain('Negotiate in Chat');
-  expect(html).toContain('Account addresses, the selected maker and timing are public');
-  expect(html).toContain('not been configured');
-  expect(html).toContain('reserves its own inventory only for a funded offer');
-  expect(html).not.toContain('>Take<');
+  expect(html).toContain('Earlier public RFQ records only');
+  expect(html).toContain('Confidential settlement availability');
+  expect(html).toContain('Recover maker inventory');
+  expect(html).not.toContain('Confirm private swap');
+  expect(html).not.toContain('Request funded offer');
 });
 it('converts human amounts exactly and rejects precision loss', () => {
   expect(parseMakerAmount('1.000001', 6)).toBe('1000001');

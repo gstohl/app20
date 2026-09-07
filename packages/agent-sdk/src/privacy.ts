@@ -1,4 +1,5 @@
 import type { Account, RpcProvider, Call } from 'starknet';
+import { rejectPublicSettlement } from '@app20/domain';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PrivacyClient } from '../../privy/src/privacy';
@@ -51,6 +52,7 @@ export async function createPrivacyWallet(options: NodePrivacyOptions): Promise<
     unshield:(token,amount)=>run(()=>privacy.unshield({token,amount})),
     reconcile:()=>exclusive('wallet',reconcile),
     executor:{address:account.address,chainId:mainnet.chainId,execute:async actions=>{
+      rejectPublicSettlement();
       const [fund,recover,invoke]=actions;
       if(actions.length!==3||fund?.type!=='withdraw'||recover?.type!=='transfer'||recover.amount!=='OPEN'||invoke?.type!=='invoke'||BigInt(fund.recipient)!==BigInt(mainnet.settlement.address)||BigInt(invoke.contract)!==BigInt(mainnet.settlement.address)||invoke.calldata.length!==3||invoke.calldata[2]!=='${openNoteIds[0]}'||BigInt(recover.recipient)!==BigInt(account.address))throw new Error('Unsupported private settlement batch.');
       const transaction_hash=await run(()=>privacy.invokeExternal({funding:{token:fund.token,recipient:fund.recipient,amount:BigInt(fund.amount)},recovery:{token:recover.token,recipient:recover.recipient},calldata:args=>{const notes=args.openNotes as {noteId:bigint}[];if(notes.length!==1)throw new Error('Expected one output note.');return {contractAddress:invoke.contract,calldata:[invoke.calldata[0],invoke.calldata[1],notes[0]!.noteId]};}}));

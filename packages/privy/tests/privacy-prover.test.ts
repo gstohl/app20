@@ -21,6 +21,7 @@ function fakeSdk(
     invalidateProofNonceCache?: () => void;
     onWithToken?: (token: unknown) => void;
     onTokenOperation?: (method: string, input: unknown) => void;
+    onChange?: (recipient: unknown, withdraw: unknown) => void;
     onInvoke?: (
       callBuilder: (args: Record<string, unknown>) => unknown,
     ) => void;
@@ -41,6 +42,10 @@ function fakeSdk(
       for (const method of ["register", "setup", "surplusTo"]) {
         builder[method] = () => builder;
       }
+      builder.surplusTo = (recipient: unknown, withdraw: unknown) => {
+        options.onChange?.(recipient, withdraw);
+        return builder;
+      };
       builder.invoke = (
         callBuilder: (args: Record<string, unknown>) => unknown,
       ) => {
@@ -190,72 +195,65 @@ describe("PrivacyClient prover safety", () => {
     expect(account.execute).not.toHaveBeenCalled();
   });
 
-  it("builds one grouped external invoke for private mail and attachment", async () => {
-    const account = fakeAccount();
-    const withTokens: unknown[] = [];
+  it("keeps payment change encrypted without withdrawals or OPEN notes", async () => {
     const operations: Array<{ method: string; input: unknown }> = [];
-    let invokeBuilder:
-      | ((args: Record<string, unknown>) => unknown)
-      | undefined;
-    const token = "0x04718";
+    const onChange = vi.fn();
+    const account = fakeAccount();
     const client = new PrivacyClient({
       account: account as never,
       provider: fakeProvider() as never,
-      network: "sepolia",
+      network: "mainnet",
       poolAddress: "0x123",
       prover: customProver(provingProvider(), { submittable: false }),
       discovery,
       privacySdk: fakeSdk(callAndProof(), {
-        onWithToken: (value) => withTokens.push(value),
-        onTokenOperation: (method, input) =>
-          operations.push({ method, input }),
-        onInvoke: (builder) => {
-          invokeBuilder = builder;
-        },
+        onTokenOperation: (method, input) => operations.push({ method, input }),
+        onChange,
       }),
       viewingKeyProvider: { getViewingKey: async () => 1n },
     });
 
-    await expect(
-      client.invokeExternal({
-        funding: { token, recipient: "0xhelper", amount: 7n },
-        recovery: { token, recipient: "0xabc" },
-        transfers: [{ token, recipient: "0xbob", amount: 5n }],
-        calldata: (args) => ({
-          contractAddress: "0xhelper",
-          calldata: [
-            args.poolAddress,
-            (args.openNotes as Array<{ noteId: bigint }>)[0]?.noteId,
-          ],
-        }),
-      }),
-    ).resolves.toMatchObject({ submitted: false });
-
-    expect(withTokens).toEqual([token]);
-    expect(operations.map(({ method }) => method)).toEqual([
-      "transfer",
-      "withdraw",
-      "transfer",
-      "surplusTo",
-    ]);
-    expect(operations[0]?.input).toEqual({ recipient: "0xbob", amount: 5n });
-    expect(operations[1]?.input).toEqual({
-      recipient: "0xhelper",
-      amount: 7n,
-    });
-    expect(
-      typeof (operations[2]?.input as { amount?: unknown }).amount,
-    ).toBe("symbol");
-    expect(invokeBuilder).toBeTypeOf("function");
-    expect(
-      invokeBuilder?.({
-        poolAddress: 0x123n,
-        openNotes: [{ noteId: 99n }],
-        withdrawals: [],
-      }),
-    ).toEqual({ contractAddress: "0xhelper", calldata: [0x123n, 99n] });
+    await expect(client.transfer({ token: "0x4718", recipient: "0x456", amount: 5n }))
+      .resolves.toMatchObject({ submitted: false });
+    expect(operations).toEqual([{ method: "transfer", input: { recipient: "0x456", amount: 5n } }]);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("0xabc", false);
     expect(account.execute).not.toHaveBeenCalled();
   });
+
+  it.each(["invoke", "invokeExternal"] as const)(
+    "rejects retired %s before inspecting input, reading keys, RPC, or proving",
+    async (method) => {
+      const account = fakeAccount();
+      const provider = fakeProvider();
+      const getViewingKey = vi.fn(async () => 1n);
+      const sdk = fakeSdk(callAndProof("proof-data"));
+      const createTransfers = vi.spyOn(sdk, "createPrivateTransfers");
+      const prover = provingProvider("proof-data");
+      const client = new PrivacyClient({
+        account: account as never,
+        provider: provider as never,
+        network: "mainnet",
+        poolAddress: "0x123",
+        prover: customProver(prover, { submittable: true }),
+        discovery,
+        privacySdk: sdk,
+        viewingKeyProvider: { getViewingKey },
+      });
+      const readInput = vi.fn(() => { throw new Error("input accessed"); });
+      const input = new Proxy({}, { get: readInput });
+
+      await expect(client[method](input as never)).rejects.toThrow(
+        "Confidential settlement is required",
+      );
+      expect(readInput).not.toHaveBeenCalled();
+      expect(getViewingKey).not.toHaveBeenCalled();
+      expect(createTransfers).not.toHaveBeenCalled();
+      expect(prover.prove).not.toHaveBeenCalled();
+      expect(provider.callContract).not.toHaveBeenCalled();
+      expect(provider.getBlockNumber).not.toHaveBeenCalled();
+      expect(account.execute).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses direct submission through a non-submittable prover", async () => {
     const client = new PrivacyClient({

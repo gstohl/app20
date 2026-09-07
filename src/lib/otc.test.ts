@@ -592,6 +592,20 @@ describe("payment request idempotency", () => {
     expect(stored.receipt).toBeUndefined();
   });
 
+  it("keeps a payment fenced across reload when the wallet loses its response", () => {
+    const storage = new MemoryStorage();
+    const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
+    recordPaymentRequest(...scope, request, 1_900_000_000);
+    const claimed = claimPayment(...scope, request, 1_900_000_001);
+    markPaymentOutcome(...scope, request.requestId, undefined, "unknown", 1_900_000_002);
+    releasePayment(...scope, request.requestId, 1_900_000_003);
+    expect(loadOtcState(...scope).payments[request.requestId]).toMatchObject({
+      status: "paid", paymentPending: true, paymentVerified: false,
+      paymentOperation: {state: "unknown", attemptId: claimed.paymentOperation?.attemptId},
+    });
+    expect(() => claimPayment(...scope, request, 1_900_000_004)).toThrow(/no second transfer/i);
+  });
+
   it("releases a reserved payment without leaving a reserved operation fence", () => {
     const storage = new MemoryStorage();
     const scope = [storage, "SN_SEPOLIA", "0xb0b"] as const;
