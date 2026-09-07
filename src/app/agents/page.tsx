@@ -1,0 +1,38 @@
+import { Link } from '@tanstack/react-router';
+import { MAINNET_MAKER_CONFIG as deployment } from '@/lib/mainnet-maker-config';
+import styles from './agents.module.css';
+export default function AgentsPage() {
+  return <main className={styles.page}>
+    <header><p className={styles.eyebrow}>APP20 / AGENTS</p><h1>Chat, quote, and become a maker</h1><p>Use your own account and signing policy. Maker discovery and encrypted RFQ messages live on Starknet; there is no APP20 approval service.</p></header>
+    <nav aria-label="Agent resources"><a href="/agents.md">Plain-text agent guide</a><a href="/.well-known/app20.json">Deployment manifest</a><Link to="/rfq/maker">Maker setup UI</Link></nav>
+    <section><h2>What is available</h2><dl><div><dt>Maker registration and inventory</dt><dd>Live on mainnet. Register from RFQ → Become a maker, or use the bot CLI.</dd></div><div><dt>Executable quotes</dt><dd>Supported when a maker has inventory and a running bot. Users accept through a privacy-enabled wallet. Three real mainnet fills were verified through the Node SDK on September 7, 2026, with one operator controlling both sides. Browser wallet acceptance remains separate.</dd></div><div><dt>Chat</dt><dd>The chat screen and localnet messaging exist. The Chat helper is not deployed on mainnet yet; there is no working mainnet chat endpoint to call.</dd></div></dl></section>
+    <section><h2>Node.js library</h2><p>Agents can use <code>@app20/agent-sdk</code> directly, without the website. Discover makers, register and fund an account, run the maker bot, and request encrypted quotes through Starknet RPC.</p><p><a href="/downloads/app20-agent-sdk-0.1.0.tgz" download>Download npm package</a> · <a href="/downloads/app20-agent-sdk-0.1.0.sha256">SHA-256</a> · <a href="/agent-sdk.md">API guide and examples</a></p>
+      <pre>{`npm install https://app20.io/downloads/app20-agent-sdk-0.1.0.tgz
+
+import { App20Client } from '@app20/agent-sdk';
+const app = new App20Client();
+await app.verify();
+const { makers } = await app.listMakers();`}</pre>
+      <p>Node 24+ with TypeScript definitions. Distributed here as an npm-installable archive; not yet on the npm registry. The API guide includes checksum verification.</p><p>Signing stays with your agent. The included Node wallet adapter connects your local signer to the hosted prover and supplies a settlement executor. Proving uses HTTPS: APP20/Cloudflare and the provider can read proving payloads. Mainnet Chat is not available yet.</p>
+    </section>
+    <section><h2>Become a maker</h2><ol><li>Use a dedicated Starknet mainnet account with your own gas and inventory limits.</li><li>Download the standalone bot and check its SHA-256. It requires Node 24 or later.</li><li>Create the transport key locally. Only its public JSON belongs in the maker UI.</li><li>In <Link to="/rfq/maker">Become a maker</Link>, register the public key, fund output inventory, and download your price and fee settings as <code>operator.json</code>.</li><li>Provide the bot’s signer through your secret management, then run the read-only check before starting it.</li></ol>
+      <p><a href="/downloads/app20-maker.mjs" download>Download bot</a> · <a href="/downloads/app20-maker.sha256">SHA-256</a></p>
+      <pre>{`curl -fSLO https://app20.io/downloads/app20-maker.mjs
+curl -fSLO https://app20.io/downloads/app20-maker.sha256
+shasum -a 256 -c app20-maker.sha256
+node app20-maker.mjs --init-key ./maker-key.json
+
+# Download operator.json from RFQ → Become a maker.
+export APP20_MAKER_TRANSPORT_FILE=./maker-key.json
+# Inject APP20_MAKER_SIGNING_KEY using your local secret manager.
+node app20-maker.mjs operator.json --check
+node app20-maker.mjs operator.json --run`}</pre>
+      <p>The key file is created with owner-only permissions and must stay private. Never paste its contents, a wallet signing key, or a viewing key into chat or the browser. The public registration key is safe to share.</p>
+      <p>Available commands: <code>--register</code>, <code>--run</code>, <code>--deactivate</code>, <code>--fund</code>, <code>--withdraw</code>, <code>--release</code>, and <code>--reconcile</code>. The UI can fund and withdraw directly; CLI funding and withdrawal require an explicit amount in the corresponding config field.</p>
+      <p>The bot needs persistent local storage and Starknet RPC. It is not run by this web page. It stops quoting when prices expire; update your own rate policy. Preserve the state file and reconcile an uncertain transaction before retrying. <code>--release</code> returns expired tracked reservations to available inventory.</p>
+    </section>
+    <section><h2>How to chat</h2><p>When a compatible Chat deployment is available, connect your privacy wallet, open <Link to="/chat">Chat</Link>, create or unlock your chat keys, choose a counterparty, and send an encrypted message. Read incoming messages in the same wallet scope; keep recovery material private and use the app’s encrypted recovery controls.</p><p><strong>Mainnet chat is not active yet.</strong> For agent development, the repository’s <code>npm run dev:localnet</code> environment supports the Alice/Bob chat flow. These are development wallets only. Do not put mainnet funds into them.</p><p>Chat keys and the maker’s P-256 transport key serve different protocols. RFQ request/reply ciphertext is not a general conversation. An agent must not invent a REST send-message endpoint or substitute the maker book for the undeployed Chat helper.</p></section>
+    <section><h2>Protocol and privacy</h2><p>To request a quote, obtain the maker’s active key and revision, encrypt the terms and settlement commitment using the APP20 HPKE format, and call the maker book’s <code>request</code>. A maker atomically reserves output inventory and posts an encrypted reply. Before acceptance, verify the exact on-chain reservation, amounts, commitment, expiry and deployed classes.</p><p>The taker’s standard privacy-wallet batch is <code>withdraw → transfer OPEN → invoke</code>. This is one atomic operation. Do not send a standalone public payment or improvise a separate funding transaction for the taker.</p><p>Request/reply bodies are encrypted, but the requesting account, selected maker and timing are public. Funded quote terms, inventory and proceeds are also public. Shielded settlement is not anonymous trading. Maker spreads are revenue opportunities, not guaranteed profit.</p></section>
+    <section><h2>Verified mainnet contracts</h2><dl><div><dt>Chain</dt><dd><code>{deployment.chainId}</code></dd></div><div><dt>Maker book</dt><dd><code>{deployment.address}</code></dd></div><div><dt>Settlement</dt><dd><code>{deployment.settlement.address}</code></dd></div><div><dt>Privacy pool</dt><dd><code>{deployment.settlement.pool}</code></dd></div></dl><p>Exact class hashes, token metadata and the deployment block are in the <a href="/.well-known/app20.json">machine-readable manifest</a>. Validate them through RPC before signing.</p></section>
+  </main>;
+}

@@ -104,3 +104,6 @@ export {
   memoizedViewingKeyProvider,
   viewingKeyTypedData,
 } from "./viewing-key.js";
+
+export { starkscanProver } from './starkscan.js';
+export type { StarkscanProverOptions, ProofJournal, ProofJob } from './starkscan.js';

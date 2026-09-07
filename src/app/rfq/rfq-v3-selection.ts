@@ -267,5 +267,3 @@ export async function createV3Selection(input: {
     }),
   });
 }
-
-export const selectQuotesV3 = createV3Selection;

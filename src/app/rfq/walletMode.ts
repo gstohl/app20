@@ -1,5 +1,4 @@
 import { create } from "zustand";
-import { privyBrowserConfigured } from "@/app/rfq/privy-config";
 
 export type WalletMode = "ready" | "privy";
 
@@ -18,7 +17,7 @@ export function assertPrivyRailSelected(mode: WalletMode): void {
 }
 
 export const useWalletMode = create<WalletModeState>((set) => ({
-  mode: privyBrowserConfigured ? "privy" : "ready",
+  mode: "ready",
   setMode: (mode) => set({ mode }),
   privyConnected: false,
   privyAddress: "",

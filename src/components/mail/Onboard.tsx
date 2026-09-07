@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import type { MailKeypair } from "@/lib/mail";
 import { deriveKeypair, publicKeyToFelts } from "@/lib/mail";
 import { MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE } from "@/lib/mail-authority-copy";
@@ -371,10 +372,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
     }
   }
 
-  // Setup is already a three-beat sequence in state; this only makes the
-  // sequence visible. Registration is one action, so "Register" is current
-  // while it is in flight and complete once a backup phrase exists.
-  const activeStep = backupPhrase ? 2 : setup.kind === "pending" ? 1 : 0;
+  const activeStep = backupPhrase ? 1 : 0;
   const stepState = (index: number) =>
     index < activeStep
       ? "complete"
@@ -382,37 +380,31 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         ? "current"
         : "upcoming";
 
+  if (!helperAddress) return <section id="mailbox-key-setup" className={styles.card} aria-labelledby="onboard-title">
+    <h2 id="onboard-title" className={styles.cardTitle}>Chat isn’t available on this network yet</h2>
+    <p className={styles.copy}>The Chat contract still needs to be deployed. Trading and wallet funding are available.</p>
+    <Link to="/rfq" className={styles.primaryButton}>Go to trading</Link>
+  </section>;
+
   return (
     <section
       id="mailbox-key-setup"
       className={styles.card}
       aria-labelledby="onboard-title"
     >
-      <div className={styles.cardNumber}>01</div>
       <div>
         <p className={styles.kicker}>{vault.kind === "missing" ? "CHAT SETUP" : "CHAT ACCESS"}</p>
         <h2 id="onboard-title" className={styles.cardTitle}>
           {pending ? "Save your chat backup" : vault.kind === "missing" ? "Set up encrypted chat" : "Open encrypted chat"}
         </h2>
       </div>
-      {vault.kind === "missing" && !pending ? (
-        <div className={styles.setupChoices} role="group" aria-label="Chat setup method">
-          <button type="button" aria-pressed={setupMode === "create"} disabled={disabled}
-            onClick={() => setSetupMode("create")}>Set up Chat</button>
-          <button type="button" aria-pressed={setupMode === "restore"} disabled={disabled}
-            onClick={() => setSetupMode("restore")}>Restore chat access</button>
-        </div>
-      ) : null}
       {(vault.kind !== "missing" && !pending) || (setupMode === "restore" && !pending) ? null : (
         <ol className={styles.setupSteps} aria-label="Chat setup progress">
           <li data-state={stepState(0)}>
-            <span aria-hidden="true">1</span>Device
+            <span aria-hidden="true">1</span>Enable Chat
           </li>
           <li data-state={stepState(1)}>
-            <span aria-hidden="true">2</span>Register
-          </li>
-          <li data-state={stepState(2)}>
-            <span aria-hidden="true">3</span>Backup
+            <span aria-hidden="true">2</span>Save recovery phrase
           </li>
         </ol>
       )}
@@ -420,8 +412,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         {pending ? "Keep this backup private. You need it to restore chat access on another device."
           : vault.kind === "missing" && setupMode === "restore" ? "Restore your chat key from a backup to read your encrypted messages."
           : vault.kind === "missing"
-          ? "Create a device key and register its public key to receive encrypted messages. Registration is a public Starknet transaction."
-          : "Your chat key is saved on this device. Load it to read and send messages. We check its registration; no new transaction is needed when it already matches."}
+          ? "Enable Chat once with your wallet, then save your recovery phrase. One wallet approval and a network fee are required."
+          : "Open Chat with the key saved on this device. Messages load automatically. No transaction is needed when your key is already registered."}
       </p>
       {address && chainId ? null : (
         <p className={styles.notice}>
@@ -430,15 +422,6 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
           is disabled.
         </p>
       )}
-      {helperAddress ? null : (
-        <p className={styles.notice}>
-          Chat registration needs a helper configured for this APP20 rail.
-          Live-network helpers are intentionally unavailable, so register and
-          restore stay disabled. Shield and unshield still work from the wallet
-          rail — they talk to the live STRK20 pool, not this helper.
-        </p>
-      )}
-
       {pending ? null : vault.kind === "passphrase" ? (
         <div className={styles.restoreForm}>
           <p className={styles.notice}>
@@ -465,8 +448,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         </div>
       ) : (
         <>
-          <details open={vault.kind === "missing" || undefined}>
-            <summary>Chat key protection and recovery</summary>
+          <details>
+            <summary>Protect this device with a passphrase</summary>
             <label className={styles.field}>
               <span>
                 <input
@@ -478,25 +461,20 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               </span>
               {wrapExisting ? (
                 <small>
-                  Your key is encrypted on this device. APP20 cannot read messages or use your
-                  signing key until you unlock this session, and never stores the
-                  passphrase. A wallet signature cannot be the wrap key — Ready
-                  signatures are not a stable secret.
+                  Encrypt your saved chat key and unlock it with this passphrase.
+                  APP20 does not store the passphrase.
                 </small>
               ) : null}
             </label>
             {wrapExisting ? null : (
               <p className={styles.actionWarning}>
-                Leaving this off stores the raw 32-byte chat seed in the clear
-                in this browser profile. Anyone with the profile can read your
-                messages and create payment requests that display as
-                verified from you.
+                Without a passphrase, anyone with access to this browser profile
+                can read your messages and use your chat signing key.
               </p>
             )}
             <p className={styles.finePrint}>
-              Your chat backup is the only recovery if
-              you clear this profile or forget the passphrase, and APP20 currently
-              cannot revoke the Chat key if that backup is compromised.
+              Keep your recovery phrase. You need it if you clear this browser
+              or forget the passphrase. A compromised chat key cannot currently be revoked.
             </p>
             {wrapExisting ? (
               <>
@@ -523,6 +501,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               </>
             ) : null}
           </details>
+          {!wrapExisting ? <p className={styles.finePrint}>Your chat key will be saved in this browser without a passphrase.</p> : null}
           {vault.kind === "missing" && setupMode === "restore" ? null : <button
             className={styles.primaryButton}
             type="button"
@@ -574,7 +553,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
         <summary>Restore from backup</summary>
         <div className={styles.restoreForm}>
           <label className={styles.field} htmlFor="mail-seed-backup">
-            Backup value
+            Chat recovery phrase
             <textarea
               id="mail-seed-backup"
               rows={3}
@@ -589,11 +568,8 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
               placeholder="00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000"
             />
             <small>
-              Paste exactly eight groups of eight hexadecimal characters. Choose
-              plaintext or passphrase wrap above before restoring. Whoever has
-              this value can read your messages and create payment
-              requests that display as verified from you; APP20 currently cannot
-              revoke the key if it is compromised.
+              Paste the phrase saved when you enabled Chat. Anyone with it can
+              read your messages and use your chat signing key. Keep it private.
             </small>
           </label>
           {restoreNeedsConfirmation ? (

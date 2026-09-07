@@ -1,3 +1,4 @@
+import { presentation } from '../../tools/demo-video/presentation.mjs';
 import {
   activateLocalnet,
   connectLocalnetWallet,
@@ -60,6 +61,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
 }) => {
   test.setTimeout(14 * 60_000);
   page.setDefaultTimeout(60_000);
+  const demo = process.env.APP20_DEMO_VIDEO === "1" ? await presentation(page, "chat") : null;
   const alice = localnetIdentity(config, "alice");
   const bob = localnetIdentity(config, "bob");
   // Unique per run: the chain keeps earlier runs' letters, and a fresh browser
@@ -143,11 +145,12 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     await expect(page.getByLabel(`Message to ${contactLabel}`)).toBeFocused();
   });
 
-  await test.step("3. Bob loads his key and sends an encrypted message from the composer", async () => {
+  await test.step("3. Bob stays unlocked after navigation and sends an encrypted message", async () => {
     const form = page.getByRole("form", { name: `Write to ${contactLabel}` });
-    await expect(form).toContainText("Open chat key tools");
-    await loadExistingKey(page);
+    await expect(page.getByRole("button", { name: "Check for new messages" })).toBeVisible();
+    await expect(form).not.toContainText("Open chat key tools");
     const input = page.getByLabel(`Message to ${contactLabel}`);
+    await demo?.mark("Write an encrypted message");
     await input.fill(letter);
     await expect(form).toContainText(
       /1 wallet approval · recipient count and timing are public/i,
@@ -177,12 +180,14 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     ).toBeVisible();
     await expect(conversationRow(page, contactLabel)).toContainText("You:");
     await expect(input).toHaveValue("");
+    await demo?.mark("Message confirmed");
+    await demo?.hold(5);
   });
 
   await test.step("4. Alice names the sealed sender and answers with an offer in the same thread", async () => {
     await switchIdentity(page, config, "alice");
     await loadExistingKey(page);
-    await scanRecent(page);
+    await expect(page.getByText("Updates every 60 seconds", { exact: true })).toBeVisible({ timeout: 120_000 });
     // MessagePosted carries no sender: a first letter from an unknown
     // mailbox arrives sealed until Alice files it under Bob herself.
     const sealed = conversationRow(page, "Sealed sender").filter({
@@ -205,6 +210,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     await expect(entry(page, letter)).toBeVisible();
     await expect(page.getByRole("form", { name: "Reply wallet address" })).toHaveCount(0);
 
+    await demo?.mark("Create a fixed offer");
     await attachTerms(page);
     await expect(page.getByLabel(/^To/)).toHaveValue(addressPattern(bob.address));
     await page.getByPlaceholder(COMPOSE_BODY_PLACEHOLDER).fill(offerBody);
@@ -218,6 +224,8 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     await page.getByLabel("Quoted amount").fill(quote);
     await page.getByLabel("Note (optional)").fill("Chat offer");
     await page.getByLabel(/Expiry in hours \(0 = none\)/).fill("24");
+    await demo?.mark("Review fixed offer");
+    await demo?.hold(5);
     await page
       .getByRole("button", { name: "Send encrypted message", exact: true })
       .click();
@@ -256,6 +264,9 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
     ).toBeVisible();
     await expect(entry(page, offerBody)).toContainText("Opened · record");
 
+    await demo?.mark("Bob reviews the offer");
+    await demo?.hold(8);
+    if (demo) return;
     const context = contextPanel(page);
     await page.getByRole("button", { name: "Contact details", exact: true }).click();
     await expect(context.getByRole("region", { name: "Open RFQs" })).toContainText(
@@ -314,6 +325,7 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
   await test.step("6. Bob accepts once and confirms the local transfer and receipt", async () => {
     await conversationRow(page, contactLabel).click();
     const accept = entry(page, offerBody).getByRole("button", { name: "Accept & send 0.25 STRK" });
+    await demo?.mark("Accept payment");
     await accept.click();
     if (recoveryRun) {
       const card = entry(page, offerBody);
@@ -331,6 +343,9 @@ test(recoveryRun ? "chat recovers lost confirmation and two receipt failures wit
       await expect(page.getByText("Accept transfer and one-sided receipt confirmed.", { exact: true })).toBeVisible({ timeout: 180_000 });
     }
     await expect(accept).toHaveCount(0);
+    await demo?.mark("Payment confirmed");
+    await demo?.hold(8);
+    await demo?.mark("End presentation");
     await page.screenshot({ path: "artifacts/desktop-ux/bob-accepted.png", animations: "disabled" });
   });
 });

@@ -31,6 +31,7 @@ import ChatTimeline, {
   chatEntryDomId,
   type ChatTimelineHandlers,
 } from "./ChatTimeline";
+import ChatSyncStatus from "./ChatSyncStatus";
 import {
   SELF_CONVERSATION_KEY,
   buildChatModel,
@@ -427,7 +428,7 @@ export default function ChatPage() {
     setHighlightId(itemId);
   }
 
-  function startConversation(input: string) {
+  function startConversation(input: string): boolean {
     let recipient: string;
     try {
       recipient = validateAndParseAddress(input.trim());
@@ -437,22 +438,22 @@ export default function ChatPage() {
         message:
           "That is not a valid Starknet address. Pick a saved counterparty or paste the address itself.",
       });
-      return;
+      return false;
     }
     if (address && feltEquals(recipient, address)) {
       if (model.conversations.some((row) => row.contact.key === SELF_CONVERSATION_KEY)) {
         selectConversation(SELF_CONVERSATION_KEY);
-        return;
+        return true;
       }
       desk.setStorageNotice({
         kind: "error",
         message:
           "This is your own chat. Self-addressed backups are posted from the chat tools.",
       });
-      return;
+      return false;
     }
     const key = conversationKeyFor(recipient);
-    if (!key) return;
+    if (!key) return false;
     setSearch("");
     setNeedsActionOnly(false);
     setExtraContacts((current) =>
@@ -460,6 +461,7 @@ export default function ChatPage() {
     );
     selectConversation(key);
     setComposerFocus((value) => value + 1);
+    return true;
   }
 
   /* The document composer: terms, invoices and escrow announcements go out
@@ -698,11 +700,14 @@ export default function ChatPage() {
           gate={gate}
           unattributedSent={model.unattributedSent}
           onSelect={selectConversation}
-          onNewConversation={openNewConversation}
+          onNewConversation={helperAddress ? openNewConversation : undefined}
+          syncStatus={!gate && helperAddress ? <ChatSyncStatus
+            scanning={desk.scanning} lastCheckedAt={desk.lastCheckedAt}
+            error={desk.scanKind === "error"} onRefresh={() => void desk.scanInbox("newer")} /> : null}
           newConversationForm={
-            <ChatNewConversation selfAddress={address} gate={gate}
+            helperAddress ? <ChatNewConversation selfAddress={address} gate={gate}
               onStartConversation={startConversation}
-              onNewDocument={(recipient) => openDocumentComposer(recipient)} />
+              onNewDocument={(recipient) => openDocumentComposer(recipient)} /> : null
           }
         >
           <ChatMailboxTools
@@ -749,8 +754,8 @@ export default function ChatPage() {
                 {composeDraft
                   ? "DOCUMENT DRAFT · STORED LOCALLY"
                   : conversation
-                    ? "CONVERSATION · STORED ON THIS DEVICE"
-                    : "APP20 / CHAT / ENCRYPTED CORRESPONDENCE"}
+                    ? "ENCRYPTED CHAT"
+                    : "ENCRYPTED MESSAGES"}
               </p>
               <strong>
                 {composeDraft ? (
@@ -769,13 +774,13 @@ export default function ChatPage() {
               </strong>
               {conversation && !composeDraft ? (
                 <small>
-                  {conversation.items.length} record
+                  {conversation.items.length} message
                   {conversation.items.length === 1 ? "" : "s"} on this device ·{" "}
                   {conversation.contact.kind === "self"
                     ? "your own chat"
                     : conversation.contact.address
                       ? shortenFelt(conversation.contact.address)
-                      : "unnamed thread"}
+                      : "reply address needed"}
                 </small>
               ) : null}
             </div>
@@ -927,10 +932,10 @@ export default function ChatPage() {
                 aria-labelledby="chat-empty-title"
               >
                 <p className={styles.kicker}>APP20 / CHAT</p>
-                <h2 id="chat-empty-title">No conversations on this device yet.</h2>
+                <h2 id="chat-empty-title">Start a conversation</h2>
                 <p>
-                  Start with a wallet address or a saved counterparty.
-                  Expecting a message? Use Check for new messages in the sidebar.
+                  Choose a saved contact or enter a wallet address.
+                  Incoming messages appear here automatically.
                 </p>
                 <div className={styles.welcomeLinks}>
                   <button type="button" onClick={openNewConversation}>Start a conversation</button>

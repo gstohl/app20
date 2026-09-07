@@ -48,7 +48,8 @@ export async function relayOhttp(
         method: "POST",
         headers,
         body: exactArrayBuffer(body),
-        redirect: "error",
+        // Workers supports manual redirects; the non-2xx check below rejects them.
+        redirect: "manual",
         signal: scope.signal,
       });
       const responseType = (upstream.headers.get("content-type") ?? "").split(";", 1)[0].trim().toLowerCase();

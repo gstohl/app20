@@ -528,3 +528,17 @@ fn register_pubkeys_are_isolated_by_caller() {
     assert(helper.get_pubkey(registrant_a) == (0x123456, 0xabcdef), 'caller B altered caller A');
     assert(helper.get_pubkey(registrant_b) == (0x777777, 0x888888), 'caller B key mismatch');
 }
+
+#[test]
+fn message_only_zero_note_needs_no_token_or_funding_call() {
+    let pool = contract_address(0x111);
+    let (helper_address, helper) = deploy_helper(pool);
+    // No ERC20 is deployed here: message-only execution must not call it.
+    let token = contract_address(0xdead);
+    let computation = compute_protected(helper, 0x123, token, 0, array![0xabc], 0x456);
+    let deposits = invoke_protected(
+        helper_address, helper, pool, computation, token, 0, array![0xabc], 0x456,
+    );
+    assert(deposits.is_empty(), 'unexpected asset recovery');
+    assert(helper.message_count() == 1, 'message not posted');
+}

@@ -24,6 +24,7 @@ export interface NetworkPolicyInput {
   adapter: PrivacyAdapterKind;
   operation: PrivacyOperation;
   submissionMode?: PrivacySubmissionMode;
+  privyMainnetEnabled?: boolean;
 }
 
 export interface NetworkPolicyDecision {
@@ -114,7 +115,7 @@ export function evaluateNetworkPolicy(
     };
   }
 
-  if (input.network === "mainnet" && input.adapter !== "ready") {
+  if (input.network === "mainnet" && input.adapter !== "ready" && !(input.adapter === "privy" && input.privyMainnetEnabled === true)) {
     return {
       allowed: false,
       submittable: false,

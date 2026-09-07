@@ -558,7 +558,7 @@ export function signNegotiationDocument(
   mailboxSeed: Uint8Array,
 ): SignedNegotiationDocumentV1 {
   if (mailboxSeed.length !== 32) {
-    throw new Error("Negotiation signing requires the 32-byte mailbox seed.");
+    throw new Error("Negotiation signing requires the 32-byte chat seed.");
   }
   const normalized = normalizeNegotiationDocument(document);
   const documentDigest = negotiationDocumentDigest(normalized);

@@ -1,6 +1,7 @@
 export const CANONICAL_ROUTES = {
   home: "/",
   rfq: "/rfq",
+  agents: "/agents",
   rfqOperations: "/rfq/operations",
   marketProposal: "/rfq/markets/$tokenA/$tokenB/proposal",
   funding: "/funding",

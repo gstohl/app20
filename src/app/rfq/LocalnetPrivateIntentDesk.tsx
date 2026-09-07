@@ -1641,7 +1641,7 @@ export default function LocalnetPrivateIntentDesk({
                 })
               }
             >
-              Open encrypted correspondence
+              Open encrypted chat
             </Link>
           ) : null}
         </aside>

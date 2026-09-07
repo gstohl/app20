@@ -26,7 +26,6 @@ import {
   strk20ErrorMessage,
   submitActions,
 } from "@/lib/strk20";
-import { feltEquals } from "@/lib/addresses";
 import * as constants from "@/utils/constants";
 import { ProvingProgress } from "@/components/mail/OperationProgress";
 import styles from "./PrivacyWalletMenu.module.css";
@@ -227,7 +226,6 @@ export default function PrivacyWalletMenu({
     }
 
     const amountLabel = `${formatStrkAmount(amount)} STRK`;
-    const provider = constants.myFrontendProviders[providerIndex];
     const startedAt = Date.now();
     setAction({
       kind: "proving",
@@ -434,7 +432,7 @@ export default function PrivacyWalletMenu({
             </code>
           ) : (
             <p className={styles.accountHint}>
-              Connect a privacy-enabled wallet to open this mailbox.
+              Connect a privacy-enabled wallet to open this chat.
             </p>
           )}
         </>

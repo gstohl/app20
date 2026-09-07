@@ -245,7 +245,7 @@ export function unpackFeltsToBytes(felts: readonly FeltInput[]): Uint8Array {
 
   const byteLengthValue = parseFelt(felts[0], "packed byte length");
   if (byteLengthValue > BigInt(MAX_PACKED_BYTES)) {
-    throw new Error("Packed byte length exceeds the mail payload limit.");
+    throw new Error("Packed byte length exceeds the message payload limit.");
   }
   const byteLength = Number(byteLengthValue);
   const payloadCount = Math.ceil(byteLength / FELT_PAYLOAD_BYTES);
@@ -470,25 +470,25 @@ function parseMultiRecipientCiphertext(
   bytes: Uint8Array,
 ): ParsedMultiRecipientCiphertext {
   if (!hasMultiRecipientMarker(bytes)) {
-    throw new Error("Multi-recipient mail marker is missing.");
+    throw new Error("Multi-recipient message marker is missing.");
   }
   if (bytes.length < MULTI_HEADER_BYTES) {
-    throw new Error("Multi-recipient mail header is truncated.");
+    throw new Error("Multi-recipient message header is truncated.");
   }
   if (bytes[MULTI_MARKER_BYTES] !== MULTI_RECIPIENT_VERSION) {
-    throw new Error("Unsupported multi-recipient mail version.");
+    throw new Error("Unsupported multi-recipient message version.");
   }
 
   const slotCount = bytes[MULTI_MARKER_BYTES + 1];
   if (slotCount < 2 || slotCount > MAX_MULTI_RECIPIENTS) {
-    throw new Error("Multi-recipient mail has an invalid slot count.");
+    throw new Error("Multi-recipient message has an invalid slot count.");
   }
 
   const bodyNonceOffset =
     MULTI_HEADER_BYTES + slotCount * MULTI_RECIPIENT_SLOT_BYTES;
   const minimumLength = bodyNonceOffset + NONCE_BYTES + AES_TAG_BYTES;
   if (bytes.length < minimumLength) {
-    throw new Error("Multi-recipient mail ciphertext is truncated.");
+    throw new Error("Multi-recipient message ciphertext is truncated.");
   }
 
   const slots: ParsedMultiRecipientCiphertext["slots"] = [];
@@ -513,7 +513,7 @@ function parseMultiRecipientCiphertext(
 }
 
 export function deriveKeypair(seed32: Uint8Array): MailKeypair {
-  assertLength(seed32, X25519_KEY_BYTES, "mail seed");
+  assertLength(seed32, X25519_KEY_BYTES, "chat recovery seed");
   const privateKey = hkdf(
     sha256,
     seed32,
@@ -558,7 +558,7 @@ export async function encryptMail(
 
   const ciphertextFelts = packBytesToFelts(ciphertext);
   if (ciphertextFelts.length > MAX_CT_FELTS) {
-    throw new Error(`Encrypted mail exceeds ${MAX_CT_FELTS} ciphertext felts.`);
+    throw new Error(`Encrypted message exceeds ${MAX_CT_FELTS} ciphertext felts.`);
   }
 
   return {
@@ -579,11 +579,11 @@ export async function encryptMailForRecipients(
   plaintext: string | Uint8Array,
 ): Promise<EncryptedMailRecord> {
   if (recipientPublicKeys.length === 0) {
-    throw new Error("Multi-recipient mail requires at least one recipient.");
+    throw new Error("Multi-recipient message requires at least one recipient.");
   }
   if (recipientPublicKeys.length > MAX_MULTI_RECIPIENTS) {
     throw new Error(
-      `Multi-recipient mail supports at most ${MAX_MULTI_RECIPIENTS} ` +
+      `Multi-recipient message supports at most ${MAX_MULTI_RECIPIENTS} ` +
         `recipients within the ${MAX_CT_FELTS}-felt ciphertext cap.`,
     );
   }
@@ -613,7 +613,7 @@ export async function encryptMailForRecipients(
     plaintextBytes.length;
   if (projectedBytes > MAX_PACKED_BYTES) {
     throw new Error(
-      `Encrypted mail for ${recipientKeys.length} recipients and ` +
+      `Encrypted message for ${recipientKeys.length} recipients and ` +
         `${plaintextBytes.length} plaintext bytes exceeds the ` +
         `${MAX_CT_FELTS}-felt ciphertext cap.`,
     );
@@ -675,7 +675,7 @@ export async function encryptMailForRecipients(
   const ciphertextFelts = packBytesToFelts(wireBytes);
   if (ciphertextFelts.length > MAX_CT_FELTS) {
     throw new Error(
-      `Encrypted multi-recipient mail exceeds ${MAX_CT_FELTS} ciphertext felts.`,
+      `Encrypted multi-recipient message exceeds ${MAX_CT_FELTS} ciphertext felts.`,
     );
   }
 
@@ -696,7 +696,7 @@ async function decryptLegacyMail(
 ): Promise<Uint8Array> {
   const { aesKey, viewTag } = deriveMailSecrets(sharedSecret);
   if (record.viewTag !== viewTag)
-    throw new Error("Mail view tag does not match.");
+    throw new Error("Chat view tag does not match.");
   return aesGcmDecrypt(
     aesKey,
     nonce,
@@ -744,8 +744,8 @@ async function decryptMultiRecipientMail(
 
   throw new Error(
     foundCandidate
-      ? "Mail recipient slot authentication failed."
-      : "Mail recipient slot was not found.",
+      ? "Chat recipient slot authentication failed."
+      : "Chat recipient slot was not found.",
   );
 }
 

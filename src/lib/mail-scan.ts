@@ -76,7 +76,7 @@ export function mailScanCursorKey(
   keyFingerprint: string,
 ): string {
   if (!/^[0-9a-f]{64}$/i.test(keyFingerprint)) {
-    throw new Error("Mail scan cursor requires a public-key fingerprint.");
+    throw new Error("Chat scan cursor requires a public-key fingerprint.");
   }
   return [
     MAIL_SCAN_CURSOR_PREFIX,
@@ -210,7 +210,7 @@ export function pauseMailScan(
 ): MailScanCursor {
   const token = parseContinuationToken(continuationToken);
   if (!token)
-    throw new Error("A pending mail scan requires a continuation token.");
+    throw new Error("A pending message scan requires a continuation token.");
   return {
     ...cursor,
     pending: { ...range, continuationToken: token },

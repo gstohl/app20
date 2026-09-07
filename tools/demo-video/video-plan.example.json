@@ -1,0 +1,98 @@
+{
+  "transactions": [],
+  "clips": [
+    {
+      "file": "artifacts/hackathon/live-product-tour.webm",
+      "start": 1,
+      "sourceSeconds": 20,
+      "seconds": 20,
+      "title": "Private conversations. Clear trading terms.",
+      "caption": "Negotiate directly in Chat, or compare quotes from independent makers.",
+      "label": "LIVE SITE \u00b7 READ-ONLY TOUR"
+    },
+    {
+      "file": "artifacts/hackathon/chat-localnet-round.webm",
+      "start": 59.483,
+      "sourceSeconds": 20,
+      "seconds": 20,
+      "title": "Bob asks Alice for a price",
+      "caption": "Messages are encrypted before submission. Transaction timing and some activity metadata remain visible.",
+      "label": "LOCALNET \u00b7 SIMULATED PROVING"
+    },
+    {
+      "file": "artifacts/hackathon/chat-localnet-round.webm",
+      "start": 105.077,
+      "sourceSeconds": 9,
+      "seconds": 10,
+      "title": "Alice opens the conversation",
+      "caption": "Chat keys open encrypted messages. This round runs on localnet.",
+      "label": "LOCALNET \u00b7 SIMULATED PROVING"
+    },
+    {
+      "file": "artifacts/hackathon/chat-localnet-round.webm",
+      "start": 124.618,
+      "sourceSeconds": 25,
+      "seconds": 25,
+      "title": "Alice attaches a fixed offer",
+      "caption": "Set the amount, quoted asset, and expiry. Keep the terms in the conversation.",
+      "label": "LOCALNET \u00b7 SIMULATED PROVING"
+    },
+    {
+      "file": "artifacts/hackathon/chat-localnet-round.webm",
+      "start": 186.802,
+      "sourceSeconds": 8,
+      "seconds": 15,
+      "title": "Bob reviews the terms",
+      "caption": "A Chat offer does not guarantee both assets settle. Use funded RFQ for an atomic exchange.",
+      "label": "LOCALNET \u00b7 SIMULATED PROVING"
+    },
+    {
+      "file": "artifacts/hackathon/rfq-ui-rehearsal.webm",
+      "start": 0.241,
+      "sourceSeconds": 16.5,
+      "seconds": 25,
+      "title": "Set your minimum before requesting quotes",
+      "caption": "Enter what you sell and the least you will accept. Requesting a price does not execute a swap.",
+      "label": "RFQ REHEARSAL \u00b7 SIMULATED WALLET & RPC"
+    },
+    {
+      "file": "artifacts/hackathon/rfq-ui-rehearsal.webm",
+      "start": 17.148,
+      "sourceSeconds": 15.5,
+      "seconds": 25,
+      "title": "Compare prices. Reserve only the chosen offer.",
+      "caption": "Prices below your minimum are excluded. Preliminary quotes do not reserve funds.",
+      "label": "RFQ REHEARSAL \u00b7 SIMULATED WALLET & RPC"
+    },
+    {
+      "file": "artifacts/hackathon/rfq-ui-rehearsal.webm",
+      "start": 33.141,
+      "sourceSeconds": 20,
+      "seconds": 25,
+      "title": "Review the funded price before confirming",
+      "caption": "The funded price changed. Your minimum still applies, and the updated terms require explicit review.",
+      "label": "RFQ REHEARSAL \u00b7 SIMULATED WALLET & RPC",
+      "crop": {
+        "x": 260,
+        "y": 330,
+        "width": 940,
+        "height": 670
+      }
+    },
+    {
+      "file": "artifacts/hackathon/rfq-ui-rehearsal.webm",
+      "start": 53.798,
+      "sourceSeconds": 9,
+      "seconds": 15,
+      "title": "Received asset: shielded balance",
+      "caption": "Simulated confirmation. Funding and amounts are public; remote proving infrastructure sees the proving payload.",
+      "label": "RFQ REHEARSAL \u00b7 SIMULATED WALLET & RPC",
+      "crop": {
+        "x": 260,
+        "y": 0,
+        "width": 940,
+        "height": 790
+      }
+    }
+  ]
+}

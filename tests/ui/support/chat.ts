@@ -72,6 +72,8 @@ export async function openFullRecord(card: Locator) {
 
 /** The mailbox tools sit under the conversations; each section is a disclosure. */
 export async function openTools(page: Page, title: string) {
+  const settings = page.getByRole("group", { name: "Chat tools", exact: true });
+  if (await settings.count()) await settings.evaluate(element => { (element as HTMLDetailsElement).open = true; });
   await page
     .locator("details", { has: page.locator("summary", { hasText: title }) })
     .first()
@@ -92,12 +94,13 @@ export async function scanRecent(page: Page) {
   await expect(button).toBeEnabled({ timeout: 60_000 });
 }
 
-/** Every page load starts with the key unloaded; this loads the persisted one. */
+/** Navigation retains unlocked access; a reload or account switch needs opening. */
 export async function loadExistingKey(page: Page) {
   const button = page.getByRole("button", {
     name: "Open chat",
   });
-  await expect(button).toBeVisible();
+  await expect.poll(async () => await button.isVisible() || await page.getByRole("button", { name: "Check for new messages" }).isVisible()).toBe(true);
+  if (!(await button.isVisible())) return;
   await button.click();
   await expect(button).toHaveCount(0, { timeout: 60_000 });
 }
@@ -125,7 +128,7 @@ export async function ensureMailboxKey(
     .poll(
       async () => {
         if (await backupHeading.isVisible()) return "backup";
-        return (await scanButton.isEnabled()) ? "ready" : "waiting";
+        return (await scanButton.count()) && (await scanButton.isEnabled()) ? "ready" : "waiting";
       },
       { timeout: 120_000 },
     )

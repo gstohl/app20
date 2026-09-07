@@ -115,7 +115,7 @@ async function restoreRegisteredKey(page: Page, backup: string) {
   });
   await expect(setup).toBeVisible();
   await page.getByText("Restore from backup").click();
-  await page.getByLabel("Backup value").fill(backup);
+  await page.getByLabel("Chat recovery phrase").fill(backup);
   await page.getByRole("button", { name: "Restore chat key" }).click();
   await expect(setup).toHaveCount(0, { timeout: 60_000 });
 }
@@ -587,7 +587,7 @@ test("all APP20 localnet journeys", async ({
     await connectLocalnetWallet(wrongKeyPage);
     await switchIdentity(wrongKeyPage, config, "bob");
     await wrongKeyPage.getByText("Restore from backup").click();
-    await wrongKeyPage.getByLabel("Backup value").fill(WRONG_KEY_BACKUP);
+    await wrongKeyPage.getByLabel("Chat recovery phrase").fill(WRONG_KEY_BACKUP);
     await wrongKeyPage
       .getByRole("button", { name: "Restore chat key" })
       .click();
@@ -710,7 +710,7 @@ test("all APP20 localnet journeys", async ({
       conversationRowByAddress(payPage, alice.address),
     ).toContainText("Needs action");
     await payPage.getByText("Restore from backup").click();
-    await payPage.getByLabel("Backup value").fill(bobBackup);
+    await payPage.getByLabel("Chat recovery phrase").fill(bobBackup);
     await payPage.getByRole("button", { name: "Restore chat key" }).click();
     // The reviewed link is the record this device pays from; the sealed
     // copy Alice sent arrives with the post-payment mail check and carries

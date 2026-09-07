@@ -1,0 +1,13 @@
+{
+  "name": "app20-demo-video",
+  "private": true,
+  "type": "module",
+  "scripts": {"render": "node render.mjs"},
+  "dependencies": {
+    "@remotion/bundler": "4.0.521",
+    "@remotion/renderer": "4.0.521",
+    "remotion": "4.0.521",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  }
+}

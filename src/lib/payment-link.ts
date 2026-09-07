@@ -454,7 +454,7 @@ function requestFromTuple(value: unknown): PaymentRequestPayload {
 
 function signatureTuple(auth: MailSenderAuth): EncodedPaymentLinkSignature {
   const normalized = parseMailSenderAuth(auth);
-  if (!normalized) throw new Error("Payment link Mail signature is malformed.");
+  if (!normalized) throw new Error("Payment link Chat signature is malformed.");
   return [
     normalized.version,
     normalized.mailboxPublicKey,

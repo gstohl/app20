@@ -133,9 +133,8 @@ function SenderNaming({
       }}
     >
       <p className={styles.namingNote}>
-        Ask the sender for their wallet address through a trusted channel, or
-        choose a saved counterparty. This files the thread and sets your reply
-        destination on this device; it does not authenticate the sender.
+        Add a wallet address to reply. Confirm it with the sender first, or choose
+        a saved contact. Adding an address does not verify who sent the message.
       </p>
       <AddressBookField
         selfAddress={selfAddress}

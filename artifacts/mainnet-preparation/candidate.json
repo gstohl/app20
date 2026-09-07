@@ -1,0 +1,66 @@
+{
+  "format": "app20-mainnet-preparation/v1",
+  "generatedAt": "2026-09-06T23:59:39.305Z",
+  "status": "prepared-not-deployed",
+  "releaseReady": false,
+  "network": "SN_MAIN",
+  "contract": "App20Chat",
+  "sourceCommit": "b216f2e97ef53f60a269e6962ae5adb11cb43b5e",
+  "sourceTreeDirty": true,
+  "compilerVersion": "scarb 2.18.0 (e6144df0f 2026-04-21)\ncairo: 2.18.0 (https://crates.io/crates/cairo-lang-compiler/2.18.0)\nsierra: 1.8.0\narch: aarch64-apple-darwin",
+  "sourceSha256": "27c5fbb49d30573fb4ff0bc97b4a2e9c134c1998b3cbc3ecbfcdd0454fac7135",
+  "classHash": "0x2e6fd0b464b0a7a1c8793b5d18609609e167af5ce7916e28821af34b5de4b12",
+  "compiledClassHash": "0x569f9283589005a6de489b1ffebd88c1575552920678f595c1f0899f56637e1",
+  "artifacts": {
+    "sierraPath": "cairo/target/dev/app20_chat_App20Chat.contract_class.json",
+    "sierraSha256": "abd8bd1c8ddc973fb9afb1d286c3ba5f6e2f14074d09f3b5c3591df1132cfcf5",
+    "casmPath": "cairo/target/dev/app20_chat_App20Chat.compiled_contract_class.json",
+    "casmSha256": "e2fb2f62f5367f66a38ec30b8f992cf6c597ddefa5acb3f52353f5994415ced5",
+    "abiSha256": "4c2510ed8843fb1a7e06046c323c50c1b2adacd8d934b71a10a770657cad29fc"
+  },
+  "constructorCalldata": [
+    "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a"
+  ],
+  "deploymentPlan": {
+    "account": "0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3",
+    "udcAddress": "0x02ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125",
+    "salt": "0x1",
+    "calls": [
+      {
+        "contractAddress": "0x2ceed65a4bd731034c01113685c831b01c15d7d432f71afb1cf1634b53a2125",
+        "entrypoint": "deploy_contract",
+        "calldata": [
+          "0x2e6fd0b464b0a7a1c8793b5d18609609e167af5ce7916e28821af34b5de4b12",
+          "0x1",
+          "1",
+          1,
+          "1814936321941532183679178948991547227199883572895129352162421598057876324650"
+        ]
+      }
+    ],
+    "addresses": [
+      "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4"
+    ]
+  },
+  "chainInspection": {
+    "rpcOrigin": "https://api.cartridge.gg",
+    "chainId": "0x534e5f4d41494e",
+    "block": {
+      "block_hash": "0x3603cf0439e8a19f69dfd8205922738d2022efe53ceaa965a582fbb96e5d05c",
+      "block_number": 14478659
+    },
+    "poolClassHash": "0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d",
+    "poolFeeBaseUnits": "6000000000000000000",
+    "deployment": null
+  },
+  "maximumTotalFeesBaseUnits": null,
+  "remaining": [
+    "Real-wallet message-only invocation rehearsal",
+    "Deployer wallet and exact fee budget",
+    "Mainnet declaration and deployment",
+    "Verify deployed class and pinned pool",
+    "Activate reviewed Chat address in runtime policy",
+    "Public frontend deployment and real-wallet browser check",
+    "Three successful pool transactions and three-minute video"
+  ]
+}

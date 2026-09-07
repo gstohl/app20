@@ -11,6 +11,14 @@
     "./hpke-open": {
       "types": "./src/hpke-open.ts",
       "import": "./src/hpke-open.ts"
+    },
+    "./starknet-maker": {
+      "types": "./src/starknet-maker.ts",
+      "import": "./src/starknet-maker.ts"
+    },
+    "./private-settlement": {
+      "types": "./src/private-settlement.ts",
+      "import": "./src/private-settlement.ts"
     }
   },
   "imports": {

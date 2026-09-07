@@ -8,7 +8,7 @@ import {
   networkForProviderIndex,
   type App20TokenNetwork,
 } from "@/lib/token-registry";
-import { LOCALNET_CHAIN_ID, localnetWalletEnabled } from "@/utils/constants";
+import { LOCALNET_CHAIN_ID, localnetWalletEnabled, mainnetOnly } from "@/utils/constants";
 import { constants } from "starknet";
 
 export type ActiveStarknetSession = Readonly<{
@@ -69,12 +69,12 @@ export function resolveActiveStarknetSession(
       rail: "privy" as const,
       connected,
       account,
-      chainId: constants.StarknetChainId.SN_SEPOLIA,
-      network: "sepolia" as const,
+      chainId: mainnetOnly ? constants.StarknetChainId.SN_MAIN : constants.StarknetChainId.SN_SEPOLIA,
+      network: mainnetOnly ? "mainnet" as const : "sepolia" as const,
       compatible: connected,
       reason: connected
-        ? "Privy account is active on Sepolia."
-        : "No active Privy Sepolia account.",
+        ? "Privy account is active."
+        : "No active Privy account.",
     });
   }
 

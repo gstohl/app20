@@ -96,7 +96,7 @@ describe("device-local correspondents", () => {
         newestScannedBlock: null,
         oldestScannedBlock: null,
       }),
-    ).toMatch(/no inbox check/i);
+    ).toMatch(/messages have not been checked/i);
     expect(
       describeMailScanCursor({
         newestScannedBlock: 40,

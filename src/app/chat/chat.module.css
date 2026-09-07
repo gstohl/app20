@@ -105,6 +105,52 @@
   border-bottom: 1px solid var(--shell-line);
 }
 
+.syncBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--shell-line);
+  color: var(--shell-muted);
+  font-size: 12px;
+}
+
+.syncBar > div { display: grid; gap: 3px; }
+.syncBar small { font-size: 11px; }
+
+.syncBar button {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--shell-line);
+  background: transparent;
+  color: var(--shell-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.syncBar button:disabled { opacity: .5; cursor: wait; }
+
+.syncBar button:focus-visible,
+.settingsSummary:focus-visible {
+  outline: 2px solid var(--shell-orange);
+  outline-offset: 2px;
+}
+
+.recentLabel { padding: 10px 14px 4px; font-size: 11px; color: var(--shell-muted); }
+
+.settingsSummary {
+  padding: 12px;
+  cursor: pointer;
+  color: var(--shell-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.rail > .tools { flex: none; max-height: 45%; overflow-y: auto; }
+
 .railSearch {
   width: 100%;
   min-height: 32px;
@@ -1509,7 +1555,7 @@
   font-size: var(--text-xs, 11px);
 }
 
-/* ── Mailbox tools under the conversations ──────────────────────────────── */
+/* Chat settings under the conversations. */
 
 /* One column that can shrink: a long address or label in any section must
    wrap or truncate inside the rail, never widen every section past it. */
@@ -1523,7 +1569,6 @@
   background: var(--shell-panel);
 }
 
-.toolsSection,
 .toolsForm,
 .toolsBody {
   display: grid;
@@ -1533,18 +1578,6 @@
   padding: 10px 14px;
 }
 
-.toolsSection {
-  border-bottom: 1px solid var(--shell-line);
-}
-
-.toolsHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4, 8px);
-}
-
-.toolsHead strong,
 .toolsDisclosure > summary {
   color: var(--shell-text);
   font-family: var(--font-mono-ui), monospace;
@@ -1552,14 +1585,6 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-}
-
-.toolsKeyState {
-  color: var(--shell-muted);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: var(--label-sm, 9px);
-  font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
 .toolsActions {

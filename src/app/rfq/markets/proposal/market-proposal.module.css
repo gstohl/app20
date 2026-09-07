@@ -239,74 +239,11 @@
   line-height: 1.35;
 }
 
-.feeFieldset {
-  min-width: 0;
-  margin: 0;
-  border: 0;
-  padding: 0;
-}
-
 .feeFieldset legend,
 .field > span,
 .inventoryCard > span {
   margin-bottom: 7px;
   color: var(--shell-muted);
-}
-
-.feeOptions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--shell-line);
-}
-
-.feeOption {
-  position: relative;
-  min-width: 0;
-  cursor: pointer;
-}
-
-.feeOption + .feeOption {
-  border-left: 1px solid var(--shell-line);
-}
-
-.feeOption input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.feeOption > span {
-  display: grid;
-  min-height: 58px;
-  align-content: center;
-  gap: 3px;
-  padding: 8px 11px;
-  background: var(--shell-inset);
-}
-
-.feeOption strong {
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 13px;
-}
-
-.feeOption small {
-  color: var(--shell-muted);
-  font-size: 9px;
-}
-
-.feeOption input:checked + span {
-  color: var(--shell-bg);
-  background: var(--shell-orange);
-}
-
-.feeOption input:checked + span small {
-  color: color-mix(in srgb, var(--shell-bg) 74%, transparent);
-}
-
-.feeOption input:focus-visible + span {
-  outline: 2px solid var(--shell-text);
-  outline-offset: -3px;
 }
 
 .field,
@@ -391,24 +328,6 @@
   gap: 10px;
 }
 
-.inventoryNotice {
-  display: grid;
-  gap: 4px;
-  border-left: 2px solid var(--shell-orange);
-  padding: 2px 0 2px 11px;
-}
-
-.inventoryNotice strong {
-  font-size: 11px;
-}
-
-.inventoryNotice p {
-  margin: 0;
-  color: var(--shell-muted);
-  font-size: 10px;
-  line-height: 1.45;
-}
-
 .primaryButton {
   min-height: 48px;
   margin: 18px;
@@ -442,35 +361,6 @@
 
 .reviewHeader > strong.ready {
   color: var(--shell-live);
-}
-
-.reviewList {
-  margin: 0;
-}
-
-.reviewList > div {
-  display: grid;
-  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
-  gap: 10px;
-  border-bottom: 1px solid var(--shell-line);
-  padding: 8px 13px;
-}
-
-.reviewList dt {
-  color: var(--shell-muted);
-}
-
-.reviewList dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.reviewList dd.blocked {
-  color: var(--shell-orange);
 }
 
 .status {
@@ -550,110 +440,6 @@
 
 .checksum dd {
   text-align: right;
-}
-
-.readinessList {
-  display: grid;
-  border: 1px solid var(--shell-line);
-}
-
-.readinessList article {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr);
-  gap: 9px;
-  padding: 8px;
-}
-
-.readinessList article + article {
-  border-top: 1px solid var(--shell-line);
-}
-
-.readinessList article > div {
-  display: grid;
-  gap: 3px;
-}
-
-.readinessList article strong {
-  font-size: 10px;
-}
-
-.readinessList i {
-  align-self: start;
-  border: 1px solid currentColor;
-  padding: 2px 4px;
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 7px;
-  font-style: normal;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.checkPass {
-  color: var(--shell-live);
-}
-
-.checkBlock {
-  color: var(--shell-orange);
-}
-
-.checkUnknown {
-  color: var(--shell-muted);
-}
-
-.deploymentGate {
-  display: grid;
-  gap: 6px;
-  margin: 12px 13px;
-  border: 1px solid var(--shell-line);
-  padding: 11px;
-  background: var(--shell-inset);
-}
-
-.deploymentGate > span {
-  color: var(--shell-orange);
-}
-
-.deploymentGate h3 {
-  margin: 0;
-  font-size: 12px;
-}
-
-.deploymentGate ul {
-  display: grid;
-  gap: 4px;
-  margin: 2px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.deploymentGate li {
-  color: var(--shell-muted);
-  font-size: 10px;
-}
-
-.deploymentGate li::before {
-  margin-right: 7px;
-  color: var(--shell-orange);
-  content: "□";
-}
-
-.deployButton {
-  min-height: 42px;
-  margin: 0 13px;
-  border: 1px solid var(--shell-line);
-  color: var(--shell-muted);
-  background: var(--shell-inset);
-  cursor: not-allowed;
-  opacity: 0.62;
-}
-
-.deployHint {
-  margin: 8px 13px 14px;
-  color: var(--shell-muted);
-  font-size: 9px;
-  line-height: 1.45;
 }
 
 .invalidCard {
@@ -743,15 +529,6 @@
 
   .canonicalGrid > div:first-child {
     border-top: 0;
-  }
-
-  .feeOption + .feeOption {
-    border-top: 1px solid var(--shell-line);
-    border-left: 0;
-  }
-
-  .feeOption > span {
-    min-height: 48px;
   }
 
   .primaryButton {

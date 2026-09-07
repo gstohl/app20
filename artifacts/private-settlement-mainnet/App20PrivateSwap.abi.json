@@ -1,0 +1,395 @@
+[
+  {
+    "type": "impl",
+    "name": "Impl",
+    "interface_name": "app20_chat::private_swap::IApp20PrivateSwap"
+  },
+  {
+    "type": "struct",
+    "name": "core::integer::u256",
+    "members": [
+      {
+        "name": "low",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "high",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "app20_chat::private_swap::SwapQuote",
+    "members": [
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "sell_token",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "buy_token",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "sell_amount",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "buy_amount",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "commitment",
+        "type": "core::felt252"
+      },
+      {
+        "name": "expires_at",
+        "type": "core::integer::u64"
+      },
+      {
+        "name": "status",
+        "type": "core::integer::u8"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "app20_chat::OpenNoteDeposit",
+    "members": [
+      {
+        "name": "note_id",
+        "type": "core::felt252"
+      },
+      {
+        "name": "token",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "amount",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::array::Span::<app20_chat::OpenNoteDeposit>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<app20_chat::OpenNoteDeposit>"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "app20_chat::private_swap::IApp20PrivateSwap",
+    "items": [
+      {
+        "type": "function",
+        "name": "pool",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "book",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "available",
+        "inputs": [
+          {
+            "name": "maker",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::integer::u256"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "liability",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::integer::u256"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "quote",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "app20_chat::private_swap::SwapQuote"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "deposit_inventory",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "amount",
+            "type": "core::integer::u128"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "withdraw_inventory",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "amount",
+            "type": "core::integer::u128"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "reserve_quote",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "sell_token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "buy_token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "sell_amount",
+            "type": "core::integer::u128"
+          },
+          {
+            "name": "buy_amount",
+            "type": "core::integer::u128"
+          },
+          {
+            "name": "commitment",
+            "type": "core::felt252"
+          },
+          {
+            "name": "expires_at",
+            "type": "core::integer::u64"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "release_expired",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "privacy_invoke",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "secret",
+            "type": "core::felt252"
+          },
+          {
+            "name": "note_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::array::Span::<app20_chat::OpenNoteDeposit>"
+          }
+        ],
+        "state_mutability": "external"
+      }
+    ]
+  },
+  {
+    "type": "constructor",
+    "name": "constructor",
+    "inputs": [
+      {
+        "name": "pool",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "book",
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::private_swap::App20PrivateSwap::InventoryChanged",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "token",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "available",
+        "type": "core::integer::u256",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::private_swap::App20PrivateSwap::QuoteReserved",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "expires_at",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::private_swap::App20PrivateSwap::QuoteFilled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "sell_amount",
+        "type": "core::integer::u128",
+        "kind": "data"
+      },
+      {
+        "name": "buy_amount",
+        "type": "core::integer::u128",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::private_swap::App20PrivateSwap::QuoteReleased",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::private_swap::App20PrivateSwap::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "InventoryChanged",
+        "type": "app20_chat::private_swap::App20PrivateSwap::InventoryChanged",
+        "kind": "nested"
+      },
+      {
+        "name": "QuoteReserved",
+        "type": "app20_chat::private_swap::App20PrivateSwap::QuoteReserved",
+        "kind": "nested"
+      },
+      {
+        "name": "QuoteFilled",
+        "type": "app20_chat::private_swap::App20PrivateSwap::QuoteFilled",
+        "kind": "nested"
+      },
+      {
+        "name": "QuoteReleased",
+        "type": "app20_chat::private_swap::App20PrivateSwap::QuoteReleased",
+        "kind": "nested"
+      }
+    ]
+  }
+]

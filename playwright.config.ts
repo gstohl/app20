@@ -17,6 +17,6 @@ export default defineConfig({
     viewport: { width: 1_440, height: 900 },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "retain-on-failure",
+    video: process.env.APP20_DEMO_VIDEO === "1" ? { mode: "on", size: { width: 1440, height: 900 } } : "retain-on-failure",
   },
 });

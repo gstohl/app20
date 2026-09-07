@@ -1,14 +1,14 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "app20",
-  "main": "workers/relay/src/index.ts",
+  "main": "workers/relay/src/worker.ts",
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "upload_source_maps": false,
   "routes": [
     {
-      "pattern": "app20.gstohl.com",
+      "pattern": "app20.io",
       "custom_domain": true
     }
   ],
@@ -42,9 +42,13 @@
   ],
   "vars": {
     "ENVIRONMENT": "production",
+    "STARKNET_MAINNET_RPC_URL": "https://api.cartridge.gg/x/starknet/mainnet",
+    "STARKNET_SEPOLIA_RPC_URL": "https://api.cartridge.gg/x/starknet/sepolia",
     "RFQ_TRANSPORT_ENABLED": "false",
     "TRUST_CLIENT_IP_HEADERS": "true",
-    "PRIVY_SUBMISSION_MODE": "build-only",
+    "PRIVY_SUBMISSION_MODE": "live",
+    "PRIVY_MAINNET_ENABLED": "true",
+    "PRIVY_APP_ID": "cmsvq8r0q00om0cibkn7kgi30",
     "PRIVY_FRAME_ORIGINS": "https://auth.privy.io",
     "PRIVY_CONNECT_ORIGINS": "https://auth.privy.io,https://api.privy.io",
     "SEPOLIA_POOL_ADDRESS": "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",

@@ -1,0 +1,22 @@
+import {readFile,mkdir,copyFile} from 'node:fs/promises';
+import {resolve,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {bundle} from '@remotion/bundler';
+import {selectComposition,renderMedia} from '@remotion/renderer';
+import {chromium} from '@playwright/test';
+const directory=dirname(fileURLToPath(import.meta.url));
+const propsPath=resolve(process.argv[2]??'artifacts/hackathon/video-plan.json');
+const props=JSON.parse(await readFile(propsPath,'utf8'));
+if(props.clips.some(clip=>clip.sourceSeconds!==undefined))throw new Error('Use render-edit.mjs for paced edits with sourceSeconds/end holds.');
+if(props.clips.reduce((n,c)=>n+c.seconds,0)!==180)throw new Error('The demo must total exactly 180 seconds.');
+const publicDir=resolve(directory,'public');await mkdir(publicDir,{recursive:true});
+for(const clip of props.clips){if(!clip.label)throw new Error('Every clip needs its live/localnet/fixture label');const file=clip.file;clip.file=file.split('/').at(-1);await copyFile(resolve(file),resolve(publicDir,clip.file));}
+props.transactions??=[];
+if(props.transactions.length)throw new Error('Attach verified receipt footage after reviewing artifacts/hackathon/verified-mainnet-transactions.json; arbitrary claimed hashes are not accepted.');
+const serveUrl=await bundle({entryPoint:resolve(directory,'Root.tsx'),publicDir});
+const browserExecutable=chromium.executablePath();
+const composition=await selectComposition({serveUrl,id:'APP20Demo',inputProps:props,browserExecutable});
+const outputLocation=resolve('artifacts/hackathon/app20-demo-rehearsal.mp4');
+let lastPercent=-1;
+await renderMedia({composition,serveUrl,codec:'h264',muted:true,outputLocation,inputProps:props,browserExecutable,concurrency:8,crf:20,onProgress:({progress})=>{const percent=Math.floor(progress*100);if(percent%10===0 && percent!==lastPercent){lastPercent=percent;process.stdout.write(`\rRendering ${percent}%`);}}});
+console.log('\n'+outputLocation);

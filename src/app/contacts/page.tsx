@@ -84,7 +84,7 @@ function AddressBookPanel({
       setAddressDraft("");
       setError(null);
       setStatus(
-        "Saved under this device's AES-GCM key. Back it up from Chat's mailbox tools for an encrypted on-chain recovery snapshot.",
+        "Saved under this device's AES-GCM key. Back it up from Chat's recovery tools for an encrypted on-chain recovery snapshot.",
       );
       window.dispatchEvent(new Event(ADDRESS_BOOK_CHANGED_EVENT));
     } catch (cause: unknown) {
@@ -236,7 +236,7 @@ function AddressBookPanel({
               <p className={styles.bookEmpty}>
                 Add a label and address above. Entries stay AES-GCM encrypted
                 under a device-local key until you explicitly post an encrypted
-                recovery snapshot from Chat&apos;s mailbox tools.
+                recovery snapshot from Chat&apos;s recovery tools.
               </p>
             </div>
           )
@@ -284,9 +284,9 @@ export default function ContactsPage() {
       <p className={styles.disclosure}>
         Local contacts are AES-GCM encrypted under app20/address-book/v1. Code
         running in this browser profile can still read an unlocked book. For
-        cross-device recovery, Chat&apos;s mailbox tools can post a
+        cross-device recovery, Chat&apos;s recovery tools can post a
         self-addressed encrypted snapshot: connect the same wallet and restore
-        the mailbox recovery phrase. Wallet possession alone cannot decrypt it. {" "}
+        the chat recovery phrase. Wallet possession alone cannot decrypt it. {" "}
         {MAIL_RECOVERY_PHRASE_AUTHORITY_NOTICE} On-chain ciphertext, size,
         timing, and helper activity remain public and cannot be deleted.
       </p>

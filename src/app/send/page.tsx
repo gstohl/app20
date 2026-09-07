@@ -6,7 +6,7 @@ export default function SendPage() {
     <SecondaryRailShell
       boundary="Public boundary · unavailable in this build"
       title="Public send"
-      summary="A public send exposes sender, recipient, amount, and timing on-chain. It is separate from RFQ, Mail, and funding."
+      summary="A public send exposes sender, recipient, amount, and timing on-chain. It is separate from RFQ, Chat, and funding."
     >
       <section aria-label="Public send availability">
         <h2>Unavailable in this build</h2>

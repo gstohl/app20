@@ -1,3 +1,4 @@
+import { mainnetOnly } from "@/utils/constants";
 "use client";
 
 import type { WalletWithStarknetFeatures } from "@starknet-io/get-starknet-wallet-standard/features";
@@ -94,9 +95,9 @@ export default function SelectWallet({
       }
 
       const chainId = chainIdFromStandardAccount(account) ?? "";
-      if (!chainId || !isStrk20Chain(chainId)) {
+      if (!chainId || !isStrk20Chain(chainId) || (mainnetOnly && providerIndexForChain(chainId) !== 0)) {
         walletStore.disconnect(
-          "The wallet switched to an unsupported network. Switch it to Starknet Sepolia or Mainnet, then connect again.",
+          "Switch your wallet to Starknet Mainnet, then reconnect.",
         );
         return;
       }
@@ -171,7 +172,7 @@ export default function SelectWallet({
   ) {
     if (!isSelectablePrivacyWallet(selectedWallet)) {
       throw new Error(
-        "APP20 accepts Ready Wallet Standard on live networks. Use the separate Privy rail on Sepolia.",
+        "Connect a privacy-enabled Ready wallet.",
       );
     }
     // Authorize first. Ready refuses wallet_requestChainId with
@@ -186,9 +187,9 @@ export default function SelectWallet({
     }
 
     const chainId = chainIdFromStandardAccount(standardAccount);
-    if (!chainId || !isStrk20Chain(chainId)) {
+    if (!chainId || !isStrk20Chain(chainId) || (mainnetOnly && providerIndexForChain(chainId) !== 0)) {
       throw new Error(
-        "Switch the selected wallet to Starknet Sepolia or Mainnet before connecting.",
+        "Switch your wallet to Starknet Mainnet before connecting.",
       );
     }
     const providerIndex = providerIndexForChain(chainId);

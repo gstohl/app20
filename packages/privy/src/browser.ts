@@ -37,7 +37,7 @@ export type {
   BrowserRawSign,
   BrowserRawSignResult,
 } from "./browser-signer.js";
-export { serviceDiscovery } from "./discovery.js";
+export { serviceDiscovery, contractDiscovery } from "./discovery.js";
 export type { ServiceDiscoveryOptions } from "./discovery.js";
 export { serviceProver } from "./prover.js";
 export type { ServiceProverOptions } from "./prover.js";
@@ -364,3 +364,6 @@ export function computeBrowserAccountAddress(
 ): string {
   return computeReadyAddress(publicKey, classHash);
 }
+
+export { starkscanProver } from './starkscan.js';
+export type { StarkscanProverOptions, ProofJournal, ProofJob } from './starkscan.js';

@@ -96,3 +96,9 @@ Local-v3 residual risks that do not create a production-v3 commitment:
 4. Lifecycle and economics: P0-02, P0-25, P0-03, P0-10, P0-11, P0-12, P1-04, P1-06.
 5. Operations and Mail: P0-27, P0-33, P0-36; preserve the local-only P1-21/P1-22 controls while production lifecycle work proceeds.
 6. Mount: P0-01.
+
+## Independent fixed-quote settlement (2026-09-06)
+
+`App20MakerBook`, `App20PrivateSwap`, the standalone maker CLI and the desktop frontend implement permissionless encrypted request/reply transport, funded fixed quotes, atomic shielded swaps, maker proceeds and expiry release. The real-pool devnet lifecycle passes with upstream simulated proof facts. See [operator documentation](makers/README.md).
+
+This separate protocol does not close the legacy v3 ladder/claim-ticket items above. RFQ requesting accounts and funded quote amounts remain public; maker inventory and proceeds are public. The maker book and settlement are now deployed and verified on mainnet; see the [deployment manifest](../deployments/mainnet/private-settlement.json). Live wallet/proof validation and operational inventory remain pending. The production fixed-quote UI now pins the verified mainnet deployment; this does not activate the legacy v3 protocol.

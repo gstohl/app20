@@ -403,7 +403,7 @@ export default function PayPage() {
             aria-labelledby="payment-link-create-title"
           >
             <p className={styles.kicker}>
-              MAIL-SIGNED REQUEST / NO TRANSACTION
+              CHAT-SIGNED REQUEST / NO TRANSACTION
             </p>
             <h2 id="payment-link-create-title" className={styles.cardTitle}>
               Request a private payment

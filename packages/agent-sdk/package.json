@@ -1,0 +1,33 @@
+{
+  "name": "@app20/agent-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js client and maker runner for APP20 on Starknet",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "app20-maker": "./dist/maker.mjs"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "examples"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test test/*.test.mjs",
+    "pretest": "node build.mjs"
+  },
+  "dependencies": {
+    "starknet": "10.5.0"
+  }
+}

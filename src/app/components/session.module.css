@@ -197,3 +197,5 @@
     font-size: 9px;
   }
 }
+
+.walletAction > a { display: flex; align-items: center; min-height: 44px; padding: 12px 18px; background: var(--shell-orange, #f26928); color: #0a0b0a; text-decoration: none; font: inherit; }

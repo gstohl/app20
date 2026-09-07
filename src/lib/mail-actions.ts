@@ -70,7 +70,7 @@ export function buildMailActions({
   attachmentAmount,
 }: BuildMailActionsInput): App20Strk20Action[] {
   if (!isConfiguredMailHelper(helperAddress)) {
-    throw new Error("A deployed mail helper is required before sending.");
+    throw new Error("A deployed message helper is required before sending.");
   }
   if (attachmentAmount === undefined) {
     return buildMailInvokeActions({

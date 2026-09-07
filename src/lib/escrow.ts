@@ -317,7 +317,7 @@ function concatBytes(...values: Uint8Array[]): Uint8Array {
 
 function assertMailSeed(mailSeed: Uint8Array): void {
   if (mailSeed.length !== MAIL_SEED_BYTES) {
-    throw new Error(`Mail seed must be exactly ${MAIL_SEED_BYTES} bytes.`);
+    throw new Error(`Chat seed must be exactly ${MAIL_SEED_BYTES} bytes.`);
   }
 }
 

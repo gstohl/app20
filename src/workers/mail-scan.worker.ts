@@ -40,7 +40,7 @@ workerScope.addEventListener("message", (event) => {
     } catch (error: unknown) {
       workerScope.postMessage({
         ok: false,
-        message: error instanceof Error ? error.message : "Mail scan failed.",
+        message: error instanceof Error ? error.message : "Chat scan failed.",
       });
     } finally {
       // Structured clone of the mailbox key stays in this worker until wiped.

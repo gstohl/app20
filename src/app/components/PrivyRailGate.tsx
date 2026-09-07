@@ -18,7 +18,7 @@ export default function PrivyRailGate({ children }: { children: ReactNode }) {
         </span>
         <dl>
           <div><dt>Selected rail</dt><dd>Ready Wallet Standard</dd></div>
-          <div><dt>Required rail</dt><dd>Sepolia / Privy</dd></div>
+          <div><dt>Required rail</dt><dd>Mainnet / Privy</dd></div>
           <div><dt>Effect of switching</dt><dd>No transaction; account context changes</dd></div>
         </dl>
         <button type="button" onClick={() => setMode("privy")}>Switch explicitly to Privy</button>

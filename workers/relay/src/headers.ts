@@ -3,6 +3,8 @@ export interface SpaSecurityConfig {
   privyConnectOrigins: readonly string[];
   /** Optional comma-separated `IPFS_ORIGINS` binding. */
   ipfsOrigins?: string;
+  /** Optional direct Starknet RPC origins for the independent maker frontend. */
+  makerRpcOrigins?: string;
 }
 
 // Reviewed in code rather than runtime configuration: the opt-in public price
@@ -49,6 +51,7 @@ export function spaSecurityHeaders(config: SpaSecurityConfig): Headers {
           .filter(Boolean)
       : [],
   );
+  const makerRpcOrigins = reviewedOrigins((config.makerRpcOrigins ?? "").split(",").map(value => value.trim()).filter(Boolean));
   const headers = new Headers();
   headers.set("referrer-policy", "no-referrer");
   headers.set("x-content-type-options", "nosniff");
@@ -69,6 +72,7 @@ export function spaSecurityHeaders(config: SpaSecurityConfig): Headers {
         ...connections,
         ...PUBLIC_MARKET_DATA_ORIGINS,
         ...ipfsOrigins,
+        ...makerRpcOrigins,
       ].join(" ")}`.trim(),
       "img-src 'self' data: blob:",
       "style-src 'self' 'unsafe-inline'",

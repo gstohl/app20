@@ -31,7 +31,6 @@ import {
 import {
   claimEscrowOperation,
   confirmEscrowOperation,
-  loadEscrowState,
   markEscrowOperationOutcome,
   markEscrowOperationSubmitted,
   parseEscrowFundPayload,

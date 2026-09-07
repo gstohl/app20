@@ -1,0 +1,347 @@
+[
+  {
+    "type": "impl",
+    "name": "Impl",
+    "interface_name": "app20_chat::maker_book::IApp20MakerBook"
+  },
+  {
+    "type": "struct",
+    "name": "core::integer::u256",
+    "members": [
+      {
+        "name": "low",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "high",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "app20_chat::maker_book::Maker",
+    "members": [
+      {
+        "name": "x",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "y",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "revision",
+        "type": "core::integer::u64"
+      },
+      {
+        "name": "valid_until",
+        "type": "core::integer::u64"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "app20_chat::maker_book::Request",
+    "members": [
+      {
+        "name": "taker",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "revision",
+        "type": "core::integer::u64"
+      },
+      {
+        "name": "expires_at",
+        "type": "core::integer::u64"
+      },
+      {
+        "name": "status",
+        "type": "core::integer::u8"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "app20_chat::maker_book::IApp20MakerBook",
+    "items": [
+      {
+        "type": "function",
+        "name": "register",
+        "inputs": [
+          {
+            "name": "x",
+            "type": "core::integer::u256"
+          },
+          {
+            "name": "y",
+            "type": "core::integer::u256"
+          },
+          {
+            "name": "valid_until",
+            "type": "core::integer::u64"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "deactivate",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "maker",
+        "inputs": [
+          {
+            "name": "account",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "app20_chat::maker_book::Maker"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "maker_count",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::integer::u64"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "maker_at",
+        "inputs": [
+          {
+            "name": "index",
+            "type": "core::integer::u64"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "request",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "maker",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "revision",
+            "type": "core::integer::u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "core::integer::u64"
+          },
+          {
+            "name": "payload",
+            "type": "core::array::Array::<core::felt252>"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "respond",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "payload",
+            "type": "core::array::Array::<core::felt252>"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "cancel",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_request",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "app20_chat::maker_book::Request"
+          }
+        ],
+        "state_mutability": "view"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::maker_book::App20MakerBook::MakerUpdated",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "revision",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "valid_until",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::array::Span::<core::felt252>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<core::felt252>"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::maker_book::App20MakerBook::Requested",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "taker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "revision",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "expires_at",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "payload",
+        "type": "core::array::Span::<core::felt252>",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::maker_book::App20MakerBook::Responded",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "maker",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "payload",
+        "type": "core::array::Span::<core::felt252>",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::maker_book::App20MakerBook::Cancelled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "id",
+        "type": "core::felt252",
+        "kind": "key"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "app20_chat::maker_book::App20MakerBook::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "MakerUpdated",
+        "type": "app20_chat::maker_book::App20MakerBook::MakerUpdated",
+        "kind": "nested"
+      },
+      {
+        "name": "Requested",
+        "type": "app20_chat::maker_book::App20MakerBook::Requested",
+        "kind": "nested"
+      },
+      {
+        "name": "Responded",
+        "type": "app20_chat::maker_book::App20MakerBook::Responded",
+        "kind": "nested"
+      },
+      {
+        "name": "Cancelled",
+        "type": "app20_chat::maker_book::App20MakerBook::Cancelled",
+        "kind": "nested"
+      }
+    ]
+  }
+]

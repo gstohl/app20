@@ -3,7 +3,6 @@ import {
   evaluatePriceSchedule,
   invertPriceSchedule,
   scheduleUnitPriceE18,
-  type SelectedFillV3,
   type SelectFillsV3Result,
   type SizeBucket,
   type SolverQuoteV3,
@@ -170,16 +169,4 @@ export function sizeInvoiceFromSelectedFills(input: {
     totalBuyAmount: fills.reduce((sum, fill) => sum + fill.amountB, 0n),
     fills: Object.freeze(fills),
   });
-}
-
-export const chooseInvoiceSellSize = sizeInvoiceFromSelectedFills;
-
-export function invoiceSelectionFromSizing(
-  sizing: InvoiceExactSizing,
-): readonly SelectedFillV3[] {
-  return Object.freeze(
-    sizing.fills.map(({ quote, amountA, amountB }) =>
-      Object.freeze({ quote, amountA, amountB }),
-    ),
-  );
 }
