@@ -4,7 +4,7 @@
 
 [Watch the new 63-second demo](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4) · [Release and captions](https://github.com/gstohl/app20/releases/tag/fixed-2026-09-08) · [Submission manifest](../strk20.json)
 
-The `fixed` branch links this public video and contains five verified mainnet transactions and four project contracts. The latest two transaction hashes prove an encrypted Chat message and a confidential settlement; the original three remain labelled historical swaps with public funded terms. This is a post-deadline follow-up for organizer review. The original `main` branch and deadline release are preserved separately.
+The `fixed` branch links this public video and contains six verified mainnet transactions and four project contracts. The first three transaction hashes prove two encrypted Chat messages and one confidential settlement through the updated contracts; the original three remain labelled historical swaps with public funded terms. This is a post-deadline follow-up for organizer review. The original `main` branch and deadline release are preserved separately.
 
 ## Deadline submission release
 
@@ -22,7 +22,7 @@ In the September 7 recording run, the browser's real local-contract flow passed,
 
 The export is checked for 4,080 frames, clean audio/video decoding and the complete waveform tail of all 12 narration chapters. Every clip leaves at least 1.5 seconds after its measured voice. [Timed script](../tools/demo-video/VOICEOVER.md) · [Recording guide](../tools/demo-video/README.md) · [Implementation and evidence limits](CONFIDENTIAL_RFQ.md).
 
-All media and temporary evidence remain under ignored `artifacts/`. The sibling voiceover, SRT and poster accompany the export. No new mainnet transactions were submitted for that September 7 recording; the first three hashes in `strk20.json` are for the earlier public-funded-terms protocol. The current video is listed in the fixed-branch release section above.
+All media and temporary evidence remain under ignored `artifacts/`. The sibling voiceover, SRT and poster accompany the export. No new mainnet transactions were submitted for that September 7 recording; its three hashes remain in `strk20.json` as evidence of the earlier public-funded-terms protocol. The current video is listed in the fixed-branch release section above.
 
 ## Mainnet settlement evidence
 
@@ -56,7 +56,7 @@ The [hackathon submission requirements](https://github.com/starkience/strk20-hac
 The mainnet transaction requirement now has verified evidence. To recheck the manifest without signing or broadcasting:
 
 ```sh
-node scripts/verify-hackathon-transactions.mjs --rpc https://rpc.starknet.lava.build/rpc/v0_10
+node scripts/verify-hackathon-transactions.mjs --rpc https://starknet-rpc.publicnode.com
 ```
 
 The verifier checks mainnet, successful included receipts and receipt-block contract pins. Historical swaps require their `QuoteFilled` event and pool/APP20 calls; the exact new Chat and confidential hashes additionally require their durable block identities, nested pool callbacks and matching Chat event or settled flag plus encrypted output events. Its default RPC is Publicnode. `--write` preserves existing contracts and whichever video URL is currently in the manifest. It records receipt evidence; `--write` additionally updates `strk20.json`. Historical trace availability is required. In the September 7 run, Lava handled the proof-bearing transactions and traces successfully; Cartridge's trace endpoint rejected the new proof-fact version during this run. Starkscan proving worked, but its RPC write gateway reported disabled writes, so signed transactions were broadcast through Lava without provider credentials.
@@ -123,11 +123,13 @@ Deployment alone does not establish operation. The subsequent operator Chat mess
 
 The deadline manifest pointed to the [original mainnet demo](https://github.com/gstohl/app20/releases/download/mainnet-hackathon-2026-09-08/app20-demo-mainnet.mp4). The `fixed` manifest now links the newer 63-second release above.
 
-## September 8 verified mainnet Chat message
+## September 8 verified mainnet Chat messages
 
 A real-proof Chat message succeeded in [transaction 0x382800b8…](https://starkscan.co/tx/0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62), block **14529927**. The encrypted `MessagePosted` event decrypted correctly, its replay slot was consumed, and private note discovery before and after showed an unchanged STRK balance. Receipt-block class pins and the pool/helper execution trace were verified. See [durable public evidence](../deployments/mainnet/chat-message-2026-09-08.json) and [verification scope](CHAT_MAINNET_EVIDENCE_PLAN.md).
 
 This was an operator-controlled Core SDK self-message. It verifies the mainnet messaging path, not Ready extension acceptance, a payment to another account or confidential atomic swap settlement. The proof uses a private 1-base-unit STRK self-transfer for pool replay protection; it contains no public deposit, withdrawal, OPEN note or helper funding. Network and pool fees remain public. The message plaintext, exact balances and secret proof material are not included in the public record.
+
+A second message succeeded in [transaction 0x2ffc05f3…](https://starkscan.co/tx/0x2ffc05f3ec5399a96596c226049edb8217afdeeea9ea707aaba1e2a37effd56), block **14532316**, with a distinct encrypted payload and replay identity. The same receipt, trace, decryption and replay checks passed; private STRK and historical OPEN balances were unchanged across blocks 14532315–14532316. [Follow-up evidence](../deployments/mainnet/chat-message-followup-2026-09-08.json). Together with the confidential settlement below, this gives three verified updated-contract transactions, listed before the three historical swaps in `fixed`'s `strk20.json`.
 
 
 ## September 8 verified confidential mainnet settlement

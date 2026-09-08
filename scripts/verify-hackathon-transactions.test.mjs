@@ -10,9 +10,13 @@ const confidential = JSON.parse(await readFile(new URL('../deployments/mainnet/c
 const selector = hash.getSelectorFromName;
 const event = (address, name, keys = [], data = []) => ({ from_address: address, keys: [selector(name), ...keys], data });
 const invocation = (address, entrypoint, calldata = [], calls = []) => ({ contract_address: address, entry_point_selector: selector(entrypoint), calldata, calls, caller_address: d.settlement.pool });
-function fixture(kind) {
+function fixture(kind, chatHash = chat.transaction.hash) {
   const evidence = structuredClone({ chat, confidential }), isChat = kind === 'chat', isSettle = kind === 'settle';
-  const txHash = isChat ? chat.transaction.hash : isSettle ? confidential.transactionHash : '0x123';
+  const txHash = isChat ? chatHash : isSettle ? confidential.transactionHash : '0x123';
+  if (isChat && chatHash !== chat.transaction.hash) {
+    const followup = structuredClone(chat); followup.transaction.hash = chatHash;
+    evidence.additionalChatMessages = [followup];
+  }
   const address = isChat ? chat.chat.address : isSettle ? confidential.escrow : d.settlement.address;
   const classHash = isChat ? chat.chat.classHash : isSettle ? confidential.escrowClass : d.settlement.classHash;
   const block = isChat ? { hash: chat.transaction.blockHash, number: chat.transaction.blockNumber } : isSettle ? confidential.block : { hash: '0xabcd', number: 101 };
@@ -51,6 +55,22 @@ test('confidential evidence requires settlement mode, encrypted events and the r
   f.callback.calldata[1] = '0x0'; await assert.rejects(f.run(), /settlement callback/);
   const open = fixture('settle'); open.receipt.events.push(event(d.settlement.pool, 'OpenNoteDeposited')); await assert.rejects(open.run(), /without public/);
   const unsettled = fixture('settle'); unsettled.state[0] = '0x0'; await assert.rejects(unsettled.run(), /settled/);
+});
+test('additional Chat messages must independently bind their hash, block, helper and callback', async () => {
+  const f = fixture('chat', '0x456');
+  assert.equal((await f.run()).type, 'chat-message');
+  assert.equal(f.evidence.chat.transaction.hash, chat.transaction.hash);
+  f.evidence.additionalChatMessages[0].transaction.blockHash = '0xbad';
+  await assert.rejects(f.run(), /Durable evidence/);
+  const wrongContract = fixture('chat', '0x456');
+  wrongContract.evidence.additionalChatMessages[0].chat.address = '0xbad';
+  await assert.rejects(wrongContract.run(), /Durable evidence/);
+  const wrongEvent = fixture('chat', '0x456');
+  wrongEvent.callback.calldata[5] = '0xbad';
+  await assert.rejects(wrongEvent.run(), /exact Chat/);
+  const duplicate = fixture('chat', '0x456');
+  duplicate.evidence.additionalChatMessages.push(structuredClone(duplicate.evidence.additionalChatMessages[0]));
+  await assert.rejects(duplicate.run(), /Duplicate/);
 });
 test('unsuccessful receipts, wrong class pins and stale evidence blocks cannot be promoted', async () => {
   const f = fixture('settle'); f.receipt.execution_status = 'REVERTED'; await assert.rejects(f.run(), /successful/);

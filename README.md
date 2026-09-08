@@ -17,8 +17,8 @@ This branch contains the post-deadline privacy fixes, verified mainnet Chat and 
 | Live application | [app20.io](https://app20.io) — one RFQ workspace, Chat and agent integration |
 | Current demo | [63-second narrated video](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4) · [English captions](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.srt) |
 | Release | [Fixed-branch release and downloads](https://github.com/gstohl/app20/releases/tag/fixed-2026-09-08) |
-| Scoring metadata | Root [`strk20.json`](strk20.json): five mainnet hashes, four project contracts, video and app URL |
-| Mainnet evidence | [Confidential settlement](deployments/mainnet/confidential-settlement-2026-09-08.json) · [Chat message](deployments/mainnet/chat-message-2026-09-08.json) |
+| Scoring metadata | Root [`strk20.json`](strk20.json): three updated-protocol mainnet transactions, three historical hashes, four project contracts, video and app URL |
+| Mainnet evidence | [Confidential settlement](deployments/mainnet/confidential-settlement-2026-09-08.json) · [Chat message](deployments/mainnet/chat-message-2026-09-08.json) · [Chat follow-up](deployments/mainnet/chat-message-followup-2026-09-08.json) |
 
 The video shows a genuine encrypted maker quote, an actual mainnet message decrypted in a watch-only source preview, and the current SDK page. It stops before wallet signing. Its source labels remain visible; it does not claim a native Ready wallet settlement demonstration.
 
@@ -37,11 +37,12 @@ The private-only policy rejects public trade legs, OPEN settlement notes and one
 | --- | --- | --- |
 | Confidential swap | [0x59435ee6…](https://starkscan.co/tx/0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696) | Both agreed encrypted outputs arrived; escrow empty and settled; no public trade value actions or new OPEN outputs |
 | Encrypted Chat message | [0x382800b8…](https://starkscan.co/tx/0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62) | Message decrypted, replay protection consumed, private STRK balance preserved |
+| Encrypted Chat follow-up | [0x2ffc05f3…](https://starkscan.co/tx/0x2ffc05f3ec5399a96596c226049edb8217afdeeea9ea707aaba1e2a37effd56) | Separate message and replay identity; decryption, pool/helper trace and unchanged private STRK balance verified |
 | Historical swap 1 | [0x1e364ca1…](https://starkscan.co/tx/0x1e364ca1c778fd304fae9506dabade0f2c958e0e867465db9a7ceb0f13af36d) | Earlier protocol with public funded terms |
 | Historical swap 2 | [0x30f926d2…](https://starkscan.co/tx/0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e) | Earlier protocol with public funded terms |
 | Historical swap 3 | [0x6905abc5…](https://starkscan.co/tx/0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171) | Earlier protocol with public funded terms |
 
-A read-only recheck on September 8 verified all five receipts, pool/project execution traces and receipt-block class hashes. All four project contracts also matched their pins at mainnet block 14532003. Encrypted note discovery also verified the new settlement outputs. These were controlled SDK runs: one operator controlled both wallets and funded both swap legs. The Chat proof was a self-message. The three historical swaps remain separately labelled and do not prove the newer confidential protocol.
+A read-only recheck on September 8 verified all six receipts, pool/project execution traces and receipt-block class hashes. The first three manifest entries use the updated contracts: two encrypted Chat messages and one confidential swap. All four project contracts also matched their pins at mainnet block 14532003. Encrypted note discovery verified the settlement outputs and preserved Chat balances. These were controlled SDK runs: one operator controlled both wallets and funded both swap legs; the Chat proofs were self-messages. The three historical swaps remain separately labelled and do not prove the newer confidential protocol.
 
 | Mainnet contract | Address / source |
 | --- | --- |
@@ -52,7 +53,7 @@ A read-only recheck on September 8 verified all five receipts, pool/project exec
 
 Full addresses, historical contracts and chain/class pins are in [`strk20.json`](strk20.json), the [deployment manifest](public/.well-known/app20.json) and [mainnet runbook](docs/MAINNET_RUNBOOK.md). A new swap uses its own escrow instance.
 
-Recheck the five submission transactions without signing or broadcasting, after installing the project dependencies:
+Recheck the six submission transactions without signing or broadcasting, after installing the project dependencies:
 
 ```sh
 node scripts/verify-hackathon-transactions.mjs --rpc https://starknet-rpc.publicnode.com

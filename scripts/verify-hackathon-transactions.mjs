@@ -46,13 +46,16 @@ function evidenceBinding(record, type, txHash, receipt) {
 }
 
 export async function verifyHackathonTransaction(provider, txHash, evidence) {
+  const chatRecords = [evidence.chat, ...(evidence.additionalChatMessages ?? [])].filter(record => record && same(record.transaction?.hash, txHash));
+  if (chatRecords.length > 1) throw Error('Duplicate durable Chat records for one transaction.');
+  const chatRecord = chatRecords[0];
   const receipt = await provider.getTransactionReceipt(txHash);
   if (receipt.execution_status !== 'SUCCEEDED' || !receipt.block_hash || !Number.isSafeInteger(receipt.block_number) || receipt.block_number <= 0 || !['ACCEPTED_ON_L1', 'ACCEPTED_ON_L2'].includes(receipt.finality_status) || !Array.isArray(receipt.events)) throw Error(txHash + ': not a successful included transaction.');
   if (receipt.transaction_hash && !same(receipt.transaction_hash, txHash)) throw Error('Receipt belongs to another transaction.');
   const trace = await provider.getTransactionTrace(txHash), calls = invocations(trace);
   const poolCalls = calls.filter(c => same(c.contract_address, deployment.settlement.pool) && same(c.entry_point_selector, selector('apply_actions')));
   if (poolCalls.length === 0) throw Error(txHash + ': did not apply STRK20 pool actions.');
-  const type = same(txHash, CHAT.hash) ? 'chat-message' : same(txHash, CONFIDENTIAL.hash) ? 'confidential-settlement' : 'historical-swap';
+  const type = same(txHash, CHAT.hash) || chatRecord ? 'chat-message' : same(txHash, CONFIDENTIAL.hash) ? 'confidential-settlement' : 'historical-swap';
   const pin = type === 'chat-message' ? CHAT : type === 'confidential-settlement' ? CONFIDENTIAL : deployment.settlement;
   if (!calls.some(c => same(c.contract_address, pin.address))) throw Error(txHash + ': did not call the expected APP20 contract.');
   for (const [address, expected] of [[deployment.settlement.pool, deployment.settlement.poolClassHash], [pin.address, pin.classHash]]) {
@@ -65,7 +68,7 @@ export async function verifyHackathonTransaction(provider, txHash, evidence) {
     const fill = fills[0];
     return { ...common, quoteId: fill.keys[1], maker: fill.keys[2], sellAmount: BigInt(fill.data[0]).toString(), buyAmount: BigInt(fill.data[1]).toString() };
   }
-  evidenceBinding(type === 'chat-message' ? evidence.chat : evidence.confidential, type, txHash, receipt);
+  evidenceBinding(type === 'chat-message' ? chatRecord : evidence.confidential, type, txHash, receipt);
   // The callback must be inside apply_actions and called by the actual pool.
   const callbacks = poolCalls.flatMap(pool => invocations(pool.calls)).filter(c => same(c.contract_address, pin.address) && same(c.entry_point_selector, selector('privacy_invoke_with_computation')) && typeof c.caller_address === 'string' && same(c.caller_address, deployment.settlement.pool));
   if (poolCalls.length !== 1 || callbacks.length !== 1) throw Error('Expected exactly one proof-bound APP20 callback inside the pool application.');
@@ -108,6 +111,7 @@ async function main(args) {
   const requested = requestedTransactionHashes(hashes.length ? hashes : manifest.transactions);
   const evidence = {
     chat: JSON.parse(await readFile(resolve(root, 'deployments/mainnet/chat-message-2026-09-08.json'), 'utf8')),
+    additionalChatMessages: [JSON.parse(await readFile(resolve(root, 'deployments/mainnet/chat-message-followup-2026-09-08.json'), 'utf8'))],
     confidential: JSON.parse(await readFile(resolve(root, 'deployments/mainnet/confidential-settlement-2026-09-08.json'), 'utf8')),
   };
   const provider = new RpcProvider({ nodeUrl: rpcUrl });

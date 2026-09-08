@@ -28,9 +28,21 @@ node scripts/mainnet-chat-proof.mjs --mode evidence --transaction 0x382800b80521
 
 Evidence mode authenticates the expected encrypted event and checks the replay slot. The additional trace/class and fixed-block balance comparison are recorded in the public evidence. Exact balances, note material, viewing keys, encrypted proof journals and prover diagnostics stay in owner-only storage outside the repository. The published record contains the balance-equality result, not the private balances or message plaintext.
 
+## September 8 follow-up
+
+A second encrypted self-message succeeded in [transaction 0x2ffc05f3…](https://starkscan.co/tx/0x2ffc05f3ec5399a96596c226049edb8217afdeeea9ea707aaba1e2a37effd56), block **14532316**, accepted on L2 at verification. It uses a separate encrypted payload, replay identity and proof journal. Decryption, replay consumption, receipt-block class pins and the exact pool/helper callback were verified. Private STRK and legacy OPEN balances were unchanged between blocks 14532315 and 14532316. [Sanitized evidence](../deployments/mainnet/chat-message-followup-2026-09-08.json).
+
+Recheck its event and replay slot with the retained operator material:
+
+```sh
+node scripts/mainnet-chat-proof.mjs --run-id fixed-followup-2026-09-08 --mode evidence --transaction 0x2ffc05f3ec5399a96596c226049edb8217afdeeea9ea707aaba1e2a37effd56
+```
+
+Explicit run IDs use separate journals under `~/.config/app20/mainnet-chat-proof/runs/<run-id>/`. Each requires an owner-only `message.txt`; retries must retain the same file and journal. The original run remains at its original path. Proof generation never broadcasts; the separately guarded release command performed this one authorized transaction. The maker was paused with no pending wallet operation and restarted after confirmation.
+
 ## Remaining evidence
 
-This was an operator-controlled self-message, not a two-user wallet exchange. Ready extension acceptance, a Chat payment to another mainnet account and confidential atomic swap settlement remain unverified. The installed wallet adapter must preserve computation, proof facts and replay protection; no public-transfer fallback is permitted.
+Both Chat transactions were operator-controlled self-messages, not a two-user wallet exchange. Ready extension acceptance and a Chat payment to another mainnet account remain unverified. A separate [controlled confidential atomic swap](../deployments/mainnet/confidential-settlement-2026-09-08.json) has since been verified on mainnet. The installed wallet adapter must preserve computation, proof facts and replay protection; no public-transfer fallback is permitted.
 
 The three September 7 hashes in `strk20.json` remain valid evidence of the earlier swap protocol with public funded terms. This new message has its own pool-backed receipt and durable record. Deployment and registration transactions are setup evidence and must not replace qualifying pool interactions. Do not describe the old swaps as proof of the new confidential escrow.
 

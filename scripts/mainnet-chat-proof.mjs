@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Operator-owned, proof-only Chat rehearsal. This command has no broadcast path.
-import { readFile, mkdir, open, rename, unlink } from 'node:fs/promises';
+// Operator-owned, proof-only Chat run. This command has no broadcast path.
+import { readFile, mkdir, open, rename, unlink, lstat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { createEmptyRegistry, createPrivateTransfers } from '@starkware-libs/sta
 import { PrivacyPoolABI } from '@starkware-libs/starknet-privacy-sdk/abi';
 import { MAINNET_DEPLOYMENT as deployment } from '../src/lib/mainnet-deployment.ts';
 import { MAINNET_PROOF_FORMAT, realProofConfigHash } from '../src/lib/mainnet-proof-format.ts';
+import { fixedBlockDiscoveryProvider } from './mainnet-wallet-proof.mjs';
 
 export const CHAT = Object.freeze({
   address: '0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4',
@@ -19,10 +20,19 @@ export const CHAT = Object.freeze({
 });
 export const OPERATOR = '0x2baf5bf273ff0ecf729e1b9d455889a2dfbc831c944e48a124367295d2d6bc3';
 const root = resolve(import.meta.dirname, '..');
-const directory = resolve(homedir(), '.config/app20/mainnet-chat-proof');
+/** Each explicit follow-up has its own replay identity and durable proof journal. */
+export function chatProofRun(runId) {
+  const base = resolve(homedir(), '.config/app20/mainnet-chat-proof');
+  if (runId !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(runId)) throw Error('Use a lowercase run ID of at most 64 letters, digits or hyphens.');
+  return {
+    directory: runId === undefined ? base : resolve(base, 'runs', runId),
+    actionId: '0x' + hash.starknetKeccak('app20/chat/mainnet-release/message/v1' + (runId === undefined ? '' : '/' + runId)).toString(16),
+  };
+}
+let run = chatProofRun(), directory = run.directory;
 const rpc = 'https://api.cartridge.gg/x/starknet/mainnet';
 const relayUrl = 'https://app20.dokgst.workers.dev/api/privacy/prove';
-const message = 'Hey, the private chat is live. Can you see this message?';
+let message = 'Hey, the private chat is live. Can you see this message?';
 const same = (a, b) => BigInt(a) === BigInt(b);
 const domain = value => BigInt(shortString.encodeShortString(value));
 const poseidon = values => ec.starkCurve.poseidonHashMany(values.map(BigInt));
@@ -115,11 +125,10 @@ async function context(provider, checkFresh = true) {
   let request = await read('request.json');
   if (!request) {
     const preflight = await inspectChatPrerequisites(provider);
-    request = { schema: 'app20-mainnet-chat-proof-request/v1', block: preflight.block, actionId: hash.starknetKeccak('app20/chat/mainnet-release/message/v1').toString(), record: await app.mail.encryptMail(mailbox.publicKey, message) };
-    request.actionId = hex(request.actionId);
+    request = { schema: 'app20-mainnet-chat-proof-request/v1', block: preflight.block, actionId: run.actionId, record: await app.mail.encryptMail(mailbox.publicKey, message) };
     await save('request.json', request);
   }
-  if (request.schema !== 'app20-mainnet-chat-proof-request/v1' || !same(request.actionId, hash.starknetKeccak('app20/chat/mainnet-release/message/v1'))) throw Error('Unexpected saved Chat request.');
+  if (request.schema !== 'app20-mainnet-chat-proof-request/v1' || !same(request.actionId, run.actionId)) throw Error('Unexpected saved Chat request.');
   if (new TextDecoder().decode(await app.mail.decryptMail(mailbox.privateKey, request.record)) !== message) throw Error('Saved encrypted message cannot be authenticated.');
   // Discovery may have required a later shielding transaction. Before any signed
   // invocation or hosted job exists, refresh only the public proving block.
@@ -142,7 +151,7 @@ async function prove(provider) {
   const previous = await read('submission.json');
   if (previous) return { output: resolve(directory, 'submission.json'), ...validateChatProof(previous.submission, ctx.expected), transactionSubmitted: false, reused: true };
   const provingProvider = await ctx.app.starkscanProver({ relayUrl, poolClassHash: deployment.settlement.poolClassHash, accessToken: async () => (await readFile(resolve(homedir(), '.config/app20/prover-agent.token'), 'utf8')).trim(), journal: { runExclusive: work => exclusive('hosted-proof', work), load: key => read('proof-' + key + '.json'), save: (key, value) => save('proof-' + key + '.json', value) } }).resolve({ provider, network: 'mainnet', chainId: deployment.chainId, nodeUrl: rpc, poolAddress: deployment.settlement.pool });
-  const discoveryProvider = await ctx.app.contractDiscovery().resolve({ provider, poolAddress: deployment.settlement.pool });
+  const discoveryProvider = await ctx.app.contractDiscovery().resolve({ provider: fixedBlockDiscoveryProvider(provider, ctx.preflight.block.hash), poolAddress: deployment.settlement.pool });
   const transfers = createPrivateTransfers({ account: await operator(provider), viewingKeyProvider: { getViewingKey: async () => ctx.viewing }, provingProvider, discoveryProvider, poolContractAddress: deployment.settlement.pool });
   const key = createHash('sha256').update('app20/chat-proof/invocation/v1:' + ctx.viewing.toString(16)).digest();
   let invocation;
@@ -185,16 +194,26 @@ async function evidence(provider, transactionHash) {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await mkdir(directory, { recursive: true, mode: 0o700 });
   try {
-    const { values } = parseArgs({ options: { mode: { type: 'string', default: 'check' }, transaction: { type: 'string' } } });
+    const { values } = parseArgs({ options: { mode: { type: 'string', default: 'check' }, transaction: { type: 'string' }, 'run-id': { type: 'string' } } });
     if (!['check', 'prove', 'evidence'].includes(values.mode)) throw Error('Unsupported proof-only mode.');
+    run = chatProofRun(values['run-id']); directory = run.directory;
+    await mkdir(directory, { recursive: true, mode: 0o700 });
+    // A follow-up's owner-only message.txt stays beside its sealed invocation.
+    // Reading it again also prevents a resumed proof from changing the message.
+    if (values['run-id'] !== undefined && values.mode !== 'check') {
+      const messageFile = resolve(directory, 'message.txt'), stat = await lstat(messageFile);
+      if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) || stat.size > 1024) throw Error('The message must be an owner-only regular file of at most 1024 bytes.');
+      message = (await readFile(messageFile, 'utf8')).trim();
+      if (!message || Buffer.byteLength(message, 'utf8') > 1024) throw Error('A nonempty message of at most 1024 UTF-8 bytes is required.');
+    }
     const provider = new RpcProvider({ nodeUrl: rpc });
     const result = await exclusive('operation', () => values.mode === 'check' ? inspectChatPrerequisites(provider) : values.mode === 'prove' ? prove(provider) : evidence(provider, values.transaction));
     console.log(serialize(result));
   } catch (error) {
+    await mkdir(directory, { recursive: true, mode: 0o700 });
     await save('last-error.json', { at: new Date().toISOString(), message: String(error?.message ?? error), stack: error?.stack });
-    console.error('Chat proof rehearsal stopped without broadcasting. Inspect the protected operator journal; private prover diagnostics are not printed.');
+    console.error('Chat proof run stopped without broadcasting. Inspect the protected operator journal; private prover diagnostics are not printed.');
     process.exitCode = 1;
   }
 }
