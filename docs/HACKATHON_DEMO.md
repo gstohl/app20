@@ -1,10 +1,18 @@
-## Deadline submission release
-
-The public submission video is [APP20 mainnet release demo](https://github.com/gstohl/app20/releases/download/mainnet-hackathon-2026-09-08/app20-demo-mainnet.mp4): 126 seconds, 1080p, ElevenLabs narration and subtitles. Every retained voice segment includes its complete tail. The obsolete maker chapter was removed. Local demonstrations remain labelled; the closing card records deployed mainnet contracts and pending end-to-end validation. The deadline `strk20.json` contained this URL, the three earlier verified mainnet transaction hashes and four deployed contract addresses. The local follow-up preserves them and appends the verified Chat and confidential settlement hashes as post-deadline evidence; it does not imply a retroactive panel rescore.
-
 # Hackathon demonstration status
 
-Updated September 8, 2026. Three historical mainnet settlement transactions are verified and recorded in `strk20.json`. They use the earlier protocol with public funded terms. The prior 2:16 narrated video includes localnet Chat and confidential escrow development, but its one-sided Chat offer acceptance and public maker onboarding predate the new private-only policy. Those scenes must be replaced before publication as the current product. The current public video URL is listed in the deadline release section above.
+## Current fixed-branch release
+
+[Watch the new 63-second demo](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4) · [Release and captions](https://github.com/gstohl/app20/releases/tag/fixed-2026-09-08) · [Submission manifest](../strk20.json)
+
+The `fixed` branch links this public video and contains five verified mainnet transactions and four project contracts. The latest two transaction hashes prove an encrypted Chat message and a confidential settlement; the original three remain labelled historical swaps with public funded terms. This is a post-deadline follow-up for organizer review. The original `main` branch and deadline release are preserved separately.
+
+## Deadline submission release
+
+The original deadline video is [APP20 mainnet release demo](https://github.com/gstohl/app20/releases/download/mainnet-hackathon-2026-09-08/app20-demo-mainnet.mp4): 126 seconds, 1080p, ElevenLabs narration and subtitles. Every retained voice segment includes its complete tail. The obsolete maker chapter was removed. Local demonstrations remain labelled; the closing card records deployed mainnet contracts and pending end-to-end validation. The deadline `strk20.json` contained this URL, the three earlier verified mainnet transaction hashes and four deployed contract addresses. The `fixed` follow-up preserves the historical hashes and four contract addresses, appends verified Chat and confidential settlement evidence, and links the current video above. This does not imply a retroactive panel rescore.
+
+## Recording history
+
+Updated September 8, 2026. Three historical mainnet settlement transactions are verified and recorded in `strk20.json`. They use the earlier protocol with public funded terms. The prior 2:16 narrated video includes localnet Chat and confidential escrow development, but its one-sided Chat offer acceptance and public maker onboarding predate the new private-only policy. Those scenes were superseded by the corrected releases. The current video is listed in the fixed-branch release section above.
 
 ## Prior video: confidential development (version 8)
 
@@ -14,7 +22,7 @@ In the September 7 recording run, the browser's real local-contract flow passed,
 
 The export is checked for 4,080 frames, clean audio/video decoding and the complete waveform tail of all 12 narration chapters. Every clip leaves at least 1.5 seconds after its measured voice. [Timed script](../tools/demo-video/VOICEOVER.md) · [Recording guide](../tools/demo-video/README.md) · [Implementation and evidence limits](CONFIDENTIAL_RFQ.md).
 
-All media and temporary evidence remain under ignored `artifacts/`. The sibling voiceover, SRT and poster accompany the export. No new mainnet transactions were submitted for that September 7 recording; the first three hashes in `strk20.json` are for the earlier public-funded-terms protocol. The current public video URL is listed in the deadline release section above.
+All media and temporary evidence remain under ignored `artifacts/`. The sibling voiceover, SRT and poster accompany the export. No new mainnet transactions were submitted for that September 7 recording; the first three hashes in `strk20.json` are for the earlier public-funded-terms protocol. The current video is listed in the fixed-branch release section above.
 
 ## Mainnet settlement evidence
 
@@ -51,7 +59,7 @@ The mainnet transaction requirement now has verified evidence. To recheck the ma
 node scripts/verify-hackathon-transactions.mjs --rpc https://rpc.starknet.lava.build/rpc/v0_10
 ```
 
-The verifier checks mainnet, successful included receipts and receipt-block contract pins. Historical swaps require their `QuoteFilled` event and pool/APP20 calls; the exact new Chat and confidential hashes additionally require their durable block identities, nested pool callbacks and matching Chat event or settled flag plus encrypted output events. Its default RPC is Publicnode. `--write` preserves existing contracts and the deadline video URL. It records receipt evidence; `--write` additionally updates `strk20.json`. Historical trace availability is required. In the September 7 run, Lava handled the proof-bearing transactions and traces successfully; Cartridge's trace endpoint rejected the new proof-fact version during this run. Starkscan proving worked, but its RPC write gateway reported disabled writes, so signed transactions were broadcast through Lava without provider credentials.
+The verifier checks mainnet, successful included receipts and receipt-block contract pins. Historical swaps require their `QuoteFilled` event and pool/APP20 calls; the exact new Chat and confidential hashes additionally require their durable block identities, nested pool callbacks and matching Chat event or settled flag plus encrypted output events. Its default RPC is Publicnode. `--write` preserves existing contracts and whichever video URL is currently in the manifest. It records receipt evidence; `--write` additionally updates `strk20.json`. Historical trace availability is required. In the September 7 run, Lava handled the proof-bearing transactions and traces successfully; Cartridge's trace endpoint rejected the new proof-fact version during this run. Starkscan proving worked, but its RPC write gateway reported disabled writes, so signed transactions were broadcast through Lava without provider credentials.
 
 The deadline release above replaced the superseded Chat acceptance and maker onboarding scenes and populated `demo_video`. Further edits should preserve those corrections and be checked against the current flow. The prior cut omits the receipt chapter; its confidential escrow footage is localnet development with simulated proving. Remote proving exposes proving payloads to the relay/proving infrastructure; this recording does not establish anonymous proving or remove that documented limitation.
 
@@ -113,7 +121,7 @@ The APP20 Chat helper is deployed at `0x501331396a00e95a4b520502ff73155412e056bd
 
 Deployment alone does not establish operation. The subsequent operator Chat message and confidential atomic settlement now have accepted real-proof evidence. The confidential escrow’s `realProofVerified` is true after receipt, trace and encrypted-output verification. The browser wallet integration is implemented; native Ready end-to-end acceptance remains unverified. The submission's three transaction hashes are preserved as verified historical swap evidence. Declaration/deployment transactions are not substituted for STRK20-pool transaction evidence.
 
-The manifest now points to the [mainnet demo release asset](https://github.com/gstohl/app20/releases/download/mainnet-hackathon-2026-09-08/app20-demo-mainnet.mp4). Its release publication is handled separately; the manifest URL alone does not prove upload completion.
+The deadline manifest pointed to the [original mainnet demo](https://github.com/gstohl/app20/releases/download/mainnet-hackathon-2026-09-08/app20-demo-mainnet.mp4). The `fixed` manifest now links the newer 63-second release above.
 
 ## September 8 verified mainnet Chat message
 
@@ -126,10 +134,10 @@ This was an operator-controlled Core SDK self-message. It verifies the mainnet m
 
 [Transaction 0x59435ee6…](https://starkscan.co/tx/0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696) succeeded at block **14530706**, accepted on L2 at verification. Its single proof delivered both agreed encrypted outputs; the escrow became empty and settled. Receipt-block class pins, the exact proof facts and callback, and encrypted balance deltas were verified. No public trade value action, deposit, withdrawal or OPEN output was created. See [sanitized durable evidence](../deployments/mainnet/confidential-settlement-2026-09-08.json), including setup and both encrypted funding receipts.
 
-One operator controlled both wallets and funded both escrow legs. This establishes controlled SDK settlement, not independently operated market liquidity or native Ready wallet acceptance. Mainnet refunds and independent review remain unverified. Escrow deployment/activity, deadlines, fees and timing stay public; the hosted prover receives the private witness. No private terms, exact wallet balances, keys or invocation payloads are published. The local manifest appends this settlement and the verified Chat message to the original three swap hashes, preserving all four contracts and the deadline video URL. They are post-deadline evidence; this does not claim a hackathon panel rescore or alter GitHub/main or the published deadline release.
+One operator controlled both wallets and funded both escrow legs. This establishes controlled SDK settlement, not independently operated market liquidity or native Ready wallet acceptance. Mainnet refunds and independent review remain unverified. Escrow deployment/activity, deadlines, fees and timing stay public; the hosted prover receives the private witness. No private terms, exact wallet balances, keys or invocation payloads are published. The local manifest appends this settlement and the verified Chat message to the original three swap hashes, preserving all four contracts. The later fixed-branch update links the refreshed video. They are post-deadline evidence; this does not claim a hackathon panel rescore or alter GitHub/main or the published deadline release.
 
 ## September 8 social video and direct website deployment
 
 The fresh social export is `artifacts/social/app20-mainnet-social-2026-09-08.mp4`: 63 seconds at 1080p/30 fps, with the selected Liam voice, short normal-speed sequences, a black macOS-style cursor, square browser frame and compact bars. It shows a genuine encrypted maker quote and the confirmed mainnet Chat message in a watch-only source preview, then the current SDK page. It stops before wallet signing, omits the confirmed-swaps chapter and submits no transactions. Source labels remain visible. The complete narration is retained with reading pauses; captions and the timed script accompany the local export. All media stays in ignored `artifacts/`.
 
-The website was deployed directly through Wrangler as Cloudflare version `19e8f22d-2e75-48a5-82d1-77612fed999d`. Its encrypted room transport returned a real maker quote in the browser. Mainnet message and confidential settlement are verified separately through the controlled SDK runs above; native Ready acceptance and mainnet refunds remain unverified. The maker is an independently running, locally hosted process with bounded exposure; Cloudflare does not host its signing keys or guarantee its uptime. The deadline video URL remains unchanged.
+The website was deployed directly through Wrangler as Cloudflare version `19e8f22d-2e75-48a5-82d1-77612fed999d`. Its encrypted room transport returned a real maker quote in the browser. Mainnet message and confidential settlement are verified separately through the controlled SDK runs above; native Ready acceptance and mainnet refunds remain unverified. The maker is an independently running, locally hosted process with bounded exposure; Cloudflare does not host its signing keys or guarantee its uptime. The original deadline release remains available; only the `fixed` manifest is updated to the new video.

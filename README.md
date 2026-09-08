@@ -1,69 +1,102 @@
-# APP20 — private chat, payments and RFQs on Starknet
+# APP20 — confidential RFQs and encrypted Chat on Starknet
 
-[App](https://app20.io) · [Agent guide](https://app20.io/agents) · [SDK documentation](packages/agent-sdk/README.md) · [Confidential RFQ guide](docs/CONFIDENTIAL_RFQ.md)
+**Conversations. Clear terms. Private settlement.**
 
-APP20 is a Starknet application for encrypted chat, shielded payments and confidential token swaps. Chat combines conversations with payments and invoices. The RFQ (request for quote) workspace demonstrates an exchange where both parties approve the terms and receive their assets together. STRK20 provides the privacy pool that holds balances as encrypted notes.
+[Open the app](https://app20.io) · [Watch the 63-second demo](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4) · [Submission manifest](strk20.json) · [SDK guide](packages/agent-sdk/README.md)
 
-**Real-proof Chat and confidential settlement are verified on mainnet.** The Chat message decrypted correctly and preserved the private balance. The atomic swap delivered both agreed encrypted outputs, left the escrow empty and settled, and created no public trade transfers or OPEN outputs. These were controlled Node SDK runs; one operator controlled both wallets and funded both swap legs. Native Ready wallet acceptance remains unverified. See the [Chat evidence](deployments/mainnet/chat-message-2026-09-08.json) and [confidential settlement evidence](deployments/mainnet/confidential-settlement-2026-09-08.json).
+APP20 is a private RFQ desk and encrypted Chat app built on STRK20. Request quotes from selected makers, review your minimum return, and exchange shielded assets through a jointly approved escrow. Chat keeps the conversation encrypted alongside payments and invoices.
 
-## Current status
+[![APP20 reviewing a live encrypted maker quote](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08-preview.png)](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4)
 
-New payments must spend encrypted notes. Swaps require an atomic exchange approved by both parties. Unsupported operations stop before funding or signing; they cannot fall back to public settlement or a one-sided payment. See [the settlement policy](docs/PRIVATE_SETTLEMENT_POLICY.md).
+## Hackathon review — `fixed` branch
 
-| Feature | Status |
+This branch contains the post-deadline privacy fixes, verified mainnet Chat and confidential settlement, and the refreshed demo. It is submitted for the organizers to consider separately from the [deadline release](https://github.com/gstohl/app20/releases/tag/mainnet-hackathon-2026-09-08) and the original `main` branch.
+
+| Review | Link / scope |
 | --- | --- |
-| RFQ | `/rfq` integrates the mainnet confidential flow and browser wallet adapter; native Ready acceptance remains unverified |
-| Confidential escrow | Controlled real-proof mainnet settlement verified with exact encrypted outputs; timeout refunds verified locally |
-| Chat messages | Mainnet operator message verified, decrypted and replay-protected; a private 1-base-unit self-transfer preserves the balance without helper funding |
-| Chat payments and invoices | Encrypted transfer and memo path implemented; mainnet recipient-payment and browser wallet acceptance remain unverified |
-| Chat swaps and invoice conversion | Blocked pending integration with the confidential RFQ flow; no one-sided payment fallback |
-| Agent library | Confidential escrow integration and separate shielded-wallet operations; downloadable `@app20/agent-sdk`, not published to the npm registry |
-| Mainnet proof tooling | Real hosted Chat and confidential settlement proofs accepted on mainnet; receipts, traces and encrypted discovery verified |
-| Privy wallet | Separate register/shield/transfer/unshield rail; configured credentials and real-wallet acceptance remain necessary |
+| Live application | [app20.io](https://app20.io) — one RFQ workspace, Chat and agent integration |
+| Current demo | [63-second narrated video](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.mp4) · [English captions](https://github.com/gstohl/app20/releases/download/fixed-2026-09-08/app20-mainnet-social-2026-09-08.srt) |
+| Release | [Fixed-branch release and downloads](https://github.com/gstohl/app20/releases/tag/fixed-2026-09-08) |
+| Scoring metadata | Root [`strk20.json`](strk20.json): five mainnet hashes, four project contracts, video and app URL |
+| Mainnet evidence | [Confidential settlement](deployments/mainnet/confidential-settlement-2026-09-08.json) · [Chat message](deployments/mainnet/chat-message-2026-09-08.json) |
 
-The browser integration includes wallet signing, encrypted quote rooms and durable recovery. Its native Ready extension journey still needs an unlocked-wallet end-to-end run. The local lab controls two disposable wallets; the verified mainnet run also used one operator. Neither run establishes independent market liquidity or an independent security review.
+The video shows a genuine encrypted maker quote, an actual mainnet message decrypted in a watch-only source preview, and the current SDK page. It stops before wallet signing. Its source labels remain visible; it does not claim a native Ready wallet settlement demonstration.
 
-## Current contracts and flow
+## What APP20 does
 
-### Confidential swaps
+- **Confidential RFQ:** encrypted requests and replies between a taker and chosen makers, explicit minimum receive, and separate approval of the agreed trade.
+- **Atomic private settlement:** a Cairo escrow requires both parties' approval and delivers both agreed assets as encrypted STRK20 notes in one settlement.
+- **Encrypted Chat:** recipient-encrypted messages, shielded payments and same-token invoices. Incoming messages refresh automatically after unlocking.
+- **Independent makers and agents:** a Node SDK and maker runner with separate signing policies, inventory limits, fee budgets and persistent recovery journals.
 
-[`App20ConfidentialEscrow`](cairo/src/confidential_escrow.cairo) is a dedicated policy account for one two-party trade:
+The private-only policy rejects public trade legs, OPEN settlement notes and one-sided swap acceptance. Unsupported confidential operations stop before submission. [Settlement policy](docs/PRIVATE_SETTLEMENT_POLICY.md).
 
-1. Agree on assets, exact amounts, recipients and a deadline. The public constructor stores a commitment to the terms, two distinct public signing keys, the deadline and pinned pool identity.
-2. Both parties approve setup. Each funds the escrow separately from its own shielded balance, using viewing material created only for this escrow.
-3. Both approve the exact exchange. The contract permits both agreed outputs together as encrypted notes, returning any surplus only to the original owner of that asset. Public deposits, withdrawals, OPEN outputs and unrelated calls are rejected by its action policy.
-4. After expiry, either party can authorize a fresh encrypted refund of its original asset without the other party's signature. Funding is not atomic: the first funder may have to wait until expiry if the peer stops participating.
+## Verified on Starknet mainnet
 
-The pool callback checks the actual execution deadline and prevents a second settlement. The SDK checks deployed identities, prepares operations, collects approvals and journals uncertain submissions. The controlled mainnet settlement additionally passed receipt, trace and encrypted-output verification; mainnet refunds and native wallet acceptance are separate, unverified paths. See [protocol and recovery details](docs/CONFIDENTIAL_RFQ.md).
+| Operation | Successful transaction | Verified result |
+| --- | --- | --- |
+| Confidential swap | [0x59435ee6…](https://starkscan.co/tx/0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696) | Both agreed encrypted outputs arrived; escrow empty and settled; no public trade value actions or new OPEN outputs |
+| Encrypted Chat message | [0x382800b8…](https://starkscan.co/tx/0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62) | Message decrypted, replay protection consumed, private STRK balance preserved |
+| Historical swap 1 | [0x1e364ca1…](https://starkscan.co/tx/0x1e364ca1c778fd304fae9506dabade0f2c958e0e867465db9a7ceb0f13af36d) | Earlier protocol with public funded terms |
+| Historical swap 2 | [0x30f926d2…](https://starkscan.co/tx/0x30f926d2eddc5361ff96b0c3c5f173d87fef227fb87d1055899f32daf221c7e) | Earlier protocol with public funded terms |
+| Historical swap 3 | [0x6905abc5…](https://starkscan.co/tx/0x6905abc575ffb6532b566695c86194d15dfe6e26afd8ab9b47f9e4bb749a171) | Earlier protocol with public funded terms |
 
-### Chat and payments
+A read-only recheck on September 8 verified all five receipts, pool/project execution traces and receipt-block class hashes. All four project contracts also matched their pins at mainnet block 14532003. Encrypted note discovery also verified the new settlement outputs. These were controlled SDK runs: one operator controlled both wallets and funded both swap legs. The Chat proof was a self-message. The three historical swaps remain separately labelled and do not prove the newer confidential protocol.
 
-[`App20Chat`](cairo/src/lib.cairo) registers chat public keys and emits encrypted message records. Its protected callback accepts only the configured privacy pool, binds the message payload to the computation and rejects replayed actions. Encryption and decryption happen in the clients.
+| Mainnet contract | Address / source |
+| --- | --- |
+| Chat helper | [0x50133139…](https://starkscan.co/contract/0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4) · [Cairo](cairo/src/lib.cairo) |
+| Verified confidential escrow instance | [0x11b28bb2…](https://starkscan.co/contract/0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f) · [Cairo](cairo/src/confidential_escrow.cairo) |
+| Historical maker book | [0x9df86f7e…](https://starkscan.co/contract/0x9df86f7e74cf096c3788a5bf2c51945de50a13602a4383b93bbd64f39fe051) · [Deployment record](deployments/mainnet/private-settlement.json) |
+| Historical public-term swap | [0x1bc94493…](https://starkscan.co/contract/0x1bc94493f67039bd0138101eb7a9be600496e9c63d26e331799881f9041d642) · [Deployment record](deployments/mainnet/private-settlement.json) |
 
-The current app sends messages through an unfunded, proof-bound helper operation. A payment adds an encrypted transfer from existing shielded notes to the same batch; the helper does not settle swaps. Same-token invoices use that payment path. Plain messages include a private transfer of 1 base unit of STRK back to the sender to provide pool replay protection. An existing shielded STRK note is required; its balance is preserved. Pool and network fees still apply. Chat offer acceptance and invoice conversion remain blocked.
+Full addresses, historical contracts and chain/class pins are in [`strk20.json`](strk20.json), the [deployment manifest](public/.well-known/app20.json) and [mainnet runbook](docs/MAINNET_RUNBOOK.md). A new swap uses its own escrow instance.
 
-## Privacy boundary
+Recheck the five submission transactions without signing or broadcasting, after installing the project dependencies:
 
-Message content is encrypted for its recipients. Confidential escrow amounts, assets and destinations are private proof inputs; counterparties still know their agreement.
+```sh
+node scripts/verify-hackathon-transactions.mjs --rpc https://starknet-rpc.publicnode.com
+```
 
-Shielding/unshielding expose their own amounts and assets and remain separate wallet operations. Escrow activity, timing, deadlines, fees, ephemeral signer keys and ciphertext/proof sizes remain visible. Deploying an escrow from a personal wallet can expose that wallet’s link to the escrow. Counterparties know their agreement. Historical maker recovery remains public under the old contracts.
+## How a confidential RFQ settles
 
-### Proving payload exposure
+1. **Request and compare.** The taker encrypts the request for selected makers. A maker returns the price, expiry and agreement through the encrypted room.
+2. **Approve and fund.** Each party holds an independent signing key. Both approve the setup; each separately funds the escrow from shielded notes. The public constructor contains a commitment to the private terms.
+3. **Settle together.** Both approve the exact operation. A real STRK20 proof delivers the agreed encrypted outputs atomically, and the escrow callback prevents a second settlement.
+4. **Recover after expiry.** Either party can authorize an encrypted refund of its original asset without the other's signature. This path is verified locally; mainnet refunds remain unverified. Funding is separate, so the first funder may need to wait until the deadline.
 
-The hosted path is `Browser or Node agent → APP20 Cloudflare Worker → Starkscan → STRK20 proving service`. TLS protects connections but APP20/Cloudflare and the proving operator can access proving payloads. This is HTTPS JSON, **not a verified OHTTP route**. The hosted prover receives the private witness; keeping signing keys local does not hide transaction details or escrow viewing material included in that witness.
+The React/TypeScript frontend uses encrypted quote rooms on Cloudflare Durable Objects. The Cairo policy account enforces settlement rules through the STRK20 pool. Browser and Node clients share the confidential SDK; the hosted proof route runs through the APP20 Worker and Starkscan. [Architecture](docs/APP20_ARCHITECTURE.md) · [Protocol and recovery](docs/CONFIDENTIAL_RFQ.md).
 
-The Worker does not log or persist proof request/response bodies. Separate relay tokens, caller-bound polling and request/concurrency limits protect access. Preserve wallet recovery state and operation journals across restarts; investigate unknown proof or transaction outcomes before retrying. RPC providers can observe discovery queries and timing.
+## Privacy boundary and current limits
 
-## Use the app
+Quote contents are encrypted for the trading parties. Chat content is encrypted for its recipients. Confidential swap assets, amounts and destinations are private proof inputs, and settlement creates encrypted notes.
 
-- `/rfq`: one confidential swap workspace, with network availability shown before any signing.
-- `/agents`: Node SDK, confidential RFQ integration and current network support.
-- `/recovery/privy`: the separately configured wallet and recovery rail. Switching wallets does not move balances.
-- `/chat`: encrypted conversations and payments, with the deployed mainnet helper configured. Incoming messages refresh after unlocking and every 60 seconds while visible and online. The operator mainnet message is verified; Ready wallet acceptance remains unverified. Fixed offers may be discussed, but acceptance requiring a swap is blocked.
+Escrow deployment/activity, timing, deadlines, fees, public signing keys and ciphertext/proof sizes remain visible. A personal wallet's deployment can link it to the escrow. Shielding and unshielding expose their own public amounts and assets. Counterparties know the trade terms, and the hosted APP20/Cloudflare and Starkscan/proving infrastructure can access the private witness. The current proving transport is HTTPS JSON; it does not establish anonymous or OHTTP proving.
 
-## Node.js library
+| Capability | Current scope |
+| --- | --- |
+| Mainnet confidential settlement and Chat message | Verified through the controlled SDK runs above |
+| Browser RFQ | Wallet adapter and encrypted quote flow implemented; live encrypted quote capture passed; native Ready end-to-end acceptance unverified |
+| Timeout refunds | Contract/SDK flow verified locally; mainnet acceptance unverified |
+| Chat payments and same-token invoices | Encrypted transfer/memo path implemented; mainnet recipient-payment acceptance unverified |
+| Chat swaps and invoice conversion | Blocked pending confidential atomic wallet integration; no one-sided payment fallback |
+| Independent security review | Not completed |
 
-Node 24+ and ESM:
+Maker availability depends on independently running processes. The recorded maker ran locally with bounded exposure; Cloudflare does not host its signing keys or guarantee liquidity. Prior deployed contracts and transactions remain public; current clients block new trading through the old public-term protocol. [Historical recovery](docs/makers/README.md) · [Known gaps](docs/GAPS.md).
+
+## Run locally or integrate
+
+Use Node.js 24+ and npm:
+
+```sh
+npm ci
+npm run build:packages
+npm run dev
+```
+
+For a disposable end-to-end swap/refund lab, run `npm run pool:setup` then `npm run dev:confidential` and open `http://127.0.0.1:5198/rfq`. It controls two development wallets and simulates proving. Chat has a separate `npm run dev:localnet` environment. [Full development, relay configuration and deployment guide](docs/DEVELOPMENT.md).
+
+The Node SDK is downloadable as an npm-installable archive; it is not published to the npm registry:
 
 ```sh
 curl -fSLO https://app20.io/downloads/app20-agent-sdk-0.1.0.tgz
@@ -72,122 +105,28 @@ shasum -a 256 -c app20-agent-sdk-0.1.0.sha256
 npm install ./app20-agent-sdk-0.1.0.tgz
 ```
 
-```js
-import { confidentialCapabilities } from '@app20/agent-sdk/confidential';
+Use `@app20/agent-sdk/confidential` to prepare agreements, inspect funding, collect approvals, settle and recover. `createPrivacyWallet` provides separate register/shield/transfer/unshield operations; there is no `sendChat` SDK API yet. [SDK and adapter examples](packages/agent-sdk/README.md) · [Run a maker](public/agents.md#run-a-confidential-maker-from-the-source-checkout).
 
-// Check support before asking a wallet to sign.
-console.log(confidentialCapabilities.mainnetEnabled);
-```
+## Validation
 
-Use `@app20/agent-sdk/confidential` to construct agreements, inspect escrow funding, collect approvals, settle and recover expired funding. `createConfidentialClient` supports the pinned mainnet deployment, where controlled real-proof atomic settlement is verified. Native browser wallet acceptance and mainnet refunds remain unverified. The current source also includes `createConfidentialProofClient`, which prepares and proves operations without exposing funding or transaction submission. Build it from the checkout using [the mainnet proof rehearsal guide](docs/CONFIDENTIAL_RFQ_MAINNET_PROOF.md).
-
-`createPrivacyWallet` provides separately invoked registration, shielding, encrypted transfers, unshielding and reconciliation. There is no `sendChat` SDK API yet. See [SDK details and adapter examples](packages/agent-sdk/README.md). Preserve journals and secure wallet material across restarts; an unknown submission outcome must be reconciled before retrying.
-
-## Develop
-
-Use Node.js 24+ and npm. Build workspace exports before starting the frontend:
+The September 8 release passed the production build, 1,046 source tests, relay and SDK tests, 93 evidence/maker tests, live encrypted quote capture, and desktop/mobile deployment checks. The 63-second video decoded cleanly and all six complete narration endings matched their source audio. Controlled mainnet acceptance is recorded separately above.
 
 ```sh
-npm ci
-npm run build:packages
-npm run dev
-```
-
-The normal dev server shows the app with its network restrictions. To execute the confidential swap and refund flow, install the pinned privacy-pool toolchain and start the disposable lab:
-
-```sh
-npm run pool:setup
-npm run dev:confidential
-# Open http://127.0.0.1:5198/rfq
-```
-
-Create an escrow, approve setup, fund each side and approve the exchange. A second, partially funded trade demonstrates the independent timeout refund. Stop the command with Ctrl-C to remove that lab's disposable wallets and state.
-
-For Chat, use the separate Alice/Bob localnet environment. Its runner also requires Scarb 2.18.x as `scarb` on your PATH or at `~/.local/bin/scarb`. Stop the confidential lab before starting it:
-
-```sh
-npm run dev:localnet
-# Open http://127.0.0.1:5173/chat
-# Stop from a separate terminal:
-npm run localnet:stop
-```
-
-Localnet helpers, test tokens and chat contracts are not mainnet assets. Never fund development keys with real assets.
-
-## Configure Privy and the proving relay
-
-Public build variables:
-
-```text
-VITE_PRIVY_APP_ID
-VITE_PRIVY_CLIENT_ID
-```
-
-Set these in an ignored `.env.production.local` or your build environment. Configure `app20.io` as an allowed domain in Privy and enable the required Starknet embedded-wallet/signing functionality.
-
-Cloudflare secrets (enter values through secret storage, never `VITE_*`):
-
-```sh
-npx wrangler secret put PRIVY_APP_SECRET
-npx wrangler secret put STARKSCAN_API_KEY
-npx wrangler secret put PROOF_CAPABILITY_SECRET
-npx wrangler secret put OHTTP_SESSION_SECRET
-npx wrangler secret put PROVER_AGENT_TOKEN_HASHES
-```
-
-`PROOF_CAPABILITY_SECRET` and `OHTTP_SESSION_SECRET` must each be independently generated with at least 32 bytes of entropy. `PROVER_AGENT_TOKEN_HASHES` maps SHA-256 digests of individually issued high-entropy agent tokens to stable agent identifiers. Give each agent only its own token; never the Starkscan key. Rotate/revoke individual relay tokens by updating that mapping. An empty mapping enables no agent tokens.
-
-Worker variables include the public `PRIVY_APP_ID`, `PRIVY_MAINNET_ENABLED=true`, and `PRIVY_SUBMISSION_MODE=live`. Live mode enables submission for real proofs; it is not evidence that a live transaction has passed. Missing required credentials fail closed. Mainnet pool/class pins come from the shared deployment module.
-
-Starkscan's proving endpoint is **`POST /v1/SN_MAIN/prove`**, not the generic RPC method route. Poll `/v1/SN_MAIN/prove/{jobId}`. The SDK preserves submission idempotency and never automatically replaces an uncertain job. See [Starkscan's proving contract](https://starkscan.co/docs/api/strk20-prover).
-
-## Validate and deploy
-
-```sh
-npm run build:packages
 npm run test:all
 npm run build
 ```
 
-After `npm run pool:setup`, validate the current escrow contract and SDK integration:
-
-```sh
-npm run check:confidential-contract
-PATH="$PWD/vendor/bin:$PATH" RUST_LOG=warn node --test pool-harness/tests/confidential-rfq-sdk.e2e.test.mjs
-```
-
-Run devnet tests serially with other devnet instances stopped. For the browser journey, start `npm run dev:confidential`, then run these in another terminal:
-
-```sh
-npx playwright install chromium
-npm run test:confidential:browser
-```
-
-Build generates browser assets, the installable SDK archive and checksums, TypeScript checks and browser-secret scans. The local integration and browser tests use disposable wallets and simulated proofs. A mainnet acceptance claim additionally requires a real accepted proof, successful receipts and verified encrypted outputs. [Detailed validation guide](docs/CONFIDENTIAL_RFQ.md#reproduce-validation).
-
-With the Worker configured, deploy the built app using `npx wrangler deploy`. A frontend deployment alone does not prove chain execution; the current mainnet contract pins, enabled clients and separately recorded operation evidence define the supported scope.
-
-The Worker serves the app and RPC/prover routes. Its API keys are not embedded in browser or SDK downloads. The provider determines proving throughput; a Worker forwards jobs and does not generate STARK proofs itself.
+For contract and browser integration checks, see [reproduce validation](docs/CONFIDENTIAL_RFQ.md#reproduce-validation). All `artifacts/` media, recordings and temporary output remain gitignored; published video assets live in the release. Wallet keys, viewing keys and private journals stay outside the repository.
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `src/app/rfq/ConfidentialRfqPage.tsx` | Current RFQ screen and local lab entry |
-| `src/app/chat`, `src/components/chat` | Conversations, encrypted messages, payments and invoices |
-| `packages/agent-sdk` | Installable Node library and persistent wallet/proof integration |
-| `packages/privy` | Privy signing, privacy wallet operations, discovery and proof providers |
-| `workers/relay` | Authenticated RPC/proving relays and atomic quotas |
-| `cairo/src/confidential_escrow.cairo` | Jointly approved confidential swap and timeout-refund policy |
-| `cairo/src/lib.cairo` | Chat key registration and encrypted message helper |
-| `pool-harness/src/confidential-lab.mjs` | Disposable wallets and local escrow execution through the SDK |
-| `pool-harness/tests` | Privacy-pool integration and contract regression tests |
-| `scripts/confidential-mainnet-proof.mjs` | Mainnet preflight and proof rehearsal without transaction submission |
-
-## Existing positions and historical evidence
-
-Earlier deployed contracts remain available for explicit recovery; new trading through their public-term protocol is disabled in current clients. Existing positions can be inspected and reconciled through the [historical recovery tools](docs/makers/README.md). Earlier maker-page bookmarks redirect to `/rfq`.
-
-The first three `strk20.json` hashes are September 7 mainnet swaps belonging to that earlier protocol, with one operator controlling both sides. They do not prove the current confidential escrow; its separate [September 8 accepted settlement and encrypted-output evidence](deployments/mainnet/confidential-settlement-2026-09-08.json) does. Historical receipts, costs and recording status are kept in the [mainnet runbook](docs/MAINNET_RUNBOOK.md) and [demo notes](docs/HACKATHON_DEMO.md).
-
-The local submission manifest also includes the verified September 8 Chat message and confidential settlement as post-deadline evidence. The original three hashes, four contracts and deadline video URL are preserved. These additions do not claim that the hackathon panel rescored the submission; GitHub/main and the published deadline release are unchanged.
+| `src/app/rfq`, `src/lib/confidential-*` | Single RFQ screen, wallet adapter and durable trading flow |
+| `src/app/chat`, `src/components/chat` | Encrypted conversations, payments and invoices |
+| `cairo/src` | Chat helper and confidential escrow contracts |
+| `packages/agent-sdk` | Shared Node/browser confidential protocol and journals |
+| `workers/relay` | Authenticated RPC/prover routes and encrypted quote rooms |
+| `scripts/confidential-maker*.mjs` | Independent maker, wallet adapter and protected journals |
+| `deployments/mainnet` | Sanitized transaction evidence and deployment records |
+| `tools/demo-video` | Reproducible capture, narration and rendering tools |

@@ -6,7 +6,7 @@ Updated 2026-09-08. A [real-proof operator Chat message](../deployments/mainnet/
 
 At the user's instruction, the funded operator wallet registered with STRK20 and shielded 0.03 STRK, acquired a small native-USDC inventory, registered/funded a maker, and completed three encrypted-request → funded-quote → private-fill rounds. Each fill exchanged 0.01 shielded STRK for 0.001 shielded USDC. The same operator controlled both roles.
 
-All three successful mainnet receipts, quote-fill events, pool/APP20 traces and class pins were verified. Local viewing-key discovery confirmed 0.003 USDC in three shielded notes. Maker proceeds were withdrawn, inventory checked at zero, and the test maker deactivated. See [public execution evidence](../deployments/mainnet/smoke-test-2026-09-07.json) and [hackathon status](HACKATHON_DEMO.md). The three historical qualifying hashes and published deadline video URL are in `strk20.json`.
+All three successful mainnet receipts, quote-fill events, pool/APP20 traces and class pins were verified. Local viewing-key discovery confirmed 0.003 USDC in three shielded notes. Maker proceeds were withdrawn, inventory checked at zero, and the test maker deactivated. See [public execution evidence](../deployments/mainnet/smoke-test-2026-09-07.json) and [hackathon status](HACKATHON_DEMO.md). The `fixed` manifest retains those three historical hashes, adds the verified Chat and confidential-settlement hashes, and links the current fixed-branch video. The deadline release remains separately available.
 
 Demo network and pool fees were **35.863877034965690848 STRK**. Including the earlier deployment, fees were **63.910369825551435280 STRK**, within the existing 65 STRK ceiling. A separate 0.5 STRK was converted to USDC inventory. The runner enforces the combined fee ceiling, a per-transaction gas cap, a 6 STRK pool-fee cap, exact token/recipient/amount checks and durable pending-transaction fences.
 
@@ -83,7 +83,7 @@ On 2026-09-06 the mainnet pool returned a fee of **6 STRK** (`600000000000000000
 - Chat: deployed and enabled, with one verified operator-controlled mainnet message. Ready acceptance, independent two-wallet messaging and a recipient payment remain unverified.
 - Confidential RFQ: one `/rfq` screen, deployed escrow and enabled SDK; accepted atomic settlement and independent browser integration remain pending.
 - Earlier maker/settlement contracts: three mainnet swaps verified historically. New public-term registration, funding, quoting and settlement are disabled; only explicit historical recovery remains.
-- The public frontend is https://app20.io. The submission manifest includes the published deadline video; subsequent edits must reflect current behavior.
+- The public frontend is https://app20.io. The `fixed` submission manifest links the refreshed 63-second video; the original deadline release remains separately available.
 
 
 ## Historical independent-maker deployment
