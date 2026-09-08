@@ -9,7 +9,8 @@ export type RelayService =
   | "rfq-ingress"
   | "rfq-directory"
   | "rfq-maker"
-  | "rfq-taker";
+  | "rfq-taker"
+  | "confidential-trading";
 export type GateBudget =
   | "privy-bootstrap"
   | "ohttp-prover"
@@ -61,6 +62,7 @@ export interface RelayEnv {
   SEPOLIA_STRK_TOKEN_ADDRESS: string;
   READY_ACCOUNT_CLASS_HASH: string;
   RELAY_GATE: DurableObjectNamespaceLike;
+  CONFIDENTIAL_ROOMS?: DurableObjectNamespaceLike;
   /** Checked-in policy marker only; application code cannot enable transport. */
   RFQ_TRANSPORT_ENABLED?: "false";
   RFQ_REPLAY?: DurableObjectNamespaceLike;

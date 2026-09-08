@@ -49,3 +49,38 @@
   .swapRecords { padding: 18px 12px; }
   .privacyDetails { padding-inline: 12px; }
 }
+
+/* Quote review and recovery stay in the same square RFQ workspace. */
+.ticket .inputError { margin: 0; color: #eea38a; font-size: 13px; line-height: 1.5; }
+.ticket .tradingStatus { margin: 0; color: var(--shell-text); font-size: 13px; line-height: 1.5; }
+.recordsHeading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.recordsHeading h3 { margin: 0; }
+.refreshButton { min-height: 36px; padding: 5px 11px; border: 1px solid var(--shell-line); border-radius: 0; background: transparent; color: var(--shell-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.refreshButton:disabled { opacity: .5; cursor: default; }
+.roomList { display: grid; gap: 12px; }
+.roomCard { min-width: 0; padding: 18px; border: 1px solid var(--shell-line); border-radius: 0; background: var(--shell-inset); }
+.roomHeading { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+.roomHeading h4 { margin: 0; font-size: 16px; font-weight: 650; overflow-wrap: anywhere; }
+.roomState { color: var(--shell-muted); font-size: 12px; text-align: right; }
+.roomState[data-state="quote"], .roomState[data-state="fund"], .roomState[data-state="settle"] { color: var(--shell-orange); }
+.roomState[data-state="settled"], .roomState[data-state="refunded"] { color: #aac5a1; }
+.roomAmounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 0 0 16px; }
+.roomAmounts div { min-width: 0; }
+.roomAmounts dt { margin-bottom: 4px; color: var(--shell-muted); font-size: 11px; }
+.roomAmounts dd { margin: 0; color: var(--shell-text); font-size: 15px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.counterparty { display: grid; gap: 5px; margin-bottom: 14px; }
+.counterparty > span { color: var(--shell-muted); font-size: 11px; }
+.counterparty code { color: var(--shell-text); font: 11px/1.6 var(--font-mono-ui), monospace; overflow-wrap: anywhere; user-select: all; }
+.ticket .roomNote { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--shell-muted); }
+.roomActions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 16px; }
+.roomActions:empty { display: none; }
+.roomAction { min-height: 44px; padding: 10px 16px; border: 1px solid var(--shell-orange); border-radius: 0; background: var(--shell-orange); color: var(--shell-bg); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.roomAction:disabled { border-color: var(--shell-line); background: transparent; color: var(--shell-muted); cursor: not-allowed; }
+.roomActions a { color: var(--shell-orange); font-size: 12px; text-underline-offset: 3px; }
+@media (max-width: 600px) {
+  .roomCard { padding: 14px 12px; }
+  .roomHeading { align-items: flex-start; }
+  .roomAmounts { gap: 12px; }
+  .roomAmounts dd { font-size: 14px; }
+  .roomAction { width: 100%; }
+}

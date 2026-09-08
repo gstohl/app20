@@ -57,8 +57,8 @@ test('browser confidential entrypoint and durable storage work across real brows
   await t.test('existing Node exports survive and browser status matches without a filesystem API', async () => {
     const nodeSdk = await import('../dist/confidential.js');
     assert.equal(typeof nodeSdk.createConfidentialJournal, 'function');
-    const actual = await page.evaluate(() => ({ filesystem: typeof sdk.createConfidentialJournal, browser: typeof sdk.createBrowserConfidentialJournal, mainnet: sdk.confidentialCapabilities.mainnetEnabled, realProof: sdk.confidentialCapabilities.realProofVerified }));
-    assert.deepEqual(actual, { filesystem: 'undefined', browser: 'function', mainnet: nodeSdk.confidentialCapabilities.mainnetEnabled, realProof: false });
+    const actual = await page.evaluate(() => ({ filesystem: typeof sdk.createConfidentialJournal, browser: typeof sdk.createBrowserConfidentialJournal, mainnet: sdk.confidentialCapabilities.mainnetEnabled, realProof: sdk.confidentialCapabilities.realProofVerified, walletSupported: sdk.confidentialCapabilities.browserWalletSupported, nativeReadyVerified: sdk.confidentialCapabilities.nativeReadyEndToEndVerified }));
+    assert.deepEqual(actual, { filesystem: 'undefined', browser: 'function', mainnet: nodeSdk.confidentialCapabilities.mainnetEnabled, realProof: true, walletSupported: true, nativeReadyVerified: false });
   });
 
   await t.test('cross-tab locks serialize read/modify/write and preserve both records', async () => {

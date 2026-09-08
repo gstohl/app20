@@ -4,7 +4,7 @@
 
 Every new settlement must keep payment/trade amounts, assets and recipients out of public settlement data. This applies to RFQ, Chat payments, invoices and offers. `packages/domain/src/settlement-privacy.ts` fixes public settlement and one-sided Chat acceptance to false, with enforcement below the UI in builders, SDK and CLI. `/rfq` now presents confidential availability.
 
-Chat payments spend existing encrypted notes and carry an unfunded `compute_and_invoke` message operation. No payment withdraw, deposit or OPEN note is permitted; the helper's public token argument is fixed STRK, not the payment asset. Swaps discussed in Chat require a jointly approved atomic exchange and remain unavailable until that integration exists. Mainnet Chat still has no deployed helper.
+Chat payments spend existing encrypted notes and carry an unfunded `compute_and_invoke` message operation. No payment withdraw, deposit or OPEN note is permitted; the helper's public token argument is fixed STRK, not the payment asset. Swaps discussed in Chat require a jointly approved atomic exchange and remain unavailable until that integration exists. The deployed mainnet helper has a [verified operator-controlled message](../deployments/mainnet/chat-message-2026-09-08.json): a private 1-base-unit STRK self-transfer supplies pool replay protection and preserves the balance. Ready extension and mainnet recipient-payment acceptance remain unverified.
 
 Earlier `App20MakerBook` / `App20PrivateSwap` contracts remain deployed. Current clients block new registration, funding, requests, quoting and settlement. Existing record reconciliation, expired reservation release, available inventory withdrawal and deactivation are preserved as explicit historical recovery, with their original public disclosures. Changing the app does not revoke contracts or erase past transactions. See [the complete settlement policy](PRIVATE_SETTLEMENT_POLICY.md).
 
@@ -12,7 +12,7 @@ Earlier `App20MakerBook` / `App20PrivateSwap` contracts remain deployed. Current
 
 The separate `App20ConfidentialEscrow` contract is now part of the normal Cairo build. `@app20/agent-sdk/confidential` implements private action review, independent approvals, pinned deployment checks, one-bundle settlement, durable submission recovery and unilateral timeout refunds. `npm run dev:confidential` exposes the same implementation through a disposable local browser workspace; its controls are excluded from production builds.
 
-Local contract execution with simulated proof facts passes. Real STARK proofs for this escrow, independent wallet adapters, authenticated private negotiation/inventory reservations and independent review remain open. Mainnet is explicitly disabled. The earlier mainnet RFQ is a separate public-term protocol disabled for new client execution. See [the current development guide](CONFIDENTIAL_RFQ.md).
+Local contract execution with simulated proof facts passes. Real STARK proofs for this escrow, independent wallet adapters, authenticated private negotiation/inventory reservations and independent review remain open. The pinned mainnet contract and SDK are enabled, but those remaining checks are not yet established. The earlier mainnet RFQ is a separate public-term protocol disabled for new client execution. See [the current development guide](CONFIDENTIAL_RFQ.md).
 
 ## Earlier architecture history
 

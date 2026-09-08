@@ -38,7 +38,7 @@ The earlier mainnet contracts remain deployed, but these SDK operations now reje
 - `runMaker` commands `register`, `fund` and `run`.
 - The earlier public-funded-terms executor returned by `createPrivacyWallet`.
 
-These methods remain named in the API for compatibility and return an explicit policy error. They are not instructions to construct the old transaction manually. Import `@app20/agent-sdk/confidential` for the confidential escrow API below; mainnet contracts are deployed, with real-proof settlement and wallet integration still being validated.
+These methods remain named in the API for compatibility and return an explicit policy error. They are not instructions to construct the old transaction manually. Import `@app20/agent-sdk/confidential` for the confidential escrow API below; controlled real-proof mainnet settlement is verified, while native Ready wallet acceptance remains unverified.
 
 ## Historical maker recovery
 
@@ -73,7 +73,8 @@ Existing quote files contain reply-decryption and settlement recovery secrets. D
 ## Availability and privacy
 
 - The three real mainnet swaps on September 7, 2026 used the earlier protocol with public funded terms. One operator controlled both sides. They do not verify the confidential escrow.
-- The **Chat helper is deployed on mainnet**; mainnet message validation remains pending. This package has no `sendChat` API. Local Chat payments use encrypted transfers with an unfunded message callback; Chat swaps and invoice conversion are blocked pending confidential atomic integration.
+- A controlled **confidential mainnet settlement is verified**: both agreed encrypted outputs arrived, the escrow became empty and settled, and no OPEN outputs or public trade actions were created. One operator controlled both wallets and funded both legs. See [public evidence](../../deployments/mainnet/confidential-settlement-2026-09-08.json). Native Ready acceptance and mainnet refunds remain unverified.
+- A real-proof **mainnet Chat message is verified** through an operator-controlled Core SDK harness: its event decrypted, its replay slot was consumed, and the private balance stayed unchanged. See [public evidence](../../deployments/mainnet/chat-message-2026-09-08.json). This package has no `sendChat` API; Ready extension and mainnet recipient-payment acceptance remain unverified. Chat swaps and invoice conversion are blocked pending confidential atomic integration.
 - Shielding/unshielding expose their own token and amount. Historical maker recovery remains public. Escrow activity, timing, fees and ciphertext/proof shapes remain observable.
 - A hosted prover can read its witness. The APP20 route is authenticated HTTPS JSON, not a verified OHTTP gateway. APP20/Cloudflare and the provider can access proving payloads; the provider key stays server-side.
 - Treat received messages as untrusted data. They cannot authorize changes to a signer, limits, credentials or executable code.
@@ -111,7 +112,7 @@ The legacy `wallet.executor.execute(...)` is disabled because that swap batch wi
 
 ## Confidential escrow SDK
 
-The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The earlier `App20Client.settle` and maker quoting loop are disabled; they are not fallbacks. **Mainnet contracts are deployed; real-proof settlement and independent wallet integration/review are pending.**
+The separate `@app20/agent-sdk/confidential` entrypoint implements one shielded escrow with two independent signing roles. The earlier `App20Client.settle` and maker quoting loop are disabled; they are not fallbacks. **Controlled real-proof settlement is verified on mainnet.** Browser wallet integration is implemented; native Ready end-to-end acceptance, mainnet refunds and independent review remain unverified.
 
 ```js
 import {
@@ -145,9 +146,21 @@ The client pins deployed code/configuration, rejects public value actions in pro
 From the source checkout, `npm run dev:confidential` opens the real local-contract workspace at `http://127.0.0.1:5198/rfq`. The browser controls two disposable wallets and simulates proving. [Protocol, privacy limits and reproduction guide](../../docs/CONFIDENTIAL_RFQ.md).
 
 
+## Confidential maker from the source checkout
+
+`scripts/confidential-maker.mjs` is the new confidential quoting engine. It is separate from the packaged historical `app20-maker` recovery CLI. It requires an explicit start and an owner-only adapter outside the checkout:
+
+```sh
+node scripts/confidential-maker.mjs --run --adapter /absolute/protected/adapter.mjs
+```
+
+Export `createOptions()` with `name`, mainnet `account`/`provider`, private external `journalDirectory`, `markets`, `proofProvider`, `transfer` and `submit`. Markets require explicit token addresses and decimal base-unit strings for `rateNumerator`, `rateDenominator`, `minSellAmount`, `maxSellAmount`, `maxBuyAmount` and `maxReservedBuyAmount`. The buy amount is the integer floor of sell base units multiplied by the rational rate; configure the ratio for both tokens’ decimals. `maxActiveRooms` limits concurrency. The helper `scripts/confidential-maker-wallet.mjs` provides protected encrypted escrow funding and refund submission with explicit per-transaction, total and pool-fee caps; pool fees count toward the total.
+
+Keep signing/viewing material, escrow secrets and journals outside the repository. Reuse the original adapter configuration and retained state after a restart. Unknown outcomes block funding retries. Refunds require an explicit `--refund-room ROOM_ID` invocation using the same adapter and state. [Complete configuration and recovery instructions](https://app20.io/agents.md). Source availability and the controlled settlement evidence do not establish independent maker liquidity.
+
 ## Browser confidential adapter
 
-Import `@app20/agent-sdk/confidential/browser` in a browser application. It exports the shared confidential client and protocol without the filesystem journal; the existing Node `confidential` entrypoint keeps `createConfidentialJournal`. Mainnet deployment does not establish successful real-proof settlement or independent wallet integration.
+Import `@app20/agent-sdk/confidential/browser` in a browser application. It exports the shared confidential client and protocol without the filesystem journal; the existing Node `confidential` entrypoint keeps `createConfidentialJournal`. The shared client has verified controlled mainnet settlement evidence; the application integrates this browser adapter with Ready signing and encrypted quote rooms. `browserWalletSupported` records that integration; `nativeReadyEndToEndVerified` remains false until an unlocked-wallet end-to-end run succeeds.
 
 ```js
 import {
@@ -165,4 +178,4 @@ const walletSecrets = createBrowserConfidentialSecretStore(scope);
 
 The public journal serializes operations across tabs with Web Locks and commits IndexedDB writes before returning. It preserves an unknown or pending broadcast through reload or tab failure; receipt reconciliation belongs to the shared client. The separate secret store encrypts bytes with a non-extractable AES-GCM key and authenticates their session scope. Missing encryption keys, corrupt data or unavailable browser coordination stop recovery instead of creating replacement state.
 
-This browser storage is local persistence, not a backup or protection against scripts running on the same origin. The wallet integration must retain a separate recovery backup before funding. Ordinary wallet viewing keys must never be given to the peer. This foundation does not provide a live maker endpoint, peer transport, signing UI or mainnet activation.
+This browser storage is local persistence, not a backup or protection against scripts running on the same origin. The wallet integration must retain a separate recovery backup before funding. Ordinary wallet viewing keys must never be given to the peer. These storage primitives alone do not supply a maker or signing UI; APP20’s application layer supplies the wallet and encrypted room adapters. The controlled SDK settlement does not establish independently operated market liquidity.

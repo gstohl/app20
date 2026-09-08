@@ -19,12 +19,12 @@
     "App20Chat": {
       "address": "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4",
       "classHash": "0x2e6fd0b464b0a7a1c8793b5d18609609e167af5ce7916e28821af34b5de4b12",
-      "status": "deployed-mainnet-validation-pending"
+      "status": "mainnet-operator-message-verified"
     },
     "App20ConfidentialEscrow": {
       "address": "0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f",
       "classHash": "0x134accea913ca144f2a37015014235785687fd8eec2c15773d716e505cd669f",
-      "status": "deployed-mainnet-validation-pending"
+      "status": "mainnet-controlled-settlement-verified"
     }
   },
   "pool": {
@@ -35,13 +35,27 @@
   },
   "fromBlock": 14474272,
   "chat": {
-    "status": "deployed-mainnet-validation-pending",
+    "status": "mainnet-operator-message-verified",
     "address": "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4",
     "localPaymentSettlement": "encrypted-transfer-and-unfunded-encrypted-message",
     "mainnetPaymentsEnabled": true,
     "offerSwapAcceptanceEnabled": false,
     "invoiceSwapConversionEnabled": false,
-    "paymentMemoPublicToken": "fixed-STRK-helper-argument-not-payment-asset"
+    "paymentMemoPublicToken": "fixed-STRK-helper-argument-not-payment-asset",
+    "messageVerification": {
+      "transaction": "0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62",
+      "blockNumber": 14529927,
+      "executor": "operator-controlled-core-sdk-harness",
+      "expectedMessageDecrypted": true,
+      "replaySlotConsumed": true,
+      "privateBalanceUnchanged": true,
+      "readyExtensionVerified": false,
+      "independentWalletExchangeVerified": false,
+      "recipientPaymentVerified": false,
+      "evidence": "https://starkscan.co/tx/0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62",
+      "publicEvidence": "https://app20.io/evidence/chat-message-2026-09-08.json"
+    },
+    "messageReplayProtection": "private-1-base-unit-STRK-self-transfer-and-bound-helper-replay-slot"
   },
   "liveWalletFillVerified": true,
   "agentSdk": {
@@ -70,7 +84,9 @@
     ],
     "liveProofVerified": true,
     "verifiedSubmissionRpc": "https://rpc.starknet.lava.build/rpc/v0_10",
-    "liveProofScope": "earlier-mainnet-private-swap-flow-only"
+    "liveProofScope": "historical-private-swap-flow-operator-mainnet-chat-and-controlled-confidential-settlement",
+    "verifiedChatSubmissionRpc": "https://starknet-rpc.publicnode.com",
+    "verifiedConfidentialSubmissionRpc": "https://starknet-rpc.publicnode.com"
   },
   "liveFillVerification": {
     "date": "2026-09-07",
@@ -86,13 +102,13 @@
     "currentClientExecutionEnabled": false
   },
   "confidentialRfq": {
-    "status": "deployed-mainnet-validation-pending",
+    "status": "mainnet-controlled-settlement-verified",
     "guide": "https://app20.io/agent-sdk.md",
     "page": "https://app20.io/rfq",
     "sdkEntrypoint": "@app20/agent-sdk/confidential",
     "mainnetEnabled": true,
-    "realProofVerified": false,
-    "independentBrowserWalletsSupported": false,
+    "realProofVerified": true,
+    "independentBrowserWalletsSupported": true,
     "independentReviewComplete": false,
     "localContractExecutionVerified": true,
     "funding": "separate-encrypted-transfers-to-joint-escrow",
@@ -104,14 +120,33 @@
       "deadline",
       "timing",
       "fees",
-      "ciphertext and proof sizes"
+      "ciphertext and proof sizes",
+      "deployment wallet linkage when a personal wallet deploys the escrow"
     ],
     "hostedProverSeesWitness": true,
     "defaultRfqPage": "https://app20.io/rfq",
     "chatSwapIntegrationReady": false,
     "deploymentAddress": "0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f",
     "deploymentTransaction": "0x57642bc0760ef6fcfd07d4cbe589193c32b352b302d6660c8d6e255dcafc872",
-    "deploymentBlock": 14528770
+    "deploymentBlock": 14528770,
+    "nativeReadyEndToEndVerified": false,
+    "mainnetRefundVerified": false,
+    "settlementVerification": {
+      "transaction": "0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696",
+      "transactionUrl": "https://starkscan.co/tx/0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696",
+      "blockNumber": 14530706,
+      "finalityAtVerification": "ACCEPTED_ON_L2",
+      "executor": "node-sdk",
+      "operatorControlledBothWallets": true,
+      "operatorFundedBothLegs": true,
+      "exactEncryptedOutputsVerified": true,
+      "publicTradeValueActions": false,
+      "newOpenOutputs": false,
+      "escrowSettled": true,
+      "escrowBalancesZero": true,
+      "evidenceFile": "deployments/mainnet/confidential-settlement-2026-09-08.json",
+      "evidence": "https://app20.io/evidence/confidential-settlement-2026-09-08.json"
+    }
   },
   "settlementPolicy": {
     "mode": "private-only",

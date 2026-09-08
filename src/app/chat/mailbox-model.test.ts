@@ -148,9 +148,15 @@ function invoiceMessage(
   };
 }
 
-describe("localnet-final chat contract routing", () => {
-  it.each([0, 2])(
-    "keeps Chat unavailable on live provider index %i",
+describe("deployed Chat contract routing", () => {
+  it("routes mainnet Chat to its deployed contract", () => {
+    expect(BigInt(helperForNetwork(0)!)).toBe(
+      BigInt("0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4"),
+    );
+  });
+
+  it.each([1, 2, -1, 4])(
+    "keeps Chat unavailable on unsupported provider index %i",
     (providerIndex) => {
       expect(helperForNetwork(providerIndex)).toBeNull();
     },

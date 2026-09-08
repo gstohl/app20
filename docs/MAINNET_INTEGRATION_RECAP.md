@@ -1,5 +1,7 @@
 # Mainnet proving, Privy and agent SDK recap
 
+September 8 update: the Chat helper is deployed and an [operator-controlled mainnet message](../deployments/mainnet/chat-message-2026-09-08.json) is verified, including decryption, replay protection and unchanged private balance. Ready extension and recipient-payment acceptance remain unverified. The current `/rfq` is confidential-only; new execution of the earlier public-term maker protocol is disabled. The sections below retain the September 7 release history and its checks, not current activation instructions.
+
 Published to https://app20.io as Worker version `cda4f8a7-7360-490e-bcea-40ce128d7d00`.
 
 ## Delivered

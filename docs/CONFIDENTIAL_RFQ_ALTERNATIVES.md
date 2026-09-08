@@ -1,8 +1,8 @@
 # Confidential RFQ alternatives
 
-Implementation update: the joint escrow candidate now has a Cairo contract, Node SDK, durable recovery and a local browser workflow. Mainnet and real-proof gates remain closed. See [the current development guide](CONFIDENTIAL_RFQ.md). The comparison below records the alternatives considered.
+Implementation update, September 8: the joint escrow is enabled and its controlled real-proof mainnet settlement is verified, including both exact encrypted outputs. Browser wallet integration is implemented; native Ready end-to-end acceptance, mainnet refunds and independent review remain unverified. See [the current development guide](CONFIDENTIAL_RFQ.md). The comparison below records the alternatives considered.
 
-Reviewed September 7, 2026. This compares documented capabilities; no new integration, privacy guarantee or production deployment is enabled. The failed two-proof experiment does not establish that confidential RFQ is impossible.
+The comparison was reviewed September 7, 2026; its historical integration descriptions are separate from the subsequent APP20 mainnet result. The failed two-proof experiment does not establish that confidential RFQ is impossible.
 
 ## Existing integrations
 
@@ -17,9 +17,9 @@ Reviewed September 7, 2026. This compares documented capabilities; no new integr
 
 Tongo and external dark pools are not automatic replacements for the hackathon's required STRK20-touching settlement transactions. A public withdrawal into another protocol can also disclose the funding amount. Do not present a bridge or subsequent encrypted transfer as erasing an already public swap.
 
-## Tested locally: a jointly authorized account, one proof
+## Implemented and verified: a jointly authorized account, one proof
 
-This began as an inference from single-owner multi-asset transfers and the pool's custom account-signature validation. It now has an isolated Cairo implementation and a successful local execution experiment against the exact pinned mainnet pool class. It is not a documented upstream escrow integration or an enabled APP20 feature.
+This began as an inference from single-owner multi-asset transfers and the pool's custom account-signature validation. It now has a Cairo implementation, local adversarial execution tests and a [successful real-proof mainnet settlement](../deployments/mainnet/confidential-settlement-2026-09-08.json). This is APP20’s custom escrow integration; upstream does not provide a turnkey escrow.
 
 Instead of applying two separately proven updates, counterparties could fund a dedicated, jointly authorized account with encrypted transfers ahead of settlement. That account would authorize one action bundle creating both encrypted outputs. The pool would see one logical user and one action message, avoiding the exact singleton-facts conflict observed by the probe. There must be no central operator with unilateral spending power.
 
@@ -31,7 +31,7 @@ This changes the protocol's funding and custody semantics. A bare 2-of-2 wallet 
 4. Settlement and refunds remain encrypted inside the pool. Constructor parameters, signer registration, channel setup, fee movements and timing must be reviewed for metadata leakage; a visible ephemeral account is still an observable identifier.
 5. Test the exact pinned mainnet class locally, then validate real proofs and actual wallet support. Hosted proving still exposes witnesses to the provider; account construction does not solve that separate limitation.
 
-The [joint escrow harness](../pool-harness/JOINT_ESCROW.md) settled both encrypted outputs in one transaction, rejected adversarial authorizations and callbacks, and exercised independent timeout refunds and later one-sided funding recovery. It uses simulated proof facts while running the actual Cairo signature checks. The local node explicitly rejects `starknet_getStorageProof`, preventing the full-node proving path from using this fixture. Real STARK proofs, wallet integration and independent review remain required; hosted witness disclosure and public metadata are not solved by this prototype. The two-proof regression remains unchanged.
+The [joint escrow harness](../pool-harness/JOINT_ESCROW.md) settled both encrypted outputs in one transaction, rejected adversarial authorizations and callbacks, and exercised independent timeout refunds and later one-sided funding recovery. It uses simulated proof facts while running the actual Cairo signature checks. The local node explicitly rejects `starknet_getStorageProof`, preventing the full-node proving path from using this fixture. A separate live run subsequently established real STARK proof acceptance and both encrypted outputs. Native Ready acceptance, mainnet refunds and independent review remain unverified; hosted witness disclosure and public metadata remain limitations. The two-proof regression remains unchanged.
 
 ## Primary references
 

@@ -1,0 +1,85 @@
+{
+  "entryPoint": "tools/demo-video/SocialFilm.tsx",
+  "captureFrame": {
+    "x": 60,
+    "y": 72,
+    "width": 1800,
+    "height": 900
+  },
+  "workDirectory": "artifacts/social/2026-09-08/edit",
+  "output": "artifacts/social/app20-mainnet-social-2026-09-08.mp4",
+  "narrated": true,
+  "transitions": false,
+  "clips": [
+    {
+      "title": "Conversations. Clear terms.",
+      "caption": "A single workspace for encrypted Chat and confidential RFQs.",
+      "label": "PRODUCT PREVIEW",
+      "seconds": 9,
+      "narration": "Here\u2019s APP twenty. Encrypted conversations and a clearer way to agree on a trade, on Starknet.",
+      "audioFile": "artifacts/social/2026-09-08/audio/00.mp3",
+      "browserPath": "Source preview \u00b7 app20.io",
+      "file": "artifacts/social/2026-09-08/sequence-00.mp4",
+      "sourceSeconds": 8,
+      "start": 0
+    },
+    {
+      "title": "Set your terms",
+      "caption": "Choose your amount, minimum return and makers.",
+      "label": "LIVE ENCRYPTED QUOTE",
+      "seconds": 10,
+      "narration": "Start with the trade you want. Set your amount and the minimum you\u2019ll accept. Your request is encrypted for the makers you choose.",
+      "audioFile": "artifacts/social/2026-09-08/audio/01.mp3",
+      "browserPath": "Source preview \u00b7 app20.io/rfq",
+      "file": "artifacts/social/2026-09-08/sequence-01.mp4",
+      "sourceSeconds": 8.5,
+      "start": 0
+    },
+    {
+      "title": "Review your quote",
+      "caption": "Separate funding approvals. Encrypted settlement. An independent recovery deadline.",
+      "label": "LIVE ENCRYPTED QUOTE",
+      "seconds": 12,
+      "narration": "Review the quote, fund your side, and approve the swap. Both assets settle as encrypted notes, with a deadline to recover your funds if it doesn\u2019t complete.",
+      "audioFile": "artifacts/social/2026-09-08/audio/02.mp3",
+      "browserPath": "Source preview \u00b7 app20.io/rfq",
+      "file": "artifacts/social/2026-09-08/sequence-02.mp4",
+      "sourceSeconds": 8.5,
+      "start": 0
+    },
+    {
+      "title": "Keep the conversation encrypted",
+      "caption": "A confirmed mainnet message, decrypted by its recipient.",
+      "label": "MAINNET \u00b7 READ-ONLY",
+      "seconds": 10,
+      "narration": "Chat keeps the conversation encrypted, too. This message came from Starknet mainnet and is decrypted here using the recipient\u2019s key.",
+      "audioFile": "artifacts/social/2026-09-08/audio/03.mp3",
+      "browserPath": "Source preview \u00b7 app20.io/chat",
+      "file": "artifacts/social/2026-09-08/sequence-03.mp4",
+      "sourceSeconds": 8.5,
+      "start": 0
+    },
+    {
+      "title": "Build with the Node SDK",
+      "caption": "Independent signing policies for makers and agents.",
+      "label": "PRODUCT PREVIEW",
+      "seconds": 12,
+      "narration": "Makers and agents can join through the Node SDK. Each side keeps control of its own signing policy, from agreeing terms to recovering an expired swap.",
+      "audioFile": "artifacts/social/2026-09-08/audio/04.mp3",
+      "browserPath": "app20.io/agents",
+      "file": "artifacts/social/2026-09-08/sequence-04.mp4",
+      "sourceSeconds": 10,
+      "start": 0
+    },
+    {
+      "title": "APP20 \u00b7 Starknet",
+      "caption": "Encrypted conversations. Clear terms. app20.io",
+      "label": "APP20",
+      "seconds": 10,
+      "narration": "APP twenty. Encrypted conversations. Clear terms. Explore it at app twenty dot io.",
+      "audioFile": "artifacts/social/2026-09-08/audio/05.mp3",
+      "browserPath": "app20.io",
+      "kind": "closing"
+    }
+  ]
+}

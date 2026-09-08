@@ -2,6 +2,8 @@ import { createPrivyWalletDirectory } from './bootstrap.ts';
 import { RelayHttpError } from './errors.ts';
 import { readBoundedRequest, readBoundedResponse } from './body.ts';
 import type { AtomicGate, RelayDependencies, RelayEnv } from './types.ts';
+import { authenticateReadyProofToken, READY_PROOF_TOKEN_PREFIX } from './ready-proof-auth.ts';
+import { requireSameOrigin } from './origin.ts';
 const upstream = 'https://api.starkscan.co/v1/SN_MAIN/prove';
 const enc = new TextEncoder();
 async function mac(secret: string, input: string): Promise<string> {
@@ -20,7 +22,12 @@ export async function relayStarkscanProof(request: Request, env: RelayEnv, deps:
   let subject: string;
   const agents: Record<string,string> = JSON.parse(env.PROVER_AGENT_TOKEN_HASHES ?? '{}');
   const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(bearer))),b=>b.toString(16).padStart(2,'0')).join('');
-  if (agents[digest]) subject = `agent:${agents[digest]}`;
+  if (bearer.startsWith(`${READY_PROOF_TOKEN_PREFIX}.`)) {
+    if (request.method === 'POST' || request.headers.has('origin')) requireSameOrigin(request, env);
+    if (request.headers.get('sec-fetch-site') === 'cross-site') throw new RelayHttpError(403, 'Cross-origin request rejected.');
+    const claim = await authenticateReadyProofToken(bearer, new URL(request.url).origin, env, deps.now?.());
+    subject = `ready:${claim.chainId}:${claim.account}`;
+  } else if (agents[digest]) subject = `agent:${agents[digest]}`;
   else {
     try { subject = `privy:${(await (deps.privyDirectory ?? createPrivyWalletDirectory(env)).authenticateAndList(bearer)).subject}`; }
     catch { throw new RelayHttpError(401,'Authentication required.'); }

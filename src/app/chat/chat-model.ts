@@ -1078,6 +1078,16 @@ export function buildChatModel(input: ChatModelInput): ChatModel {
       claimedFinancialAddress(message, input.selfAddress) ??
       threadOwners.get(thread) ??
       dealOwnerOf(message);
+    // An explicit assignment on this device can file a received self-message
+    // under this wallet. Payload claims alone never establish that association,
+    // and filing it here does not add sender authentication or a Sent copy.
+    if (canonical(message.assignedAddress) && address && isSelf(address)) {
+      push(
+        { key: SELF_CONVERSATION_KEY, kind: "self" },
+        { ...partial, conversationKey: SELF_CONVERSATION_KEY, otherRecipients: 0 },
+      );
+      continue;
+    }
     if (address && !isSelf(address)) {
       push(
         { key: address, kind: "counterparty", address },

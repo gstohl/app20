@@ -1,6 +1,6 @@
 # Confidential RFQ — design and feasibility gates
 
-Prepared September 7, 2026. Status: the paired-proof candidate failed; the alternative jointly authorized escrow passed local settlement/refund execution gates with simulated proof facts. The escrow has now been implemented in the normal Cairo build, with a Node SDK, recovery journal and local browser workspace. Mainnet activation, real proofs, independent wallet integration and review remain pending. See [the current development guide](CONFIDENTIAL_RFQ.md).
+Prepared September 7, 2026. Status: the paired-proof candidate failed; the alternative jointly authorized escrow passed local settlement/refund execution gates with simulated proof facts. The escrow has now been implemented in the normal Cairo build, with a Node SDK, recovery journal and local browser workspace. The September 8 follow-up enabled mainnet and verified a controlled real-proof settlement with both exact encrypted outputs. Browser integration is implemented; native Ready end-to-end acceptance, mainnet refunds and independent review remain unverified. See [the current development guide](CONFIDENTIAL_RFQ.md).
 
 ## Objective and limits
 
@@ -38,7 +38,7 @@ These are real contract executions with **simulated proof facts**, not real STAR
 
 The proposed paired-apply candidate below is therefore **not compatible with the tested pool validation rule**. Work on its callback coordinator and wallet UI stops at this prerequisite. This does not prove that every confidential exchange protocol is impossible: a supported multi-party pool primitive or a separately designed confidential escrow could have different authorizations and funding semantics. The jointly authorized escrow has since been implemented as the development path described below.
 
-The subsequent [integration comparison and single-proof escrow candidate](CONFIDENTIAL_RFQ_ALTERNATIVES.md) records other routes. In particular, using one jointly authorized account is a different hypothesis from combining two pool proofs; its local custody/refund gates have passed; real proofs and independent wallet integration remain pending.
+The subsequent [integration comparison and single-proof escrow candidate](CONFIDENTIAL_RFQ_ALTERNATIVES.md) records other routes. In particular, using one jointly authorized account is a different hypothesis from combining two pool proofs; its local custody/refund gates passed, followed by a [controlled real-proof mainnet settlement](../deployments/mainnet/confidential-settlement-2026-09-08.json). Native Ready end-to-end acceptance remains unverified.
 
 ## Rejected candidate: two mutually bound private legs
 
@@ -82,15 +82,15 @@ Use an isolated two-account SDK harness with in-memory test secrets and the real
 
 Acceptance: two differently owned encrypted balances exchange atomically; decrypted outputs are exact; an independently submitted leg fails; malicious peer outputs fail; no public trade amounts/pair or OPEN outputs appear in raw calldata, decoded events, traces or state changes. Devnet mock proofs alone are not cryptographic verification evidence. Repeat successful and adversarial cases with real proofs before asserting feasibility on the live protocol.
 
-### Phase 2 — development implementation delivered; production gates pending
+### Phase 2 — implementation delivered; controlled mainnet settlement verified
 
 The normal Cairo contract, pinned class hashes, independent-signature Node client, private action review, public proof-output checks, durable funding/submission recovery, actual local browser flow, release denial checks and agent documentation are implemented. The SDK regression uses the same client as the browser fixture. [Current guide](CONFIDENTIAL_RFQ.md).
 
-After real proofs and wallet integration pass, complete authenticated padded RFQ transport, encrypted-note inventory reservations, durable cancellation/reconciliation, wallet capability detection and UI integration. Test minimums, token decimals, stale quotes, key rotations, domain replay, peer substitution, partial fills, changed amounts, duplicate nullifiers, reentrancy, fee camouflage, callback stripping, timeout/reorg and provider failure. No automatic fallback to the public helper or two independent payments.
+The browser wallet adapter, encrypted RFQ rooms, durable journals and a separate confidential maker are now implemented. Native Ready end-to-end acceptance and independently operated maker liquidity need separate verification. Continue testing transport, inventory reservations, cancellation/reconciliation and wallet capability detection. Test minimums, token decimals, stale quotes, key rotations, domain replay, peer substitution, partial fills, changed amounts, duplicate nullifiers, reentrancy, fee camouflage, callback stripping, timeout/reorg and provider failure. No automatic fallback to the public helper or two independent payments.
 
-### Phase 3 — independent review and deployment
+### Phase 3 — deployment recorded; independent review remains outstanding
 
-Review the cryptographic bindings, wallet trust boundary and Cairo as a new protocol. Pin artifacts and deployment identity, then obtain a separate mainnet fee cap and deploy only after local and real-proof evidence is complete. The prior mainnet swaps are evidence of the old design, not evidence of confidential settlement. Record new receipts and wallet discovery results, then update the product wording, video and submission manifest to the capability actually delivered.
+Mainnet deployment and controlled settlement are recorded in the [September 8 evidence](../deployments/mainnet/confidential-settlement-2026-09-08.json), including receipt-block pins, trace checks and exact encrypted-output verification. The prior mainnet swaps remain evidence of the old design. Independent review of the cryptographic bindings, wallet trust boundary and Cairo is still outstanding; accepted chain execution does not substitute for that review. Keep product wording and new media scoped to the verified capability. The historical submission and GitHub release remain unchanged.
 
 ## Sources
 

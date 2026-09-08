@@ -1,0 +1,69 @@
+{
+  "schema": "app20-mainnet-chat-message-evidence/v1",
+  "network": "SN_MAIN",
+  "chainId": "0x534e5f4d41494e",
+  "verifiedAt": "2026-09-08T00:22:30.470Z",
+  "transaction": {
+    "hash": "0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62",
+    "blockNumber": 14529927,
+    "blockHash": "0x15c494a9ef0c24ac4ae0c24aa520aa77727bbe4d402b91c09bb4e6cbc159045",
+    "executionStatus": "SUCCEEDED",
+    "finality": "ACCEPTED_ON_L2"
+  },
+  "chat": {
+    "address": "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4",
+    "classHash": "0x2e6fd0b464b0a7a1c8793b5d18609609e167af5ce7916e28821af34b5de4b12"
+  },
+  "pool": {
+    "address": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+    "classHash": "0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d"
+  },
+  "executor": "operator-controlled Node harness using the official STRK20 Core SDK",
+  "verification": {
+    "messagePostedCount": 1,
+    "expectedMessageDecrypted": true,
+    "replaySlotConsumed": true,
+    "receiptBlockClassPinsVerified": true,
+    "poolApplyActionsTraceVerified": true,
+    "chatComputedInvokeTraceVerified": true,
+    "privateStrkBalanceUnchanged": true,
+    "balanceComparisonBlocks": [
+      14529926,
+      14529927
+    ]
+  },
+  "proof": {
+    "format": "PROOF1",
+    "hostedProvider": "Starkscan through the authenticated APP20 relay",
+    "submissionRpc": "https://starknet-rpc.publicnode.com",
+    "publicActionKinds": [
+      "WriteOnce",
+      "EmitNoteUsed",
+      "WriteOnce",
+      "EmitEncNoteCreated",
+      "WriteOnce",
+      "EmitEncNoteCreated",
+      "InvokeWithComputation"
+    ],
+    "privateSelfTransferBaseUnits": "1",
+    "publicDeposits": false,
+    "publicWithdrawals": false,
+    "openNotes": false,
+    "helperFunding": false
+  },
+  "scope": {
+    "operatorControlledSelfMessage": true,
+    "independentWalletExchangeVerified": false,
+    "readyExtensionVerified": false,
+    "chatPaymentToAnotherAccountVerified": false,
+    "confidentialAtomicSwapVerified": false,
+    "signingKeysAndViewingKeysPublished": false,
+    "messagePlaintextPublished": false,
+    "privateBalancesPublished": false,
+    "hostedProverSeesWitness": true
+  },
+  "reproduction": {
+    "eventAndReplay": "node scripts/mainnet-chat-proof.mjs --mode evidence --transaction 0x382800b805219f0c8639459c353976618ae38fdb6468dd28f1e71ecec7bcf62",
+    "privateDiscovery": "Operator viewing-key discovery at the immediately preceding block and receipt block; only equality is published."
+  }
+}

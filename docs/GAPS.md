@@ -8,9 +8,9 @@ All new RFQ and Chat settlements are subject to [the private-only policy](PRIVAT
 | --- | --- |
 | Real confidential escrow proof | Open: generate and obtain chain acceptance of a real STARK proof for the pinned escrow/pool; simulated facts do not satisfy this |
 | Independent wallet integration | Open: separate users approve exact terms without exporting ordinary viewing keys; prove, submit and recover through compatible wallet adapters |
-| Chat settlement integration | Partial: encrypted payments implemented locally; add confidential atomic offer/invoice-conversion handoff and a compatible verified mainnet Chat deployment |
+| Chat settlement integration | Partial: mainnet operator message verified with decryption, replay state and unchanged balance; verify Ready and recipient payments, then add confidential atomic offer/invoice-conversion handoff |
 | Private negotiation and inventory | Open: authenticated encrypted quote transport, secure wallet state and production maker reservation workflow for the new escrow |
-| Review and activation | Open: independent protocol/wallet review and verified release evidence before mainnet flags change |
+| Review and activation | Open: independent protocol/wallet review and full confidential settlement evidence; mainnet flags are enabled but do not establish these checks |
 | Hosted prover confidentiality | Open for secrecy from the provider: hosted services see the witness; require a verified self-controlled route for that property |
 | Current demo footage | Open: replace v8 one-sided Chat acceptance and public maker onboarding before showing it as the current product |
 

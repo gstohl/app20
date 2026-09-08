@@ -1,0 +1,95 @@
+{
+  "schema": "app20/confidential-mainnet-settlement/v1",
+  "verifiedAt": "2026-09-08T00:42:49.859Z",
+  "chainId": "0x534e5f4d41494e",
+  "transactionHash": "0x59435ee65a7f42ed41b329c2df8bb9be7cf5fdfe69ddfd8cb2d08230412696",
+  "block": {
+    "number": 14530706,
+    "hash": "0x77371f02e0eb8c9835cba03d5ef6538be2239b2b37efd192a56c2e84d4ae60b"
+  },
+  "finality": "ACCEPTED_ON_L2",
+  "execution": "SUCCEEDED",
+  "pool": "0x40337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+  "escrow": "0x11b28bb270f1c9c7eefd1205cfba6c1a686436fcb5f5c3281d5a0a77011438f",
+  "poolClass": "0x67dddd89d80fedadc06b6f160798f94800a4a70164e5a24301cd0d6076b554d",
+  "escrowClass": "0x134accea913ca144f2a37015014235785687fd8eec2c15773d716e505cd669f",
+  "proofId": "d788861afb42c8b0e7ec4d359b7357eb2df3c520f37ba95c9094f4745e37243e",
+  "provingBlock": {
+    "number": 14530643,
+    "hash": "0x4308965fae41e259233c028636d2f42788c9503ad66ba5024eeff6c41716629"
+  },
+  "publicActionKinds": [
+    "WriteOnce",
+    "EmitNoteUsed",
+    "WriteOnce",
+    "EmitNoteUsed",
+    "WriteOnce",
+    "EmitEncNoteCreated",
+    "WriteOnce",
+    "EmitEncNoteCreated",
+    "InvokeWithComputation"
+  ],
+  "checks": {
+    "proofFactsMatch": true,
+    "exactApplyActionsTrace": true,
+    "exactEscrowCallback": true,
+    "receiptBlockClassPins": true,
+    "receiptBlockSettled": true,
+    "encryptedOutputEvents": 2,
+    "spentNoteEvents": 2,
+    "newOpenOutputs": false,
+    "newPublicValueActions": false
+  },
+  "realProofVerified": true,
+  "verificationScope": {
+    "executor": "Node SDK with separate ephemeral escrow signing roles",
+    "operatorControlledBothWallets": true,
+    "operatorFundedBothLegs": true,
+    "nativeReadyEndToEndVerified": false,
+    "mainnetRefundVerified": false,
+    "independentReviewComplete": false
+  },
+  "fundingTransactions": [
+    {
+      "mode": "setup",
+      "hash": "0x5d10be8fe1a5ea3971a01aaf4f6a430315292de42f773d38f8d51f60789b7e8",
+      "block": 14530292
+    },
+    {
+      "mode": "fundA",
+      "hash": "0x7a6608cdc0a21240a5ed10410975eb694612b0aa82b72569953ea9a2372005",
+      "block": 14530412
+    },
+    {
+      "mode": "fundB",
+      "hash": "0x621541474d760c9289101e287b56d0451e8509de3d409a4e2a4cae5766f73e8",
+      "block": 14530541
+    }
+  ],
+  "encryptedDiscovery": {
+    "baselineBlock": {
+      "number": 14530618,
+      "hash": "0x64be70c536cdd8bc577070b01c6b7fbc8d3d9b8209e89292938bb49e9afb3a3"
+    },
+    "afterBlock": {
+      "number": 14530750,
+      "hash": "0x6bb774141a485db1a5de327b3f41129274de1fa4795b243c92f59bb3a5e86ba"
+    },
+    "escrowSettled": true,
+    "escrowBalancesZero": true,
+    "aReceivedAgreedBEncrypted": true,
+    "bReceivedAgreedAEncrypted": true,
+    "aOtherAssetUnchanged": true,
+    "bOtherAssetUnchanged": true,
+    "allLegacyOpenBalancesUnchanged": true,
+    "exactBalancesPublished": false
+  },
+  "privacyLimits": [
+    "Escrow deployment and activity, ephemeral signing keys, deadlines, timing, proof/ciphertext sizes and fees remain public.",
+    "Shielding, unshielding and external hedging have public token movements.",
+    "Deploying an escrow from a personal wallet can reveal its link to that wallet.",
+    "Counterparties know their agreed terms; the hosted proving service receives the private witness."
+  ],
+  "rpcCompatibility": "Publicnode supplied the successful PROOF1 transaction trace; Cartridge trace replay rejected PROOF1.",
+  "wireEncodingFix": "Joint authorization serializes all signature felts as canonical 0x-prefixed hex; the previous decimal strings were rejected before execution."
+}

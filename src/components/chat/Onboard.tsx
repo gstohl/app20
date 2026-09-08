@@ -382,7 +382,7 @@ export default function Onboard({ helperAddress, onKeyReady }: OnboardProps) {
 
   if (!helperAddress) return <section id="mailbox-key-setup" className={styles.card} aria-labelledby="onboard-title">
     <h2 id="onboard-title" className={styles.cardTitle}>Chat isn’t available on this network yet</h2>
-    <p className={styles.copy}>The Chat contract still needs to be deployed. Confidential swaps are also awaiting wallet and network support.</p>
+    <p className={styles.copy}>Switch your wallet to Starknet mainnet to set up encrypted Chat.</p>
     <Link to="/rfq" className={styles.primaryButton}>View confidential RFQ</Link>
   </section>;
 

@@ -237,7 +237,7 @@ a {
 /* APP20 execution desk. Route modules consume this one palette through
    semantic aliases; product surfaces must not redefine their own desk colors. */
 .app-shell {
-  --app-shell-offset: 92px;
+  --app-shell-offset: 64px;
   --shell-bg: #0b0c0c;
   --shell-panel: #111313;
   --shell-inset: #202222;
@@ -344,33 +344,12 @@ a {
   transform: translateY(0);
 }
 
-.signal-bar {
-  display: flex;
-  min-height: 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  border-bottom: 1px solid var(--shell-orange);
-  padding: 5px 12px;
-  color: var(--shell-bg);
-  background: var(--shell-orange);
-  font-family: var(--font-mono-ui), monospace;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-}
-
-.signal-bar > span:last-child {
-  opacity: 0.7;
-}
-.signal-dot,
 .network-status i {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--shell-muted);
 }
-.signal-dot.is-live,
 .network-status i.status-live {
   background: var(--shell-live);
   box-shadow: 0 0 10px color-mix(in srgb, var(--shell-live) 70%, transparent);
@@ -758,7 +737,7 @@ a {
   font-size: 11px;
 }
 .rail-gate-page {
-  min-height: calc(100dvh - var(--app-shell-offset, 92px));
+  min-height: calc(100dvh - var(--app-shell-offset, 64px));
   padding: clamp(24px, 3vw, 38px) max(18px, calc((100vw - 720px) / 2));
   color: var(--shell-text);
   background: var(--shell-bg);
@@ -821,7 +800,7 @@ a {
 }
 
 @media (min-width: 901px) and (max-width: 1200px) {
-  .app-shell { --app-shell-offset: 146px; }
+  .app-shell { --app-shell-offset: 101px; }
   .app-header {
     grid-template-columns: auto minmax(0, 1fr);
     gap: 4px 12px;
@@ -833,7 +812,7 @@ a {
 
 @media (max-width: 900px) {
   .app-shell {
-    --app-shell-offset: 136px;
+    --app-shell-offset: 109px;
   }
   .app-header {
     grid-template-columns: auto minmax(0, 1fr);
@@ -882,15 +861,7 @@ a {
 
 @media (max-width: 560px) {
   .app-shell {
-    --app-shell-offset: 128px;
-  }
-  .signal-bar {
-    min-height: 34px;
-    flex-wrap: nowrap;
-    padding: 6px 10px;
-  }
-  .signal-bar > span:last-child {
-    display: none;
+    --app-shell-offset: 101px;
   }
   .lifecycle-strip,
   .evidence-labels {

@@ -1,8 +1,26 @@
 # APP20 demo recording
 
-## Current confidential development edit (version 8)
+## Current social video — September 8
 
-`artifacts/hackathon/app20-demo-v8-confidential.mp4` is the current 136-second, 1080p/30 fps edit. It keeps the natural Chat conversation, selected ElevenLabs Liam voice, black macOS-style cursor, smooth movements, compact bars and macOS window frame. New chapters show the implemented local confidential escrow, separate funding, joint settlement, independent timeout recovery and updated SDK. There is no confirmed-swaps chapter. The earlier maker network is identified as a separate protocol.
+`artifacts/social/app20-mainnet-social-2026-09-08.mp4` is the new 63-second, 1920×1080/30 fps cut. It uses six complete recordings of the selected ElevenLabs Liam voice, normal-speed 4–5-second source sequences, a black macOS-style cursor with curved motion, a rectangular browser frame, and tighter bars. The signal bar and confirmed-swaps chapter are absent.
+
+The RFQ footage includes an actual encrypted request and response from the running mainnet maker. It stops at quote review; no wallet setup, funding or settlement is performed in the recording. Chat displays the actual confirmed mainnet self-message through an isolated, watch-only source preview with the recipient key. Source-preview and read-only labels stay visible. SDK footage comes from the deployed website. No chain events or messages are simulated, and recording submits no transactions. The independently verified controlled SDK settlement is documented in `deployments/mainnet/`; native Ready wallet acceptance remains unverified.
+
+The exact capture ranges, source cuts, voice hashes and final plan are retained under the ignored `artifacts/social/2026-09-08/` and `artifacts/hackathon/social-fresh/` directories. `social-film-plan.example.json` records the six-scene layout; prepared sequence files are local artifacts. Refresh marked capture intervals after re-recording. The capture script accepts an optional `--config` JSON file; operator Chat mode requires an isolated local source server and the protected local viewing material. It never exports a browser profile or trace. Quote-only mode permits encrypted room creation but rejects wallet signing and value transfers.
+
+```sh
+node tools/demo-video/capture-social-tour.mjs --config /path/to/capture-config.json
+node tools/demo-video/render-film.mjs artifacts/social/2026-09-08/film-plan.json
+node tools/demo-video/verify-film.mjs artifacts/social/2026-09-08/film-plan.json
+```
+
+`SocialFilm.tsx` supplies the square window and animated closing. Rendering decodes each voice file to PCM, preserves all samples, adds 0.5 seconds before and at least 1.5 seconds after speech, and rejects undersized scenes. One continuous PCM master supplies the final AAC track. Verification checks the delivered frame count, full audio/video decoding and waveform correlation at every spoken ending. English subtitles accompany the MP4 as an embedded track and SRT; sentence timings are estimates within each measured voice clip.
+
+The entire `artifacts/` directory remains ignored. The social video is a local handoff for X, not an automatic post or replacement of the deadline release. `strk20.json` retains the published deadline video URL and adds the verified Chat and confidential-settlement hashes to the three historical swaps.
+
+## Previous confidential development edit (version 8)
+
+`artifacts/hackathon/app20-demo-v8-confidential.mp4` is the earlier 136-second, 1080p/30 fps edit. It keeps the natural Chat conversation, selected ElevenLabs Liam voice, black macOS-style cursor, smooth movements, compact bars and macOS window frame. New chapters show the implemented local confidential escrow, separate funding, joint settlement, independent timeout recovery and updated SDK. There is no confirmed-swaps chapter. The earlier maker network is identified as a separate protocol.
 
 The new local browser flow passed using the same SDK as the integration tests. Localnet and simulated-proof labels stay visible. Five new Liam recordings update the settlement, refund, privacy and closing narration. The renderer checks the full measured voice duration plus 0.5 seconds before and at least 1.5 seconds after every clip. It creates one continuous audio master; `verify-film.mjs` checks frame count, clean decoding and waveform correlation for every spoken ending in the delivered MP4.
 
@@ -18,7 +36,7 @@ node tools/demo-video/verify-film.mjs artifacts/hackathon/v8/film-plan.json
 
 `film-plan.example.json` is the complete current edit plan, with normal-speed excerpts and end-frame reading holds. The capture chapter markers are under ignored `artifacts/hackathon/`; source timings must be rechecked after a fresh recording. The setup excerpt joins 2–6, 9–14 and 25–29 seconds; settlement joins 80.2–87.2 and 117.2–121.2; refund joins 186–192 and 214–215. Refund crops differ across the cut because the progress notice changes the viewport position. Exclude the full-page screenshot frames after the final reading hold. Download narration through the signed-in Chrome connection; preserve the chosen voice and clear the old editor text before filling a chapter.
 
-The video, SRT, voiceover, poster, audio manifest and delivery report stay in ignored `artifacts/`. A public video URL has not been assigned, so `strk20.json` retains an empty `demo_video`. The three real mainnet transaction hashes remain evidence of the earlier deployed settlement protocol. No new mainnet transaction was submitted for version 8.
+The video, SRT, voiceover, poster, audio manifest and delivery report stay in ignored `artifacts/`. At the time of this version-8 edit, a public video URL had not been assigned. The later deadline release URL is now recorded in `strk20.json`. The three historical mainnet hashes remain evidence of the earlier settlement protocol. No new mainnet transaction was submitted for version 8.
 
 ## Previous edits
 
@@ -59,7 +77,7 @@ node tools/demo-video/render-film.mjs artifacts/hackathon/v4/film-plan.json
 
 Version 4 uses the reviewed version-3 footage, cuts and mainnet evidence. It does not submit new transactions or publish the video.
 
-The film distinguishes three sources throughout: localnet Chat with mock proving, RFQ UI with simulated wallets/RPC, and read-only previews of the current production build. Its mainnet evidence chapter shows earlier real Node SDK transactions. The browser fixture confirmation is not mainnet execution evidence. Mainnet Chat remains undeployed.
+The film distinguishes three sources throughout: localnet Chat with mock proving, RFQ UI with simulated wallets/RPC, and read-only previews of the current production build. Its mainnet evidence chapter shows earlier real Node SDK transactions. The browser fixture confirmation is not mainnet execution evidence. Mainnet Chat was undeployed when version 4 was recorded; its deployment and a successful encrypted message are now verified.
 
 ## Capture
 
@@ -88,10 +106,10 @@ Chapter markers are saved to `artifacts/hackathon/*-chapters.json`. Inspect the 
 
 ## Verify mainnet evidence
 
-The three submission hashes are already recorded in `strk20.json`. Recheck them without signing or broadcasting:
+Five hashes are recorded in `strk20.json`: three historical swaps, one verified Chat message and one confidential settlement. Recheck them without signing or broadcasting:
 
 ```sh
-node scripts/verify-hackathon-transactions.mjs --rpc https://rpc.starknet.lava.build/rpc/v0_10
+node scripts/verify-hackathon-transactions.mjs --rpc https://starknet-rpc.publicnode.com
 ```
 
 The verifier writes `artifacts/hackathon/verified-mainnet-transactions.json` after checking successful receipts, completed quote events, APP20/STRK20 execution traces, and the pinned deployed classes at each receipt block. All three were confirmed on L1 on September 7, 2026. Do not use deployment or fixture hashes as settlement proof.

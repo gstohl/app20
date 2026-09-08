@@ -48,6 +48,30 @@ test('each role reviews and signs the exact private operation; tampering never r
   assert.throws(() => authorizeConfidentialOperation(other, 17n, [a, b]), /identity/i);
 });
 
+test('direct prover JSON encodes all joint signature felts as hex without changing approvals or terms', async () => {
+  for (const [mode, code] of [['setup', 0], ['settle', 1], ['refundA', 2], ['refundB', 3]]) {
+    const { agreement, prepared, sign } = fixture();
+    if (mode !== 'settle') {
+      const isB = mode === 'refundB', token = isB ? agreement.terms.tokenB : agreement.terms.tokenA;
+      const recipient = isB ? agreement.terms.partyB : agreement.terms.partyA;
+      const actions = mode === 'setup' ? ['2', '0', '111'] : ['3', '6', '111', token, '0', '3', recipient, '33', token, '1234', '0', '88'];
+      const inner = [agreement.address, '17', ...actions, '9', agreement.address, '2', '17', String(code), '0'];
+      prepared.mode = mode;
+      prepared.invocation.calldata = ['1', agreement.pool, hash.getSelectorFromName('compile_actions'), String(inner.length), ...inner];
+      prepared.digest = confidentialDigest(agreement, mode, inner);
+    }
+    const roles = mode === 'refundA' ? ['a'] : mode === 'refundB' ? ['b'] : ['a', 'b'];
+    const approvals = await Promise.all(roles.map(role => approveConfidentialOperation(prepared, 17n, role, sign(role))));
+    const before = structuredClone({ prepared, approvals });
+    const wire = JSON.parse(JSON.stringify(authorizeConfidentialOperation(prepared, 17n, approvals)));
+    const expected = [String(code), agreement.terms.tokenA, agreement.terms.tokenB, agreement.terms.amountA, agreement.terms.amountB, agreement.terms.partyA, agreement.terms.partyB, agreement.terms.salt, ...['a', 'b'].flatMap(role => approvals.find(value => value.role === role)?.signature ?? ['0', '0'])];
+    assert.equal(wire.signature.length, 12);
+    for (const felt of wire.signature) assert.match(felt, /^0x(?:0|[1-9a-f][\da-f]*)$/, mode);
+    assert.deepEqual(wire.signature.map(BigInt), expected.map(BigInt), mode);
+    assert.deepEqual({ prepared, approvals }, before, 'Canonical encoding must not rewrite the signed request');
+  }
+});
+
 test('mainnet simulated proofs and remote simulated proofs fail closed before SDK setup', async () => {
   const { agreement } = fixture();
   const journal = { runExclusive: action => action(), load: async () => undefined, save: async () => {} };
@@ -56,7 +80,8 @@ test('mainnet simulated proofs and remote simulated proofs fail closed before SD
   const remote = runtime(agreement, journal); remote.options.provider.channel.nodeUrl = 'https://example.invalid';
   await assert.rejects(() => createConfidentialClient(remote.options), /loopback/i);
   assert.equal(confidentialCapabilities.mainnetEnabled, true);
-  assert.equal(confidentialCapabilities.realProofVerified, false);
+  assert.equal(confidentialCapabilities.realProofVerified, true);
+  assert.equal(confidentialCapabilities.nativeReadyEndToEndVerified, false);
 });
 
 test('durable journal retains uncertain funding across restarts and excludes private payloads', async () => {
@@ -116,7 +141,7 @@ test('mainnet proof rehearsal exposes no funding/submission method while product
   assert.equal(typeof production.execute, 'function');
   assert.equal(env.submissions, 0);
   assert.equal(confidentialCapabilities.mainnetEnabled, true);
-  assert.equal(confidentialCapabilities.realProofVerified, false);
+  assert.equal(confidentialCapabilities.realProofVerified, true);
 });
 
 test('mainnet proof rehearsal verifies live chain, pool, escrow and configuration before reading viewing material', async () => {
@@ -155,7 +180,7 @@ test('proof preparation inputs are owned before asynchronous journal and provide
   let entered; const wait = new Promise(resolve => { entered = resolve; });
   let release; const gate = new Promise(resolve => { release = resolve; });
   const journal = { runExclusive: async action => { entered(); await gate; return action(); }, load: async () => undefined, save: async () => {} };
-  const env = runtime(agreement, journal, { simulatedProofs: false, proofProvider: { getDefaultDetails: async () => ({}), prove: async invocation => { assert.equal(invocation.signature[0], '1'); return proofEnvelope(agreement); } } });
+  const env = runtime(agreement, journal, { simulatedProofs: false, proofProvider: { getDefaultDetails: async () => ({}), prove: async invocation => { assert.equal(invocation.signature[0], '0x1'); return proofEnvelope(agreement); } } });
   const client = await createConfidentialProofClient(env.options);
   const pending = client.prove(prepared, approvals);
   await wait; prepared.mode = 'refundA'; prepared.invocation.calldata[4] = '0xdead'; approvals.pop(); release();

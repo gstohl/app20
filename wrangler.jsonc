@@ -27,6 +27,10 @@
       {
         "name": "RESERVATION_LEDGER",
         "class_name": "ReservationLedgerDurableObject"
+      },
+      {
+        "name": "CONFIDENTIAL_ROOMS",
+        "class_name": "ConfidentialRoomsDurableObject"
       }
     ]
   },
@@ -38,6 +42,10 @@
     {
       "tag": "v2",
       "new_sqlite_classes": ["ReservationLedgerDurableObject"]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["ConfidentialRoomsDurableObject"]
     }
   ],
   "vars": {

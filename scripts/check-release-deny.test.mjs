@@ -19,7 +19,7 @@ const validFiles = {
   `,
   "src/lib/confidential-rfq-status.ts": `
     export const CONFIDENTIAL_RFQ_MAINNET_ENABLED = true;
-    export const CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED = false;
+    export const CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED = true;
   `,
   "src/utils/constants.ts": `
     export const mailHelperSepolia = "0x0";
@@ -270,7 +270,7 @@ test("lstat rejects present, dangling, and checked-source symlinks", async () =>
 
 
 test("public confidential activation cannot misrepresent settlement verification", async () => {
-  for (const [name, expected] of [["CONFIDENTIAL_RFQ_MAINNET_ENABLED", true], ["CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", false]]) {
+  for (const [name, expected] of [["CONFIDENTIAL_RFQ_MAINNET_ENABLED", true], ["CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", true]]) {
     const root = await fixture();
     await overwrite(root, "src/lib/confidential-rfq-status.ts", validFiles["src/lib/confidential-rfq-status.ts"].replace(`${name} = ${expected}`, `${name} = ${!expected}`));
     assert((await checkReleaseDeny(root)).some(failure => failure.includes(name)));

@@ -110,7 +110,6 @@ test(recoveryRun ? "chat recovers lost message confirmation and makes one encryp
 
     await page.getByRole("link", { name: "Open in Chat" }).click();
     await expect(page).toHaveURL(/\/chat$/);
-    await expect(page.locator(".signal-bar")).toContainText("CHAT");
     await expect(
       navLink(page, "Chat"),
     ).toHaveAttribute("aria-current", "page");

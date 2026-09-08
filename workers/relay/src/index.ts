@@ -1,4 +1,6 @@
 import { relayStarkscanProof } from './starkscan-prover.ts';
+import { handleReadyProofSession } from './ready-proof-auth.ts';
+import { handleConfidentialRooms, ConfidentialRoomsDurableObject } from './confidential-rooms.ts';
 import { bootstrapQuotaSubject, handlePrivacyBootstrap } from "./bootstrap.ts";
 import { errorResponse } from "./errors.ts";
 import { DurableAtomicGate, RelayGateDurableObject } from "./gate.ts";
@@ -18,6 +20,7 @@ export {
   RelayGateDurableObject,
   ReservationLedgerDurableObject,
   RfqReplayDurableObject,
+  ConfidentialRoomsDurableObject,
 };
 export type { AtomicGate, RelayEnv, SpaSecurityConfig } from "./types.ts";
 
@@ -108,6 +111,8 @@ export function createRelayHandler(overrides: Partial<RelayDependencies> = {}) {
       }
       const gateForRequest = () =>
         dependencies.gate ?? new DurableAtomicGate(env.RELAY_GATE);
+      if (path === '/api/privacy/ready-proof-session') return await handleReadyProofSession(request,env,dependencies,gateForRequest());
+      if (path.startsWith('/api/confidential/')) return await handleConfidentialRooms(request,env,gateForRequest());
       if (path === "/api/privacy/prove" || path.startsWith("/api/privacy/prove/")) return await relayStarkscanProof(request, env, dependencies, gateForRequest());
       if (path === "/api/ohttp/prover") {
         return await relayOhttp(

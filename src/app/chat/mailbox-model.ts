@@ -56,10 +56,9 @@ function configuredForLocalnet(
 }
 
 export function helperForNetwork(providerIndex: number): string | null {
-  const configured = configuredForLocalnet(
-    providerIndex,
-    constants.mailHelperLocalnet,
-  );
+  const configured = providerIndex === 0
+    ? constants.mailHelperMainnet
+    : configuredForLocalnet(providerIndex, constants.mailHelperLocalnet);
   if (!isConfiguredMailHelper(configured)) return null;
 
   try {

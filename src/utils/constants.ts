@@ -86,8 +86,8 @@ export function strk20PoolForProviderIndex(
   return null;
 }
 
-// Localnet-final policy: historical proof deployments and injected live build
-// variables are never runtime configuration.
+// Mainnet uses the pinned deployed Chat contract. Public build variables cannot
+// override live deployment addresses; localnet remains explicitly build-gated.
 export const mailHelperSepolia = "0x0";
 export const mailHelperMainnet = "0x501331396a00e95a4b520502ff73155412e056bd42bc41cb115deb656d97ae4";
 export const mailHelperLocalnet = localnetWalletEnabled

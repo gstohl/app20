@@ -2,7 +2,7 @@ import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import SessionControl from "@/app/components/SessionControl";
 import { useStoreWallet } from "@/app/components/Wallet/walletContext";
 import { useWalletMode } from "@/app/rfq/walletMode";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { clearChatSession } from "@/app/chat/chat-session";
 import { useFrontendProvider } from "@/app/components/client/provider/providerContext";
 
@@ -11,6 +11,16 @@ type AppShellProps = {
 };
 
 export default function AppShell({ renderLocalnetTools }: AppShellProps) {
+  const headerRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const updateHeight = () => header.parentElement?.style.setProperty("--app-shell-offset", `${header.getBoundingClientRect().height}px`);
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const wallet = useStoreWallet.subscribe((next, previous) => {
       if (next.address !== previous.address || next.chain !== previous.chain || next.isConnected !== previous.isConnected) clearChatSession();
@@ -26,39 +36,16 @@ export default function AppShell({ renderLocalnetTools }: AppShellProps) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const readyConnected = useStoreWallet((state) => state.isConnected);
-  const walletMode = useWalletMode((state) => state.mode);
-  const privyConnected = useWalletMode((state) => state.privyConnected);
   const rfqActive = pathname === "/rfq" || pathname.startsWith("/rfq/");
   const chatActive = pathname === "/chat" || pathname.startsWith("/chat/");
-  const connected = walletMode === "privy" ? privyConnected : readyConnected;
   const payActive = pathname === "/pay";
-  const moduleName = chatActive
-    ? "CHAT"
-    : payActive
-      ? "PAY"
-      : pathname === "/contacts"
-        ? "COUNTERPARTIES"
-        : rfqActive
-          ? "RFQ WORKSPACE"
-          : pathname === "/agents" ? "AGENTS" : "APP20";
 
   return (
     <div className="app-shell">
       <a className="skip-link" href="#route-content">
         Skip to route content
       </a>
-      <div className="signal-bar">
-        <span
-          className={`signal-dot ${connected ? "is-live" : ""}`}
-          aria-hidden="true"
-        />
-        {/* Live session state for the module you are actually in. */}
-        {connected
-          ? `${moduleName} · WALLET CONNECTED`
-          : `${moduleName} · NO WALLET CONNECTED`}
-      </div>
-      <header className="app-header">
+      <header className="app-header" ref={headerRef}>
         <Link
           className="app-brand"
           to="/"

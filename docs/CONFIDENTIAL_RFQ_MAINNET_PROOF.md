@@ -1,6 +1,8 @@
 # Mainnet confidential proof rehearsal
 
-The operator can prepare and prove an escrow operation before enabling transaction submission. This is a real-proof integration step; a returned proof envelope is not evidence that mainnet accepted it. Public release flags remain unchanged until the full settlement and independent-wallet workflow is verified.
+The complete controlled Node SDK settlement is verified on mainnet: setup, separate encrypted funding and one atomic exchange succeeded, and receipt/trace checks plus fixed-block private discovery confirmed both agreed encrypted outputs. See [the sanitized September 8 evidence](../deployments/mainnet/confidential-settlement-2026-09-08.json). `realProofVerified` is true. One operator controlled both wallets and funded both legs; native Ready wallet acceptance, mainnet refunds and independent review remain unverified.
+
+The operator can still prepare and prove an escrow operation without submitting it. A returned proof envelope alone is not evidence of chain acceptance; the separate receipt and encrypted-output checks remain necessary for every claimed execution.
 
 Run the read-only preflight:
 
@@ -42,6 +44,10 @@ node scripts/confidential-mainnet-proof.mjs \
 
 Supported modes are `setup`, `settle`, `refundA` and `refundB`. Settlement requires both previously funded assets; refunds require chain expiry. The command uses `createConfidentialProofClient`, which has no `fund` or `execute` method. It verifies the live chain, canonical pool, pinned escrow class and exact constructor before retrieving escrow viewing material, then independently verifies the required signatures and returned public proof envelope. The output contains only the public submission and is created exclusively with owner-only permissions. Private invocations and arbitrary provider errors are never printed.
 
-Broadcast is a separate operator step with its own durable transaction ledger and fee limit. Re-read pool fees, estimate network gas, preserve unknown-outcome fences, and verify the submitted receipt plus decrypted outputs before marking the protocol available. Do not submit the public constructor fixtures used for fee estimation.
+All Invoke V3 signature felts must use canonical `0x`-prefixed hexadecimal strings. Decimal strings caused a raw JSON-RPC `-32602` rejection before Cairo execution; canonical serialization fixed the setup proof without changing its signed values or policy.
+
+For the verified run, Publicnode supported proof-aware fee estimation, fully validated simulation, submission and the PROOF1 transaction trace. Cartridge supplied storage proofs, but its trace replay rejected PROOF1. Use exact accepted block hashes for proving and verify the returned block binding; provider capability differences must not be bypassed by skipping final transaction validation.
+
+Broadcast is a separate operator step with its own durable transaction ledger and fee limit. Re-read pool fees, estimate network gas, preserve unknown-outcome fences, and verify the submitted receipt plus decrypted outputs before marking the settlement flow verified. Do not submit the public constructor fixtures used for fee estimation.
 
 The upstream [transaction prover](https://github.com/starkware-libs/sequencer/tree/main/crates/starknet_transaction_prover) accepts Invoke V3 transactions against finalized state; [the SDK](https://github.com/starkware-libs/starknet-privacy/blob/main/sdk/src/interfaces.ts) exposes custom signers and `computeAndInvoke`. These primitives support this experiment, but upstream does not supply APP20's two-party escrow or independent wallet adapters.

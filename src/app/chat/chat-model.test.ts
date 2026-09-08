@@ -318,6 +318,24 @@ describe("chat conversations", () => {
     expect(dave.items[0].needsAction).toMatch(/Deposit leg B/);
   });
 
+  it("files an explicitly self-assigned received message under This chat without upgrading its provenance", () => {
+    const assigned = { ...sealedLetter, assignedAddress: "0x000a11ce" };
+    const model = buildChatModel(input({ messages: [assigned] }));
+    expect(model.conversations.some(row => row.contact.kind === "sealed")).toBe(false);
+    const own = conversation(model, SELF_CONVERSATION_KEY);
+    expect(own.contact.kind).toBe("self");
+    expect(contactDisplayName(own.contact)).toBe("This chat");
+    expect(own.items).toHaveLength(1);
+    expect(own.items[0]).toMatchObject({ direction: "incoming", provenance: "decrypted", body: sealedLetter.plaintext });
+    expect(own.items[0].message).toBe(assigned);
+    expect(assigned).toEqual({ ...sealedLetter, assignedAddress: "0x000a11ce" });
+
+    // The encrypted record by itself remains sealed when the local assignment
+    // is removed; neither decryption nor our own address authenticates a sender.
+    const original = buildChatModel(input({ messages: [sealedLetter] }));
+    expect(conversation(original, sealedConversationKey(id("dd"))).contact.kind).toBe("sealed");
+  });
+
   it("prefers a decrypted record over saved deal state for the same deal", () => {
     const decryptedOffer = incoming(
       "0x11:1",

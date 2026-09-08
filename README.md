@@ -4,7 +4,7 @@
 
 APP20 is a Starknet application for encrypted chat, shielded payments and confidential token swaps. Chat combines conversations with payments and invoices. The RFQ (request for quote) workspace demonstrates an exchange where both parties approve the terms and receive their assets together. STRK20 provides the privacy pool that holds balances as encrypted notes.
 
-**Chat and confidential swaps currently run in local development environments. Mainnet confidential trading and mainnet Chat are not enabled in this release.** The desktop-first browser app and SDK expose network availability before execution.
+**Real-proof Chat and confidential settlement are verified on mainnet.** The Chat message decrypted correctly and preserved the private balance. The atomic swap delivered both agreed encrypted outputs, left the escrow empty and settled, and created no public trade transfers or OPEN outputs. These were controlled Node SDK runs; one operator controlled both wallets and funded both swap legs. Native Ready wallet acceptance remains unverified. See the [Chat evidence](deployments/mainnet/chat-message-2026-09-08.json) and [confidential settlement evidence](deployments/mainnet/confidential-settlement-2026-09-08.json).
 
 ## Current status
 
@@ -12,16 +12,16 @@ New payments must spend encrypted notes. Swaps require an atomic exchange approv
 
 | Feature | Status |
 | --- | --- |
-| RFQ | `/rfq` presents the confidential flow; mainnet contracts are deployed; real-proof settlement validation is pending |
-| Confidential escrow | Cairo contract, independent party approvals, encrypted outputs, timeout refunds and Node SDK implemented; local tests use simulated proofs |
-| Chat messages | Localnet encrypted conversations, public-key registration and replay-protected message delivery; no helper funding or asset transfer required |
-| Chat payments and invoices | Localnet encrypted transfers from existing shielded notes, with an unfunded encrypted message operation |
-| Chat swaps and invoice conversion | Blocked until confidential atomic settlement is supported; no one-sided payment fallback |
+| RFQ | `/rfq` integrates the mainnet confidential flow and browser wallet adapter; native Ready acceptance remains unverified |
+| Confidential escrow | Controlled real-proof mainnet settlement verified with exact encrypted outputs; timeout refunds verified locally |
+| Chat messages | Mainnet operator message verified, decrypted and replay-protected; a private 1-base-unit self-transfer preserves the balance without helper funding |
+| Chat payments and invoices | Encrypted transfer and memo path implemented; mainnet recipient-payment and browser wallet acceptance remain unverified |
+| Chat swaps and invoice conversion | Blocked pending integration with the confidential RFQ flow; no one-sided payment fallback |
 | Agent library | Confidential escrow integration and separate shielded-wallet operations; downloadable `@app20/agent-sdk`, not published to the npm registry |
-| Mainnet proof tooling | Operator preflight and proof rehearsal implemented; proof generation does not establish accepted settlement or enable the app |
+| Mainnet proof tooling | Real hosted Chat and confidential settlement proofs accepted on mainnet; receipts, traces and encrypted discovery verified |
 | Privy wallet | Separate register/shield/transfer/unshield rail; configured credentials and real-wallet acceptance remain necessary |
 
-The confidential lab controls two disposable wallets. Independent wallet integration, authenticated private quote negotiation, real proof acceptance and independent review remain release requirements. An open permissionless maker market is not available through the current confidential flow.
+The browser integration includes wallet signing, encrypted quote rooms and durable recovery. Its native Ready extension journey still needs an unlocked-wallet end-to-end run. The local lab controls two disposable wallets; the verified mainnet run also used one operator. Neither run establishes independent market liquidity or an independent security review.
 
 ## Current contracts and flow
 
@@ -34,19 +34,19 @@ The confidential lab controls two disposable wallets. Independent wallet integra
 3. Both approve the exact exchange. The contract permits both agreed outputs together as encrypted notes, returning any surplus only to the original owner of that asset. Public deposits, withdrawals, OPEN outputs and unrelated calls are rejected by its action policy.
 4. After expiry, either party can authorize a fresh encrypted refund of its original asset without the other party's signature. Funding is not atomic: the first funder may have to wait until expiry if the peer stops participating.
 
-The pool callback checks the actual execution deadline and prevents a second settlement. The SDK checks deployed identities, prepares operations, collects approvals and journals uncertain submissions. A contract implementation and simulated local execution are not evidence of a mainnet-ready service. See [protocol and recovery details](docs/CONFIDENTIAL_RFQ.md).
+The pool callback checks the actual execution deadline and prevents a second settlement. The SDK checks deployed identities, prepares operations, collects approvals and journals uncertain submissions. The controlled mainnet settlement additionally passed receipt, trace and encrypted-output verification; mainnet refunds and native wallet acceptance are separate, unverified paths. See [protocol and recovery details](docs/CONFIDENTIAL_RFQ.md).
 
 ### Chat and payments
 
 [`App20Chat`](cairo/src/lib.cairo) registers chat public keys and emits encrypted message records. Its protected callback accepts only the configured privacy pool, binds the message payload to the computation and rejects replayed actions. Encryption and decryption happen in the clients.
 
-The current app sends messages through an unfunded, proof-bound helper operation. A payment adds an encrypted transfer from existing shielded notes to the same batch; the helper does not settle swaps. Same-token invoices use that payment path. Plain messages require no asset transfer, although pool and network fees still apply. Chat offer acceptance and invoice conversion remain blocked.
+The current app sends messages through an unfunded, proof-bound helper operation. A payment adds an encrypted transfer from existing shielded notes to the same batch; the helper does not settle swaps. Same-token invoices use that payment path. Plain messages include a private transfer of 1 base unit of STRK back to the sender to provide pool replay protection. An existing shielded STRK note is required; its balance is preserved. Pool and network fees still apply. Chat offer acceptance and invoice conversion remain blocked.
 
 ## Privacy boundary
 
 Message content is encrypted for its recipients. Confidential escrow amounts, assets and destinations are private proof inputs; counterparties still know their agreement.
 
-Shielding/unshielding expose their own amounts and assets and remain separate wallet operations. Escrow activity, timing, deadlines, fees, ephemeral signer keys and ciphertext/proof sizes remain visible. Counterparties know their agreement. Historical maker recovery remains public under the old contracts.
+Shielding/unshielding expose their own amounts and assets and remain separate wallet operations. Escrow activity, timing, deadlines, fees, ephemeral signer keys and ciphertext/proof sizes remain visible. Deploying an escrow from a personal wallet can expose that wallet’s link to the escrow. Counterparties know their agreement. Historical maker recovery remains public under the old contracts.
 
 ### Proving payload exposure
 
@@ -59,7 +59,7 @@ The Worker does not log or persist proof request/response bodies. Separate relay
 - `/rfq`: one confidential swap workspace, with network availability shown before any signing.
 - `/agents`: Node SDK, confidential RFQ integration and current network support.
 - `/recovery/privy`: the separately configured wallet and recovery rail. Switching wallets does not move balances.
-- `/chat`: localnet encrypted conversations and payments. Incoming messages refresh after unlocking and every 60 seconds while visible and online. Mainnet Chat is not enabled. Fixed offers may be discussed, but acceptance requiring a swap is blocked.
+- `/chat`: encrypted conversations and payments, with the deployed mainnet helper configured. Incoming messages refresh after unlocking and every 60 seconds while visible and online. The operator mainnet message is verified; Ready wallet acceptance remains unverified. Fixed offers may be discussed, but acceptance requiring a swap is blocked.
 
 ## Node.js library
 
@@ -79,7 +79,7 @@ import { confidentialCapabilities } from '@app20/agent-sdk/confidential';
 console.log(confidentialCapabilities.mainnetEnabled);
 ```
 
-Use `@app20/agent-sdk/confidential` to construct agreements, inspect escrow funding, collect approvals, settle locally and recover expired funding. `createConfidentialClient` blocks mainnet execution. The current source also includes `createConfidentialProofClient`, which prepares and proves operations without exposing funding or transaction submission. Build it from the checkout using [the mainnet proof rehearsal guide](docs/CONFIDENTIAL_RFQ_MAINNET_PROOF.md).
+Use `@app20/agent-sdk/confidential` to construct agreements, inspect escrow funding, collect approvals, settle and recover expired funding. `createConfidentialClient` supports the pinned mainnet deployment, where controlled real-proof atomic settlement is verified. Native browser wallet acceptance and mainnet refunds remain unverified. The current source also includes `createConfidentialProofClient`, which prepares and proves operations without exposing funding or transaction submission. Build it from the checkout using [the mainnet proof rehearsal guide](docs/CONFIDENTIAL_RFQ_MAINNET_PROOF.md).
 
 `createPrivacyWallet` provides separately invoked registration, shielding, encrypted transfers, unshielding and reconciliation. There is no `sendChat` SDK API yet. See [SDK details and adapter examples](packages/agent-sdk/README.md). Preserve journals and secure wallet material across restarts; an unknown submission outcome must be reconciled before retrying.
 
@@ -165,7 +165,7 @@ npm run test:confidential:browser
 
 Build generates browser assets, the installable SDK archive and checksums, TypeScript checks and browser-secret scans. The local integration and browser tests use disposable wallets and simulated proofs. A mainnet acceptance claim additionally requires a real accepted proof, successful receipts and verified encrypted outputs. [Detailed validation guide](docs/CONFIDENTIAL_RFQ.md#reproduce-validation).
 
-With the Worker configured, deploy the built app using `npx wrangler deploy`. Deploying the frontend does not enable confidential mainnet settlement or Chat.
+With the Worker configured, deploy the built app using `npx wrangler deploy`. A frontend deployment alone does not prove chain execution; the current mainnet contract pins, enabled clients and separately recorded operation evidence define the supported scope.
 
 The Worker serves the app and RPC/prover routes. Its API keys are not embedded in browser or SDK downloads. The provider determines proving throughput; a Worker forwards jobs and does not generate STARK proofs itself.
 
@@ -188,4 +188,6 @@ The Worker serves the app and RPC/prover routes. Its API keys are not embedded i
 
 Earlier deployed contracts remain available for explicit recovery; new trading through their public-term protocol is disabled in current clients. Existing positions can be inspected and reconciled through the [historical recovery tools](docs/makers/README.md). Earlier maker-page bookmarks redirect to `/rfq`.
 
-The three September 7 mainnet swaps in `strk20.json` belong to that earlier protocol, with one operator controlling both sides. They do not prove the current confidential escrow. Historical receipts, costs and recording status are kept in the [mainnet runbook](docs/MAINNET_RUNBOOK.md) and [demo notes](docs/HACKATHON_DEMO.md).
+The first three `strk20.json` hashes are September 7 mainnet swaps belonging to that earlier protocol, with one operator controlling both sides. They do not prove the current confidential escrow; its separate [September 8 accepted settlement and encrypted-output evidence](deployments/mainnet/confidential-settlement-2026-09-08.json) does. Historical receipts, costs and recording status are kept in the [mainnet runbook](docs/MAINNET_RUNBOOK.md) and [demo notes](docs/HACKATHON_DEMO.md).
+
+The local submission manifest also includes the verified September 8 Chat message and confidential settlement as post-deadline evidence. The original three hashes, four contracts and deadline video URL are preserved. These additions do not claim that the hackathon panel rescored the submission; GitHub/main and the published deadline release are unchanged.

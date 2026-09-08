@@ -52,6 +52,7 @@ const SERVICE_BUDGETS: Readonly<Record<string, readonly GateBudget[]>> = {
   discovery: ["ohttp-discovery"],
   "starknet-sepolia": ["rpc-read", "rpc-costly", "rpc-submit"],
   "starknet-mainnet": ["rpc-read", "rpc-costly", "rpc-submit"],
+  "confidential-trading": ["rpc-read", "rpc-submit"],
 };
 
 function policy(budget: GateBudget): GatePolicy {

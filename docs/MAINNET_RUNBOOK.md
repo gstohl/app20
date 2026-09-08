@@ -1,12 +1,12 @@
 # APP20 mainnet operations
 
-Updated 2026-09-07. The maker book and private-swap contract are deployed, the frontend is live, and three real Node SDK mainnet private swaps are verified. Chat remains a separate undeployed candidate. The historical preparation sections below describe that Chat work and do not supersede the execution evidence.
+Updated 2026-09-08. A [real-proof operator Chat message](../deployments/mainnet/chat-message-2026-09-08.json) is accepted on mainnet, decrypted, replay-protected and verified to preserve its private balance. Ready extension and mainnet recipient-payment acceptance remain unverified. The confidential escrow is deployed and its SDK enabled; atomic settlement validation remains pending. The three earlier swap receipts belong to the retired public-funded-terms protocol. [The private settlement policy](PRIVATE_SETTLEMENT_POLICY.md) governs current execution; historical preparation and maker sections below do not enable new legacy trading.
 
 ## Completed mainnet settlement demo
 
 At the user's instruction, the funded operator wallet registered with STRK20 and shielded 0.03 STRK, acquired a small native-USDC inventory, registered/funded a maker, and completed three encrypted-request → funded-quote → private-fill rounds. Each fill exchanged 0.01 shielded STRK for 0.001 shielded USDC. The same operator controlled both roles.
 
-All three successful mainnet receipts, quote-fill events, pool/APP20 traces and class pins were verified. Local viewing-key discovery confirmed 0.003 USDC in three shielded notes. Maker proceeds were withdrawn, inventory checked at zero, and the test maker deactivated. See [public execution evidence](../deployments/mainnet/smoke-test-2026-09-07.json) and [hackathon status](HACKATHON_DEMO.md). The three qualifying hashes are in `strk20.json`; the video URL is still pending.
+All three successful mainnet receipts, quote-fill events, pool/APP20 traces and class pins were verified. Local viewing-key discovery confirmed 0.003 USDC in three shielded notes. Maker proceeds were withdrawn, inventory checked at zero, and the test maker deactivated. See [public execution evidence](../deployments/mainnet/smoke-test-2026-09-07.json) and [hackathon status](HACKATHON_DEMO.md). The three historical qualifying hashes and published deadline video URL are in `strk20.json`.
 
 Demo network and pool fees were **35.863877034965690848 STRK**. Including the earlier deployment, fees were **63.910369825551435280 STRK**, within the existing 65 STRK ceiling. A separate 0.5 STRK was converted to USDC inventory. The runner enforces the combined fee ceiling, a per-transaction gas cap, a 6 STRK pool-fee cap, exact token/recipient/amount checks and durable pending-transaction fences.
 
@@ -48,19 +48,17 @@ The plan uses the installed Starknet SDK's current UDC, a deployer-unique salt a
 
 ## Chat transaction compatibility
 
-The localnet funded-message path prepends `prepare_funding` to the account's atomic batch. The browser Wallet API path does not insert that call. Reusing the localnet withdrawal/recovery-note batch with a real wallet can leave the helper funding unrecovered.
+`buildMessageOnlyChatActions` is wired into normal messages, documents, backups and responses. It pairs an encrypted 1-base-unit STRK self-transfer with an unfunded `compute_and_invoke` callback. The existing shielded balance is preserved; the self-transfer supplies pool note replay protection. A callback alone fails the real pool's `NO_REPLAY_PROTECTION` check. No helper funding, public withdrawal or OPEN recovery note is used. Numeric payments provide their own encrypted transfer rather than adding this self-transfer.
 
-`buildMessageOnlyChatActions` is a separately tested candidate: one proof-bound `compute_and_invoke`, no token withdrawal, no recovery OPEN note and `note_id = 0`. The contract's message-only path emits the encrypted message and returns no deposits. Pool and network fees still apply. This builder is not wired into live runtime yet.
+The deployed helper and this Core SDK path succeeded in mainnet block 14529927. The encrypted event, bound helper replay slot, pool/helper trace, contract pins and unchanged private balance were verified. See [Chat evidence](CHAT_MAINNET_EVIDENCE_PLAN.md). Runtime addresses are pinned in `constants.ts` and `helperForNetwork`; RFQ/escrow activation remains separate.
 
-Before runtime activation, verify that the selected real wallet accepts `compute_and_invoke`; the installed Wallet API union does not type that extension, although the localnet adapter supports it. Test a real-wallet preparation first. If unsupported, implement an explicitly reviewed standard-invoke message path or a wallet adapter that supports the extension; do not silently strip replay protection or assume localnet proves support. Mainnet fees make durable pending-message recovery across reloads an additional priority.
-
-After compatibility is proven, wire the selected message-only path consistently into quick messages, document messages, backups and receipts, removing their localnet helper-funding balance requirement. Transfers remain explicit separate user actions. Configure the verified Chat address in `constants.ts` and `helperForNetwork`, and revise the matching release-policy assertions and tests for that exact address. RFQ/escrow addresses remain independent of Chat activation.
+Ready extension acceptance is still unverified. The installed Wallet API union does not declare the `compute_and_invoke` extension; localnet support does not establish the real extension's behavior. A supported adapter must preserve private computation, proof facts and both replay checks. Do not fall back to public invokes or strip protection. Preserve proof and pending-message journals across reloads and reconcile unknown submissions before retrying.
 
 ## Hosting
 
-`wrangler.jsonc` now supplies server-side Cartridge mainnet and Sepolia RPC endpoints. They are not browser credentials. Ready owns proving and private state; its basic mainnet path does not require hosted Privy prover/discovery credentials.
+`wrangler.jsonc` supplies server-side RPC endpoints; these are not browser credentials. The verified operator Chat run used hosted proving and Publicnode proof-aware submission. A browser adapter needs its own authenticated proving and private-state integration; the Node receipt does not establish Ready support.
 
-The public frontend is deployed as Worker `app20` at **https://app20.io**, with `workers_dev` also enabled. The custom domain, HTTPS, desktop routes and same-origin Starknet RPC were verified on 2026-09-07 (Europe/Vaduz). See [frontend deployment evidence](../deployments/mainnet/frontend.json). The fixed-quote UI is active and the Node demo verified funded maker settlement. Browser wallet acceptance and an ongoing maker operation remain separate work. Privy backend authentication and OHTTP are not activated.
+The public frontend is deployed as Worker `app20` at **https://app20.io**, with `workers_dev` also enabled. The custom domain, HTTPS, desktop routes and same-origin Starknet RPC were verified on 2026-09-07 (Europe/Vaduz). See [frontend deployment evidence](../deployments/mainnet/frontend.json). The current RFQ screen is confidential-only; the older Node demo verified the retired funded maker protocol. Browser wallet acceptance and an ongoing maker operation remain separate work. Privy backend authentication and OHTTP are not activated.
 
 After the candidate has real wallet/contract configuration, publish with the existing `npm run deploy:cf` command. Verify the resulting public URL, security headers, same-origin RPC, wallet connection and a message round trip from two real accounts. Configure optional Privy services separately if they will be offered.
 
@@ -82,18 +80,17 @@ On 2026-09-06 the mainnet pool returned a fee of **6 STRK** (`600000000000000000
 
 ## Current state
 
-- Contract candidate and read-only preparation tooling: available.
-- Unsigned deployment calls: generated when a real deployer public address is supplied.
-- Message-only action builder: unit-tested candidate; real-wallet compatibility and runtime wiring pending.
-- Frontend bundle/Worker: published at https://app20.io; desktop routes and Starknet RPC verified. Browser wallet acceptance and a continuously operated maker remain separate follow-up work.
-- Three mainnet private-swap transactions: completed and verified. Chat deployment and a published final demo video remain pending.
-- Independent fixed-quote RFQ: contracts deployed and verified; real Node SDK proof execution, maker inventory and three fills completed. The temporary demo maker was cleaned up and deactivated. See [deployment evidence](../deployments/mainnet/private-settlement.json) and [execution evidence](../deployments/mainnet/smoke-test-2026-09-07.json). Legacy v3 gaps remain in `GAPS.md`.
+- Chat: deployed and enabled, with one verified operator-controlled mainnet message. Ready acceptance, independent two-wallet messaging and a recipient payment remain unverified.
+- Confidential RFQ: one `/rfq` screen, deployed escrow and enabled SDK; accepted atomic settlement and independent browser integration remain pending.
+- Earlier maker/settlement contracts: three mainnet swaps verified historically. New public-term registration, funding, quoting and settlement are disabled; only explicit historical recovery remains.
+- The public frontend is https://app20.io. The submission manifest includes the published deadline video; subsequent edits must reflect current behavior.
 
-## Independent makers
 
-The [independent maker flow](makers/README.md) supports funded fixed quotes and atomic shielded settlement through `App20PrivateSwap`. Makers can withdraw proceeds and reclaim expired reservations. It does not require the legacy localnet pre-call or compute-and-invoke shim. The real-pool devnet test uses simulated proof facts; the Node SDK additionally completed real mainnet proof execution. Ready extension acceptance remains unverified.
+## Historical independent-maker deployment
 
-Use `npm run mainnet:prepare:settlement -- --rpc https://api.cartridge.gg/x/starknet/mainnet` for both contract artifacts and deployment verification. The maker book and private swap were deployed and verified on 2026-09-06 under a 65 STRK total fee ceiling. Account activation, both declarations and deployment cost 28.046492790585744432 STRK combined. Exact addresses, transaction hashes, class hashes and the verification block are in the [deployment manifest](../deployments/mainnet/private-settlement.json). The fixed-quote UI uses the verified runtime addresses; the completed Node demo is recorded above.
+The earlier independent maker flow supported funded fixed quotes and shielded settlement through `App20PrivateSwap`, with public funded terms. Current clients block new execution; see [historical recovery](makers/README.md). Makers can withdraw proceeds and reclaim expired reservations. It does not require the legacy localnet pre-call or compute-and-invoke shim. The real-pool devnet test uses simulated proof facts; the Node SDK additionally completed real mainnet proof execution. Ready extension acceptance remains unverified.
+
+Use `npm run mainnet:prepare:settlement -- --rpc https://api.cartridge.gg/x/starknet/mainnet` for both contract artifacts and deployment verification. The maker book and private swap were deployed and verified on 2026-09-06 under a 65 STRK total fee ceiling. Account activation, both declarations and deployment cost 28.046492790585744432 STRK combined. Exact addresses, transaction hashes, class hashes and the verification block are in the [deployment manifest](../deployments/mainnet/private-settlement.json). Those addresses remain pinned for historical record handling; new execution is blocked by current clients. The completed historical Node demo is recorded above.
 
 ## Starkscan proving transport limitation (2026-09-07)
 
@@ -115,4 +112,4 @@ The Starkscan REST adapter, authenticated Worker proof routes, caller-bound job 
 
 The browser Privy wallet has mainnet registration, shielding, transfer and unshield paths. Ready remains the default RFQ wallet; Privy does not silently become the Ready account or move its funds. The Node SDK `createPrivacyWallet` supplies an executor for APP20 settlement plus wallet operations, using the official SDK and contract discovery. Its mainnet registration/shield and three private fills are now verified. This does not establish Ready or Privy browser acceptance, a standalone private transfer, or unshield execution.
 
-The `[20]` SVG replaces the Starknet favicon. README and agent guidance describe the accepted plaintext-at-relay proving limitation. Chat onboarding wording now reports the actual missing deployment, rather than an intentional blanket live-network ban. A fresh mainnet Chat candidate was built and inspected in `artifacts/mainnet-preparation/candidate.json`; it has not been signed, declared, deployed, or activated.
+The `[20]` SVG replaces the Starknet favicon. README and agent guidance describe the accepted plaintext-at-relay proving limitation. The September 7 preparation candidate was subsequently declared, deployed and activated on September 8; its verified Chat operation is recorded above.

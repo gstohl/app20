@@ -148,5 +148,8 @@ export function authorizeConfidentialOperation(prepared: ConfidentialPrepared, v
   if (roles.size !== approvals.length || approvals.length !== review.requiredSigners.length || review.requiredSigners.some(role => !roles.has(role))) throw new Error('Every required party must approve exactly once.');
   for (const approval of approvals) if (!verifyConfidentialApproval(prepared.agreement, review.digest, approval)) throw new Error('Invalid or mismatched approval.');
   const signatureFor = (role: ConfidentialRole) => approvals.find(a => a.role === role)?.signature ?? ['0', '0'];
-  return { ...structuredClone(prepared.invocation), signature: [String(CONFIDENTIAL_MODES[prepared.mode]), ...confidentialTermsFelts(prepared.agreement.terms), ...signatureFor('a'), ...signatureFor('b')] };
+  // The hosted prover consumes RPC JSON directly, without Starknet.js normalizing
+  // decimal amounts/signatures. Every felt on this wire must use 0x notation.
+  const signature = [String(CONFIDENTIAL_MODES[prepared.mode]), ...confidentialTermsFelts(prepared.agreement.terms), ...signatureFor('a'), ...signatureFor('b')].map(value => confidentialFelt(value, false));
+  return { ...structuredClone(prepared.invocation), signature };
 }

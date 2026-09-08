@@ -351,7 +351,7 @@ export async function checkReleaseDeny(root = repositoryRoot) {
   if (confidentialText !== undefined) {
     const parsed = sourceFile(confidentialPath, confidentialText, failures);
     assertExportedConst(parsed, confidentialPath, "CONFIDENTIAL_RFQ_MAINNET_ENABLED", true, failures);
-    assertExportedConst(parsed, confidentialPath, "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", false, failures);
+    assertExportedConst(parsed, confidentialPath, "CONFIDENTIAL_RFQ_REAL_PROOF_VERIFIED", true, failures);
   }
 
   const productionPath = "src/app/rfq/production-private-intents.ts";
